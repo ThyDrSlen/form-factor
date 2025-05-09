@@ -6,6 +6,33 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		E323AAFA2D04EAE700E5E726 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = E323AAF92D04EAE700E5E726 /* Auth */; };
+		E323AAFC2D04EAE700E5E726 /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = E323AAFB2D04EAE700E5E726 /* Functions */; };
+		E323AAFE2D04EAE700E5E726 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = E323AAFD2D04EAE700E5E726 /* PostgREST */; };
+		E323AB002D04EAE700E5E726 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = E323AAFF2D04EAE700E5E726 /* Realtime */; };
+		E323AB022D04EAE700E5E726 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = E323AB012D04EAE700E5E726 /* Storage */; };
+		E323AB042D04EAE700E5E726 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = E323AB032D04EAE700E5E726 /* Supabase */; };
+		E323AB062D04EB0200E5E726 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = E323AB052D04EB0200E5E726 /* Auth */; };
+		E323AB082D04EB0200E5E726 /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = E323AB072D04EB0200E5E726 /* Functions */; };
+		E323AB0A2D04EB0200E5E726 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = E323AB092D04EB0200E5E726 /* PostgREST */; };
+		E323AB0C2D04EB0200E5E726 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = E323AB0B2D04EB0200E5E726 /* Realtime */; };
+		E323AB0E2D04EB0200E5E726 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = E323AB0D2D04EB0200E5E726 /* Storage */; };
+		E323AB102D04EB0200E5E726 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = E323AB0F2D04EB0200E5E726 /* Supabase */; };
+		E323AB122D04EB0E00E5E726 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = E323AB112D04EB0E00E5E726 /* Auth */; };
+		E323AB142D04EB0E00E5E726 /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = E323AB132D04EB0E00E5E726 /* Functions */; };
+		E323AB162D04EB0E00E5E726 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = E323AB152D04EB0E00E5E726 /* PostgREST */; };
+		E323AB182D04EB0E00E5E726 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = E323AB172D04EB0E00E5E726 /* Realtime */; };
+		E323AB1A2D04EB0E00E5E726 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = E323AB192D04EB0E00E5E726 /* Storage */; };
+		E323AB1C2D04EB0E00E5E726 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = E323AB1B2D04EB0E00E5E726 /* Supabase */; };
+		E35634CC2D063D6600346031 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = E35634CB2D063D6600346031 /* GoogleSignIn */; };
+		E35634CE2D063D6600346031 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = E35634CD2D063D6600346031 /* GoogleSignInSwift */; };
+		E3959E412DCD8B3E00875D66 /* form-factor.xctestplan in Resources */ = {isa = PBXBuildFile; fileRef = E3C044F52D0644CA007A83A4 /* form-factor.xctestplan */; };
+		E3A980312DCDD5FC00119756 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = E3A980302DCDD5FC00119756 /* GoogleSignIn */; };
+		E3A980332DCDD5FC00119756 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = E3A980322DCDD5FC00119756 /* GoogleSignInSwift */; };
+		E3A980352DCDD8AE00119756 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E3A980342DCDD8AE00119756 /* XCTest.framework */; platformFilter = ios; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		E323AAD82D02CE7B00E5E726 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,22 +54,53 @@
 		E323AAC72D02CE7900E5E726 /* form-factor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "form-factor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E323AAD72D02CE7B00E5E726 /* form-factorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "form-factorTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E323AAE12D02CE7B00E5E726 /* form-factorUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "form-factorUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		E3A980342DCDD8AE00119756 /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = Platforms/iPhoneOS.platform/Developer/Library/Frameworks/XCTest.framework; sourceTree = DEVELOPER_DIR; };
+		E3C044F52D0644CA007A83A4 /* form-factor.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = "form-factor.xctestplan"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		E3A9802A2DCDCCCA00119756 /* Exceptions for "form-factor" folder in "form-factorTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Tests/form-factorTests/ConfigurationTests.swift",
+				"Tests/form-factorTests/DashboardViewModelTests.swift",
+				"Tests/form-factorTests/form_factorTests.swift",
+				"Tests/form-factorTests/SupabaseManagerTests.swift",
+			);
+			target = E323AAD62D02CE7B00E5E726 /* form-factorTests */;
+		};
+		E3C044FB2D064721007A83A4 /* Exceptions for "form-factor" folder in "form-factor" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				"Tests/form-factorTests/ConfigurationTests.swift",
+				"Tests/form-factorTests/DashboardViewModelTests.swift",
+				"Tests/form-factorTests/form_factorTests.swift",
+				"Tests/form-factorTests/SupabaseManagerTests.swift",
+				"Tests/form-factorUITests/form_factorUITests.swift",
+				"Tests/form-factorUITests/form_factorUITestsLaunchTests.swift",
+			);
+			target = E323AAC62D02CE7900E5E726 /* form-factor */;
+		};
+		E3C045022D064724007A83A4 /* Exceptions for "form-factor" folder in "form-factorUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Tests/form-factorUITests/form_factorUITests.swift",
+				"Tests/form-factorUITests/form_factorUITestsLaunchTests.swift",
+			);
+			target = E323AAE02D02CE7B00E5E726 /* form-factorUITests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		E323AAC92D02CE7900E5E726 /* form-factor */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E3C044FB2D064721007A83A4 /* Exceptions for "form-factor" folder in "form-factor" target */,
+				E3A9802A2DCDCCCA00119756 /* Exceptions for "form-factor" folder in "form-factorTests" target */,
+				E3C045022D064724007A83A4 /* Exceptions for "form-factor" folder in "form-factorUITests" target */,
+			);
 			path = "form-factor";
-			sourceTree = "<group>";
-		};
-		E323AADA2D02CE7B00E5E726 /* form-factorTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "form-factorTests";
-			sourceTree = "<group>";
-		};
-		E323AAE42D02CE7B00E5E726 /* form-factorUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "form-factorUITests";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -52,6 +110,14 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E323AB0A2D04EB0200E5E726 /* PostgREST in Frameworks */,
+				E323AB082D04EB0200E5E726 /* Functions in Frameworks */,
+				E323AB102D04EB0200E5E726 /* Supabase in Frameworks */,
+				E35634CE2D063D6600346031 /* GoogleSignInSwift in Frameworks */,
+				E323AB062D04EB0200E5E726 /* Auth in Frameworks */,
+				E323AB0E2D04EB0200E5E726 /* Storage in Frameworks */,
+				E323AB0C2D04EB0200E5E726 /* Realtime in Frameworks */,
+				E35634CC2D063D6600346031 /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -59,6 +125,15 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E3A980352DCDD8AE00119756 /* XCTest.framework in Frameworks */,
+				E323AAFE2D04EAE700E5E726 /* PostgREST in Frameworks */,
+				E323AAFC2D04EAE700E5E726 /* Functions in Frameworks */,
+				E323AB042D04EAE700E5E726 /* Supabase in Frameworks */,
+				E3A980332DCDD5FC00119756 /* GoogleSignInSwift in Frameworks */,
+				E323AAFA2D04EAE700E5E726 /* Auth in Frameworks */,
+				E323AB022D04EAE700E5E726 /* Storage in Frameworks */,
+				E323AB002D04EAE700E5E726 /* Realtime in Frameworks */,
+				E3A980312DCDD5FC00119756 /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -66,6 +141,12 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E323AB162D04EB0E00E5E726 /* PostgREST in Frameworks */,
+				E323AB142D04EB0E00E5E726 /* Functions in Frameworks */,
+				E323AB1C2D04EB0E00E5E726 /* Supabase in Frameworks */,
+				E323AB122D04EB0E00E5E726 /* Auth in Frameworks */,
+				E323AB1A2D04EB0E00E5E726 /* Storage in Frameworks */,
+				E323AB182D04EB0E00E5E726 /* Realtime in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -75,9 +156,9 @@
 		E323AABE2D02CE7900E5E726 = {
 			isa = PBXGroup;
 			children = (
+				E3C044F52D0644CA007A83A4 /* form-factor.xctestplan */,
 				E323AAC92D02CE7900E5E726 /* form-factor */,
-				E323AADA2D02CE7B00E5E726 /* form-factorTests */,
-				E323AAE42D02CE7B00E5E726 /* form-factorUITests */,
+				E323AAF82D04EAE700E5E726 /* Frameworks */,
 				E323AAC82D02CE7900E5E726 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -92,6 +173,14 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		E323AAF82D04EAE700E5E726 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				E3A980342DCDD8AE00119756 /* XCTest.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -99,9 +188,10 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = E323AAEB2D02CE7B00E5E726 /* Build configuration list for PBXNativeTarget "form-factor" */;
 			buildPhases = (
-				E323AAC32D02CE7900E5E726 /* Sources */,
+				E3959DFF2DC9E8E600875D66 /* Run Script */,
 				E323AAC42D02CE7900E5E726 /* Frameworks */,
 				E323AAC52D02CE7900E5E726 /* Resources */,
+				E323AAC32D02CE7900E5E726 /* Sources */,
 			);
 			buildRules = (
 			);
@@ -112,6 +202,14 @@
 			);
 			name = "form-factor";
 			packageProductDependencies = (
+				E323AB052D04EB0200E5E726 /* Auth */,
+				E323AB072D04EB0200E5E726 /* Functions */,
+				E323AB092D04EB0200E5E726 /* PostgREST */,
+				E323AB0B2D04EB0200E5E726 /* Realtime */,
+				E323AB0D2D04EB0200E5E726 /* Storage */,
+				E323AB0F2D04EB0200E5E726 /* Supabase */,
+				E35634CB2D063D6600346031 /* GoogleSignIn */,
+				E35634CD2D063D6600346031 /* GoogleSignInSwift */,
 			);
 			productName = "form-factor";
 			productReference = E323AAC72D02CE7900E5E726 /* form-factor.app */;
@@ -130,11 +228,16 @@
 			dependencies = (
 				E323AAD92D02CE7B00E5E726 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-				E323AADA2D02CE7B00E5E726 /* form-factorTests */,
-			);
 			name = "form-factorTests";
 			packageProductDependencies = (
+				E323AAF92D04EAE700E5E726 /* Auth */,
+				E323AAFB2D04EAE700E5E726 /* Functions */,
+				E323AAFD2D04EAE700E5E726 /* PostgREST */,
+				E323AAFF2D04EAE700E5E726 /* Realtime */,
+				E323AB012D04EAE700E5E726 /* Storage */,
+				E323AB032D04EAE700E5E726 /* Supabase */,
+				E3A980302DCDD5FC00119756 /* GoogleSignIn */,
+				E3A980322DCDD5FC00119756 /* GoogleSignInSwift */,
 			);
 			productName = "form-factorTests";
 			productReference = E323AAD72D02CE7B00E5E726 /* form-factorTests.xctest */;
@@ -153,11 +256,14 @@
 			dependencies = (
 				E323AAE32D02CE7B00E5E726 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-				E323AAE42D02CE7B00E5E726 /* form-factorUITests */,
-			);
 			name = "form-factorUITests";
 			packageProductDependencies = (
+				E323AB112D04EB0E00E5E726 /* Auth */,
+				E323AB132D04EB0E00E5E726 /* Functions */,
+				E323AB152D04EB0E00E5E726 /* PostgREST */,
+				E323AB172D04EB0E00E5E726 /* Realtime */,
+				E323AB192D04EB0E00E5E726 /* Storage */,
+				E323AB1B2D04EB0E00E5E726 /* Supabase */,
 			);
 			productName = "form-factorUITests";
 			productReference = E323AAE12D02CE7B00E5E726 /* form-factorUITests.xctest */;
@@ -192,9 +298,14 @@
 			knownRegions = (
 				en,
 				Base,
+				"es-419",
 			);
 			mainGroup = E323AABE2D02CE7900E5E726;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				E35634CA2D063D6600346031 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E323AAC82D02CE7900E5E726 /* Products */;
 			projectDirPath = "";
@@ -212,6 +323,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E3959E412DCD8B3E00875D66 /* form-factor.xctestplan in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -230,6 +342,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		E3959DFF2DC9E8E600875D66 /* Run Script */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Run Script";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "#!/usr/bin/env bash\n# point this at your Info.plist\nINFOPLIST=\"${SRCROOT}/form-factor/Info.plist\"\n\n# helper to add-or-set a plist key\nplist_set() {\n  local key=$1 value=$2\n  if /usr/libexec/PlistBuddy -c \"Print :$key\" \"$INFOPLIST\" &>/dev/null; then\n    /usr/libexec/PlistBuddy -c \"Set :$key \\\"$value\\\"\" \"$INFOPLIST\"\n  else\n    /usr/libexec/PlistBuddy -c \"Add :$key string \\\"$value\\\"\" \"$INFOPLIST\"\n  fi\n}\n\nplist_set \"NSHealthShareUsageDescription\"    \"We need to read your workouts and heart-rate data so you can see them in the dashboard.\"\nplist_set \"NSHealthUpdateUsageDescription\"   \"We need to write your logged workouts back to HealthKit.\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		E323AAC32D02CE7900E5E726 /* Sources */ = {
@@ -321,10 +454,12 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
+				NEW_SETTING = "";
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
@@ -378,10 +513,12 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				NEW_SETTING = "";
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
@@ -393,16 +530,25 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "form-factor/form-factor.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"form-factor/Preview Content\"";
+				DEVELOPMENT_TEAM = NCTLNFGC6G;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "form-factor/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "We need to read your workouts and heart‐rate data so you can see them in the dashboard.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "We need to write your logged workouts back to HealthKit.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleDarkContent;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -421,16 +567,26 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "form-factor/form-factor.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"form-factor/Preview Content\"";
+				DEVELOPMENT_TEAM = NCTLNFGC6G;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "form-factor/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "We need to read your workouts and heart‐rate data so you can see them in the dashboard.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "We need to write your logged workouts back to HealthKit.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleDarkContent;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -447,9 +603,9 @@
 		E323AAEF2D02CE7B00E5E726 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NCTLNFGC6G;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
 				MARKETING_VERSION = 1.0;
@@ -465,9 +621,9 @@
 		E323AAF02D02CE7B00E5E726 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NCTLNFGC6G;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
 				MARKETING_VERSION = 1.0;
@@ -485,10 +641,12 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NCTLNFGC6G;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "kc.form-factorUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE = "";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -501,10 +659,12 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NCTLNFGC6G;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "kc.form-factorUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE = "";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -552,6 +712,138 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+		E35634CA2D063D6600346031 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E323AAF92D04EAE700E5E726 /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+		E323AAFB2D04EAE700E5E726 /* Functions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Functions;
+		};
+		E323AAFD2D04EAE700E5E726 /* PostgREST */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = PostgREST;
+		};
+		E323AAFF2D04EAE700E5E726 /* Realtime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Realtime;
+		};
+		E323AB012D04EAE700E5E726 /* Storage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Storage;
+		};
+		E323AB032D04EAE700E5E726 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+		E323AB052D04EB0200E5E726 /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+		E323AB072D04EB0200E5E726 /* Functions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Functions;
+		};
+		E323AB092D04EB0200E5E726 /* PostgREST */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = PostgREST;
+		};
+		E323AB0B2D04EB0200E5E726 /* Realtime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Realtime;
+		};
+		E323AB0D2D04EB0200E5E726 /* Storage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Storage;
+		};
+		E323AB0F2D04EB0200E5E726 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+		E323AB112D04EB0E00E5E726 /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+		E323AB132D04EB0E00E5E726 /* Functions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Functions;
+		};
+		E323AB152D04EB0E00E5E726 /* PostgREST */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = PostgREST;
+		};
+		E323AB172D04EB0E00E5E726 /* Realtime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Realtime;
+		};
+		E323AB192D04EB0E00E5E726 /* Storage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Storage;
+		};
+		E323AB1B2D04EB0E00E5E726 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E323AAF72D04E9FA00E5E726 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+		E35634CB2D063D6600346031 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E35634CA2D063D6600346031 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		E35634CD2D063D6600346031 /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E35634CA2D063D6600346031 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+		E3A980302DCDD5FC00119756 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E35634CA2D063D6600346031 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		E3A980322DCDD5FC00119756 /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E35634CA2D063D6600346031 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = E323AABF2D02CE7900E5E726 /* Project object */;
 }

@@ -1,0 +1,37 @@
+{
+  "configurations" : [
+    {
+      "id" : "BAE1394B-D03B-4F88-B31B-2BF18E4C0383",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:form-factor.xcodeproj",
+      "identifier" : "E323AAC62D02CE7900E5E726",
+      "name" : "form-factor"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:form-factor.xcodeproj",
+        "identifier" : "E323AAD62D02CE7B00E5E726",
+        "name" : "form-factorTests"
+      }
+    },
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:form-factor.xcodeproj",
+        "identifier" : "E323AAE02D02CE7B00E5E726",
+        "name" : "form-factorUITests"
+      }
+    }
+  ],
+  "version" : 1
+}
