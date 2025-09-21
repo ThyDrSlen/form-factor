@@ -1,0 +1,6 @@
+*** Begin Patch
+*** Update File: node_modules/tslib/modules/index.js
+@@
+-var tslib_1 = require("tslib");
++var tslib_1 = require("../tslib.js");
+*** End Patch
