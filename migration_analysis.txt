@@ -1,0 +1,131 @@
+# Form Factor App Migration Analysis
+
+## Project Structure Analysis
+
+### Key Components
+1. **Authentication**
+   - Google Sign-In (partially implemented)
+   - Apple Sign-In (indicated by AuthView with AuthenticationServices)
+   - Supabase authentication
+
+2. **Core Features**
+   - Food tracking (FoodEntryView, FoodEntry model)
+   - Workout tracking (WorkoutEntryView, Workout model)
+   - HealthKit integration (HealthKitManager)
+   - Dashboard with charts (DashboardView with Charts framework)
+   - User profile management (AccountView)
+   - Data synchronization (SyncManager)
+
+3. **Data Models**
+   - FoodEntry: Tracks food consumption
+   - Workout: Tracks exercise data
+   - UserInfo: Stores user profile information
+   - Uses SwiftData for local persistence
+
+4. **Services**
+   - HealthKitManager: Handles health data access
+   - SupabaseManager: Manages backend communication
+   - SyncManager: Handles data synchronization
+
+## Migration Plan to Expo/React Native
+
+### 1. Setup & Dependencies
+```bash
+# Core dependencies
+expo install @react-navigation/native @react-navigation/stack
+# Authentication
+expo install @react-native-google-signin/google-signin expo-auth-session expo-web-browser
+# State management
+expo install @reduxjs/toolkit react-redux
+# UI Components
+expo install react-native-chart-kit react-native-svg
+# Database
+expo install @supabase/supabase-js
+# Health Data
+expo install expo-health-connect
+```
+
+### 2. Key Files to Migrate
+
+#### 2.1 Authentication
+- **Current**: `AuthView.swift`, `GoogleSignInView.swift`
+- **Migration**:
+  - Use `@react-native-google-signin/google-signin` for Google Sign-In
+  - Use `expo-auth-session` for OAuth providers
+  - Implement Supabase Auth with `@supabase/supabase-js`
+
+#### 2.2 Health Data
+- **Current**: `HealthKitManager.swift`
+- **Migration**:
+  - Replace with `expo-health-connect`
+  - Request necessary permissions
+  - Map HealthKit data types to React Native equivalent
+
+#### 2.3 Data Models
+- **Current**: SwiftData models (`FoodEntry`, `Workout`, `UserInfo`)
+- **Migration**:
+  - Convert to TypeScript interfaces
+  - Use Supabase as the primary database
+  - Implement local caching with AsyncStorage or SQLite
+
+#### 2.4 Views
+- **Current**: SwiftUI Views
+- **Migration**:
+  - Rebuild using React Native components
+  - Use React Navigation for routing
+  - Implement similar UI with React Native styling
+
+### 3. Implementation Steps
+
+1. **Setup Project**
+   - Initialize Expo project with TypeScript
+   - Configure navigation structure
+   - Set up state management
+
+2. **Authentication Flow**
+   - Implement Google/Apple sign-in
+   - Set up Supabase auth
+   - Create protected routes
+
+3. **Core Features**
+   - Health data integration
+   - Food/Workout tracking forms
+   - Dashboard with charts
+   - User profile management
+
+4. **Data Sync**
+   - Implement offline-first approach
+   - Set up real-time sync with Supabase
+   - Handle conflicts and merge strategies
+
+### 4. Challenges & Considerations
+
+1. **HealthKit to Health Connect**
+   - Different APIs and permission models
+   - Data format conversion
+   - Testing on both iOS and Android
+
+2. **Performance**
+   - Large datasets handling
+   - Smooth animations for charts
+   - Background sync
+
+3. **Platform Differences**
+   - UI/UX consistency
+   - Native module integration
+   - Permission handling
+
+### 5. Testing Strategy
+1. Unit tests for business logic
+2. Integration tests for data flow
+3. E2E tests for critical paths
+4. Manual testing on different devices
+
+### 6. Next Steps
+1. Set up the basic Expo project structure
+2. Implement authentication flow
+3. Create core data models and services
+4. Build UI components
+5. Implement data synchronization
+6. Test thoroughly
+7. Deploy to app stores
