@@ -1,0 +1,41 @@
+# Exclude local caches and simulator artifacts that cause casing issues
+
+# macOS
+.DS_Store
+
+# Node / Expo caches
+node_modules/
+.expo/
+.expo-shared/
+dist/
+web-build/
+
+
+# Playwright artifacts
+playwright-report/
+test-results/
+
+# iOS/Android local build outputs (cloud build will handle these)
+ios/build/
+android/app/build/
+
+# iOS Simulator and Apple caches accidentally added to project
+Library/
+**/Library/**
+
+# Rust/Cargo caches accidentally created in project root
+.cargo/
+**/.cargo/**
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor
+.vscode/
+.idea/
+
+# Misc
+**/*.orig.*
