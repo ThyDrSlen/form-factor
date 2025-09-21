@@ -131,3 +131,4 @@ expo-env.d.ts
 # Xcode user state
 ios/**/xcuserdata/
 ios/**/*.xcuserstate
+tsconfig.json.bak
