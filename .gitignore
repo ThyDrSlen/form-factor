@@ -41,7 +41,7 @@ app-example
 .app-store
 .aws*
 
-.bun*
+
 
 # Add to .gitignore
 # Cargo/Rust
@@ -79,3 +79,55 @@ Library/
 # Test outputs
 playwright-report/
 test-results/
+
+
+# Expo/Node
+.expo/
+.expo-shared/
+dist/
+web-build/
+node_modules/
+
+# Native build outputs
+ios/build/
+ios/Pods/
+android/app/build/
+android/.gradle/
+android/local.properties
+
+# Logs / coverage / tests
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log
+coverage/
+playwright-report/
+test-results/
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# Env secrets (keep examples tracked)
+.env
+.env*.local
+.env.*
+!.env.example
+!.env.sample
+!.env.defaults
+
+# Tool caches
+.bun/
+.cargo/
+Library/
+**/Library/**
+
+# Expo generated
+expo-env.d.ts
+.metro-health-check*
+*.tsbuildinfo
+# Xcode user state
+ios/**/xcuserdata/
+ios/**/*.xcuserstate
