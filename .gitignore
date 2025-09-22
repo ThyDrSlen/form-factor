@@ -91,19 +91,7 @@ node_modules/
 # Native build outputs
 ios/build/
 ios/Pods/
-android/app/build/
-android/.gradle/
-android/local.properties
-android/**/build/
-android/**/.cxx/
-android/**/.externalNativeBuild/
-android/**/captures/
-android/**/obj/
-android/**/*.apk
-android/**/*.aab
-android/**/*.ap_
-android/**/*.dex
-android/**/*.class
+android/*
 
 # Logs / coverage / tests
 *.log

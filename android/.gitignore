@@ -1,0 +1,29 @@
+# OSX
+#
+.DS_Store
+
+# Android/IntelliJ
+#
+**/build/
+.idea
+.gradle
+local.properties
+*.iml
+*.hprof
+.cxx/
+
+# Native build directories
+.externalNativeBuild/
+captures/
+obj/
+
+# Build outputs
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# Bundle artifacts
+*.jsbundle
+ 
