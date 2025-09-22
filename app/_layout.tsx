@@ -1,21 +1,24 @@
-import 'react-native-url-polyfill/auto';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
+import 'react-native-url-polyfill/auto';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { FoodProvider } from '../contexts/FoodContext';
 import { WorkoutsProvider } from '../contexts/WorkoutsContext';
+import { ThemeProvider } from './design-system/ThemeProvider';
 
-// This layout wraps the entire app with the AuthProvider
+// This layout wraps the entire app with providers
 function RootLayoutNav() {
   return (
-    <AuthProvider>
-      <WorkoutsProvider>
-        <FoodProvider>
-          <InitialLayout />
-        </FoodProvider>
-      </WorkoutsProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <WorkoutsProvider>
+          <FoodProvider>
+            <InitialLayout />
+          </FoodProvider>
+        </WorkoutsProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 
