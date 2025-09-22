@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View, Platform, Keyboard, InputAccessoryView, KeyboardAvoidingView, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFood } from '../contexts/FoodContext';
 import { useSafeBack } from '../hooks/use-safe-back';
@@ -19,6 +19,20 @@ export default function AddFoodScreen() {
   const [date, setDate] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const nameRef = React.useRef<TextInput>(null);
+  const caloriesRef = React.useRef<TextInput>(null);
+  const proteinRef = React.useRef<TextInput>(null);
+  const carbsRef = React.useRef<TextInput>(null);
+  const fatRef = React.useRef<TextInput>(null);
+  const accessoryID = 'decimalAccessory';
+
+  function normalizeDecimal(value: string): string {
+    const cleaned = value.replace(/[^0-9.]/g, '');
+    const firstDot = cleaned.indexOf('.');
+    if (firstDot === -1) return cleaned;
+    return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+  }
 
   // Safe back: force replace to the Food tab to avoid any stack edge-cases
   const safeBack = useSafeBack('/food', { alwaysReplace: true });
@@ -72,7 +86,15 @@ export default function AddFoodScreen() {
         <View style={styles.headerSpacer} />
       </View>
 
-      <View style={styles.content}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          bounces
+          contentInsetAdjustmentBehavior="always"
+          onScrollBeginDrag={Keyboard.dismiss}
+          showsVerticalScrollIndicator={false}
+        >
         <View style={styles.inputContainer}>
           <Text style={styles.label}>Food Name *</Text>
           <TextInput 
@@ -81,6 +103,10 @@ export default function AddFoodScreen() {
             onChangeText={setName} 
             placeholder="e.g., Chicken Breast, Apple, Pasta"
             editable={!saving}
+            ref={nameRef}
+            returnKeyType="next"
+            onSubmitEditing={() => caloriesRef.current?.focus()}
+            blurOnSubmit={false}
           />
         </View>
 
@@ -89,10 +115,16 @@ export default function AddFoodScreen() {
           <TextInput 
             style={styles.input} 
             value={calories} 
-            onChangeText={setCalories} 
+            onChangeText={(t) => setCalories(normalizeDecimal(t))} 
+            inputMode="decimal"
             keyboardType="decimal-pad" 
             placeholder="e.g., 250"
             editable={!saving}
+            ref={caloriesRef}
+            returnKeyType="next"
+            onSubmitEditing={() => proteinRef.current?.focus()}
+            blurOnSubmit={false}
+            inputAccessoryViewID={Platform.OS === 'ios' ? accessoryID : undefined}
           />
         </View>
 
@@ -102,10 +134,16 @@ export default function AddFoodScreen() {
             <TextInput 
               style={styles.input} 
               value={protein} 
-              onChangeText={setProtein} 
+              onChangeText={(t) => setProtein(normalizeDecimal(t))} 
+              inputMode="decimal"
               keyboardType="decimal-pad" 
               placeholder="Optional"
               editable={!saving}
+              ref={proteinRef}
+              returnKeyType="next"
+              onSubmitEditing={() => carbsRef.current?.focus()}
+              blurOnSubmit={false}
+              inputAccessoryViewID={Platform.OS === 'ios' ? accessoryID : undefined}
             />
           </View>
 
@@ -114,10 +152,16 @@ export default function AddFoodScreen() {
             <TextInput 
               style={styles.input} 
               value={carbs} 
-              onChangeText={setCarbs} 
+              onChangeText={(t) => setCarbs(normalizeDecimal(t))} 
+              inputMode="decimal"
               keyboardType="decimal-pad" 
               placeholder="Optional"
               editable={!saving}
+              ref={carbsRef}
+              returnKeyType="next"
+              onSubmitEditing={() => fatRef.current?.focus()}
+              blurOnSubmit={false}
+              inputAccessoryViewID={Platform.OS === 'ios' ? accessoryID : undefined}
             />
           </View>
 
@@ -126,10 +170,15 @@ export default function AddFoodScreen() {
             <TextInput 
               style={styles.input} 
               value={fat} 
-              onChangeText={setFat} 
+              onChangeText={(t) => setFat(normalizeDecimal(t))} 
+              inputMode="decimal"
               keyboardType="decimal-pad" 
               placeholder="Optional"
               editable={!saving}
+              ref={fatRef}
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              inputAccessoryViewID={Platform.OS === 'ios' ? accessoryID : undefined}
             />
           </View>
         </View>
@@ -172,7 +221,18 @@ export default function AddFoodScreen() {
             {saving ? 'Saving...' : 'Save Meal'}
           </Text>
         </TouchableOpacity>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+      {Platform.OS === 'ios' && (
+        <InputAccessoryView nativeID={accessoryID}>
+          <View style={styles.accessoryContainer}>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity onPress={() => Keyboard.dismiss()} style={styles.accessoryButton}>
+              <Text style={styles.accessoryButtonText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </InputAccessoryView>
+      )}
     </SafeAreaView>
   );
 }
@@ -205,9 +265,9 @@ const styles = StyleSheet.create({
     width: 40,
   },
   content: {
-    flex: 1,
     padding: 20,
   },
+  flex: { flex: 1 },
   inputContainer: {
     marginBottom: 20,
   },
@@ -232,6 +292,27 @@ const styles = StyleSheet.create({
     padding: 16, 
     fontSize: 16,
     color: '#1C1C1E',
+  },
+  accessoryContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#F2F2F7',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#D1D1D6',
+  },
+  accessoryButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#007AFF',
+    borderRadius: 8,
+  },
+  accessoryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   dateInput: {
     backgroundColor: '#FFFFFF',
