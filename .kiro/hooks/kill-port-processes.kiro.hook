@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "name": "Kill Port Processes",
+  "description": "Automatically kills all processes running on ports 8081 to 8089 when development server conflicts are detected",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "package.json",
+      "app.json",
+      "expo-env.d.ts",
+      "metro.config.js"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Execute this bash script to kill all processes on ports 8081-8089:\n\nfor port in {8081..8089}; do\n  pids=$(lsof -ti tcp:$port)\n  if [ -n \"$pids\" ]; then\n    echo \"Killing PID(s) on port $port: $pids\"\n    echo \"$pids\" | xargs -n1 kill -9\n  else\n    echo \"No process on port $port\"\n  fi\ndone"
+  }
+}
