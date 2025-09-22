@@ -1,32 +1,39 @@
-const path = require('path');
 const { getDefaultConfig } = require('expo/metro-config');
 
 const config = (() => {
   const cfg = getDefaultConfig(__dirname);
 
-  return {
-    ...cfg,
-    transformer: {
-      ...cfg.transformer,
+  const { resolver } = cfg;
+
+  // The path to our bulletproof, self-contained tslib shim
+  const tslibShimPath = require.resolve('./tslib-proper-shim.js');
+
+  cfg.resolver = {
+    ...resolver,
+    sourceExts: [...resolver.sourceExts, 'mjs', 'cjs'],
+
+    // Use resolveRequest to intercept ALL module requests.
+    // This is the most powerful and reliable way to alias modules.
+    resolveRequest: (context, moduleName, platform) => {
+      // Check if the requested module is tslib or any of its sub-paths.
+      if (moduleName.startsWith('tslib')) {
+        // If it is, force it to resolve to our self-contained shim.
+        return context.resolveRequest(context, tslibShimPath, platform);
+      }
+
+      // For all other modules, use the default resolver.
+      return context.resolveRequest(context, moduleName, platform);
     },
-    resolver: {
-      ...cfg.resolver,
-      sourceExts: [...cfg.resolver.sourceExts, 'mjs', 'cjs'],
 
-
-      resolverMainFields: ['react-native', 'browser', 'module', 'main'],
-      extraNodeModules: {
-        ...(cfg.resolver.extraNodeModules || {}),
-        tslib: require.resolve('./shim-tslib.js'),
-        'tslib/modules': require.resolve('./shim-tslib.js'),
-        'tslib/modules/index.js': require.resolve('./shim-tslib.js'),
-        // Force @supabase/node-fetch to use its browser build to avoid Node stdlib (stream) on RN
-        '@supabase/node-fetch': require.resolve('@supabase/node-fetch/browser.js'),
-        // Force CJS build of punycode so whatwg-url can access ucs2.decode on Hermes
-        punycode: require.resolve('punycode/punycode.js'),
-      },
+    // Keep other necessary overrides
+    extraNodeModules: {
+      ...(resolver.extraNodeModules || {}),
+      '@supabase/node-fetch': require.resolve('@supabase/node-fetch/browser.js'),
+      punycode: require.resolve('punycode/punycode.js'),
     },
   };
+
+  return cfg;
 })();
 
 module.exports = config;
