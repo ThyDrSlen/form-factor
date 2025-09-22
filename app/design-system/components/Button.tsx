@@ -15,6 +15,8 @@ import { useTheme } from '../ThemeProvider';
 import { createButtonStyle } from '../utils';
 import { Text } from './Text';
 
+import * as Haptics from 'expo-haptics';
+
 interface ButtonProps extends Omit<TouchableOpacityProps, 'style'> {
   title: string;
   variant?: 'primary' | 'secondary' | 'destructive';
