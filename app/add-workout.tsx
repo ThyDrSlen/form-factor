@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View, Platform, Keyboard, InputAccessoryView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWorkouts } from '../contexts/WorkoutsContext';
 import { useSafeBack } from '../hooks/use-safe-back';
@@ -17,6 +17,14 @@ export default function AddWorkoutScreen() {
   const [reps, setReps] = useState('');
   const [weight, setWeight] = useState('');
   const [saving, setSaving] = useState(false);
+  const setsRef = React.useRef<TextInput>(null);
+  const repsRef = React.useRef<TextInput>(null);
+  const weightRef = React.useRef<TextInput>(null);
+  const accessoryID = 'numericAccessory';
+
+  function onlyDigits(value: string): string {
+    return value.replace(/[^0-9]/g, '');
+  }
 
   // Prefer a safe back action: if there's no history, go directly to the Workouts tab inside tabs group
   const safeBack = useSafeBack('/(tabs)/workouts');
@@ -80,24 +88,36 @@ export default function AddWorkoutScreen() {
           <View style={[styles.inputContainer, styles.halfWidth]}>
             <Text style={styles.label}>Sets</Text>
             <TextInput 
+              ref={setsRef}
               style={styles.input} 
               value={sets} 
-              onChangeText={setSets} 
-              keyboardType="number-pad" 
+              onChangeText={(t) => setSets(onlyDigits(t))} 
+              inputMode="numeric"
+              keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'} 
               placeholder="1"
               editable={!saving}
+              returnKeyType="next"
+              onSubmitEditing={() => repsRef.current?.focus()}
+              blurOnSubmit={false}
+              inputAccessoryViewID={Platform.OS === 'ios' ? accessoryID : undefined}
             />
           </View>
 
           <View style={[styles.inputContainer, styles.halfWidth]}>
             <Text style={styles.label}>Reps</Text>
             <TextInput 
+              ref={repsRef}
               style={styles.input} 
               value={reps} 
-              onChangeText={setReps} 
-              keyboardType="number-pad" 
+              onChangeText={(t) => setReps(onlyDigits(t))} 
+              inputMode="numeric"
+              keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'} 
               placeholder="Optional"
               editable={!saving}
+              returnKeyType="next"
+              onSubmitEditing={() => weightRef.current?.focus()}
+              blurOnSubmit={false}
+              inputAccessoryViewID={Platform.OS === 'ios' ? accessoryID : undefined}
             />
           </View>
         </View>
@@ -105,12 +125,17 @@ export default function AddWorkoutScreen() {
         <View style={styles.inputContainer}>
           <Text style={styles.label}>Weight (lbs)</Text>
           <TextInput 
+            ref={weightRef}
             style={styles.input} 
             value={weight} 
-            onChangeText={setWeight} 
-            keyboardType="number-pad" 
+            onChangeText={(t) => setWeight(onlyDigits(t))} 
+            inputMode="numeric"
+            keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'} 
             placeholder="Optional"
             editable={!saving}
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            inputAccessoryViewID={Platform.OS === 'ios' ? accessoryID : undefined}
           />
         </View>
 
@@ -129,6 +154,16 @@ export default function AddWorkoutScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+      {Platform.OS === 'ios' && (
+        <InputAccessoryView nativeID={accessoryID}>
+          <View style={styles.accessoryContainer}>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity onPress={() => Keyboard.dismiss()} style={styles.accessoryButton}>
+              <Text style={styles.accessoryButtonText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </InputAccessoryView>
+      )}
     </SafeAreaView>
   );
 }
@@ -188,6 +223,27 @@ const styles = StyleSheet.create({
     padding: 16, 
     fontSize: 16,
     color: '#1C1C1E',
+  },
+  accessoryContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#F2F2F7',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#D1D1D6',
+  },
+  accessoryButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#007AFF',
+    borderRadius: 8,
+  },
+  accessoryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   saveButton: { 
     flexDirection: 'row', 
