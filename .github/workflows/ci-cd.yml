@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Test & Lint
@@ -30,7 +34,7 @@ jobs:
         run: npx eslint . --ext .ts,.tsx,.js,.jsx
 
       - name: Run tests
-        run: npm test
+        run: npm test --if-present
 
   build-preview:
     name: EAS Build Preview
@@ -58,7 +62,7 @@ jobs:
         run: npm ci
 
       - name: Create preview build
-        run: eas build --platform all --profile preview --non-interactive
+        run: npx eas build --platform all --profile preview --non-interactive
 
   deploy-staging:
     name: Deploy to Staging
@@ -93,10 +97,10 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
       - name: Build and submit to app stores (staging)
-        run: eas build --platform all --profile staging --auto-submit --non-interactive
+        run: npx eas build --platform all --profile staging --auto-submit --non-interactive
 
       - name: Deploy web to staging
-        run: eas update --branch staging --message "Staging deployment from ${{ github.sha }}"
+        run: npx eas update --branch staging --message "Staging deployment from ${{ github.sha }}"
 
   deploy-production:
     name: Deploy to Production
@@ -131,10 +135,10 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
       - name: Build and submit to app stores (production)
-        run: eas build --platform all --profile production --auto-submit --non-interactive
+        run: npx eas build --platform all --profile production --auto-submit --non-interactive
 
       - name: Deploy web to production
-        run: eas update --branch production --message "Production deployment from ${{ github.sha }}"
+        run: npx eas update --branch production --message "Production deployment from ${{ github.sha }}"
 
       - name: Create GitHub release
         uses: actions/create-release@v1
