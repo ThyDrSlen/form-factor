@@ -24,7 +24,6 @@
     "@react-navigation/elements": "^2.3.8",
     "@react-navigation/native": "^7.1.6",
     "@supabase/supabase-js": "^2.50.0",
-
     "buffer": "^6.0.3",
     "expo": "53.0.22",
     "expo-apple-authentication": "~7.2.4",
@@ -33,7 +32,7 @@
     "expo-blur": "~14.1.4",
     "expo-constants": "~17.1.6",
     "expo-crypto": "~14.1.5",
-    "expo-dev-client": "~5.2.0",
+    "expo-dev-client": "~5.2.4",
     "expo-font": "~13.3.1",
     "expo-haptics": "~14.1.4",
     "expo-image": "~2.4.0",
