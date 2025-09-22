@@ -5,31 +5,16 @@
     "slug": "form-factor",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
     "scheme": "formfactoreas",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "plugins": [
       "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
-        }
-      ],
       "expo-web-browser",
-      "expo-apple-authentication",
       "react-native-vision-camera"
     ],
     "android": {
-      "package": "com.slenthekid.form-factor-eas",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
+      "package": "com.slenthekid.formfactoreas",
       "intentFilters": [
         {
           "action": "VIEW",
@@ -55,11 +40,10 @@
     "ios": {
       "bundleIdentifier": "com.slenthekid.form-factor-eas",
       "supportsTablet": true,
-      "jsEngine": "jsc",
-      "usesAppleSignIn": true,
-      "associatedDomains": [
-        "applinks:nxywytufzdgzcizmpvbd.supabase.co"
-      ]
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "We read your step count and heart rate to display insights on your dashboard.",
+        "NSHealthUpdateUsageDescription": "We write selected health metrics only when you explicitly enable it."
+      }
     },
     "web": {
       "bundler": "metro",
