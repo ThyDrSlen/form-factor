@@ -1,4 +1,5 @@
 import { Slot, Redirect } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '../../contexts/AuthContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StyleSheet, View } from 'react-native';
@@ -10,7 +11,8 @@ export default function AuthLayout() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, styles.loadingContainer]}>
+      <SafeAreaView style={[styles.container, styles.loadingContainer]} edges={['top', 'bottom', 'left', 'right']}>
+        <StatusBar style="light" backgroundColor="#1A1A1A" />
         <View style={styles.skeletonContainer}>
           <Skeleton height={80} width="80%" radius="square" />
           <View style={styles.spacer} />
@@ -28,7 +30,8 @@ export default function AuthLayout() {
 
   return (
     <PaperProvider>
-      <SafeAreaView style={styles.container}>
+      <StatusBar style="light" backgroundColor="#1A1A1A" />
+      <SafeAreaView style={styles.container} edges={['top', 'bottom', 'left', 'right']}>
         <Slot />
       </SafeAreaView>
     </PaperProvider>
@@ -38,7 +41,7 @@ export default function AuthLayout() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#1A1A1A',
   },
   loadingContainer: {
     flex: 1,
