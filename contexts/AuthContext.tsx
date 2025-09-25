@@ -36,6 +36,24 @@ const MOCK_SESSION: Session = {
   user: MOCK_USER,
 } as Session;
 
+// Small helper to cap how long we wait for a promise (e.g., network sign-out)
+async function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout?: () => void): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => {
+          onTimeout?.();
+          resolve(undefined);
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 type AuthContextType = {
   user: User | null;
   session: Session | null;
@@ -328,19 +346,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return {};
       }
 
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error('[Auth] Error signing out:', error);
-        return { error };
-      }
-
-      // Clear stored session
-      await sessionManager.clearSession();
-
-      // Update state
+      // Optimistically clear local state and storage first so UI responds immediately
       setUser(null);
       setSession(null);
       setError(null);
+      await sessionManager.clearSession();
+
+      // Fire supabase sign-out but don't let it block the UI for long
+      const result = await withTimeout(
+        supabase.auth.signOut(),
+        1500,
+        () => console.log('[Auth] signOut timed out, proceeding optimistically')
+      );
+
+      if (result && 'error' in result && result.error) {
+        console.warn('[Auth] Error from supabase.signOut (post-optimistic):', result.error);
+        return { error: result.error };
+      }
 
       return {};
     } catch (error) {

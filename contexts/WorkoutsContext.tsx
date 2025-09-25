@@ -15,6 +15,7 @@ interface WorkoutsContextValue {
   workouts: Workout[];
   addWorkout: (workout: Workout) => Promise<void>;
   refreshWorkouts: () => Promise<void>;
+  deleteWorkout: (id: string) => Promise<void>;
   loading: boolean;
 }
 
@@ -22,6 +23,7 @@ const WorkoutsContext = createContext<WorkoutsContextValue>({
   workouts: [],
   addWorkout: async () => {},
   refreshWorkouts: async () => {},
+  deleteWorkout: async () => {},
   loading: false,
 });
 
@@ -102,6 +104,26 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const deleteWorkout = async (id: string) => {
+    try {
+      console.log('[WorkoutsProvider] Deleting workout:', id);
+      // Try Supabase first
+      const { error } = await supabase
+        .from('workouts')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.warn('[WorkoutsProvider] Error deleting from Supabase, applying local fallback:', error);
+      }
+
+      setWorkouts(prev => prev.filter(w => w.id !== id));
+    } catch (err) {
+      console.error('[WorkoutsProvider] Unexpected error during delete:', err);
+      setWorkouts(prev => prev.filter(w => w.id !== id));
+    }
+  };
+
   const addWorkout = async (workout: Workout) => {
     try {
       console.log('[WorkoutsProvider] Adding workout to Supabase:', workout);
@@ -179,7 +201,7 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <WorkoutsContext.Provider value={{ workouts, addWorkout, refreshWorkouts: fetchWorkouts, loading }}>
+    <WorkoutsContext.Provider value={{ workouts, addWorkout, refreshWorkouts: fetchWorkouts, deleteWorkout, loading }}>
       {children}
     </WorkoutsContext.Provider>
   );

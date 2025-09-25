@@ -15,6 +15,7 @@ interface FoodContextValue {
   foods: FoodEntry[];
   addFood: (food: FoodEntry) => Promise<void>;
   refreshFoods: () => Promise<void>;
+  deleteFood: (id: string) => Promise<void>;
   loading: boolean;
 }
 
@@ -22,6 +23,7 @@ const FoodContext = createContext<FoodContextValue>({
   foods: [],
   addFood: async () => { },
   refreshFoods: async () => { },
+  deleteFood: async () => { },
   loading: false,
 });
 
@@ -95,6 +97,25 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
       setFoods(sampleFoods);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const deleteFood = async (id: string) => {
+    try {
+      console.log('[FoodProvider] Deleting food:', id);
+      const { error } = await supabase
+        .from('foods')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.warn('[FoodProvider] Error deleting from Supabase, applying local fallback:', error);
+      }
+
+      setFoods(prev => prev.filter(f => f.id !== id));
+    } catch (err) {
+      console.error('[FoodProvider] Unexpected error during delete:', err);
+      setFoods(prev => prev.filter(f => f.id !== id));
     }
   };
 
@@ -175,7 +196,7 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <FoodContext.Provider value={{ foods, addFood, refreshFoods: fetchFoods, loading }}>
+    <FoodContext.Provider value={{ foods, addFood, refreshFoods: fetchFoods, deleteFood, loading }}>
       {children}
     </FoodContext.Provider>
   );
