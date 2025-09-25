@@ -1,24 +1,31 @@
-import { Slot, useRouter, useSegments } from 'expo-router';
+import { ThemeProvider } from '@/design-system/ThemeProvider';
+import { Slot, usePathname, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
+import 'react-native-gesture-handler';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-url-polyfill/auto';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { FoodProvider } from '../contexts/FoodContext';
 import { WorkoutsProvider } from '../contexts/WorkoutsContext';
-import { ThemeProvider } from './design-system/ThemeProvider';
+import { HealthKitProvider } from '../contexts/HealthKitContext';
 
 // This layout wraps the entire app with providers
 function RootLayoutNav() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <WorkoutsProvider>
-          <FoodProvider>
-            <InitialLayout />
-          </FoodProvider>
-        </WorkoutsProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider>
+        <AuthProvider>
+          <HealthKitProvider>
+            <WorkoutsProvider>
+              <FoodProvider>
+                <InitialLayout />
+              </FoodProvider>
+            </WorkoutsProvider>
+          </HealthKitProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -29,6 +36,8 @@ function InitialLayout() {
   const inTabsGroup = segments[0] === '(tabs)';
   const { user, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const inModalsGroup = pathname.startsWith('/(modals)');
 
   useEffect(() => {
     if (loading) {
@@ -41,13 +50,10 @@ function InitialLayout() {
       segments,
       inAuthGroup,
       inTabsGroup,
+      pathname,
+      inModalsGroup,
       currentPath: segments.join('/'),
     });
-
-    // Define allowed screens for authenticated users outside of tabs
-    const allowedScreens = ['add-workout', 'add-food'];
-    const currentScreen = segments[0];
-    const isAllowedScreen = allowedScreens.includes(currentScreen);
 
     // If user is signed in but in auth group, redirect to tabs
     if (user && inAuthGroup) {
@@ -57,18 +63,13 @@ function InitialLayout() {
     }
 
     // If user is signed in but on root path, redirect to tabs
-    if (user && segments.length === 0) {
+    if (user && pathname === '/') {
       console.log('[Layout] User signed in on root, redirecting to tabs');
       router.replace('/(tabs)');
       return;
     }
 
-    // If user is signed in but not in tabs group (and not in auth), only redirect if not on allowed screen
-    if (user && !inTabsGroup && !inAuthGroup && !isAllowedScreen) {
-      console.log('[Layout] User signed in but not in tabs or allowed screen, redirecting to tabs');
-      router.replace('/(tabs)');
-      return;
-    }
+    // Do not force redirect for other signed-in routes (e.g., modals or standalone flows)
 
     // If user is not signed in but not in auth group, redirect to sign-in
     if (!user && !inAuthGroup) {
@@ -78,7 +79,7 @@ function InitialLayout() {
     }
 
     console.log('[Layout] No redirect needed');
-  }, [user, loading, segments, inAuthGroup, inTabsGroup, router]);
+  }, [user, loading, segments, inAuthGroup, inTabsGroup, inModalsGroup, pathname, router]);
 
   if (loading) {
     return (

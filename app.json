@@ -6,12 +6,20 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "formfactoreas",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "plugins": [
       "expo-router",
       "expo-web-browser",
-      "react-native-vision-camera"
+      "react-native-vision-camera",
+      [
+        "react-native-health",
+        {
+          "healthSharePermission": "We read your step count and heart rate to display insights on your dashboard.",
+          "healthUpdatePermission": "We write selected health metrics only when you explicitly enable it.",
+          "isClinicalDataEnabled": false
+        }
+      ]
     ],
     "android": {
       "package": "com.slenthekid.formfactoreas",
@@ -39,11 +47,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.slenthekid.form-factor-eas",
-      "supportsTablet": true,
-      "infoPlist": {
-        "NSHealthShareUsageDescription": "We read your step count and heart rate to display insights on your dashboard.",
-        "NSHealthUpdateUsageDescription": "We write selected health metrics only when you explicitly enable it."
-      }
+      "supportsTablet": true
     },
     "web": {
       "bundler": "metro",
