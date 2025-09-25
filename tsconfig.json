@@ -6,6 +6,8 @@
     "paths": {
       "@/*": ["./*"]
     },
+    "jsx": "react-jsx",
+    "declaration": false,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true
@@ -13,6 +15,7 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    "**/*.d.ts",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ]
