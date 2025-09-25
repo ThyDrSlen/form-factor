@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { DeleteAction } from '@/components';
 import React, { useCallback, useRef } from 'react';
 import {
     ActivityIndicator,
@@ -16,6 +17,7 @@ import {
     useWindowDimensions,
     View
 } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import { useWorkouts, type Workout } from '../../contexts/WorkoutsContext';
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as unknown as React.ComponentType<React.ComponentProps<typeof Animated.FlatList<Workout>>>;
@@ -25,7 +27,7 @@ const CARD_MARGIN = 12;
 
 export default function WorkoutsScreen() {
   const router = useRouter();
-  const { workouts, loading, refreshWorkouts } = useWorkouts();
+  const { workouts, loading, refreshWorkouts, deleteWorkout } = useWorkouts();
   const { width } = useWindowDimensions();
   const scrollY = useRef(new Animated.Value(0)).current;
   const refreshing = useRef(false);
@@ -38,9 +40,20 @@ export default function WorkoutsScreen() {
 
   const handleAddPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    console.log('Navigating to add-workout from workouts tab');
-    router.push('/add-workout');
+    console.log('Navigating to add-workout modal from workouts tab');
+    router.push('/(modals)/add-workout');
   };
+
+  const renderRightActions = (id: string, title: string) => (
+    <TouchableOpacity
+      accessibilityRole="button"
+      onPress={() => deleteWorkout(id)}
+      style={styles.swipeDelete}
+    >
+      <Ionicons name="trash-outline" size={20} color="#fff" />
+      <Text style={styles.swipeDeleteText}>Delete</Text>
+    </TouchableOpacity>
+  );
 
   const renderItem = (info: { item: Workout; index: number }) => {
     const { item, index } = info;
@@ -62,14 +75,15 @@ export default function WorkoutsScreen() {
     });
 
     return (
-      <Animated.View style={[styles.card, { opacity, transform: [{ scale }] }]}>
-        <TouchableOpacity 
-          activeOpacity={0.9}
-          onPress={() => {
-            Haptics.selectionAsync();
-            // Navigate to workout detail
-          }}
-        >
+      <Swipeable renderRightActions={() => renderRightActions(item.id, item.exercise)}>
+        <Animated.View style={[styles.card, { opacity, transform: [{ scale }] }]}>
+          <TouchableOpacity 
+            activeOpacity={0.9}
+            onPress={() => {
+              Haptics.selectionAsync();
+              // Navigate to workout detail
+            }}
+          >
           <LinearGradient
             colors={['#FFFFFF', '#F8F9FF']}
             style={styles.cardGradient}
@@ -129,10 +143,20 @@ export default function WorkoutsScreen() {
                 <Ionicons name="share-outline" size={16} color="#007AFF" />
                 <Text style={styles.actionText}>Share</Text>
               </TouchableOpacity>
+              <View style={styles.divider} />
+              <DeleteAction
+                id={item.id}
+                onDelete={deleteWorkout}
+                variant="icon"
+                confirmTitle="Delete workout?"
+                confirmMessage={`This will permanently remove \"${item.exercise}\".`}
+                style={{ paddingHorizontal: 8 }}
+              />
             </View>
           </LinearGradient>
-        </TouchableOpacity>
-      </Animated.View>
+          </TouchableOpacity>
+        </Animated.View>
+      </Swipeable>
     );
   };
 
@@ -311,6 +335,21 @@ const styles = StyleSheet.create({
     width: 1,
     backgroundColor: 'rgba(142, 142, 147, 0.1)',
     marginVertical: 4,
+  },
+  swipeDelete: {
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 88,
+    borderRadius: 16,
+    marginBottom: CARD_MARGIN,
+    flexDirection: 'column',
+  },
+  swipeDeleteText: {
+    color: '#fff',
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '600',
   },
   emptyState: {
     flex: 1,

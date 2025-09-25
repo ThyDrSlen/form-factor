@@ -101,7 +101,22 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
+        <TouchableOpacity
+          style={styles.signOutButton}
+          onPress={async () => {
+            console.time('[Profile] Sign-out duration');
+            console.log('[Profile] Sign-out button pressed');
+            const { error } = await signOut();
+            console.timeEnd('[Profile] Sign-out duration');
+            if (error) {
+              console.error('[Profile] Sign-out error:', error);
+              Alert.alert('Error', 'Failed to sign out');
+            } else {
+              console.log('[Profile] Sign-out successful');
+              Alert.alert('Signed out', 'You have been signed out.');
+            }
+          }}
+        >
           <Ionicons name="log-out-outline" size={20} color="#fff" />
           <Text style={styles.signOutButtonText}>Sign Out</Text>
         </TouchableOpacity>

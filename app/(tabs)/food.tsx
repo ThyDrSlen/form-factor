@@ -1,19 +1,35 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { Swipeable } from 'react-native-gesture-handler';
 import React from 'react';
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { FoodEntry, useFood } from '../../contexts/FoodContext';
 
 export default function FoodScreen() {
   const router = useRouter();
-  const { foods } = useFood();
+  const { foods, deleteFood } = useFood();
+
+  const renderRightActions = (id: string) => (
+    <TouchableOpacity
+      accessibilityRole="button"
+      onPress={() => deleteFood(id)}
+      style={styles.swipeDelete}
+    >
+      <Ionicons name="trash-outline" size={20} color="#fff" />
+      <Text style={styles.swipeDeleteText}>Delete</Text>
+    </TouchableOpacity>
+  );
 
   const renderItem = ({ item }: { item: FoodEntry }) => (
-    <TouchableOpacity style={styles.item}>
-      <Text style={styles.itemName}>{item.name}</Text>
-      <Text style={styles.itemCalories}>{item.calories} kcal</Text>
-      <Text style={styles.itemDate}>{new Date(item.date).toLocaleDateString()}</Text>
-    </TouchableOpacity>
+    <Swipeable renderRightActions={() => renderRightActions(item.id)}>
+      <TouchableOpacity style={styles.item}>
+        <View style={styles.itemHeaderRow}>
+          <Text style={styles.itemName}>{item.name}</Text>
+        </View>
+        <Text style={styles.itemCalories}>{item.calories} kcal</Text>
+        <Text style={styles.itemDate}>{new Date(item.date).toLocaleDateString()}</Text>
+      </TouchableOpacity>
+    </Swipeable>
   );
 
   return (
@@ -35,8 +51,8 @@ export default function FoodScreen() {
       <TouchableOpacity 
         style={styles.addButton} 
         onPress={() => {
-          console.log('Navigating to add-food from food tab');
-          router.push('/add-food');
+          console.log('Navigating to add-food modal from food tab');
+          router.push('/(modals)/add-food');
         }}
       >
         <Ionicons name="add" size={28} color="#fff" />
@@ -58,6 +74,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
+  },
+  itemHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  swipeDelete: {
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 88,
+    borderRadius: 12,
+    marginBottom: 12,
+    flexDirection: 'column',
+  },
+  swipeDeleteText: {
+    color: '#fff',
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '600',
   },
   itemName: { fontSize: 16, fontWeight: '500', color: '#1C1C1E' },
   itemCalories: { fontSize: 14, color: '#636366', marginTop: 4 },
