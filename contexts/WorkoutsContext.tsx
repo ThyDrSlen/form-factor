@@ -17,6 +17,9 @@ interface WorkoutsContextValue {
   refreshWorkouts: () => Promise<void>;
   deleteWorkout: (id: string) => Promise<void>;
   loading: boolean;
+  isWorkoutInProgress: boolean;
+  startWorkout: () => void;
+  endWorkout: () => void;
 }
 
 const WorkoutsContext = createContext<WorkoutsContextValue>({
@@ -25,11 +28,15 @@ const WorkoutsContext = createContext<WorkoutsContextValue>({
   refreshWorkouts: async () => {},
   deleteWorkout: async () => {},
   loading: false,
+  isWorkoutInProgress: false,
+  startWorkout: () => {},
+  endWorkout: () => {},
 });
 
 export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isWorkoutInProgress, setIsWorkoutInProgress] = useState(false);
 
   // Fetch workouts from Supabase on component mount
   useEffect(() => {
@@ -103,6 +110,9 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
     }
   };
+
+  const startWorkout = () => setIsWorkoutInProgress(true);
+  const endWorkout = () => setIsWorkoutInProgress(false);
 
   const deleteWorkout = async (id: string) => {
     try {
@@ -201,7 +211,7 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <WorkoutsContext.Provider value={{ workouts, addWorkout, refreshWorkouts: fetchWorkouts, deleteWorkout, loading }}>
+    <WorkoutsContext.Provider value={{ workouts, addWorkout, refreshWorkouts: fetchWorkouts, deleteWorkout, loading, isWorkoutInProgress, startWorkout, endWorkout }}>
       {children}
     </WorkoutsContext.Provider>
   );
