@@ -4,13 +4,15 @@ import CoreImage
 import AVFoundation
 
 @objc(VisionPoseDetector)
-public class VisionPoseDetector: NSObject, FrameProcessorPluginBase {
+public class VisionPoseDetector: NSObject {
   
   @objc
-  public static func callback(_ frame: Frame, withArguments arguments: [AnyHashable: Any]?) -> Any? {
-    guard let imageBuffer = frame.buffer as? CVPixelBuffer else {
+  public static func callback(frame: Frame, withArguments arguments: [AnyHashable: Any]?) -> Any? {
+    guard let buffer = CMSampleBufferGetImageBuffer(frame.buffer) else {
       return nil
     }
+    
+    let imageBuffer = buffer
     
     let request = VNDetectHumanBodyPoseRequest()
     request.revision = VNDetectHumanBodyPoseRequestRevision1
