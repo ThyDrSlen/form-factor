@@ -3,6 +3,10 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '../supabase';
 
+ // Ensure the auth session is correctly completed when returning to the app (iOS 11+)
+ // This avoids lingering authentication sessions after the redirect back to the app.
+ WebBrowser.maybeCompleteAuthSession();
+
 interface AuthResult {
   success: boolean;
   session?: Session;
