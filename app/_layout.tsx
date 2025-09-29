@@ -1,29 +1,55 @@
 import { ThemeProvider } from '@/design-system/ThemeProvider';
 import { Slot, usePathname, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
-import 'react-native-gesture-handler';
+import { ActivityIndicator, View, Text as RNText } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-url-polyfill/auto';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { FoodProvider } from '../contexts/FoodContext';
 import { WorkoutsProvider } from '../contexts/WorkoutsContext';
 import { HealthKitProvider } from '../contexts/HealthKitContext';
+import { UnitsProvider } from '../contexts/UnitsContext';
+import { useFonts, Lexend_400Regular, Lexend_500Medium, Lexend_700Bold } from '@expo-google-fonts/lexend';
+import { ToastProvider } from '../contexts/ToastContext';
 
 // This layout wraps the entire app with providers
 function RootLayoutNav() {
+  // Load Lexend fonts globally
+  const [fontsLoaded] = useFonts({ Lexend_400Regular, Lexend_500Medium, Lexend_700Bold });
+
+  if (fontsLoaded && RNText) {
+    // Apply a global default font family (non-destructive merge)
+    // Note: this affects only Text components that don't explicitly override fontFamily
+    const AnyText = RNText as any;
+    AnyText.defaultProps = AnyText.defaultProps || {};
+    AnyText.defaultProps.style = [
+      { fontFamily: 'Lexend_400Regular' },
+      Array.isArray(AnyText.defaultProps.style) ? AnyText.defaultProps.style : AnyText.defaultProps.style,
+    ];
+  }
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
-        <AuthProvider>
-          <HealthKitProvider>
-            <WorkoutsProvider>
-              <FoodProvider>
-                <InitialLayout />
-              </FoodProvider>
-            </WorkoutsProvider>
-          </HealthKitProvider>
-        </AuthProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <UnitsProvider>
+              <HealthKitProvider>
+                <WorkoutsProvider>
+                  <FoodProvider>
+                    {!fontsLoaded ? (
+                      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#050E1F' }}>
+                        <ActivityIndicator color="#4C8CFF" />
+                      </View>
+                    ) : (
+                      <InitialLayout />
+                    )}
+                  </FoodProvider>
+                </WorkoutsProvider>
+              </HealthKitProvider>
+            </UnitsProvider>
+          </AuthProvider>
+        </ToastProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );

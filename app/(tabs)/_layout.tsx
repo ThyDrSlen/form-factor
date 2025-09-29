@@ -9,22 +9,22 @@ export default function TabsLayout() {
   return (
     <View style={{
       flex: 1,
-      backgroundColor: '#F8F9FF',
+      backgroundColor: '#050E1F',
       paddingTop: insets.top,
     }}>
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: '#007AFF',
-          tabBarInactiveTintColor: '#8E8E93',
+          tabBarActiveTintColor: '#4C8CFF',
+          tabBarInactiveTintColor: '#6781A6',
           tabBarStyle: {
-            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-            borderTopWidth: 0,
+            backgroundColor: '#0F2339',
+            borderTopWidth: 1,
+            borderTopColor: '#1B2E4A',
             height: 60 + (Platform.OS === 'ios' ? insets.bottom / 2 : 0),
             paddingBottom: Platform.OS === 'ios' ? insets.bottom / 2 : 8,
             paddingTop: 8,
-            boxShadow: '0 -1px 4px rgba(0,0,0,0.1)',
-            elevation: 4,
+            elevation: 0,
             position: 'absolute',
             bottom: 0,
             left: 0,
@@ -40,7 +40,7 @@ export default function TabsLayout() {
             paddingVertical: 4,
           },
           headerStyle: {
-            backgroundColor: '#F8F9FF',
+            backgroundColor: '#050E1F',
             height: 44 + insets.top,
           },
           headerTitleStyle: {
@@ -84,6 +84,16 @@ export default function TabsLayout() {
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="fast-food-outline" size={size} color={color} />
             ),
+          }}
+        />
+        <Tabs.Screen
+          name="scan"
+          options={{
+            title: 'Scan',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="scan-outline" size={size} color={color} />
+            ),
+            tabBarStyle: { display: 'none' },
           }}
         />
         <Tabs.Screen

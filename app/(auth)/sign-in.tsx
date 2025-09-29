@@ -131,7 +131,7 @@ export default function SignInScreen() {
           {/* Header with help button */}
           <View style={styles.header}>
             <Text variant="headline" weight="semibold" color="#FFFFFF">
-              Fitness Tracker
+              Form Factor
             </Text>
             <TouchableOpacity style={styles.helpButton}>
               <Ionicons name="help-circle-outline" size={24} color="#8E8E93" />
@@ -141,7 +141,7 @@ export default function SignInScreen() {
           {/* Main card container */}
           <View style={styles.card}>
             <Text variant="largeTitle" weight="normal" color="#FFFFFF" align="center" style={styles.welcomeTitle}>
-              Welcome to Fitness Tracker
+              Welcome to Form Factor
             </Text>
 
             {/* Error message */}
@@ -158,7 +158,7 @@ export default function SignInScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Email"
-                placeholderTextColor="#8E8E93"
+                placeholderTextColor="#6781A6"
                 value={formData.email}
                 onChangeText={(text) => setFormData(prev => ({ ...prev, email: text.trim() }))}
                 keyboardType="email-address"
@@ -173,7 +173,7 @@ export default function SignInScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Password"
-                placeholderTextColor="#8E8E93"
+                placeholderTextColor="#6781A6"
                 value={formData.password}
                 onChangeText={(text) => setFormData(prev => ({ ...prev, password: text }))}
                 secureTextEntry
@@ -218,7 +218,7 @@ export default function SignInScreen() {
 
             {Platform.OS === 'ios' && (
               <Button
-                title="Continue with Facebook"
+                title="Continue with Apple"
                 variant="secondary"
                 size="large"
                 fullWidth
@@ -238,7 +238,7 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1A1A1A', // Dark background matching the design
+    backgroundColor: '#050E1F',
   },
   keyboardView: {
     flex: 1,
@@ -259,8 +259,10 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   card: {
-    backgroundColor: '#2C2C2E', // Card background
-    borderRadius: 16,
+    backgroundColor: '#0F2339',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#1B2E4A',
     padding: 32,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
@@ -273,10 +275,10 @@ const styles = StyleSheet.create({
     lineHeight: 40,
   },
   errorContainer: {
-    backgroundColor: '#2C1B1B',
+    backgroundColor: 'rgba(255, 69, 58, 0.1)',
     borderWidth: 1,
     borderColor: '#FF453A',
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 12,
     marginBottom: 24,
   },
@@ -284,14 +286,14 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   input: {
-    backgroundColor: '#3A3A3C',
+    backgroundColor: '#13263C',
     borderWidth: 1,
-    borderColor: '#48484A',
+    borderColor: '#1B2E4A',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 16,
     fontSize: 16,
-    color: '#FFFFFF',
+    color: '#F5F7FF',
     minHeight: 50,
   },
   loginButton: {
@@ -309,8 +311,9 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   socialButton: {
-    backgroundColor: '#48484A',
+    backgroundColor: '#13263C',
     marginBottom: 12,
-    borderWidth: 0,
+    borderWidth: 1,
+    borderColor: '#1B2E4A',
   },
 });

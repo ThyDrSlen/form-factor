@@ -101,7 +101,7 @@ export default function SignUpScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#050E1F',
   },
   keyboardAvoidingView: {
     flex: 1,
@@ -116,13 +116,14 @@ const styles = StyleSheet.create({
   },
   title: {
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
     fontWeight: 'bold',
+    color: '#F5F7FF',
   },
   subtitle: {
     textAlign: 'center',
     marginBottom: 32,
-    color: '#666',
+    color: '#9AACD1',
   },
   form: {
     width: '100%',
@@ -131,7 +132,7 @@ const styles = StyleSheet.create({
   },
   input: {
     marginBottom: 16,
-    backgroundColor: '#fff',
+    backgroundColor: '#13263C',
   },
   button: {
     marginTop: 8,
@@ -142,7 +143,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   link: {
-    color: '#1976D2',
+    color: '#4C8CFF',
     marginVertical: 4,
   },
 });

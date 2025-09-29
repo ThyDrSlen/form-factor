@@ -16,7 +16,11 @@ export default function AddFoodScreen() {
   const [protein, setProtein] = useState('');
   const [carbs, setCarbs] = useState('');
   const [fat, setFat] = useState('');
-  const [date, setDate] = useState(new Date());
+  const [date, setDate] = useState(() => {
+    const initial = new Date();
+    initial.setSeconds(0, 0);
+    return initial;
+  });
   const [showPicker, setShowPicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -102,6 +106,7 @@ export default function AddFoodScreen() {
             value={name} 
             onChangeText={setName} 
             placeholder="e.g., Chicken Breast, Apple, Pasta"
+            placeholderTextColor="#8CA5C6"
             editable={!saving}
             ref={nameRef}
             returnKeyType="next"
@@ -119,6 +124,7 @@ export default function AddFoodScreen() {
             inputMode="decimal"
             keyboardType="decimal-pad" 
             placeholder="e.g., 250"
+            placeholderTextColor="#8CA5C6"
             editable={!saving}
             ref={caloriesRef}
             returnKeyType="next"
@@ -138,6 +144,7 @@ export default function AddFoodScreen() {
               inputMode="decimal"
               keyboardType="decimal-pad" 
               placeholder="Optional"
+              placeholderTextColor="#8CA5C6"
               editable={!saving}
               ref={proteinRef}
               returnKeyType="next"
@@ -156,6 +163,7 @@ export default function AddFoodScreen() {
               inputMode="decimal"
               keyboardType="decimal-pad" 
               placeholder="Optional"
+              placeholderTextColor="#8CA5C6"
               editable={!saving}
               ref={carbsRef}
               returnKeyType="next"
@@ -174,6 +182,7 @@ export default function AddFoodScreen() {
               inputMode="decimal"
               keyboardType="decimal-pad" 
               placeholder="Optional"
+              placeholderTextColor="#8CA5C6"
               editable={!saving}
               ref={fatRef}
               returnKeyType="done"
@@ -184,13 +193,21 @@ export default function AddFoodScreen() {
         </View>
 
         <View style={styles.inputContainer}>
-          <Text style={styles.label}>Date & Time</Text>
+          <Text style={styles.label}>Entry Time</Text>
           <TouchableOpacity 
             onPress={() => setShowPicker(true)} 
             style={styles.dateInput}
             disabled={saving}
           >
-            <Text style={styles.dateText}>{date.toLocaleString()}</Text>
+            <Text style={styles.dateText}>
+              {date.toLocaleString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+              })}
+            </Text>
             <Ionicons name="calendar-outline" size={20} color="#8E8E93" />
           </TouchableOpacity>
         </View>
@@ -199,10 +216,18 @@ export default function AddFoodScreen() {
           <DateTimePicker
             value={date}
             mode="datetime"
-            display="default"
-            onChange={(event: any, selectedDate?: Date) => { 
-              setDate(selectedDate || date); 
-              setShowPicker(false); 
+            display={Platform.OS === 'ios' ? 'inline' : 'default'}
+            minuteInterval={1}
+            onChange={(event: any, selectedDate?: Date) => {
+              if (event?.type === 'dismissed') {
+                setShowPicker(false);
+                return;
+              }
+              const next = selectedDate ?? date;
+              const normalized = new Date(next.getTime());
+              normalized.setSeconds(0, 0);
+              setDate(normalized);
+              setShowPicker(false);
             }}
           />
         )}
@@ -240,16 +265,14 @@ export default function AddFoodScreen() {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: '#F8F9FF' 
+    backgroundColor: '#050E1F',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    backgroundColor: '#050E1F',
   },
   backButton: {
     padding: 8,
@@ -257,8 +280,8 @@ const styles = StyleSheet.create({
   headerTitle: {
     flex: 1,
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1C1C1E',
+    fontWeight: '700',
+    color: '#F5F7FF',
     textAlign: 'center',
   },
   headerSpacer: {
@@ -281,17 +304,17 @@ const styles = StyleSheet.create({
   label: { 
     fontSize: 16, 
     fontWeight: '600', 
-    color: '#1C1C1E',
+    color: '#F5F7FF',
     marginBottom: 8,
   },
   input: { 
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#13263C',
     borderWidth: 1, 
-    borderColor: '#E5E5EA', 
+    borderColor: '#1B2E4A', 
     borderRadius: 12, 
     padding: 16, 
     fontSize: 16,
-    color: '#1C1C1E',
+    color: '#F5F7FF',
   },
   accessoryContainer: {
     flexDirection: 'row',
@@ -299,9 +322,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: '#13263C',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#D1D1D6',
+    borderTopColor: '#1B2E4A',
   },
   accessoryButton: {
     paddingHorizontal: 12,
@@ -315,9 +338,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   dateInput: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#13263C',
     borderWidth: 1, 
-    borderColor: '#E5E5EA', 
+    borderColor: '#1B2E4A', 
     borderRadius: 12, 
     padding: 16,
     flexDirection: 'row',
@@ -326,24 +349,24 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 16,
-    color: '#1C1C1E',
+    color: '#F5F7FF',
   },
   saveButton: { 
     flexDirection: 'row', 
-    backgroundColor: '#007AFF', 
+    backgroundColor: '#4C8CFF', 
     padding: 16, 
-    borderRadius: 12, 
+    borderRadius: 16, 
     alignItems: 'center', 
     justifyContent: 'center', 
     marginTop: 32,
-    shadowColor: '#007AFF',
+    shadowColor: '#4C8CFF',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 4,
   },
   saveButtonDisabled: {
-    backgroundColor: '#8E8E93',
+    backgroundColor: '#5F789A',
     shadowOpacity: 0,
     elevation: 0,
   },
