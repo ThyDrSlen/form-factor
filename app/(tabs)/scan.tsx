@@ -41,33 +41,28 @@ export default function ScanScreen() {
     setBodyPose(pose);
   };
 
-  // Real-time body pose detection using Apple Vision Framework
+  // Real-time Apple Vision body pose tracking
   const frameProcessor = useFrameProcessor((frame) => {
     'worklet';
     try {
-      // Check if native module is available
-      // @ts-ignore
-      if (typeof __detectPose !== 'undefined') {
-        // @ts-ignore - Native module
-        const result = __detectPose(frame);
-        
-        if (result && result.joints && result.joints.length > 0) {
-          runOnJS(updatePose)({
-            joints: result.joints
-          });
-        }
+      // @ts-ignore - Frame processor plugin
+      const result = __detectPose(frame, {});
+      
+      if (result && result.joints && Array.isArray(result.joints) && result.joints.length > 0) {
+        runOnJS(updatePose)({
+          joints: result.joints
+        });
       }
     } catch (error) {
-      // Silently fail - pose detection is optional
-      console.log('Pose detection error:', error);
+      // Native module not available yet - will show demo skeleton
     }
   }, []);
   
-  // Fallback: Show static skeleton for demonstration if native module not available
+  // Fallback: Show demo skeleton only if native module fails after 3 seconds
   useEffect(() => {
     const timer = setTimeout(() => {
       if (!bodyPose) {
-        // Show demo skeleton if no real detection after 2 seconds
+        console.log('Native pose detection not available - showing demo skeleton');
         const demoSkeletonPose: BodyPose = {
           joints: [
             { x: 0.5, y: 0.25, confidence: 0.9, name: 'head' },
@@ -89,7 +84,7 @@ export default function ScanScreen() {
         };
         setBodyPose(demoSkeletonPose);
       }
-    }, 2000);
+    }, 3000);
     
     return () => clearTimeout(timer);
   }, [bodyPose]);
