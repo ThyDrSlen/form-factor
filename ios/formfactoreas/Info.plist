@@ -4,6 +4,8 @@
   <dict>
     <key>CADisableMinimumFrameDurationOnPhone</key>
     <true/>
+    <key>CFBundleAllowMixedLocalizations</key>
+    <true/>
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
@@ -34,7 +36,7 @@
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>exp+form-factor</string>
+          <string>exp+form-factor-eas</string>
         </array>
       </dict>
     </array>
@@ -53,6 +55,8 @@
     </dict>
     <key>NSCameraUsageDescription</key>
     <string>Allow $(PRODUCT_NAME) to access your camera</string>
+    <key>NSHealthClinicalHealthRecordsShareUsageDescription</key>
+    <string>We access clinical health records (e.g., labs and immunizations) to enhance your health insights.</string>
     <key>NSHealthShareUsageDescription</key>
     <string>We read your step count and heart rate to display insights on your dashboard.</string>
     <key>NSHealthUpdateUsageDescription</key>
@@ -67,6 +71,8 @@
     <array>
       <string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>
     </array>
+    <key>RCTNewArchEnabled</key>
+    <true/>
     <key>UILaunchStoryboardName</key>
     <string>SplashScreen</string>
     <key>UIRequiredDeviceCapabilities</key>
@@ -90,7 +96,7 @@
       <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
     <key>UIUserInterfaceStyle</key>
-    <string>Automatic</string>
+    <string>Dark</string>
     <key>UIViewControllerBasedStatusBarAppearance</key>
     <false/>
   </dict>
