@@ -2,13 +2,14 @@
   "expo": {
     "name": "form-factor-eas",
     "jsEngine": "hermes",
-    "slug": "form-factor",
+    "slug": "form-factor-eas",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "formfactoreas",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "plugins": [
+      "./plugins/withVisionPoseDetector",
       "expo-router",
       "expo-web-browser",
       "react-native-vision-camera",
@@ -17,9 +18,11 @@
         {
           "healthSharePermission": "We read your step count and heart rate to display insights on your dashboard.",
           "healthUpdatePermission": "We write selected health metrics only when you explicitly enable it.",
-          "isClinicalDataEnabled": false
+          "isClinicalDataEnabled": true,
+          "healthClinicalDescription": "We access clinical health records (e.g., labs and immunizations) to enhance your health insights."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "android": {
       "package": "com.slenthekid.formfactoreas",
@@ -47,24 +50,22 @@
     },
     "ios": {
       "bundleIdentifier": "com.slenthekid.form-factor-eas",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "icon": "./assets/images/ff-logo.png",
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "This app reads your health data to show activity insights.",
+        "NSHealthUpdateUsageDescription": "This app writes health data to record your activity.",
+        "NSCameraUsageDescription": "We need camera access to scan your form and provide skeleton tracking.",
+        "NSMicrophoneUsageDescription": "Optional: for recording workout videos",
+        "WKCompanionAppBundleIdentifier": "com.slenthekid.form-factor-eas"
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true
+      }
     },
     "web": {
       "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
-    },
-    "experiments": {
-      "typedRoutes": true
-    },
-    "extra": {
-      "supabaseUrl": "https://nxywytufzdgzcizmpvbd.supabase.co",
-      "supabaseAnonKey": "${EXPO_PUBLIC_SUPABASE_ANON_KEY}",
-      "supabaseCallbackUrl": "https://nxywytufzdgzcizmpvbd.supabase.co/auth/v1/callback",
-      "router": {},
-      "eas": {
-        "projectId": "9899be27-30c7-4388-b5ae-9b475fdc2776"
-      }
+      "output": "static"
     },
     "owner": "slenthekid"
   }
