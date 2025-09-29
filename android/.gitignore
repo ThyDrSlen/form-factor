@@ -4,7 +4,7 @@
 
 # Android/IntelliJ
 #
-**/build/
+build/
 .idea
 .gradle
 local.properties
@@ -12,18 +12,5 @@ local.properties
 *.hprof
 .cxx/
 
-# Native build directories
-.externalNativeBuild/
-captures/
-obj/
-
-# Build outputs
-*.apk
-*.aab
-*.ap_
-*.dex
-*.class
-
 # Bundle artifacts
 *.jsbundle
- 
