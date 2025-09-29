@@ -42,19 +42,25 @@ export default function ScanScreen() {
   };
 
   // Real-time Apple Vision body pose tracking
+  // NOTE: The native plugin needs to be added to Xcode project manually
   const frameProcessor = useFrameProcessor((frame) => {
     'worklet';
+    // Wrap in try-catch to handle missing plugin gracefully
     try {
-      // @ts-ignore - Frame processor plugin
-      const result = __detectPose(frame, {});
-      
-      if (result && result.joints && Array.isArray(result.joints) && result.joints.length > 0) {
-        runOnJS(updatePose)({
-          joints: result.joints
-        });
+      // @ts-ignore - Check if plugin exists before calling
+      const detectPose = global.__detectPose;
+      if (detectPose) {
+        // @ts-ignore
+        const result = detectPose(frame, {});
+        
+        if (result && result.joints && Array.isArray(result.joints) && result.joints.length > 0) {
+          runOnJS(updatePose)({
+            joints: result.joints
+          });
+        }
       }
     } catch (error) {
-      // Native module not available yet - will show demo skeleton
+      // Plugin not loaded - fallback to demo skeleton will show
     }
   }, []);
   
