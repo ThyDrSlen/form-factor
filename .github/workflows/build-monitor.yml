@@ -1,0 +1,39 @@
+name: EAS Build Status
+
+on:
+  workflow_run:
+    workflows: ["CI/CD Pipeline"]
+    types: [completed]
+
+jobs:
+  check-build-status:
+    name: Check Build Status
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Check build status
+        run: |
+          # Get latest builds
+          builds=$(npx eas build:list --limit=5 --json)
+          echo "Recent builds:"
+          echo "$builds" | jq '.[] | {id: .id, status: .status, platform: .platform, createdAt: .createdAt}'
+          
+          # Check for failed builds
+          failed_builds=$(echo "$builds" | jq '.[] | select(.status == "FAILED")')
+          if [ "$failed_builds" != "" ]; then
+            echo "❌ Found failed builds!"
+            echo "$failed_builds"
+            exit 1
+          else
+            echo "✅ All recent builds successful"
+          fi
