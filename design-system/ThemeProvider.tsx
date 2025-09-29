@@ -48,8 +48,8 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         setIsReduceMotionEnabled(reduceMotion);
 
         // Check for high contrast (iOS 13+)
-        if (AccessibilityInfo.isHighTextContrastEnabled) {
-          const highContrast = await AccessibilityInfo.isHighTextContrastEnabled();
+        if (typeof (AccessibilityInfo as any).isHighTextContrastEnabled === 'function') {
+          const highContrast = await (AccessibilityInfo as any).isHighTextContrastEnabled();
           setIsHighContrastEnabled(highContrast);
         }
 
@@ -72,7 +72,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     );
 
     let highContrastListener: any;
-    if (AccessibilityInfo.isHighTextContrastEnabled) {
+    if (typeof (AccessibilityInfo as any).isHighTextContrastEnabled === 'function') {
       // Note: There's no event listener for high contrast changes in React Native
       // This would need to be implemented differently or removed
     }
