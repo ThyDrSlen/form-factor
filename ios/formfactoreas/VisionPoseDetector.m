@@ -1,20 +1,16 @@
 #import <Foundation/Foundation.h>
 #import <VisionCamera/FrameProcessorPlugin.h>
 #import <VisionCamera/FrameProcessorPluginRegistry.h>
+#import "formfactoreas-Swift.h"
 
-@interface VisionPoseDetectorPlugin : NSObject
+@interface VisionPoseDetectorPlugin : FrameProcessorPlugin
 @end
 
 @implementation VisionPoseDetectorPlugin
 
-+ (void)load {
-  [FrameProcessorPluginRegistry addFrameProcessorPlugin:@"detectPose"
-                                        withInitializer:^FrameProcessorPlugin*(NSDictionary* options) {
-    return [[VisionPoseDetectorPlugin alloc] init];
-  }];
-}
+VISION_EXPORT_SWIFT_FRAME_PROCESSOR(VisionPoseDetectorPlugin, detectPose)
 
-- (id)callback:(Frame*)frame withArguments:(NSDictionary*)arguments {
+- (id)callback:(Frame *)frame withArguments:(NSDictionary *)arguments {
   return [VisionPoseDetector callbackWithFrame:frame withArguments:arguments];
 }
 
