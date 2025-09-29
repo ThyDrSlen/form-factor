@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
+import { Platform } from 'react-native';
 
 /**
  * useSafeBack
@@ -28,8 +29,9 @@ export function useSafeBack(
     }
 
     const paths = Array.isArray(fallback) ? fallback : [fallback];
-    // Prefer first path; if it contains group, expo-router will still handle it correctly
-    const target = paths[0];
+    const target = Platform.OS === 'web'
+      ? paths.find((path) => !path.includes('(')) ?? paths[0]
+      : paths[0];
     console.log('[useSafeBack] replacing to', target);
     router.replace(target);
   }, [navigation, router, fallback, options?.alwaysReplace]);

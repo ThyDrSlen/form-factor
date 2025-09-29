@@ -64,7 +64,7 @@ export function logError(err: AppError, ctx?: ErrorContext): void {
   const safeDetails = sanitizeDetails(err.details);
   // Structured console logging for now; can be routed to Sentry later
   // Keep logs lightweight and consistent
-  // eslint-disable-next-line no-console
+   
   console.error('[Error]', {
     domain: err.domain,
     code: err.code,
