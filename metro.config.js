@@ -1,4 +1,5 @@
 const { getDefaultConfig } = require('expo/metro-config');
+const { withNativeWind } = require('nativewind/metro');
 
 const config = (() => {
   const cfg = getDefaultConfig(__dirname);
@@ -36,6 +37,5 @@ const config = (() => {
   return cfg;
 })();
 
-module.exports = config;
-
+module.exports = withNativeWind(config);
 

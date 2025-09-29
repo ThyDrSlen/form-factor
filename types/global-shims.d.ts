@@ -17,4 +17,4 @@ declare module 'text-encoding' {
 declare module 'expo-router/entry';
 
 // Some community libs reference global `require` at runtime; define for TS
-declare var require: any;
+declare let require: any;
