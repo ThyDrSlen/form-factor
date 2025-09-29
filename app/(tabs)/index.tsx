@@ -1,6 +1,8 @@
 import { useRouter } from 'expo-router';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../contexts/AuthContext';
+import { DashboardHealth } from '@/components';
 
 export default function HomeScreen() {
   const { user } = useAuth();
@@ -27,47 +29,74 @@ export default function HomeScreen() {
         
         <View style={styles.actionGrid}>
           <TouchableOpacity 
-            style={styles.actionCard}
+            style={styles.actionCardWrapper}
             onPress={() => {
               console.log('Navigating to add-workout');
               router.push('/add-workout');
             }}
           >
-            <View style={styles.actionIcon}>
-              <Text style={styles.actionIconText}>💪</Text>
-            </View>
-            <Text style={styles.actionTitle}>Log Workout</Text>
-            <Text style={styles.actionSubtitle}>Track your exercise</Text>
+            <LinearGradient
+              colors={['#0F2339', '#081526']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.actionCard}
+            >
+              <View style={styles.actionIcon}>
+                <Text style={styles.actionIconText}>💪</Text>
+              </View>
+              <Text style={styles.actionTitle}>Log Workout</Text>
+              <Text style={styles.actionSubtitle}>Track your exercise</Text>
+            </LinearGradient>
           </TouchableOpacity>
           
           <TouchableOpacity 
-            style={styles.actionCard}
+            style={styles.actionCardWrapper}
             onPress={() => {
               console.log('Navigating to add-food');
               router.push('/add-food');
             }}
           >
-            <View style={styles.actionIcon}>
-              <Text style={styles.actionIconText}>🍎</Text>
-            </View>
-            <Text style={styles.actionTitle}>Log Meal</Text>
-            <Text style={styles.actionSubtitle}>Track your nutrition</Text>
+            <LinearGradient
+              colors={['#0F2339', '#081526']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.actionCard}
+            >
+              <View style={styles.actionIcon}>
+                <Text style={styles.actionIconText}>🍎</Text>
+              </View>
+              <Text style={styles.actionTitle}>Log Meal</Text>
+              <Text style={styles.actionSubtitle}>Track your nutrition</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
         
         <View style={styles.statsSection}>
           <Text style={styles.sectionTitle}>This Week</Text>
           <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
+            <LinearGradient
+              colors={['#0F2339', '#081526']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.statCard}
+            >
               <Text style={styles.statNumber}>0</Text>
               <Text style={styles.statLabel}>Workouts</Text>
-            </View>
-            <View style={styles.statCard}>
+            </LinearGradient>
+            <LinearGradient
+              colors={['#0F2339', '#081526']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.statCard}
+            >
               <Text style={styles.statNumber}>0</Text>
               <Text style={styles.statLabel}>Meals Logged</Text>
-            </View>
+            </LinearGradient>
           </View>
         </View>
+
+        {/* Health metrics from Apple Health */}
+        <DashboardHealth />
       </View>
     </View>
   );
@@ -76,18 +105,18 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FF',
+    backgroundColor: '#050E1F',
     padding: 24,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1C1C1E',
+    color: '#F5F7FF',
     marginTop: 16,
   },
   subtitle: {
     fontSize: 16,
-    color: '#636366',
+    color: '#9AACD1',
     marginTop: 8,
   },
   content: {
@@ -97,7 +126,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#1C1C1E',
+    color: '#F5F7FF',
     marginBottom: 16,
   },
   actionGrid: {
@@ -105,23 +134,21 @@ const styles = StyleSheet.create({
     gap: 16,
     marginBottom: 32,
   },
-  actionCard: {
+  actionCardWrapper: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+  },
+  actionCard: {
+    borderRadius: 24,
     padding: 20,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#1B2E4A',
   },
   actionIcon: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: 'rgba(76, 140, 255, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
@@ -132,12 +159,12 @@ const styles = StyleSheet.create({
   actionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1C1C1E',
+    color: '#F5F7FF',
     marginBottom: 4,
   },
   actionSubtitle: {
     fontSize: 14,
-    color: '#636366',
+    color: '#9AACD1',
     textAlign: 'center',
   },
   statsSection: {
@@ -149,25 +176,21 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 24,
     padding: 20,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#1B2E4A',
   },
   statNumber: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: '#4C8CFF',
     marginBottom: 4,
   },
   statLabel: {
     fontSize: 14,
-    color: '#636366',
+    color: '#9AACD1',
     textAlign: 'center',
   },
 });

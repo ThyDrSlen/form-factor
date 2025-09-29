@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useWorkouts, type Workout } from '../../contexts/WorkoutsContext';
+import { useToast } from '../../contexts/ToastContext';
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as unknown as React.ComponentType<React.ComponentProps<typeof Animated.FlatList<Workout>>>;
 
@@ -28,6 +29,7 @@ const CARD_MARGIN = 12;
 export default function WorkoutsScreen() {
   const router = useRouter();
   const { workouts, loading, refreshWorkouts, deleteWorkout } = useWorkouts();
+  const { show: showToast } = useToast();
   const { width } = useWindowDimensions();
   const scrollY = useRef(new Animated.Value(0)).current;
   const refreshing = useRef(false);
@@ -44,10 +46,23 @@ export default function WorkoutsScreen() {
     router.push('/(modals)/add-workout');
   };
 
+  const handleDeleteWorkout = useCallback(
+    async (id: string, title: string) => {
+      try {
+        await deleteWorkout(id);
+        showToast(`Removed ${title}`, { type: 'info' });
+      } catch (error) {
+        console.error('[Workouts] delete failed', error);
+        showToast('Failed to delete workout', { type: 'error' });
+      }
+    },
+    [deleteWorkout, showToast]
+  );
+
   const renderRightActions = (id: string, title: string) => (
     <TouchableOpacity
       accessibilityRole="button"
-      onPress={() => deleteWorkout(id)}
+      onPress={() => handleDeleteWorkout(id, title)}
       style={styles.swipeDelete}
     >
       <Ionicons name="trash-outline" size={20} color="#fff" />
@@ -85,7 +100,7 @@ export default function WorkoutsScreen() {
             }}
           >
           <LinearGradient
-            colors={['#FFFFFF', '#F8F9FF']}
+            colors={['#0F2339', '#081526']}
             style={styles.cardGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -146,7 +161,7 @@ export default function WorkoutsScreen() {
               <View style={styles.divider} />
               <DeleteAction
                 id={item.id}
-                onDelete={deleteWorkout}
+                onDelete={async (workoutId) => handleDeleteWorkout(workoutId, item.exercise)}
                 variant="icon"
                 confirmTitle="Delete workout?"
                 confirmMessage={`This will permanently remove \"${item.exercise}\".`}
@@ -233,17 +248,17 @@ export default function WorkoutsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FF',
+    backgroundColor: '#050E1F',
   },
   loadingContainer: { 
     justifyContent: 'center', 
     alignItems: 'center',
-    backgroundColor: '#F8F9FF',
+    backgroundColor: '#050E1F',
   },
   loadingText: { 
     marginTop: 16, 
     fontSize: 16, 
-    color: '#636366',
+    color: '#9AACD1',
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
   },
   list: { 
@@ -261,6 +276,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#1B2E4A',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -271,7 +288,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#1C1C1E',
+    color: '#F5F7FF',
     flex: 1,
     marginRight: 12,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
@@ -282,7 +299,7 @@ const styles = StyleSheet.create({
   },
   cardDate: {
     fontSize: 14,
-    color: '#8E8E93',
+    color: '#9AACD1',
     marginLeft: 4,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
   },
@@ -299,13 +316,13 @@ const styles = StyleSheet.create({
   detailValue: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#007AFF',
+    color: '#4C8CFF',
     marginBottom: 2,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
   },
   detailLabel: {
     fontSize: 12,
-    color: '#8E8E93',
+    color: '#9AACD1',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
@@ -313,7 +330,7 @@ const styles = StyleSheet.create({
   cardFooter: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(142, 142, 147, 0.1)',
+    borderTopColor: '#1B2E4A',
     paddingTop: 12,
     marginTop: 12,
   },
@@ -325,7 +342,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   actionText: {
-    color: '#007AFF',
+    color: '#4C8CFF',
     fontSize: 14,
     fontWeight: '500',
     marginLeft: 6,
@@ -333,7 +350,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     width: 1,
-    backgroundColor: 'rgba(142, 142, 147, 0.1)',
+    backgroundColor: '#1B2E4A',
     marginVertical: 4,
   },
   swipeDelete: {
@@ -356,13 +373,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 32,
-    backgroundColor: '#F8F9FF',
+    backgroundColor: '#050E1F',
   },
   emptyIllustration: {
     width: 140,
     height: 140,
     borderRadius: 70,
-    backgroundColor: 'rgba(0, 122, 255, 0.05)',
+    backgroundColor: 'rgba(76, 140, 255, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
@@ -370,25 +387,28 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#1C1C1E',
+    color: '#F5F7FF',
     marginBottom: 8,
     textAlign: 'center',
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
   },
   emptyDescription: {
     fontSize: 16,
-    color: '#636366',
+    color: '#9AACD1',
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 24,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
   },
   addFirstButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#4C8CFF',
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 10,
-    boxShadow: '0 4px 10px rgba(0,122,255,0.2)',
+    borderRadius: 12,
+    shadowColor: '#4C8CFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
     elevation: 4,
   },
   addFirstButtonText: {
@@ -404,10 +424,10 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#4C8CFF',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#007AFF',
+    shadowColor: '#4C8CFF',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
