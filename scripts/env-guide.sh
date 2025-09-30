@@ -134,3 +134,4 @@ print_warning "Don't forget to:"
 echo "1. Edit .env.local with your actual values"
 echo "2. Add GitHub secrets for CI/CD"
 echo "3. Test your configuration"
+
