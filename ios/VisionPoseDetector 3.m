@@ -11,7 +11,8 @@
 VISION_EXPORT_SWIFT_FRAME_PROCESSOR(VisionPoseDetectorPlugin, detectPose)
 
 - (id)callback:(Frame *)frame withArguments:(NSDictionary *)arguments {
-  return [VisionPoseDetector callback:frame withArguments:arguments];
+  return [VisionPoseDetector callbackWithFrame:frame withArguments:arguments];
 }
 
 @end
+ 
