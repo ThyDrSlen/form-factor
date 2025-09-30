@@ -130,3 +130,7 @@ expo-env.d.ts
 ios/**/xcuserdata/
 ios/**/*.xcuserstate
 tsconfig.json.bak
+
+# Local environment variables
+.env.local
+.env.local.backup
