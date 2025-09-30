@@ -15,4 +15,3 @@ VISION_EXPORT_SWIFT_FRAME_PROCESSOR(VisionPoseDetectorPlugin, detectPose)
 }
 
 @end
- 
