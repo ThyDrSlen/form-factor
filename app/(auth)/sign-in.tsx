@@ -35,6 +35,17 @@ export default function SignInScreen() {
 
     const message = error.message || error.toString();
 
+    // Handle network and configuration errors
+    if (message.includes('Network request failed') || message.includes('Network connection failed')) {
+      return 'Unable to connect to the server. Please check your internet connection and try again.';
+    }
+    if (message.includes('App configuration error') || message.includes('Supabase configuration is missing')) {
+      return 'App configuration error. Please restart the app or contact support if the issue persists.';
+    }
+    if (message.includes('Unable to connect to authentication server')) {
+      return 'Cannot reach authentication server. Please check your internet connection.';
+    }
+
     // Handle common authentication errors with user-friendly messages
     if (message.includes('Invalid login credentials')) {
       return 'Invalid email or password. Please check your credentials and try again.';
