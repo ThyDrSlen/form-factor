@@ -5,6 +5,7 @@ import * as Linking from 'expo-linking';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { SessionManager } from '../lib/services/SessionManager';
 import { supabase } from '../lib/supabase';
+import { runDiagnostics } from '../lib/network-utils';
 
 // In Expo Router, group folders like (auth) are omitted from the URL path.
 // The file app/(auth)/callback.tsx resolves to '/callback', not '/auth/callback'.
@@ -374,13 +375,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithEmail = useCallback(async (email: string, password: string) => {
     try {
       setIsSigningIn(true);
+      console.log('[Auth] Attempting to sign in with email:', email);
+      
+      // Check if Supabase client is properly configured
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+      
+      if (!supabaseUrl || !supabaseKey) {
+        console.error('[Auth] Missing Supabase environment variables');
+        const configErr = createError('auth', 'CONFIG_ERROR', 'Supabase configuration is missing. Please check your environment variables.', {
+          retryable: false,
+          severity: 'error',
+        });
+        setError(mapToUserMessage(configErr));
+        return { error: { message: 'App configuration error. Please contact support.', status: 500 } as AuthError };
+      }
+      
+      console.log('[Auth] Supabase URL:', supabaseUrl);
+      console.log('[Auth] Supabase Key present:', !!supabaseKey);
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-      console.log('signInWithPassword →', { data, error });
-      return { error: error || undefined };
+      
+      console.log('[Auth] signInWithPassword response:', { 
+        hasData: !!data, 
+        hasError: !!error,
+        errorMessage: error?.message,
+        errorStatus: error?.status
+      });
+      
+      if (error) {
+        console.error('[Auth] Supabase auth error:', error);
+        return { error };
+      }
+      
+      console.log('[Auth] Sign in successful');
+      return { error: undefined };
     } catch (error) {
+      console.error('[Auth] Unexpected error during sign in:', error);
+      
+      // Check if it's a network error
+      if (error instanceof TypeError && error.message === 'Network request failed') {
+        console.log('[Auth] Network error detected, running diagnostics...');
+        
+        // Run diagnostics to get more detailed error information
+        const diagnostics = await runDiagnostics();
+        console.log('[Auth] Diagnostics results:', diagnostics);
+        
+        let errorMessage = 'Network connection failed. Please check your internet connection and try again.';
+        
+        if (diagnostics.environment.issues.length > 0) {
+          errorMessage = `Configuration error: ${diagnostics.environment.issues.join(', ')}. Please check your .env file.`;
+        } else if (!diagnostics.network.isConnected) {
+          errorMessage = diagnostics.network.error || errorMessage;
+        }
+        
+        const networkErr = createError('auth', 'NETWORK_ERROR', 'Unable to connect to authentication server. Please check your internet connection.', {
+          retryable: true,
+          severity: 'error',
+          details: { error, diagnostics },
+        });
+        logError(networkErr, { feature: 'auth', location: 'signInWithEmail' });
+        setError(mapToUserMessage(networkErr));
+        return { error: { message: errorMessage, status: 0 } as AuthError };
+      }
+      
       const appErr = createError('auth', 'EMAIL_SIGNIN_FAILED', error instanceof Error ? error.message : 'Failed to sign in', {
         retryable: true,
         severity: 'error',
