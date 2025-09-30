@@ -10,6 +10,7 @@ import {
   getWeightHistoryAsync,
   type HealthMetricPoint,
 } from '@/lib/services/healthkit/health-metrics';
+import { analyzeWeightTrends, type WeightAnalysis } from '@/lib/services/healthkit/weight-trends';
 import { syncHealthMetricsToSupabase } from '@/lib/services/healthkit/health-sync';
 import { fetchSupabaseHealthSnapshot } from '@/lib/services/healthkit/health-supabase';
 import { useAuth } from './AuthContext';
@@ -26,10 +27,14 @@ interface HealthKitContextValue {
   bodyMassKg: { kg: number | null; timestamp: number | null } | null;
   stepHistory: HealthMetricPoint[];
   weightHistory: HealthMetricPoint[];
+  weightHistory30Days: HealthMetricPoint[];
+  weightHistory90Days: HealthMetricPoint[];
+  weightAnalysis: WeightAnalysis | null;
   dataSource: 'healthkit' | 'supabase' | 'none';
   lastUpdatedAt: number | null;
   enableHighFrequency: () => void;
   disableHighFrequency: () => void;
+  refreshWeightAnalysis: () => Promise<void>;
 }
 
 const HealthKitContext = createContext<HealthKitContextValue | undefined>(undefined);
@@ -51,10 +56,27 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const [bodyMassKg, setBodyMassKg] = useState<{ kg: number | null; timestamp: number | null } | null>(null);
   const [stepHistory, setStepHistory] = useState<HealthMetricPoint[]>([]);
   const [weightHistory, setWeightHistory] = useState<HealthMetricPoint[]>([]);
+  const [weightHistory30Days, setWeightHistory30Days] = useState<HealthMetricPoint[]>([]);
+  const [weightHistory90Days, setWeightHistory90Days] = useState<HealthMetricPoint[]>([]);
+  const [weightAnalysis, setWeightAnalysis] = useState<WeightAnalysis | null>(null);
   const [dataSource, setDataSource] = useState<'healthkit' | 'supabase' | 'none'>('none');
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const lastSyncedSignatureRef = useRef<string | null>(null);
   const highFrequencyRef = useRef<boolean>(false);
+
+  // Weight analysis refresh function
+  const refreshWeightAnalysis = useCallback(async () => {
+    try {
+      const allWeightData = [...weightHistory90Days];
+      if (allWeightData.length > 0) {
+        const analysis = analyzeWeightTrends(allWeightData);
+        setWeightAnalysis(analysis);
+        console.log('[HealthKitContext] Weight analysis updated:', analysis);
+      }
+    } catch (error) {
+      console.warn('[HealthKitContext] Failed to analyze weight trends:', error);
+    }
+  }, [weightHistory90Days]);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -90,12 +112,14 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         const useHealthKit = Platform.OS === 'ios' && status?.hasReadPermission;
 
         if (useHealthKit) {
-          const [steps, hr, weight, stepsSeries, weightSeries] = await Promise.all([
+          const [steps, hr, weight, stepsSeries, weightSeries, weightSeries30, weightSeries90] = await Promise.all([
             getStepCountForTodayAsync(),
             getLatestHeartRateAsync(),
             getLatestBodyMassKgAsync(),
             getStepHistoryAsync(7),
             getWeightHistoryAsync(7),
+            getWeightHistoryAsync(30),
+            getWeightHistoryAsync(90),
           ]);
           console.log('[HealthKitContext] loadMetrics: results', { steps, hr, weight });
 
@@ -126,8 +150,27 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
                   .map((point) => ({ ...point, value: Number(Math.max(0, point.value).toFixed(1)) }))
               : []
           );
+          setWeightHistory30Days(
+            Array.isArray(weightSeries30)
+              ? weightSeries30
+                  .filter((point): point is HealthMetricPoint => typeof point?.value === 'number' && !Number.isNaN(point.value))
+                  .map((point) => ({ ...point, value: Number(Math.max(0, point.value).toFixed(1)) }))
+              : []
+          );
+          setWeightHistory90Days(
+            Array.isArray(weightSeries90)
+              ? weightSeries90
+                  .filter((point): point is HealthMetricPoint => typeof point?.value === 'number' && !Number.isNaN(point.value))
+                  .map((point) => ({ ...point, value: Number(Math.max(0, point.value).toFixed(1)) }))
+              : []
+          );
           setDataSource('healthkit');
           setLastUpdatedAt(Date.now());
+
+          // Trigger weight analysis after data is loaded
+          setTimeout(() => {
+            refreshWeightAnalysis();
+          }, 100);
 
           const metricsSignature = JSON.stringify({
             steps: normalizedSteps,
@@ -257,10 +300,14 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
       bodyMassKg,
       stepHistory,
       weightHistory,
+      weightHistory30Days,
+      weightHistory90Days,
+      weightAnalysis,
       dataSource,
       lastUpdatedAt,
       enableHighFrequency,
       disableHighFrequency,
+      refreshWeightAnalysis,
     }),
     [
       isAvailable,
@@ -273,10 +320,14 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
       bodyMassKg,
       stepHistory,
       weightHistory,
+      weightHistory30Days,
+      weightHistory90Days,
+      weightAnalysis,
       dataSource,
       lastUpdatedAt,
       enableHighFrequency,
       disableHighFrequency,
+      refreshWeightAnalysis,
     ]
   );
 
