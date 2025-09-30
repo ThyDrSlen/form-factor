@@ -1,16 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, Platform, Alert, Animated } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, Platform, Alert, Animated, PanResponder, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Camera, useCameraDevice, useCameraPermission, useFrameProcessor } from 'react-native-vision-camera';
 import { Svg, Circle, Line } from 'react-native-svg';
 import { runOnJS } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
 type CameraPosition = 'front' | 'back';
 
 interface BodyPose {
-  joints: Array<{ x: number; y: number; confidence: number; name: string }>;
+  joints: Array<{ x: number; y: number; z?: number; confidence: number; name: string }>;
+  is3D?: boolean;
+  detectionQuality?: number;
+  timestamp?: number;
 }
 
 export default function ScanScreen() {
@@ -19,8 +23,74 @@ export default function ScanScreen() {
   const [isActive, setIsActive] = useState(true);
   const [bodyPose, setBodyPose] = useState<BodyPose | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [detectionQuality, setDetectionQuality] = useState<number>(0);
+  const [flashEnabled, setFlashEnabled] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [showSettings, setShowSettings] = useState(false);
+  const [capturePressed, setCapturePressed] = useState(false);
+  const [showZoomIndicator, setShowZoomIndicator] = useState(false);
+  const [focusPoint, setFocusPoint] = useState<{x: number, y: number} | null>(null);
   const camera = useRef<Camera>(null);
   const textOpacity = useRef(new Animated.Value(1)).current;
+  const captureScale = useRef(new Animated.Value(1)).current;
+  const settingsOpacity = useRef(new Animated.Value(0)).current;
+  const zoomIndicatorOpacity = useRef(new Animated.Value(0)).current;
+  const focusOpacity = useRef(new Animated.Value(0)).current;
+  
+  // Zoom slider pan responder
+  const zoomPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        if (Platform.OS === 'ios') {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        setShowZoomIndicator(true);
+        Animated.timing(zoomIndicatorOpacity, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      },
+      onPanResponderMove: (_, gestureState) => {
+        const screenWidth = Dimensions.get('window').width;
+        const sliderWidth = screenWidth - 120; // Account for padding
+        const progress = Math.max(0, Math.min(1, gestureState.moveX / sliderWidth));
+        const newZoom = 1 + (progress * 3); // 1x to 4x zoom
+        setZoomLevel(newZoom);
+      },
+      onPanResponderRelease: () => {
+        Animated.timing(zoomIndicatorOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => {
+          setShowZoomIndicator(false);
+        });
+      },
+    })
+  ).current;
+  
+  // Tap to focus functionality
+  const handleCameraTap = (event: any) => {
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    
+    const { locationX, locationY } = event.nativeEvent;
+    setFocusPoint({ x: locationX, y: locationY });
+    
+    // Animate focus indicator
+    focusOpacity.setValue(1);
+    Animated.timing(focusOpacity, {
+      toValue: 0,
+      duration: 1000,
+      useNativeDriver: true,
+    }).start(() => {
+      setFocusPoint(null);
+    });
+  };
   
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice(cameraPosition);
@@ -33,7 +103,31 @@ export default function ScanScreen() {
   }, [hasPermission, requestPermission]);
 
   const toggleCamera = () => {
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
     setCameraPosition((prev) => (prev === 'back' ? 'front' : 'back'));
+  };
+
+  const toggleFlash = () => {
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setFlashEnabled((prev) => !prev);
+  };
+
+  const toggleSettings = () => {
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    const newShowSettings = !showSettings;
+    setShowSettings(newShowSettings);
+    
+    Animated.timing(settingsOpacity, {
+      toValue: newShowSettings ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
   };
 
   // Update body pose from frame processor
@@ -42,33 +136,38 @@ export default function ScanScreen() {
   };
 
   // Real-time Apple Vision body pose tracking
-  // NOTE: The native plugin needs to be added to Xcode project manually
   const frameProcessor = useFrameProcessor((frame) => {
     'worklet';
-    // Wrap in try-catch to handle missing plugin gracefully
     try {
-      // @ts-ignore - Check if plugin exists before calling
-      const detectPose = global.__detectPose;
-      if (detectPose) {
-        // @ts-ignore
-        const result = detectPose(frame, {});
+      // Try to call the native pose detection
+      // @ts-ignore
+      const result = global.__detectPose(frame, {
+        isFrontCamera: cameraPosition === 'front'
+      });
+      
+      if (result && result.joints && Array.isArray(result.joints) && result.joints.length > 0) {
+        runOnJS(updatePose)({
+          joints: result.joints,
+          is3D: result.is3D,
+          detectionQuality: result.detectionQuality,
+          timestamp: result.timestamp
+        });
         
-        if (result && result.joints && Array.isArray(result.joints) && result.joints.length > 0) {
-          runOnJS(updatePose)({
-            joints: result.joints
-          });
+        if (result.detectionQuality) {
+          runOnJS(setDetectionQuality)(result.detectionQuality);
         }
       }
     } catch (error) {
-      // Plugin not loaded - fallback to demo skeleton will show
+      // Plugin not available - this is expected in development
+      console.log('Pose detection plugin not available:', error);
     }
-  }, []);
+  }, [cameraPosition]);
   
-  // Fallback: Show demo skeleton only if native module fails after 3 seconds
+  // Fallback: Show demo skeleton for testing when native module isn't available
   useEffect(() => {
     const timer = setTimeout(() => {
       if (!bodyPose) {
-        console.log('Native pose detection not available - showing demo skeleton');
+        console.log('Showing demo skeleton - native pose detection not available');
         const demoSkeletonPose: BodyPose = {
           joints: [
             { x: 0.5, y: 0.25, confidence: 0.9, name: 'head' },
@@ -87,10 +186,14 @@ export default function ScanScreen() {
             { x: 0.43, y: 0.8, confidence: 0.75, name: 'leftAnkle' },
             { x: 0.57, y: 0.8, confidence: 0.75, name: 'rightAnkle' },
           ],
+          is3D: false,
+          detectionQuality: 0.7,
+          timestamp: Date.now()
         };
         setBodyPose(demoSkeletonPose);
+        setDetectionQuality(0.7);
       }
-    }, 3000);
+    }, 2000); // Reduced timeout to 2 seconds
     
     return () => clearTimeout(timer);
   }, [bodyPose]);
@@ -109,16 +212,44 @@ export default function ScanScreen() {
   }, [textOpacity]);
 
   const handleCapture = async () => {
-    if (camera.current) {
+    if (camera.current && !capturePressed) {
+      setCapturePressed(true);
+      
+      // Haptic feedback
+      if (Platform.OS === 'ios') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      }
+      
+      // Capture button animation
+      Animated.sequence([
+        Animated.timing(captureScale, {
+          toValue: 0.9,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(captureScale, {
+          toValue: 1.1,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(captureScale, {
+          toValue: 1,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+      ]).start();
+      
       try {
         const photo = await camera.current.takePhoto({
-          flash: 'off',
+          flash: flashEnabled ? 'on' : 'off',
         });
         console.log('Photo captured:', photo.path);
         Alert.alert('Photo Captured', `Saved to: ${photo.path}`);
       } catch (error) {
         console.error('Failed to capture photo:', error);
         Alert.alert('Error', 'Failed to capture photo');
+      } finally {
+        setCapturePressed(false);
       }
     }
   };
@@ -172,6 +303,15 @@ export default function ScanScreen() {
           isActive={isActive}
           photo={true}
           frameProcessor={frameProcessor}
+          enableZoomGesture={true}
+          enablePortraitEffectsMatteDelivery={true}
+        />
+        
+        {/* Tap to focus overlay */}
+        <TouchableOpacity 
+          style={StyleSheet.absoluteFill} 
+          activeOpacity={1} 
+          onPress={handleCameraTap}
         />
         
         {/* Overlay guides */}
@@ -186,8 +326,15 @@ export default function ScanScreen() {
           <Animated.View style={[styles.topGuide, { opacity: textOpacity }]}>
             <Text style={styles.guideText}>Position yourself in frame</Text>
             <Text style={styles.guideSubtext}>
-              {bodyPose ? 'Body detected - Skeleton active' : '3D skeleton tracking active'}
+              {bodyPose ? (
+                bodyPose.is3D ? '3D Skeleton Active' : '2D Skeleton Active'
+              ) : '3D skeleton tracking active'}
             </Text>
+            {bodyPose && detectionQuality > 0 && (
+              <View style={styles.qualityIndicator}>
+                <View style={[styles.qualityBar, { width: `${detectionQuality * 100}%` }]} />
+              </View>
+            )}
           </Animated.View>
           
           {/* Skeleton Overlay */}
@@ -268,20 +415,120 @@ export default function ScanScreen() {
             </Svg>
           )}
         </View>
+        
+        {/* Zoom indicator overlay */}
+        {showZoomIndicator && (
+          <Animated.View style={[styles.zoomIndicator, { opacity: zoomIndicatorOpacity }]}>
+            <Text style={styles.zoomIndicatorText}>{zoomLevel.toFixed(1)}x</Text>
+          </Animated.View>
+        )}
+        
+        {/* Focus indicator overlay */}
+        {focusPoint && (
+          <Animated.View 
+            style={[
+              styles.focusIndicator, 
+              { 
+                left: focusPoint.x - 30, 
+                top: focusPoint.y - 30,
+                opacity: focusOpacity 
+              }
+            ]}
+          >
+            <View style={styles.focusRing} />
+          </Animated.View>
+        )}
       </View>
 
       {/* Bottom controls - positioned absolutely for full screen */}
       <View style={styles.controls}>
-        <TouchableOpacity style={styles.controlButton} onPress={toggleCamera}>
-          <Ionicons name="camera-reverse-outline" size={32} color="#F5F7FF" />
-        </TouchableOpacity>
+        {/* Left side controls */}
+        <View style={styles.leftControls}>
+          <TouchableOpacity style={styles.controlButton} onPress={toggleCamera}>
+            <Ionicons name="camera-reverse-outline" size={28} color="#F5F7FF" />
+          </TouchableOpacity>
+          
+          {cameraPosition === 'back' && (
+            <TouchableOpacity 
+              style={[styles.controlButton, flashEnabled && styles.activeControlButton]} 
+              onPress={toggleFlash}
+            >
+              <Ionicons 
+                name={flashEnabled ? "flash" : "flash-off-outline"} 
+                size={28} 
+                color={flashEnabled ? "#FFD700" : "#F5F7FF"} 
+              />
+            </TouchableOpacity>
+          )}
+        </View>
 
-        <TouchableOpacity style={styles.captureButton} onPress={handleCapture}>
-          <View style={styles.captureButtonInner} />
-        </TouchableOpacity>
+        {/* Center capture button */}
+        <Animated.View style={[styles.captureButtonContainer, { transform: [{ scale: captureScale }] }]}>
+          <TouchableOpacity style={styles.captureButton} onPress={handleCapture} disabled={capturePressed}>
+            <View style={styles.captureButtonInner} />
+          </TouchableOpacity>
+        </Animated.View>
 
-        <View style={{ width: 60 }} />
+        {/* Right side controls */}
+        <View style={styles.rightControls}>
+          <TouchableOpacity 
+            style={[styles.controlButton, zoomLevel > 1 && styles.activeControlButton]} 
+            onPress={() => {
+              if (Platform.OS === 'ios') {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }
+              setZoomLevel(zoomLevel === 1 ? 2 : 1);
+            }}
+          >
+            <Text style={[styles.zoomButtonText, zoomLevel > 1 && styles.zoomButtonTextActive]}>
+              {zoomLevel === 1 ? '2x' : '1x'}
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.controlButton} onPress={toggleSettings}>
+            <Ionicons name="settings-outline" size={28} color="#F5F7FF" />
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* Settings panel */}
+      <Animated.View style={[styles.settingsPanel, { opacity: settingsOpacity }]} pointerEvents={showSettings ? 'auto' : 'none'}>
+        <View style={styles.settingsContent}>
+          <Text style={styles.settingsTitle}>Camera Settings</Text>
+          
+          <View style={styles.settingRow}>
+            <Text style={styles.settingLabel}>Zoom Level</Text>
+            <View style={styles.zoomSlider}>
+              <View style={styles.zoomTrack} {...zoomPanResponder.panHandlers}>
+                <View style={[styles.zoomFill, { width: `${(zoomLevel - 1) * 100 / 3}%` }]} />
+                <View style={[styles.zoomThumb, { left: `${(zoomLevel - 1) * 100 / 3}%` }]} />
+              </View>
+              <Text style={styles.zoomValue}>{zoomLevel.toFixed(1)}x</Text>
+            </View>
+          </View>
+
+          <View style={styles.settingRow}>
+            <Text style={styles.settingLabel}>Flash</Text>
+            <TouchableOpacity 
+              style={[styles.settingToggle, flashEnabled && styles.settingToggleActive]} 
+              onPress={toggleFlash}
+            >
+              <Text style={[styles.settingToggleText, flashEnabled && styles.settingToggleTextActive]}>
+                {flashEnabled ? 'ON' : 'OFF'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.settingRow}>
+            <Text style={styles.settingLabel}>Camera</Text>
+            <TouchableOpacity style={styles.settingToggle} onPress={toggleCamera}>
+              <Text style={styles.settingToggleText}>
+                {cameraPosition === 'front' ? 'FRONT' : 'BACK'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Animated.View>
 
       {/* Status badge */}
       <View style={styles.statusBadge}>
@@ -422,6 +669,19 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
+  qualityIndicator: {
+    width: 100,
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 2,
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+  qualityBar: {
+    height: '100%',
+    backgroundColor: '#3CC8A9',
+    borderRadius: 2,
+  },
   controls: {
     position: 'absolute',
     bottom: 40,
@@ -429,34 +689,60 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingHorizontal: 60,
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
     zIndex: 10,
   },
+  leftControls: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  rightControls: {
+    flexDirection: 'row',
+    gap: 12,
+  },
   controlButton: {
-    width: 60,
-    height: 60,
+    width: 52,
+    height: 52,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(15, 35, 57, 0.8)',
-    borderRadius: 30,
+    backgroundColor: 'rgba(15, 35, 57, 0.9)',
+    borderRadius: 26,
     borderWidth: 1,
     borderColor: '#1B2E4A',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  activeControlButton: {
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    borderColor: '#FFD700',
+  },
+  captureButtonContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   captureButton: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     backgroundColor: '#4C8CFF',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 4,
     borderColor: '#F5F7FF',
+    shadowColor: '#4C8CFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
   },
   captureButtonInner: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: '#F5F7FF',
   },
   statusBadge: {
@@ -526,5 +812,143 @@ const styles = StyleSheet.create({
     color: '#FF6B6B',
     marginTop: 16,
     textAlign: 'center',
+  },
+  settingsPanel: {
+    position: 'absolute',
+    bottom: 120,
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(15, 35, 57, 0.95)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#1B2E4A',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  settingsContent: {
+    padding: 20,
+  },
+  settingsTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#F5F7FF',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  settingLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#F5F7FF',
+    flex: 1,
+  },
+  zoomSlider: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 16,
+  },
+  zoomTrack: {
+    flex: 1,
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 2,
+    position: 'relative',
+  },
+  zoomFill: {
+    height: '100%',
+    backgroundColor: '#4C8CFF',
+    borderRadius: 2,
+  },
+  zoomThumb: {
+    position: 'absolute',
+    top: -6,
+    width: 16,
+    height: 16,
+    backgroundColor: '#4C8CFF',
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#F5F7FF',
+    marginLeft: -8,
+  },
+  zoomValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4C8CFF',
+    marginLeft: 12,
+    minWidth: 32,
+    textAlign: 'right',
+  },
+  settingToggle: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    marginLeft: 16,
+  },
+  settingToggleActive: {
+    backgroundColor: '#4C8CFF',
+    borderColor: '#4C8CFF',
+  },
+  settingToggleText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#9AACD1',
+  },
+  settingToggleTextActive: {
+    color: '#FFFFFF',
+  },
+  zoomIndicator: {
+    position: 'absolute',
+    top: 120,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomIndicatorText: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  zoomButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#9AACD1',
+  },
+  zoomButtonTextActive: {
+    color: '#4C8CFF',
+  },
+  focusIndicator: {
+    position: 'absolute',
+    width: 60,
+    height: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  focusRing: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: '#4C8CFF',
+    backgroundColor: 'transparent',
   },
 });
