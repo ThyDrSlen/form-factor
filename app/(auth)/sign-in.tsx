@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
-import { Button, Text, useTheme } from '@/design-system';
+import { Button, Text } from '@/design-system';
 
 type FormData = {
   email: string;
@@ -23,12 +23,10 @@ export default function SignInScreen() {
     signInWithApple,
     signInWithEmail,
     signUpWithEmail,
-    resetPassword,
     isSigningIn,
     error: authError,
     clearError
   } = useAuth();
-  const { theme } = useTheme();
 
   const getErrorMessage = (error: any): string => {
     if (!error) return '';
@@ -206,7 +204,7 @@ export default function SignInScreen() {
             {/* Sign up link */}
             <View style={styles.signUpContainer}>
               <Text variant="body" color="#8E8E93">
-                Don't have an account?{' '}
+                Don&apos;t have an account?{' '}
               </Text>
               <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)} disabled={isSigningIn}>
                 <Text variant="body" color="#007AFF" style={styles.signUpLink}>

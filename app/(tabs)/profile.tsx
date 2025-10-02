@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import {
   Alert,
   Image,
-  ImageBackground,
   Pressable,
   ScrollView,
   Text,
@@ -12,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, usePathname } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   useFonts,
@@ -50,12 +49,11 @@ function StatTile({ label, value }: { label: string; value: number }) {
 }
 
 export default function ProfileScreen() {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const { workouts } = useWorkouts();
   const { bodyMassKg } = useHealthKit();
   const { weightUnit, toggleWeightUnit, convertWeight, getWeightLabel } = useUnits();
   const router = useRouter();
-  const pathname = usePathname();
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState(
     user?.user_metadata?.full_name || user?.user_metadata?.name || ''
@@ -118,7 +116,7 @@ const avatarUrl = (() => {
       } else {
         setIsEditing(false);
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'An unexpected error occurred');
     } finally {
       setIsUpdating(false);

@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View, Platform, Keyboard, InputAccessoryView, KeyboardAvoidingView, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,7 +7,6 @@ import { useFood } from '../contexts/FoodContext';
 import { useSafeBack } from '../hooks/use-safe-back';
 
 export default function AddFoodScreen() {
-  const router = useRouter();
   const { addFood } = useFood();
 
   const [name, setName] = useState('');

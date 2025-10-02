@@ -11,7 +11,7 @@ import * as Haptics from 'expo-haptics';
 type CameraPosition = 'front' | 'back';
 
 interface BodyPose {
-  joints: Array<{ x: number; y: number; z?: number; confidence: number; name: string }>;
+  joints: { x: number; y: number; z?: number; confidence: number; name: string }[];
   is3D?: boolean;
   detectionQuality?: number;
   timestamp?: number;
@@ -20,9 +20,8 @@ interface BodyPose {
 export default function ScanScreen() {
   const router = useRouter();
   const [cameraPosition, setCameraPosition] = useState<CameraPosition>('back');
-  const [isActive, setIsActive] = useState(true);
+  const [isActive] = useState(true);
   const [bodyPose, setBodyPose] = useState<BodyPose | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [detectionQuality, setDetectionQuality] = useState<number>(0);
   const [flashEnabled, setFlashEnabled] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
