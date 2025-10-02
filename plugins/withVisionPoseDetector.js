@@ -16,10 +16,12 @@ const withVisionPoseDetector = (config) => {
       // Source files are in a safe location outside ios/
       const swiftSource = path.join(projectRoot, 'native', 'VisionPoseDetector.swift');
       const objcSource = path.join(projectRoot, 'native', 'VisionPoseDetector.m');
+      const bridgingHeaderSource = path.join(projectRoot, 'native', 'formfactoreas-Bridging-Header.h');
       
       // Destination in ios/projectName/
       const swiftDest = path.join(iosRoot, projectName, 'VisionPoseDetector.swift');
       const objcDest = path.join(iosRoot, projectName, 'VisionPoseDetector.m');
+      const bridgingHeaderDest = path.join(iosRoot, projectName, 'formfactoreas-Bridging-Header.h');
       
       // Ensure native directory exists
       const nativeDir = path.join(projectRoot, 'native');
@@ -50,6 +52,11 @@ const withVisionPoseDetector = (config) => {
         console.log('✅ Copied VisionPoseDetector.m');
       }
       
+      if (fs.existsSync(bridgingHeaderSource)) {
+        fs.copyFileSync(bridgingHeaderSource, bridgingHeaderDest);
+        console.log('✅ Copied formfactoreas-Bridging-Header.h');
+      }
+      
       return config;
     },
   ]);
@@ -62,27 +69,123 @@ const withVisionPoseDetector = (config) => {
     console.log('[VisionPoseDetector] Adding files to Xcode project...');
     
     try {
-      // Add Swift file
-      const swiftFile = `${projectName}/VisionPoseDetector.swift`;
-      if (!xcodeProject.hasFile(swiftFile)) {
-        const target = xcodeProject.getFirstTarget();
-        if (target && target.uuid) {
-          xcodeProject.addSourceFile(swiftFile, {}, target.uuid);
-          console.log('✅ Added VisionPoseDetector.swift to Xcode');
+      // Get the first native target
+      const target = xcodeProject.getFirstTarget();
+      
+      if (!target) {
+        throw new Error('No native target found in Xcode project');
+      }
+      
+      // Extract target UUID
+      let targetUuid = target.uuid;
+      if (!targetUuid) {
+        const nativeTargets = xcodeProject.pbxNativeTargetSection();
+        if (nativeTargets) {
+          const targetKeys = Object.keys(nativeTargets).filter(key => !key.endsWith('_comment'));
+          if (targetKeys.length > 0) {
+            targetUuid = targetKeys[0];
+          }
         }
       }
       
-      // Add Obj-C file
-      const objcFile = `${projectName}/VisionPoseDetector.m`;
-      if (!xcodeProject.hasFile(objcFile)) {
-        const target = xcodeProject.getFirstTarget();
-        if (target && target.uuid) {
-          xcodeProject.addSourceFile(objcFile, {}, target.uuid);
-          console.log('✅ Added VisionPoseDetector.m to Xcode');
-        }
+      if (!targetUuid) {
+        throw new Error('Could not extract target UUID from Xcode project');
       }
+      
+      console.log('[VisionPoseDetector] Target UUID:', targetUuid);
+      
+      // Helper function to manually add a source file to avoid xcode library bugs
+      const addSourceFileManually = (filePath, fileName, fileType) => {
+        if (xcodeProject.hasFile(filePath)) {
+          console.log(`[VisionPoseDetector] ${fileName} already in project`);
+          return;
+        }
+        
+        // Generate UUIDs for the file reference and build file
+        const generateUuid = () => {
+          const chars = '0123456789ABCDEF';
+          let uuid = '';
+          for (let i = 0; i < 24; i++) {
+            uuid += chars.charAt(Math.floor(Math.random() * 16));
+          }
+          return uuid;
+        };
+        
+        const fileRefUuid = generateUuid();
+        const buildFileUuid = generateUuid();
+        
+        // Add file reference to PBXFileReference section
+        const fileReferences = xcodeProject.pbxFileReferenceSection();
+        fileReferences[fileRefUuid] = {
+          isa: 'PBXFileReference',
+          lastKnownFileType: fileType,
+          name: fileName,
+          path: `${projectName}/${fileName}`,
+          sourceTree: '"<group>"'
+        };
+        fileReferences[`${fileRefUuid}_comment`] = fileName;
+        
+        // Add build file to PBXBuildFile section
+        const buildFiles = xcodeProject.pbxBuildFileSection();
+        buildFiles[buildFileUuid] = {
+          isa: 'PBXBuildFile',
+          fileRef: fileRefUuid,
+          fileRef_comment: fileName
+        };
+        buildFiles[`${buildFileUuid}_comment`] = `${fileName} in Sources`;
+        
+        // Add to the target's Sources build phase
+        const buildPhases = xcodeProject.hash.project.objects['PBXSourcesBuildPhase'];
+        for (const phaseKey in buildPhases) {
+          if (!phaseKey.endsWith('_comment') && buildPhases[phaseKey]) {
+            if (!buildPhases[phaseKey].files) {
+              buildPhases[phaseKey].files = [];
+            }
+            buildPhases[phaseKey].files.push({
+              value: buildFileUuid,
+              comment: `${fileName} in Sources`
+            });
+            break;
+          }
+        }
+        
+        // Add to the project group
+        const groups = xcodeProject.hash.project.objects['PBXGroup'];
+        for (const groupKey in groups) {
+          if (!groupKey.endsWith('_comment')) {
+            const group = groups[groupKey];
+            if (group && (group.name === projectName || group.path === projectName)) {
+              if (!group.children) {
+                group.children = [];
+              }
+              group.children.push({
+                value: fileRefUuid,
+                comment: fileName
+              });
+              break;
+            }
+          }
+        }
+        
+        console.log(`✅ Added ${fileName} to Xcode project`);
+      };
+      
+      // Add Swift file
+      addSourceFileManually(
+        `${projectName}/VisionPoseDetector.swift`,
+        'VisionPoseDetector.swift',
+        'sourcecode.swift'
+      );
+      
+      // Add Obj-C file
+      addSourceFileManually(
+        `${projectName}/VisionPoseDetector.m`,
+        'VisionPoseDetector.m',
+        'sourcecode.c.objc'
+      );
+      
     } catch (error) {
-      console.warn('[VisionPoseDetector] Warning: Could not add files to Xcode project:', error.message);
+      console.error('[VisionPoseDetector] Error:', error.message);
       console.warn('[VisionPoseDetector] Files will need to be added manually via Xcode');
     }
     
