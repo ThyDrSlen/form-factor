@@ -7,7 +7,6 @@ import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { Svg, Line, Circle, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import type { HealthMetricPoint } from '../../lib/services/healthkit/health-metrics';
-import type { WeightAnalysis } from '../../lib/services/healthkit/weight-trends';
 
 const { width: screenWidth } = Dimensions.get('window');
 const chartWidth = screenWidth - 40;

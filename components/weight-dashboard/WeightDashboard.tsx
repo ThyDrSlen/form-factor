@@ -10,27 +10,22 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useHealthKit } from '../../contexts/HealthKitContext';
 import { useUnits } from '../../contexts/UnitsContext';
-import type { WeightAnalysis } from '../../lib/services/healthkit/weight-trends';
 import { WeightTrendChart } from './WeightTrendChart';
 import { WeightInsights } from './WeightInsights';
 import { WeightStatistics } from './WeightStatistics';
 import { WeightGoals } from './WeightGoals';
 import { WeightPredictions } from './WeightPredictions';
 
-const { width: screenWidth } = Dimensions.get('window');
-
 interface WeightDashboardProps {
   onClose?: () => void;
 }
 
 export function WeightDashboard({ onClose }: WeightDashboardProps) {
-  const { weightAnalysis, weightHistory90Days, refreshWeightAnalysis } = useHealthKit();
+  const { weightAnalysis, weightHistory90Days } = useHealthKit();
   const { convertWeight, getWeightLabel } = useUnits();
   const [selectedPeriod, setSelectedPeriod] = useState<'7d' | '30d' | '90d'>('90d');
   const [activeTab, setActiveTab] = useState<'overview' | 'trends' | 'insights' | 'goals'>('overview');

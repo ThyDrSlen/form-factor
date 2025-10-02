@@ -46,7 +46,7 @@ interface Insight {
   title: string;
   description: string;
   category: string;
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   color: string;
   action?: string;
 }
@@ -57,7 +57,7 @@ function generateInsights(
   weightUnit: string
 ): Insight[] {
   const insights: Insight[] = [];
-  const { trends, statistics, patterns } = analysis;
+  const { statistics, patterns } = analysis;
 
   // Trend-based insights
   if (currentTrend) {
