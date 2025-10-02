@@ -32,7 +32,13 @@ export function WeightStatistics({ analysis, data, weightUnit }: WeightStatistic
   const coefficientOfVariation = statistics.average > 0 ? 
     (statistics.standardDeviation / statistics.average) * 100 : 0;
 
-  const statCards = [
+  const statCards: {
+    title: string;
+    value: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    color: string;
+    description: string;
+  }[] = [
     {
       title: 'Average Weight',
       value: `${statistics.average.toFixed(1)} ${weightUnit}`,
@@ -63,7 +69,11 @@ export function WeightStatistics({ analysis, data, weightUnit }: WeightStatistic
     },
   ];
 
-  const trendCards = [
+  const trendCards: {
+    title: string;
+    trend: any;
+    icon: keyof typeof Ionicons.glyphMap;
+  }[] = [
     {
       title: 'Short Term (7 days)',
       trend: trends.shortTerm,
@@ -182,7 +192,7 @@ export function WeightStatistics({ analysis, data, weightUnit }: WeightStatistic
           
           {card.trend.insights.length > 0 && (
             <View style={styles.trendInsights}>
-              {card.trend.insights.map((insight, insightIndex) => (
+              {card.trend.insights.map((insight: string, insightIndex: number) => (
                 <Text key={insightIndex} style={styles.trendInsight}>
                   • {insight}
                 </Text>

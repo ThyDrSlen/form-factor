@@ -103,7 +103,7 @@ function LineChart({ data, gradientId, stroke }: { data: HealthMetricPoint[]; gr
 
 function BarChart({ data, color }: { data: HealthMetricPoint[]; color: string }) {
   const bars = useMemo(() => {
-    if (!data.length) return [] as Array<{ x: number; y: number; h: number; w: number }>;
+    if (!data.length) return [] as { x: number; y: number; h: number; w: number }[];
     const values = data.map((point) => point.value);
     const max = Math.max(...values, 0.1);
     const gap = 4;
@@ -187,23 +187,44 @@ function formatWeightDelta(history: HealthMetricPoint[], convertWeight: (kg: num
   return `${convertedDiff > 0 ? '+' : ''}${convertedDiff.toFixed(1)} ${getWeightLabel()}`;
 }
 
-const NativeCircularProgress: React.ComponentType<{ style?: unknown }> | null = (() => {
-  if (Platform.OS !== 'ios') return null;
+const NativeCircularProgressRef: { current: React.ComponentType<{ style?: unknown }> | null } = { current: null };
+
+async function loadNativeCircularProgress() {
+  if (Platform.OS !== 'ios' || NativeCircularProgressRef.current) {
+    return NativeCircularProgressRef.current;
+  }
+
   try {
-    const { CircularProgress } = require('@expo/ui/Progress');
-    return CircularProgress as typeof CircularProgress;
+    const module = await import('@expo/ui/Progress');
+    NativeCircularProgressRef.current = module.CircularProgress as React.ComponentType<{ style?: unknown }>;
   } catch (error) {
     console.warn('[ProfileHealth] Failed to load @expo/ui/Progress', error);
-    return null;
+    NativeCircularProgressRef.current = null;
   }
-})();
+
+  return NativeCircularProgressRef.current;
+}
+
+const NativeCircularProgress: React.ComponentType<{ style?: unknown }> | null = Platform.OS === 'ios' ? NativeCircularProgressRef.current : null;
 
 function SwiftUILoadingIndicator() {
-  if (!NativeCircularProgress) {
+  const [Component, setComponent] = React.useState<typeof NativeCircularProgress | null>(NativeCircularProgress);
+
+  React.useEffect(() => {
+    if (!Component && Platform.OS === 'ios') {
+      loadNativeCircularProgress().then((loaded) => {
+        if (loaded) {
+          setComponent(() => loaded);
+        }
+      });
+    }
+  }, [Component]);
+
+  if (!Component) {
     return <ActivityIndicator size="large" color="#4C8CFF" />;
   }
 
-  return <NativeCircularProgress style={{ width: 72, height: 72 }} />;
+  return <Component style={{ width: 72, height: 72 }} />;
 }
 
 export function ProfileHealth() {
