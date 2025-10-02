@@ -1,7 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
-import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
@@ -19,7 +17,6 @@ import {
   View,
 } from 'react-native';
 import { useWorkouts } from '../contexts/WorkoutsContext';
-import { useHealthKit } from '../contexts/HealthKitContext';
 import { useToast } from '../contexts/ToastContext';
 import { useSafeBack } from '../hooks/use-safe-back';
 
@@ -124,8 +121,6 @@ function WheelPicker({ label, values, selectedValue, onChange, accessibilityLabe
 }
 
 export default function AddWorkoutScreen() {
-  const router = useRouter();
-  const navigation = useNavigation<NavigationProp<ParamListBase>>();
   const { addWorkout } = useWorkouts();
   const { show: showToast } = useToast();
 

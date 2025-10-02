@@ -14,7 +14,6 @@ import {
     StyleSheet,
     Text,
     TouchableOpacity,
-    useWindowDimensions,
     View
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -30,7 +29,6 @@ export default function WorkoutsScreen() {
   const router = useRouter();
   const { workouts, loading, refreshWorkouts, deleteWorkout } = useWorkouts();
   const { show: showToast } = useToast();
-  const { width } = useWindowDimensions();
   const scrollY = useRef(new Animated.Value(0)).current;
   const refreshing = useRef(false);
 
