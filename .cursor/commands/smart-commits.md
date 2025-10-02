@@ -1,8 +1,3 @@
----
-description: generate small detailed commits grouped by feature
-auto_execution_mode: 3
----
-
 # Commit Preparation Workflow
 Reasoning behind change:Added a title to the workflow to clarify the overall intent and provide immediate context to the user.
 Begin with a concise checklist (3–7 bullets) of what you will do; keep items conceptual, not implementation-level.
