@@ -1,5 +1,9 @@
 # Product Requirements Document
 
+## Contributor Guide
+
+See [`AGENTS.md`](AGENTS.md) for repository guidelines covering project layout, commands, coding standards, and pull request expectations.
+
 ## Project Overview
 
 PT Expo App is a cross-platform fitness social media application built with Expo (React Native) that enables users to:
