@@ -26,29 +26,114 @@ public class VisionPoseDetector: NSObject {
     let imageBuffer = buffer
     
     // Detect camera orientation from frame
-    let orientation = frame.orientation
+    let uiOrientation = frame.orientation
+    // Convert UIImage.Orientation to CGImagePropertyOrientation
+    let orientation = CGImagePropertyOrientation(rawValue: UInt32(uiOrientation.rawValue)) ?? .up
     let isFrontCamera = arguments?["isFrontCamera"] as? Bool ?? false
     
-    // Use 3D body pose detection for better tracking (iOS 17+)
-    let request: VNRequest
-    var is3DRequest = false
-    
+    // Use 3D body pose detection on iOS 17+
     if #available(iOS 17.0, *) {
-      request = VNDetectHumanBodyPose3DRequest()
-      is3DRequest = true
+      return detect3DPose(imageBuffer: imageBuffer, orientation: orientation, isFrontCamera: isFrontCamera)
     } else {
-      // Fallback to 2D for older iOS
-      let pose2D = VNDetectHumanBodyPoseRequest()
-      pose2D.revision = VNDetectHumanBodyPoseRequestRevision1
-      request = pose2D
+      return detect2DPose(imageBuffer: imageBuffer, orientation: orientation, isFrontCamera: isFrontCamera)
     }
+  }
+  
+  // 3D pose detection for iOS 17+
+  @available(iOS 17.0, *)
+  private static func detect3DPose(imageBuffer: CVPixelBuffer, orientation: CGImagePropertyOrientation, isFrontCamera: Bool) -> [String: Any]? {
+    let request = VNDetectHumanBodyPose3DRequest()
+    let handler = VNImageRequestHandler(cvPixelBuffer: imageBuffer, orientation: orientation, options: [:])
+    
+    do {
+      try handler.perform([request])
+      
+      guard let observations = request.results,
+            let observation = observations.first else {
+        return nil
+      }
+      
+      var joints: [[String: Any]] = []
+      
+      // 3D joint mapping
+      let jointMapping: [VNHumanBodyPose3DObservation.JointName: String] = [
+        .centerHead: "head",
+        .centerShoulder: "neck",
+        .leftShoulder: "leftShoulder",
+        .rightShoulder: "rightShoulder",
+        .leftElbow: "leftElbow",
+        .rightElbow: "rightElbow",
+        .leftWrist: "leftWrist",
+        .rightWrist: "rightWrist",
+        .root: "hips",
+        .leftHip: "leftHip",
+        .rightHip: "rightHip",
+        .leftKnee: "leftKnee",
+        .rightKnee: "rightKnee",
+        .leftAnkle: "leftAnkle",
+        .rightAnkle: "rightAnkle"
+      ]
+      
+      for (visionJoint, ourJointName) in jointMapping {
+        if let point = try? observation.recognizedPoint(visionJoint) {
+          // Get 3D position - localPosition is a 4x4 transform matrix
+          // Extract translation from the matrix (4th column)
+          let transform = point.localPosition
+          let positionX = transform.columns.3.x
+          let positionY = transform.columns.3.y
+          let positionZ = transform.columns.3.z
+          
+          // Convert to 2D screen space (using camera matrix)
+          // For simplicity, project to XY plane
+          var x = Double(positionX) + 0.5 // Center around 0.5
+          var y = 0.5 - Double(positionY) // Flip Y and center
+          let z = Double(positionZ)
+          
+          // Flip X for front camera
+          if isFrontCamera {
+            x = 1.0 - x
+          }
+          
+          // Clamp to screen bounds
+          x = max(0.0, min(1.0, x))
+          y = max(0.0, min(1.0, y))
+          
+          let jointData: [String: Any] = [
+            "name": ourJointName,
+            "x": x,
+            "y": y,
+            "z": z,
+            "confidence": 0.9 // 3D detection doesn't provide per-joint confidence
+          ]
+          
+          joints.append(jointData)
+        }
+      }
+      
+      return [
+        "joints": joints,
+        "timestamp": Date().timeIntervalSince1970,
+        "is3D": true,
+        "detectionQuality": 0.9
+      ]
+      
+    } catch {
+      print("3D pose detection failed: \(error)")
+      return nil
+    }
+  }
+  
+  // 2D pose detection fallback for iOS < 17
+  private static func detect2DPose(imageBuffer: CVPixelBuffer, orientation: CGImagePropertyOrientation, isFrontCamera: Bool) -> [String: Any]? {
+    let request = VNDetectHumanBodyPoseRequest()
+    request.revision = VNDetectHumanBodyPoseRequestRevision1
     
     let handler = VNImageRequestHandler(cvPixelBuffer: imageBuffer, orientation: orientation, options: [:])
     
     do {
       try handler.perform([request])
       
-      guard let observations = request.results as? [VNHumanBodyPoseObservation],
+      guard let observations = request.results,
             let observation = observations.first else {
         return nil
       }
@@ -60,7 +145,7 @@ public class VisionPoseDetector: NSObject {
       
       var joints: [[String: Any]] = []
       
-      // Map Vision framework joints to our format
+      // 2D joint mapping
       let jointMapping: [VNHumanBodyPoseObservation.JointName: String] = [
         .nose: "head",
         .neck: "neck",
@@ -84,28 +169,20 @@ public class VisionPoseDetector: NSObject {
           // Only include points with sufficient confidence
           if point.confidence > 0.3 {
             var x = Double(point.location.x)
-            var y = Double(1.0 - point.location.y) // Flip Y coordinate
+            let y = Double(1.0 - point.location.y) // Flip Y coordinate
             
             // Flip X for front camera
             if isFrontCamera {
               x = 1.0 - x
             }
             
-            var jointData: [String: Any] = [
+            let jointData: [String: Any] = [
               "name": ourJointName,
               "x": x,
               "y": y,
+              "z": 0.0,
               "confidence": Double(point.confidence)
             ]
-            
-            // Add Z coordinate for 3D tracking (iOS 17+)
-            if #available(iOS 17.0, *), is3DRequest {
-              if let observation3D = observation as? VNHumanBodyPose3DObservation {
-                if let recognizedPoint3D = try? observation3D.recognizedPoint(visionJoint) {
-                  jointData["z"] = Double(recognizedPoint3D.localPosition.z)
-                }
-              }
-            }
             
             joints.append(jointData)
           }
@@ -115,12 +192,12 @@ public class VisionPoseDetector: NSObject {
       return [
         "joints": joints,
         "timestamp": Date().timeIntervalSince1970,
-        "is3D": is3DRequest,
+        "is3D": false,
         "detectionQuality": observation.confidence
       ]
       
     } catch {
-      print("Body pose detection failed: \(error)")
+      print("2D pose detection failed: \(error)")
       return nil
     }
   }
