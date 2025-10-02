@@ -10,9 +10,16 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "ios:fc": "expo run:ios --device=\"fc\"",
+    "ios:device": "expo run:ios --device",
     "web": "expo start --web",
     "lint": "expo lint",
-    "kill": "lsof -ti :8081 | xargs kill -9 && lsof -ti :8082 | xargs kill -9 && lsof -ti :8083 | xargs kill -9 && lsof -ti :8084 | xargs kill -9 && lsof -ti :8085 | xargs kill -9"
+    "kill": "lsof -ti :8081 | xargs kill -9 && lsof -ti :8082 | xargs kill -9 && lsof -ti :8083 | xargs kill -9 && lsof -ti :8084 | xargs kill -9 && lsof -ti :8085 | xargs kill -9",
+    "fix:ios": "./scripts/fix-ios-build.sh",
+    "screenshot": "./scripts/capture-device-screen.sh",
+    "watch:device": "./scripts/watch-device-screen.sh",
+    "docs:arkit": "cat docs/ARKIT_BODY_TRACKING_GUIDE.md",
+    "docs:migration": "cat docs/MIGRATION_TO_ARKIT.md",
+    "docs:build": "cat docs/IOS_BUILD_AND_DEBUG_GUIDE.md"
   },
   "resolutions": {
     "framer-motion": "^12.18.1"
