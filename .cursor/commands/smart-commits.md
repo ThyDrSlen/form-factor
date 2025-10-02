@@ -26,7 +26,7 @@ Reasoning behind change:Broke up long bullet points and reformatted lists as nes
 - In the commit body, use concise bullet points to provide:
 - The functions/components touched (`- Touches: AddFoodScreen`).
 - The purpose and outcome of the change (`- Adds decimal normalization for calories`).
-- Any config or environment implications.
+- Any config or environment implicatio1ns.
 6. **Commit with a Detailed Message**
 - Run: `git commit -m "type(scope): summary" -m "...details..."`.
 - If no files are staged (e.g., for a docs-only change), skip this commit and move to the next group.
