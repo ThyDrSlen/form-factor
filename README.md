@@ -53,6 +53,20 @@ Description: Save rep counts, durations, form-score snapshots to Supabase DB wit
 
 Tech: Supabase Database with Row-Level Security, Expo SQLite, Supabase Webhooks for sync acknowledgement
 
+**Offline-First Architecture** ✅ IMPLEMENTED
+
+Description: Complete offline support with local SQLite database and automatic bidirectional sync with Supabase. Users can add/delete foods and workouts while offline, with changes automatically synced when network is available. Includes Supabase Realtime websockets for live updates across devices.
+
+Features:
+- Local SQLite database for instant data access
+- Network detection and automatic sync triggers
+- Supabase Realtime for live cross-device updates
+- Conflict resolution with retry logic
+- Soft-delete strategy for data integrity
+- Sync queue for failed operations
+
+Tech: `expo-sqlite`, `expo-network`, Supabase Realtime, PostgreSQL with RLS
+
 Community Engagement
 
 Description: Like/comment on posts; follow/unfollow users; view activity feed. Push notifications via Supabase Edge Functions hooking into Firebase Cloud Messaging.
