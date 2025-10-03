@@ -54,13 +54,25 @@ function buildLinePath(points: HealthMetricPoint[]): { line: string; area: strin
   }
 
   const values = points.map((p) => p.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  // Ensure valid range
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    min = 0;
+    max = 1;
+  }
+  // Pad near-constant series to make subtle changes visible
+  if (max - min < 0.001) {
+    const mid = (max + min) / 2;
+    const pad = Math.max(1, Math.abs(mid) * 0.01);
+    min = mid - pad;
+    max = mid + pad;
+  }
   const range = max - min || 1;
 
   const normalized = points.map((point, index) => {
     const x = points.length === 1 ? 0 : (index / (points.length - 1)) * 100;
-    const valueRatio = (point.value - min) / range;
+    const valueRatio = Math.max(0, Math.min(1, (point.value - min) / range));
     const y = 55 - valueRatio * 40;
     return { x, y };
   });
@@ -233,6 +245,7 @@ export function ProfileHealth() {
     isLoading,
     stepHistory,
     weightHistory,
+    weightHistory30Days,
     requestPermissions,
     stepsToday,
     bodyMassKg,
@@ -288,12 +301,17 @@ export function ProfileHealth() {
   const stepsLabels = stepHistory.length
     ? stepHistory.map((point) => toDayLabel(point.date))
     : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const weightLabels = weightHistory.length
-    ? weightHistory.map((point) => toDayLabel(point.date))
+  
+  // Use 30-day history for better trend visibility
+  // Filter out zero values (days without measurements)
+  const rawWeightData = weightHistory30Days.length > 0 ? weightHistory30Days : weightHistory;
+  const weightDataToShow = rawWeightData.filter(point => point.value > 0);
+  const weightLabels = weightDataToShow.length
+    ? weightDataToShow.map((point) => toDayLabel(point.date))
     : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   const stepsDelta = computeDelta(stepHistory);
-  const weightDelta = computeDelta(weightHistory);
+  const weightDelta = computeDelta(weightDataToShow);
 
   const currentSteps = stepsToday ?? (stepHistory.length ? stepHistory[stepHistory.length - 1].value : null);
   const currentWeightKg =
@@ -301,7 +319,7 @@ export function ProfileHealth() {
   const currentWeight = currentWeightKg ? convertWeight(currentWeightKg) : null;
   const stepsDeltaLabel = `${stepsDelta.delta >= 0 ? '+' : ''}${Math.round(stepsDelta.delta)}%`;
   const weightDeltaLabel = `${weightDelta.delta >= 0 ? '+' : ''}${Math.round(weightDelta.delta)}%`;
-  const weightChangeLabel = formatWeightDelta(weightHistory, convertWeight, getWeightLabel);
+  const weightChangeLabel = formatWeightDelta(weightDataToShow, convertWeight, getWeightLabel);
   const sourceLabel = dataSource === 'supabase' ? 'Synced from Supabase' : 'HealthKit Live';
   const updatedLabel = formatUpdatedAt(lastUpdatedAt);
 
@@ -327,12 +345,12 @@ export function ProfileHealth() {
       <MetricCard
         title="Weight Tracking"
         headline={`${formatNumber(currentWeight, { maximumFractionDigits: 0, minimumFractionDigits: 0 })} ${getWeightLabel()}`}
-        subtitle={`Last 7 Days ${weightDeltaLabel}`}
+        subtitle={weightDataToShow.length > 0 ? `${weightDataToShow.length} Entries (30d)` : 'No entries yet'}
         deltaLabel={weightChangeLabel}
         deltaPositive={weightDelta.delta > 0}
         labels={weightLabels}
       >
-        <BarChart data={weightHistory} color="#3CC8A9" />
+        <BarChart data={weightDataToShow} color="#3CC8A9" />
       </MetricCard>
     </View>
   );
