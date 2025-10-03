@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as Crypto from 'expo-crypto';
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View, Platform, Keyboard, InputAccessoryView, KeyboardAvoidingView, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -52,7 +53,7 @@ export default function AddFoodScreen() {
 
     setSaving(true);
     try {
-      const id = Date.now().toString();
+      const id = Crypto.randomUUID();
       const foodEntry = { 
         id, 
         name: name.trim(), 

@@ -9,6 +9,7 @@ import { FoodProvider } from '../contexts/FoodContext';
 import { WorkoutsProvider } from '../contexts/WorkoutsContext';
 import { HealthKitProvider } from '../contexts/HealthKitContext';
 import { UnitsProvider } from '../contexts/UnitsContext';
+import { NetworkProvider } from '../contexts/NetworkContext';
 import { useFonts, Lexend_400Regular, Lexend_500Medium, Lexend_700Bold } from '@expo-google-fonts/lexend';
 import { ToastProvider } from '../contexts/ToastContext';
 
@@ -33,21 +34,23 @@ function RootLayoutNav() {
       <ThemeProvider>
         <ToastProvider>
           <AuthProvider>
-            <UnitsProvider>
-              <HealthKitProvider>
-                <WorkoutsProvider>
-                  <FoodProvider>
-                    {!fontsLoaded ? (
-                      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#050E1F' }}>
-                        <ActivityIndicator color="#4C8CFF" />
-                      </View>
-                    ) : (
-                      <InitialLayout />
-                    )}
-                  </FoodProvider>
-                </WorkoutsProvider>
-              </HealthKitProvider>
-            </UnitsProvider>
+            <NetworkProvider>
+              <UnitsProvider>
+                <HealthKitProvider>
+                  <WorkoutsProvider>
+                    <FoodProvider>
+                      {!fontsLoaded ? (
+                        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#050E1F' }}>
+                          <ActivityIndicator color="#4C8CFF" />
+                        </View>
+                      ) : (
+                        <InitialLayout />
+                      )}
+                    </FoodProvider>
+                  </WorkoutsProvider>
+                </HealthKitProvider>
+              </UnitsProvider>
+            </NetworkProvider>
           </AuthProvider>
         </ToastProvider>
       </ThemeProvider>

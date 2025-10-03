@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Crypto from 'expo-crypto';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
@@ -194,7 +195,7 @@ export default function AddWorkoutScreen() {
     
     setSaving(true);
     try {
-      const id = Date.now().toString();
+      const id = Crypto.randomUUID();
       const workout = { 
         id, 
         exercise: exercise.trim(), 
