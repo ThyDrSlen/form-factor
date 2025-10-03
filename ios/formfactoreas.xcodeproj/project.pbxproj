@@ -7,30 +7,26 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00BC1473244028BE0E30D817 /* libPods-formfactoreas.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 3CC93BDF650E16DF6938E932 /* libPods-formfactoreas.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		14A317483DB7C9579E4AA3F2 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 3572A29904328958808BD702 /* PrivacyInfo.xcprivacy */; };
-		15741B30AC6A80E6C77DAF82 /* VisionPoseDetector.m in Sources */ = {isa = PBXBuildFile; fileRef = 599632F187361733616216E2 /* VisionPoseDetector.m */; };
-		1D93B6A7555BF42F045D423A /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08AFED556CEABDAD27AFA85B /* ExpoModulesProvider.swift */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		87B21E0EC749159BE2AB77D3 /* VisionPoseDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C8747579CC7C4394726B701 /* VisionPoseDetector.swift */; };
-		9BF0B1879496A7E68C0370B7 /* libPods-formfactoreas.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 90A78E1806DC1C8D519296EE /* libPods-formfactoreas.a */; };
+		437399CD762B04F1357BCF86 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 914A4DBD03180322E6CECF79 /* PrivacyInfo.xcprivacy */; };
+		7FCD8931FCBC5C1E709693EA /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 631B0249262173D848E28651 /* ExpoModulesProvider.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		08AFED556CEABDAD27AFA85B /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-formfactoreas/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* formfactoreas.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = formfactoreas.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = formfactoreas/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = formfactoreas/Info.plist; sourceTree = "<group>"; };
-		2C8747579CC7C4394726B701 /* VisionPoseDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VisionPoseDetector.swift; path = formfactoreas/VisionPoseDetector.swift; sourceTree = "<group>"; };
-		3572A29904328958808BD702 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = formfactoreas/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		4855919CC002210A1FCCFD92 /* Pods-formfactoreas.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-formfactoreas.release.xcconfig"; path = "Target Support Files/Pods-formfactoreas/Pods-formfactoreas.release.xcconfig"; sourceTree = "<group>"; };
-		4956A582DC97A0E9CBC7A76A /* Pods-formfactoreas.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-formfactoreas.debug.xcconfig"; path = "Target Support Files/Pods-formfactoreas/Pods-formfactoreas.debug.xcconfig"; sourceTree = "<group>"; };
-		599632F187361733616216E2 /* VisionPoseDetector.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = VisionPoseDetector.m; path = formfactoreas/VisionPoseDetector.m; sourceTree = "<group>"; };
-		90A78E1806DC1C8D519296EE /* libPods-formfactoreas.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-formfactoreas.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		3CC93BDF650E16DF6938E932 /* libPods-formfactoreas.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-formfactoreas.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		631B0249262173D848E28651 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-formfactoreas/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		914A4DBD03180322E6CECF79 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = formfactoreas/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = formfactoreas/SplashScreen.storyboard; sourceTree = "<group>"; };
+		B28474826D6D09A85F331828 /* Pods-formfactoreas.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-formfactoreas.debug.xcconfig"; path = "Target Support Files/Pods-formfactoreas/Pods-formfactoreas.debug.xcconfig"; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		C021ADE25E5F6CB13C001173 /* Pods-formfactoreas.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-formfactoreas.release.xcconfig"; path = "Target Support Files/Pods-formfactoreas/Pods-formfactoreas.release.xcconfig"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = formfactoreas/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* formfactoreas-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "formfactoreas-Bridging-Header.h"; path = "formfactoreas/formfactoreas-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -41,7 +37,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				9BF0B1879496A7E68C0370B7 /* libPods-formfactoreas.a in Frameworks */,
+				00BC1473244028BE0E30D817 /* libPods-formfactoreas.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -57,20 +53,36 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				2C8747579CC7C4394726B701 /* VisionPoseDetector.swift */,
-				599632F187361733616216E2 /* VisionPoseDetector.m */,
-				3572A29904328958808BD702 /* PrivacyInfo.xcprivacy */,
+				914A4DBD03180322E6CECF79 /* PrivacyInfo.xcprivacy */,
 			);
 			name = formfactoreas;
+			sourceTree = "<group>";
+		};
+		14C0CEDE03ACDE84A2C8DB52 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				B28474826D6D09A85F331828 /* Pods-formfactoreas.debug.xcconfig */,
+				C021ADE25E5F6CB13C001173 /* Pods-formfactoreas.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
 			sourceTree = "<group>";
 		};
 		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				90A78E1806DC1C8D519296EE /* libPods-formfactoreas.a */,
+				3CC93BDF650E16DF6938E932 /* libPods-formfactoreas.a */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		339CB6A0A0F96D8C65BF3929 /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				F14E70F3FD6E981F492E57C8 /* formfactoreas */,
+			);
+			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -87,8 +99,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				FBE1BFD904FCA2B40524C6E7 /* ExpoModulesProviders */,
-				A359AA33532D92931C6066CF /* Pods */,
+				14C0CEDE03ACDE84A2C8DB52 /* Pods */,
+				339CB6A0A0F96D8C65BF3929 /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -103,24 +115,6 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		A359AA33532D92931C6066CF /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				4956A582DC97A0E9CBC7A76A /* Pods-formfactoreas.debug.xcconfig */,
-				4855919CC002210A1FCCFD92 /* Pods-formfactoreas.release.xcconfig */,
-			);
-			name = Pods;
-			path = Pods;
-			sourceTree = "<group>";
-		};
-		A8A8FA4DD4EED7A317FFDB8C /* formfactoreas */ = {
-			isa = PBXGroup;
-			children = (
-				08AFED556CEABDAD27AFA85B /* ExpoModulesProvider.swift */,
-			);
-			name = formfactoreas;
-			sourceTree = "<group>";
-		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
 			isa = PBXGroup;
 			children = (
@@ -130,12 +124,12 @@
 			path = formfactoreas/Supporting;
 			sourceTree = "<group>";
 		};
-		FBE1BFD904FCA2B40524C6E7 /* ExpoModulesProviders */ = {
+		F14E70F3FD6E981F492E57C8 /* formfactoreas */ = {
 			isa = PBXGroup;
 			children = (
-				A8A8FA4DD4EED7A317FFDB8C /* formfactoreas */,
+				631B0249262173D848E28651 /* ExpoModulesProvider.swift */,
 			);
-			name = ExpoModulesProviders;
+			name = formfactoreas;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -145,14 +139,14 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "formfactoreas" */;
 			buildPhases = (
-				C51E94951042EC80A878F53D /* [CP] Check Pods Manifest.lock */,
-				EEA214DB80DD3C49247DF327 /* [Expo] Configure project */,
+				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
+				9F1DE6E9B3B8159BD88E7F62 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
-				5C922FE10C9F251406468D1F /* [CP] Embed Pods Frameworks */,
-				6F82C658E27BD98E807C461E /* [CP] Copy Pods Resources */,
+				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
+				7034C0345F531B7228D5C2F2 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -173,8 +167,6 @@
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
 						LastSwiftMigration = 1250;
-						DevelopmentTeam = "NCTLNFGC6G";
-						ProvisioningStyle = Automatic;
 					};
 				};
 			};
@@ -204,7 +196,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				14A317483DB7C9579E4AA3F2 /* PrivacyInfo.xcprivacy in Resources */,
+				437399CD762B04F1357BCF86 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -228,7 +220,29 @@
 			shellPath = /bin/sh;
 			shellScript = "if [[ -f \"$PODS_ROOT/../.xcode.env\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env\"\nfi\nif [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.local\"\nfi\n\n# The project root by default is one level up from the ios directory\nexport PROJECT_ROOT=\"$PROJECT_DIR\"/..\n\nif [[ \"$CONFIGURATION\" = *Debug* ]]; then\n  export SKIP_BUNDLING=1\nfi\nif [[ -z \"$ENTRY_FILE\" ]]; then\n  # Set the entry JS file using the bundler's entry resolution.\n  export ENTRY_FILE=\"$(\"$NODE_BINARY\" -e \"require('expo/scripts/resolveAppEntry')\" \"$PROJECT_ROOT\" ios absolute | tail -n 1)\"\nfi\n\nif [[ -z \"$CLI_PATH\" ]]; then\n  # Use Expo CLI\n  export CLI_PATH=\"$(\"$NODE_BINARY\" --print \"require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })\")\"\nfi\nif [[ -z \"$BUNDLE_COMMAND\" ]]; then\n  # Default Expo CLI command for bundling\n  export BUNDLE_COMMAND=\"export:embed\"\nfi\n\n# Source .xcode.env.updates if it exists to allow\n# SKIP_BUNDLING to be unset if needed\nif [[ -f \"$PODS_ROOT/../.xcode.env.updates\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.updates\"\nfi\n# Source local changes to allow overrides\n# if needed\nif [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.local\"\nfi\n\n`\"$NODE_BINARY\" --print \"require('path').dirname(require.resolve('react-native/package.json')) + '/scripts/react-native-xcode.sh'\"`\n\n";
 		};
-		5C922FE10C9F251406468D1F /* [CP] Embed Pods Frameworks */ = {
+		08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-formfactoreas-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		7034C0345F531B7228D5C2F2 /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -250,7 +264,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-formfactoreas/Pods-formfactoreas-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		6F82C658E27BD98E807C461E /* [CP] Copy Pods Resources */ = {
+		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -292,29 +306,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-formfactoreas/Pods-formfactoreas-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		C51E94951042EC80A878F53D /* [CP] Check Pods Manifest.lock */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
-				"${PODS_ROOT}/Manifest.lock",
-			);
-			name = "[CP] Check Pods Manifest.lock";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-formfactoreas-checkManifestLockResult.txt",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
-			showEnvVarsInLog = 0;
-		};
-		EEA214DB80DD3C49247DF327 /* [Expo] Configure project */ = {
+		9F1DE6E9B3B8159BD88E7F62 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -346,9 +338,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				87B21E0EC749159BE2AB77D3 /* VisionPoseDetector.swift in Sources */,
-				15741B30AC6A80E6C77DAF82 /* VisionPoseDetector.m in Sources */,
-				1D93B6A7555BF42F045D423A /* ExpoModulesProvider.swift in Sources */,
+				7FCD8931FCBC5C1E709693EA /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -357,7 +347,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 4956A582DC97A0E9CBC7A76A /* Pods-formfactoreas.debug.xcconfig */;
+			baseConfigurationReference = B28474826D6D09A85F331828 /* Pods-formfactoreas.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -388,15 +378,12 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
-				DEVELOPMENT_TEAM = "NCTLNFGC6G";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 			};
 			name = Debug;
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 4855919CC002210A1FCCFD92 /* Pods-formfactoreas.release.xcconfig */;
+			baseConfigurationReference = C021ADE25E5F6CB13C001173 /* Pods-formfactoreas.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -421,9 +408,6 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
-				DEVELOPMENT_TEAM = "NCTLNFGC6G";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 			};
 			name = Release;
 		};
