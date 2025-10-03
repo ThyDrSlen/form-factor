@@ -29,6 +29,7 @@ interface HealthKitContextValue {
   weightHistory: HealthMetricPoint[];
   weightHistory30Days: HealthMetricPoint[];
   weightHistory90Days: HealthMetricPoint[];
+  weightHistory180Days: HealthMetricPoint[];
   weightAnalysis: WeightAnalysis | null;
   dataSource: 'healthkit' | 'supabase' | 'none';
   lastUpdatedAt: number | null;
@@ -58,6 +59,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const [weightHistory, setWeightHistory] = useState<HealthMetricPoint[]>([]);
   const [weightHistory30Days, setWeightHistory30Days] = useState<HealthMetricPoint[]>([]);
   const [weightHistory90Days, setWeightHistory90Days] = useState<HealthMetricPoint[]>([]);
+  const [weightHistory180Days, setWeightHistory180Days] = useState<HealthMetricPoint[]>([]);
   const [weightAnalysis, setWeightAnalysis] = useState<WeightAnalysis | null>(null);
   const [dataSource, setDataSource] = useState<'healthkit' | 'supabase' | 'none'>('none');
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
@@ -67,7 +69,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   // Weight analysis refresh function
   const refreshWeightAnalysis = useCallback(async () => {
     try {
-      const allWeightData = [...weightHistory90Days];
+      const allWeightData = [...weightHistory180Days];
       if (allWeightData.length > 0) {
         const analysis = analyzeWeightTrends(allWeightData);
         setWeightAnalysis(analysis);
@@ -76,7 +78,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.warn('[HealthKitContext] Failed to analyze weight trends:', error);
     }
-  }, [weightHistory90Days]);
+  }, [weightHistory180Days]);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -112,7 +114,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         const useHealthKit = Platform.OS === 'ios' && status?.hasReadPermission;
 
         if (useHealthKit) {
-          const [steps, hr, weight, stepsSeries, weightSeries, weightSeries30, weightSeries90] = await Promise.all([
+          const [steps, hr, weight, stepsSeries, weightSeries, weightSeries30, weightSeries90, weightSeries180] = await Promise.all([
             getStepCountForTodayAsync(),
             getLatestHeartRateAsync(),
             getLatestBodyMassKgAsync(),
@@ -120,6 +122,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
             getWeightHistoryAsync(7),
             getWeightHistoryAsync(30),
             getWeightHistoryAsync(90),
+            getWeightHistoryAsync(180),
           ]);
           console.log('[HealthKitContext] loadMetrics: results', { steps, hr, weight });
 
@@ -160,6 +163,13 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
           setWeightHistory90Days(
             Array.isArray(weightSeries90)
               ? weightSeries90
+                  .filter((point): point is HealthMetricPoint => typeof point?.value === 'number' && !Number.isNaN(point.value))
+                  .map((point) => ({ ...point, value: Number(Math.max(0, point.value).toFixed(1)) }))
+              : []
+          );
+          setWeightHistory180Days(
+            Array.isArray(weightSeries180)
+              ? weightSeries180
                   .filter((point): point is HealthMetricPoint => typeof point?.value === 'number' && !Number.isNaN(point.value))
                   .map((point) => ({ ...point, value: Number(Math.max(0, point.value).toFixed(1)) }))
               : []
@@ -302,6 +312,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
       weightHistory,
       weightHistory30Days,
       weightHistory90Days,
+      weightHistory180Days,
       weightAnalysis,
       dataSource,
       lastUpdatedAt,
@@ -322,6 +333,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
       weightHistory,
       weightHistory30Days,
       weightHistory90Days,
+      weightHistory180Days,
       weightAnalysis,
       dataSource,
       lastUpdatedAt,

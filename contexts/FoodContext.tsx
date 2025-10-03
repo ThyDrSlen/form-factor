@@ -1,5 +1,9 @@
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import * as Crypto from 'expo-crypto';
+import { localDB } from '../lib/services/database/local-db';
+import { syncService } from '../lib/services/database/sync-service';
 import { supabase } from '../lib/supabase';
+import { useNetwork } from './NetworkContext';
 
 export interface FoodEntry {
   id: string;
@@ -17,6 +21,7 @@ interface FoodContextValue {
   refreshFoods: () => Promise<void>;
   deleteFood: (id: string) => Promise<void>;
   loading: boolean;
+  isSyncing: boolean;
 }
 
 const FoodContext = createContext<FoodContextValue>({
@@ -25,178 +30,161 @@ const FoodContext = createContext<FoodContextValue>({
   refreshFoods: async () => { },
   deleteFood: async () => { },
   loading: false,
+  isSyncing: false,
 });
 
 export const FoodProvider = ({ children }: { children: ReactNode }) => {
   const [foods, setFoods] = useState<FoodEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const { isOnline } = useNetwork();
 
-  // Fetch foods from Supabase on component mount
+  // Initialize local DB and set up sync
   useEffect(() => {
-    fetchFoods();
-  }, []);
+    initializeData();
 
-  const fetchFoods = async () => {
+    // Set up realtime sync when authenticated
+    const setupRealtime = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && isOnline) {
+        await syncService.initializeRealtimeSync(user.id);
+      }
+    };
+    setupRealtime();
+
+    // Register sync callback
+    const unsubscribe = syncService.onSyncComplete(() => {
+      loadLocalFoods();
+    });
+
+    // Cleanup
+    return () => {
+      unsubscribe();
+      syncService.cleanupRealtimeSync();
+    };
+  }, [isOnline]);
+
+  // Sync when coming online
+  useEffect(() => {
+    if (isOnline) {
+      performSync();
+    }
+  }, [isOnline]);
+
+  const initializeData = async () => {
     try {
       setLoading(true);
-      console.log('[FoodProvider] Fetching foods from Supabase...');
+      console.log('[FoodProvider] Initializing local database...');
 
-      const { data, error } = await supabase
-        .from('foods')
-        .select('*')
-        .order('created_at', { ascending: false });
+      // Initialize local DB
+      await localDB.initialize();
 
-      if (error) {
-        console.error('[FoodProvider] Error fetching foods:', error);
-        // If table doesn't exist, create some sample data locally
-        if (error.message.includes('relation "foods" does not exist')) {
-          console.log('[FoodProvider] Food table does not exist, using local data');
-          const sampleFoods: FoodEntry[] = [
-            {
-              id: '1',
-              name: 'Chicken Breast',
-              calories: 231,
-              date: new Date(Date.now() - 86400000).toISOString(),
-            },
-            {
-              id: '2',
-              name: 'Apple',
-              calories: 95,
-              date: new Date().toISOString(),
-            }
-          ];
-          setFoods(sampleFoods);
-        }
-        return;
+      // Load from local DB first (instant UI)
+      await loadLocalFoods();
+
+      // If online, perform initial sync
+      if (isOnline) {
+        await performSync();
       }
+    } catch (error) {
+      console.error('[FoodProvider] Error initializing:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      // Transform Supabase data to match our FoodEntry interface
-      const transformedFoods: FoodEntry[] = data.map(item => ({
+  const loadLocalFoods = async () => {
+    try {
+      const localFoods = await localDB.getAllFoods();
+      const transformedFoods: FoodEntry[] = localFoods.map(item => ({
         id: item.id,
         name: item.name,
         calories: item.calories,
         protein: item.protein,
         carbs: item.carbs,
         fat: item.fat,
-        date: item.created_at,
+        date: item.date,
       }));
-
-      console.log('[FoodProvider] Fetched foods:', transformedFoods);
+      console.log('[FoodProvider] Loaded foods from local DB:', transformedFoods.length);
       setFoods(transformedFoods);
     } catch (error) {
-      console.error('[FoodProvider] Error fetching foods:', error);
-      // Fallback to sample data
-      const sampleFoods: FoodEntry[] = [
-        {
-          id: '1',
-          name: 'Apple',
-          calories: 95,
-          date: new Date().toISOString(),
-        }
-      ];
-      setFoods(sampleFoods);
+      console.error('[FoodProvider] Error loading local foods:', error);
+    }
+  };
+
+  const performSync = async () => {
+    try {
+      setIsSyncing(true);
+      console.log('[FoodProvider] Performing sync...');
+      await syncService.fullSync();
+      await loadLocalFoods();
+    } catch (error) {
+      console.error('[FoodProvider] Error during sync:', error);
     } finally {
-      setLoading(false);
+      setIsSyncing(false);
+    }
+  };
+
+  const fetchFoods = async () => {
+    await loadLocalFoods();
+    if (isOnline) {
+      await performSync();
     }
   };
 
   const deleteFood = async (id: string) => {
     try {
       console.log('[FoodProvider] Deleting food:', id);
-      const { error } = await supabase
-        .from('foods')
-        .delete()
-        .eq('id', id);
+      
+      // Soft delete in local DB (marks as deleted, not synced)
+      await localDB.softDeleteFood(id);
 
-      if (error) {
-        console.warn('[FoodProvider] Error deleting from Supabase, applying local fallback:', error);
+      // Update UI immediately
+      setFoods(prev => prev.filter(f => f.id !== id));
+
+      // Sync to Supabase if online
+      if (isOnline) {
+        await syncService.syncToSupabase();
       }
-
-      setFoods(prev => prev.filter(f => f.id !== id));
     } catch (err) {
-      console.error('[FoodProvider] Unexpected error during delete:', err);
-      setFoods(prev => prev.filter(f => f.id !== id));
+      console.error('[FoodProvider] Error deleting food:', err);
     }
   };
 
   const addFood = async (food: FoodEntry) => {
     try {
-      console.log('[FoodProvider] Adding food to Supabase:', food);
+      console.log('[FoodProvider] Adding food:', food);
 
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      console.log('[FoodProvider] Current user:', { user: user?.id, email: user?.email, error: userError });
+      // Generate UUID if not provided
+      const foodId = food.id || Crypto.randomUUID();
+      const newFood = { ...food, id: foodId };
 
-      if (!user) {
-        throw new Error('User not authenticated');
-      }
+      // Save to local DB first (offline-first)
+      await localDB.insertFood({
+        id: newFood.id,
+        name: newFood.name,
+        calories: newFood.calories,
+        protein: newFood.protein,
+        carbs: newFood.carbs,
+        fat: newFood.fat,
+        date: newFood.date,
+      });
 
-      // Try to save to Supabase first (let Supabase generate the ID)
-      const foodData = {
-        name: food.name,
-        calories: food.calories,
-        protein: food.protein || null,
-        carbs: food.carbs || null,
-        fat: food.fat || null,
-      };
-
-      console.log('[FoodProvider] Inserting food data:', foodData);
-
-      const { data, error } = await supabase
-        .from('foods')
-        .insert([foodData])
-        .select()
-        .single();
-
-      if (error) {
-        console.error('[FoodProvider] Supabase error:', error);
-
-        // If table doesn't exist or schema issues, just add to local state
-        if (error.message.includes('relation "foods" does not exist') ||
-          error.message.includes('user_id') ||
-          error.message.includes('null value in column') ||
-          error.code === 'PGRST204' ||
-          error.code === '23502') {
-          console.log('[FoodProvider] Schema issue or constraint violation, adding to local state only');
-          setFoods(prev => {
-            const newFoods = [food, ...prev];
-            console.log('[FoodProvider] Updated local foods:', newFoods);
-            return newFoods;
-          });
-          return;
-        }
-
-        throw error;
-      }
-
-      // Transform and add to local state
-      const newFood: FoodEntry = {
-        id: data.id,
-        name: data.name,
-        calories: data.calories,
-        protein: data.protein,
-        carbs: data.carbs,
-        fat: data.fat,
-        date: data.created_at,
-      };
-
-      console.log('[FoodProvider] Food saved to Supabase:', newFood);
+      // Update UI immediately
       setFoods(prev => [newFood, ...prev]);
+
+      // Sync to Supabase if online
+      if (isOnline) {
+        await syncService.syncToSupabase();
+      }
     } catch (error) {
       console.error('[FoodProvider] Error adding food:', error);
-
-      // Fallback: add to local state if Supabase fails
-      console.log('[FoodProvider] Falling back to local state');
-      setFoods(prev => {
-        const newFoods = [food, ...prev];
-        console.log('[FoodProvider] Updated local foods (fallback):', newFoods);
-        return newFoods;
-      });
+      throw error;
     }
   };
 
   return (
-    <FoodContext.Provider value={{ foods, addFood, refreshFoods: fetchFoods, deleteFood, loading }}>
+    <FoodContext.Provider value={{ foods, addFood, refreshFoods: fetchFoods, deleteFood, loading, isSyncing }}>
       {children}
     </FoodContext.Provider>
   );
