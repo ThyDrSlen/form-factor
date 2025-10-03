@@ -1,5 +1,9 @@
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import * as Crypto from 'expo-crypto';
+import { localDB } from '../lib/services/database/local-db';
+import { syncService } from '../lib/services/database/sync-service';
 import { supabase } from '../lib/supabase';
+import { useNetwork } from './NetworkContext';
 
 export interface Workout {
   id: string;
@@ -17,6 +21,7 @@ interface WorkoutsContextValue {
   refreshWorkouts: () => Promise<void>;
   deleteWorkout: (id: string) => Promise<void>;
   loading: boolean;
+  isSyncing: boolean;
   isWorkoutInProgress: boolean;
   startWorkout: () => void;
   endWorkout: () => void;
@@ -28,6 +33,7 @@ const WorkoutsContext = createContext<WorkoutsContextValue>({
   refreshWorkouts: async () => {},
   deleteWorkout: async () => {},
   loading: false,
+  isSyncing: false,
   isWorkoutInProgress: false,
   startWorkout: () => {},
   endWorkout: () => {},
@@ -36,78 +42,100 @@ const WorkoutsContext = createContext<WorkoutsContextValue>({
 export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isWorkoutInProgress, setIsWorkoutInProgress] = useState(false);
+  const { isOnline } = useNetwork();
 
-  // Fetch workouts from Supabase on component mount
+  // Initialize local DB and set up sync
   useEffect(() => {
-    fetchWorkouts();
-  }, []);
+    initializeData();
 
-  const fetchWorkouts = async () => {
+    // Set up realtime sync when authenticated
+    const setupRealtime = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && isOnline) {
+        await syncService.initializeRealtimeSync(user.id);
+      }
+    };
+    setupRealtime();
+
+    // Register sync callback
+    const unsubscribe = syncService.onSyncComplete(() => {
+      loadLocalWorkouts();
+    });
+
+    // Cleanup
+    return () => {
+      unsubscribe();
+      syncService.cleanupRealtimeSync();
+    };
+  }, [isOnline]);
+
+  // Sync when coming online
+  useEffect(() => {
+    if (isOnline) {
+      performSync();
+    }
+  }, [isOnline]);
+
+  const initializeData = async () => {
     try {
       setLoading(true);
-      console.log('[WorkoutsProvider] Fetching workouts from Supabase...');
-      
-      const { data, error } = await supabase
-        .from('workouts')
-        .select('*')
-        .order('created_at', { ascending: false });
+      console.log('[WorkoutsProvider] Initializing local database...');
 
-      if (error) {
-        console.error('[WorkoutsProvider] Error fetching workouts:', error);
-        // If table doesn't exist, create some sample data locally
-        if (error.message.includes('relation "workouts" does not exist')) {
-          console.log('[WorkoutsProvider] Workouts table does not exist, using local data');
-          const sampleWorkouts: Workout[] = [
-            {
-              id: '1',
-              exercise: 'Push-ups',
-              sets: 3,
-              reps: 15,
-              date: new Date(Date.now() - 86400000).toISOString(),
-            },
-            {
-              id: '2',
-              exercise: 'Squats',
-              sets: 4,
-              reps: 20,
-              weight: 135,
-              date: new Date(Date.now() - 172800000).toISOString(),
-            }
-          ];
-          setWorkouts(sampleWorkouts);
-        }
-        return;
+      // Initialize local DB
+      await localDB.initialize();
+
+      // Load from local DB first (instant UI)
+      await loadLocalWorkouts();
+
+      // If online, perform initial sync
+      if (isOnline) {
+        await performSync();
       }
+    } catch (error) {
+      console.error('[WorkoutsProvider] Error initializing:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      // Transform Supabase data to match our Workout interface
-      const transformedWorkouts: Workout[] = data.map(item => ({
+  const loadLocalWorkouts = async () => {
+    try {
+      const localWorkouts = await localDB.getAllWorkouts();
+      const transformedWorkouts: Workout[] = localWorkouts.map(item => ({
         id: item.id,
         exercise: item.exercise,
         sets: item.sets,
         reps: item.reps,
         weight: item.weight,
         duration: item.duration,
-        date: item.created_at,
+        date: item.date,
       }));
-
-      console.log('[WorkoutsProvider] Fetched workouts:', transformedWorkouts);
+      console.log('[WorkoutsProvider] Loaded workouts from local DB:', transformedWorkouts.length);
       setWorkouts(transformedWorkouts);
     } catch (error) {
-      console.error('[WorkoutsProvider] Error fetching workouts:', error);
-      // Fallback to sample data
-      const sampleWorkouts: Workout[] = [
-        {
-          id: '1',
-          exercise: 'Push-ups',
-          sets: 3,
-          reps: 15,
-          date: new Date(Date.now() - 86400000).toISOString(),
-        }
-      ];
-      setWorkouts(sampleWorkouts);
+      console.error('[WorkoutsProvider] Error loading local workouts:', error);
+    }
+  };
+
+  const performSync = async () => {
+    try {
+      setIsSyncing(true);
+      console.log('[WorkoutsProvider] Performing sync...');
+      await syncService.fullSync();
+      await loadLocalWorkouts();
+    } catch (error) {
+      console.error('[WorkoutsProvider] Error during sync:', error);
     } finally {
-      setLoading(false);
+      setIsSyncing(false);
+    }
+  };
+
+  const fetchWorkouts = async () => {
+    await loadLocalWorkouts();
+    if (isOnline) {
+      await performSync();
     }
   };
 
@@ -117,101 +145,56 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
   const deleteWorkout = async (id: string) => {
     try {
       console.log('[WorkoutsProvider] Deleting workout:', id);
-      // Try Supabase first
-      const { error } = await supabase
-        .from('workouts')
-        .delete()
-        .eq('id', id);
+      
+      // Soft delete in local DB (marks as deleted, not synced)
+      await localDB.softDeleteWorkout(id);
 
-      if (error) {
-        console.warn('[WorkoutsProvider] Error deleting from Supabase, applying local fallback:', error);
+      // Update UI immediately
+      setWorkouts(prev => prev.filter(w => w.id !== id));
+
+      // Sync to Supabase if online
+      if (isOnline) {
+        await syncService.syncToSupabase();
       }
-
-      setWorkouts(prev => prev.filter(w => w.id !== id));
     } catch (err) {
-      console.error('[WorkoutsProvider] Unexpected error during delete:', err);
-      setWorkouts(prev => prev.filter(w => w.id !== id));
+      console.error('[WorkoutsProvider] Error deleting workout:', err);
     }
   };
 
   const addWorkout = async (workout: Workout) => {
     try {
-      console.log('[WorkoutsProvider] Adding workout to Supabase:', workout);
-      
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      console.log('[WorkoutsProvider] Current user:', { user: user?.id, email: user?.email, error: userError });
-      
-      if (!user) {
-        throw new Error('User not authenticated');
-      }
+      console.log('[WorkoutsProvider] Adding workout:', workout);
 
-      // Try to save to Supabase first (let Supabase generate the ID)
-      const workoutData = {
-        exercise: workout.exercise,
-        sets: workout.sets,
-        reps: workout.reps || null,
-        weight: workout.weight || null,
-        duration: workout.duration || null,
-      };
-      
-      console.log('[WorkoutsProvider] Inserting workout data:', workoutData);
-      
-      const { data, error } = await supabase
-        .from('workouts')
-        .insert([workoutData])
-        .select()
-        .single();
+      // Generate UUID if not provided
+      const workoutId = workout.id || Crypto.randomUUID();
+      const newWorkout = { ...workout, id: workoutId };
 
-      if (error) {
-        console.error('[WorkoutsProvider] Supabase error:', error);
-        
-        // If table doesn't exist or schema issues, just add to local state
-        if (error.message.includes('relation "workouts" does not exist') || 
-            error.message.includes('user_id') ||
-            error.message.includes('null value in column') ||
-            error.code === 'PGRST204' ||
-            error.code === '23502') {
-          console.log('[WorkoutsProvider] Schema issue or constraint violation, adding to local state only');
-          setWorkouts(prev => {
-            const newWorkouts = [workout, ...prev];
-            console.log('[WorkoutsProvider] Updated local workouts:', newWorkouts);
-            return newWorkouts;
-          });
-          return;
-        }
-        
-        throw error;
-      }
+      // Save to local DB first (offline-first)
+      await localDB.insertWorkout({
+        id: newWorkout.id,
+        exercise: newWorkout.exercise,
+        sets: newWorkout.sets,
+        reps: newWorkout.reps,
+        weight: newWorkout.weight,
+        duration: newWorkout.duration,
+        date: newWorkout.date,
+      });
 
-      // Transform and add to local state
-      const newWorkout: Workout = {
-        id: data.id,
-        exercise: data.exercise,
-        sets: data.sets,
-        reps: data.reps,
-        weight: data.weight,
-        duration: data.duration,
-        date: data.created_at,
-      };
-
-      console.log('[WorkoutsProvider] Workout saved to Supabase:', newWorkout);
+      // Update UI immediately
       setWorkouts(prev => [newWorkout, ...prev]);
+
+      // Sync to Supabase if online
+      if (isOnline) {
+        await syncService.syncToSupabase();
+      }
     } catch (error) {
       console.error('[WorkoutsProvider] Error adding workout:', error);
-      
-      // Fallback: add to local state if Supabase fails
-      console.log('[WorkoutsProvider] Falling back to local state');
-      setWorkouts(prev => {
-        const newWorkouts = [workout, ...prev];
-        console.log('[WorkoutsProvider] Updated local workouts (fallback):', newWorkouts);
-        return newWorkouts;
-      });
+      throw error;
     }
   };
 
   return (
-    <WorkoutsContext.Provider value={{ workouts, addWorkout, refreshWorkouts: fetchWorkouts, deleteWorkout, loading, isWorkoutInProgress, startWorkout, endWorkout }}>
+    <WorkoutsContext.Provider value={{ workouts, addWorkout, refreshWorkouts: fetchWorkouts, deleteWorkout, loading, isSyncing, isWorkoutInProgress, startWorkout, endWorkout }}>
       {children}
     </WorkoutsContext.Provider>
   );
