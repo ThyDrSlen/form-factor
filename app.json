@@ -9,7 +9,7 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "plugins": [
-      "./plugins/withVisionPoseDetector",
+      "./plugins/withARKitBodyTracker",
       "expo-router",
       "expo-web-browser",
       "react-native-vision-camera",
@@ -46,7 +46,10 @@
           ]
         }
       ],
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "ios": {
       "bundleIdentifier": "com.slenthekid.form-factor-eas",
@@ -67,6 +70,12 @@
       "bundler": "metro",
       "output": "static"
     },
-    "owner": "slenthekid"
+    "owner": "slenthekid",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7337bf10-81b2-41f2-b8e7-047610a7a7e5"
+      }
+    }
   }
 }
