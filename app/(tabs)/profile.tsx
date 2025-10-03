@@ -1,271 +1,524 @@
-import React, { useMemo, useState } from 'react';
-import {
-  Alert,
-  Image,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Alert, StyleSheet, Platform, Share } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import {
-  useFonts,
-  Lexend_400Regular,
-  Lexend_500Medium,
-  Lexend_700Bold,
-  Lexend_900Black,
-} from '@expo-google-fonts/lexend';
-import {
-  NotoSans_400Regular,
-  NotoSans_500Medium,
-  NotoSans_700Bold,
-  NotoSans_900Black,
-} from '@expo-google-fonts/noto-sans';
-
-import { useAuth } from '../../contexts/AuthContext';
-import { useWorkouts } from '../../contexts/WorkoutsContext';
-import { supabase } from '../../lib/supabase';
-import { ProfileHealth } from '@/components/profile-health/ProfileHealth';
-import { useHealthKit } from '@/contexts/HealthKitContext';
-import { useUnits } from '@/contexts/UnitsContext';
-
-
-function StatTile({ label, value }: { label: string; value: number }) {
-  return (
-    <View style={{ minWidth: 158, flex: 1, gap: 8, borderRadius: 16, borderWidth: 1, borderColor: '#1B2E4A', backgroundColor: '#0D2036', padding: 24 }}>
-      <Text style={{ fontSize: 16, color: '#FFFFFF', fontFamily: 'Lexend_500Medium' }}>
-        {label}
-      </Text>
-      <Text style={{ fontSize: 30, color: '#FFFFFF', fontFamily: 'Lexend_700Bold' }}>
-        {value}
-      </Text>
-    </View>
-  );
-}
+import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '@/contexts/AuthContext';
+import { router } from 'expo-router';
+import { syncService } from '@/lib/services/database/sync-service';
+import { localDB } from '@/lib/services/database/local-db';
+import fixInvalidUUIDs from '@/scripts/fix-invalid-uuids';
+import { useDebugInfo } from '@/hooks/use-debug-info';
 
 export default function ProfileScreen() {
-  const { user } = useAuth();
-  const { workouts } = useWorkouts();
-  const { bodyMassKg } = useHealthKit();
-  const { weightUnit, toggleWeightUnit, convertWeight, getWeightLabel } = useUnits();
-  const router = useRouter();
-  const [isEditing, setIsEditing] = useState(false);
-  const [displayName, setDisplayName] = useState(
-    user?.user_metadata?.full_name || user?.user_metadata?.name || ''
-  );
-  const [isUpdating, setIsUpdating] = useState(false);
+  const { user, signOut } = useAuth();
+  const [isFixing, setIsFixing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const { debugInfo, loading: debugLoading, refresh: refreshDebugInfo } = useDebugInfo();
 
-  const [fontsLoaded] = useFonts({
-    Lexend_400Regular,
-    Lexend_500Medium,
-    Lexend_700Bold,
-    Lexend_900Black,
-    NotoSans_400Regular,
-    NotoSans_500Medium,
-    NotoSans_700Bold,
-    NotoSans_900Black,
-  });
-
-  const displayNameFallback = useMemo(() => {
-    if (user?.user_metadata?.full_name) return user.user_metadata.full_name;
-    if (user?.user_metadata?.name) return user.user_metadata.name;
-    return user?.email?.split('@')[0] || 'User';
-  }, [user?.email, user?.user_metadata]);
-
-  const totalWorkouts = workouts.length;
-  const daysTrained = useMemo(() => {
-    if (!workouts.length) return 0;
-    const uniqueDays = new Set(
-      workouts.map((workout) => {
-        const date = new Date(workout.date);
-        return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-      })
+  const handleSignOut = async () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOut();
+              router.replace('/(auth)/sign-in');
+            } catch (error) {
+              console.error('Error signing out:', error);
+            }
+          },
+        },
+      ]
     );
-    return uniqueDays.size;
-  }, [workouts]);
+  };
 
-  const level = Math.max(1, Math.floor(totalWorkouts / 5) + 1);
+  const handleFixSync = async () => {
+    Alert.alert(
+      'Fix Sync Issues',
+      'This will remove corrupted data and resync. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Fix Now',
+          onPress: async () => {
+            setIsFixing(true);
+            try {
+              const result = await fixInvalidUUIDs();
+              await refreshDebugInfo();
+              if (result.success) {
+                Alert.alert(
+                  '✅ Sync Fixed!',
+                  `Removed ${result.workoutsRemoved} invalid workouts\n` +
+                  `Removed ${result.foodsRemoved} invalid foods\n` +
+                  `Cleared ${result.queueCleared} queue items\n\n` +
+                  `All new data will sync properly.`
+                );
+              } else {
+                Alert.alert('Error', result.error || 'Failed to fix sync');
+              }
+            } catch (error) {
+              Alert.alert('Error', 'Failed to fix sync issues');
+            } finally {
+              setIsFixing(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
-const avatarUrl = (() => {
-  const meta = user?.user_metadata as Record<string, unknown> | undefined;
-  if (!meta) return null;
-  if (typeof meta['avatar_url'] === 'string') return meta['avatar_url'] as string;
-  if (typeof meta['picture'] === 'string') return meta['picture'] as string;
-  return null;
-})();
-
-  const handleUpdateProfile = async () => {
-    if (!displayName.trim()) {
-      Alert.alert('Error', 'Please enter a display name');
-      return;
-    }
-
-    setIsUpdating(true);
+  const handleForceSync = async () => {
+    setIsSyncing(true);
     try {
-      const { error } = await supabase.auth.updateUser({
-        data: { full_name: displayName.trim() },
-      });
-
-      if (error) {
-        Alert.alert('Error', 'Failed to update profile: ' + error.message);
-      } else {
-        setIsEditing(false);
-      }
-    } catch {
-      Alert.alert('Error', 'An unexpected error occurred');
+      await syncService.fullSync();
+      await refreshDebugInfo();
+      Alert.alert('✅ Sync Complete', 'All data has been synchronized');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to sync data');
     } finally {
-      setIsUpdating(false);
+      setIsSyncing(false);
     }
   };
 
-  if (!fontsLoaded) return null;
+  const handleClearDatabase = async () => {
+    Alert.alert(
+      '⚠️ Clear All Data',
+      'This will delete ALL local data. Data on server will be preserved. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: async () => {
+            setIsClearing(true);
+            try {
+              await localDB.clearAllData();
+              await refreshDebugInfo();
+              Alert.alert('✅ Cleared', 'All local data has been cleared');
+            } catch (error) {
+              Alert.alert('Error', 'Failed to clear data');
+            } finally {
+              setIsClearing(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
-  const resolvedName = isEditing ? displayName : displayNameFallback;
-  const headerWeight = bodyMassKg?.kg != null && Number.isFinite(bodyMassKg.kg)
-    ? `${Math.round(convertWeight(bodyMassKg.kg))} ${getWeightLabel()}`
-    : '—';
+  const handleViewSyncQueue = async () => {
+    try {
+      const queue = await localDB.getSyncQueue();
+      if (queue.length === 0) {
+        Alert.alert('Sync Queue', 'Queue is empty ✅');
+        return;
+      }
+      
+      const queueDetails = queue.map((item: any, idx: number) => 
+        `${idx + 1}. ${item.table_name} ${item.operation} (retries: ${item.retry_count})`
+      ).join('\n');
+      
+      Alert.alert(
+        `Sync Queue (${queue.length} items)`,
+        queueDetails,
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'Failed to fetch queue');
+    }
+  };
+
+  const handleExportDebugInfo = async () => {
+    if (!debugInfo) return;
+    
+    const debugReport = `
+# Form Factor Debug Report
+Generated: ${new Date().toISOString()}
+
+## App Info
+- Version: ${debugInfo.appVersion} (${debugInfo.buildNumber})
+- Platform: ${debugInfo.platform}
+- Expo SDK: ${debugInfo.expoVersion}
+
+## Sync Status
+- Unsynced Workouts: ${debugInfo.unsyncedWorkouts}
+- Unsynced Foods: ${debugInfo.unsyncedFoods}
+- Sync Queue Items: ${debugInfo.syncQueueItems}
+
+## Auth Status
+- Authenticated: ${debugInfo.isAuthenticated ? 'Yes' : 'No'}
+- User ID: ${debugInfo.userId || 'N/A'}
+- Email: ${debugInfo.userEmail || 'N/A'}
+
+## Network
+- Online: ${debugInfo.isOnline ? 'Yes' : 'No'}
+
+## Database Stats
+- Total Workouts: ${debugInfo.totalWorkouts}
+- Total Foods: ${debugInfo.totalFoods}
+`.trim();
+
+    try {
+      await Share.share({
+        message: debugReport,
+        title: 'Form Factor Debug Report',
+      });
+    } catch (error) {
+      console.error('Failed to share:', error);
+    }
+  };
+
+  const MenuItem = ({ icon, title, onPress, danger = false }: any) => (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+      <LinearGradient
+        colors={danger ? ['rgba(255, 59, 48, 0.1)', 'rgba(255, 59, 48, 0.05)'] : ['rgba(76, 140, 255, 0.05)', 'rgba(76, 140, 255, 0.02)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.menuItem}
+      >
+        <View style={styles.menuIconContainer}>
+          <Ionicons name={icon} size={20} color={danger ? '#FF3B30' : '#4C8CFF'} />
+        </View>
+        <Text style={[styles.menuText, danger && styles.menuTextDanger]}>{title}</Text>
+        <Ionicons name="chevron-forward" size={20} color="#6781A6" />
+      </LinearGradient>
+    </TouchableOpacity>
+  );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#050E1F' }} edges={['left', 'right', 'bottom']}>
-      <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#050E1F', paddingHorizontal: 16, paddingBottom: 8, paddingTop: 8 }}>
-          <View style={{ width: 48 }} />
-          <Text style={{ flex: 1, textAlign: 'center', fontSize: 18, color: '#F5F7FF', fontFamily: 'Lexend_700Bold' }}>
-            Profile
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Header Card */}
+      <LinearGradient
+        colors={['rgba(76, 140, 255, 0.15)', 'rgba(76, 140, 255, 0.05)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerCard}
+      >
+        <View style={styles.avatarContainer}>
+          <Text style={styles.avatarText}>
+            {user?.email?.charAt(0).toUpperCase() || 'U'}
           </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <TouchableOpacity 
-              style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#13263C', borderWidth: 1, borderColor: '#1B2E4A' }} 
-              onPress={toggleWeightUnit}
-              accessibilityRole="button"
-              accessibilityLabel={`Switch to ${weightUnit === 'kg' ? 'lbs' : 'kg'}`}
+        </View>
+        <Text style={styles.emailText}>{user?.email || 'Not signed in'}</Text>
+        <Text style={styles.memberSince}>Member since {new Date().getFullYear()}</Text>
+      </LinearGradient>
+
+      {/* Debug Section - Remove before production */}
+      {__DEV__ && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🔧 Debug Tools</Text>
+          
+          {/* Debug Stats Card */}
+          {debugInfo && !debugLoading && (
+            <LinearGradient
+              colors={['rgba(76, 140, 255, 0.1)', 'rgba(76, 140, 255, 0.05)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.debugStatsCard}
             >
-              <Text style={{ fontSize: 12, color: '#4C8CFF', fontFamily: 'Lexend_700Bold' }}>{weightUnit.toUpperCase()}</Text>
+              <View style={styles.debugStatsRow}>
+                <View style={styles.debugStat}>
+                  <Text style={styles.debugStatValue}>{debugInfo.unsyncedWorkouts + debugInfo.unsyncedFoods}</Text>
+                  <Text style={styles.debugStatLabel}>Unsynced</Text>
+                </View>
+                <View style={styles.debugStatDivider} />
+                <View style={styles.debugStat}>
+                  <Text style={styles.debugStatValue}>{debugInfo.syncQueueItems}</Text>
+                  <Text style={styles.debugStatLabel}>Queue</Text>
+                </View>
+                <View style={styles.debugStatDivider} />
+                <View style={styles.debugStat}>
+                  <Text style={[styles.debugStatValue, debugInfo.isOnline ? styles.debugStatOnline : styles.debugStatOffline]}>
+                    {debugInfo.isOnline ? '●' : '○'}
+                  </Text>
+                  <Text style={styles.debugStatLabel}>{debugInfo.isOnline ? 'Online' : 'Offline'}</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={refreshDebugInfo} style={styles.refreshButton}>
+                <Ionicons name="refresh" size={16} color="#4C8CFF" />
+                <Text style={styles.refreshText}>Refresh</Text>
+              </TouchableOpacity>
+            </LinearGradient>
+          )}
+          
+          {/* Debug Actions */}
+          <View style={styles.debugActions}>
+            <TouchableOpacity onPress={handleFixSync} disabled={isFixing} activeOpacity={0.7}>
+              <LinearGradient
+                colors={['rgba(255, 204, 0, 0.2)', 'rgba(255, 204, 0, 0.1)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.debugButton}
+              >
+                <Ionicons name="build-outline" size={18} color="#FFCC00" />
+                <Text style={styles.debugButtonText}>
+                  {isFixing ? 'Fixing...' : 'Fix Sync'}
+                </Text>
+              </LinearGradient>
             </TouchableOpacity>
-            <TouchableOpacity style={{ height: 40, width: 40, alignItems: 'center', justifyContent: 'center' }} accessibilityRole="button">
-              <Ionicons name="settings-outline" size={22} color="#9AACD1" />
+
+            <TouchableOpacity onPress={handleForceSync} disabled={isSyncing} activeOpacity={0.7}>
+              <LinearGradient
+                colors={['rgba(76, 140, 255, 0.2)', 'rgba(76, 140, 255, 0.1)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.debugButton}
+              >
+                <Ionicons name="sync-outline" size={18} color="#4C8CFF" />
+                <Text style={[styles.debugButtonText, { color: '#4C8CFF' }]}>
+                  {isSyncing ? 'Syncing...' : 'Force Sync'}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={handleViewSyncQueue} activeOpacity={0.7}>
+              <LinearGradient
+                colors={['rgba(76, 140, 255, 0.1)', 'rgba(76, 140, 255, 0.05)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.debugButton}
+              >
+                <Ionicons name="list-outline" size={18} color="#9AACD1" />
+                <Text style={[styles.debugButtonText, { color: '#9AACD1' }]}>
+                  View Queue
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={handleExportDebugInfo} activeOpacity={0.7}>
+              <LinearGradient
+                colors={['rgba(76, 140, 255, 0.1)', 'rgba(76, 140, 255, 0.05)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.debugButton}
+              >
+                <Ionicons name="share-outline" size={18} color="#9AACD1" />
+                <Text style={[styles.debugButtonText, { color: '#9AACD1' }]}>
+                  Export Info
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={handleClearDatabase} disabled={isClearing} activeOpacity={0.7}>
+              <LinearGradient
+                colors={['rgba(255, 59, 48, 0.2)', 'rgba(255, 59, 48, 0.1)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.debugButton}
+              >
+                <Ionicons name="trash-outline" size={18} color="#FF3B30" />
+                <Text style={[styles.debugButtonText, { color: '#FF3B30' }]}>
+                  {isClearing ? 'Clearing...' : 'Clear DB'}
+                </Text>
+              </LinearGradient>
             </TouchableOpacity>
           </View>
         </View>
+      )}
 
-        <ScrollView contentContainerStyle={{ paddingBottom: 100 }} style={{ flex: 1 }}>
-          <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
-            <LinearGradient
-              colors={["#0F2339", "#081526"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{ borderRadius: 24, padding: 20 }}
-            >
-              <View style={{ borderRadius: 24, borderWidth: 1, borderColor: '#1B2E4A', padding: 20 }}>
-                <View style={{ flexDirection: 'column', gap: 24 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-                    {avatarUrl ? (
-                      <Image source={{ uri: avatarUrl }} style={{ height: 96, width: 96, borderRadius: 48 }} />
-                    ) : (
-                      <View style={{ height: 96, width: 96, alignItems: 'center', justifyContent: 'center', borderRadius: 48, backgroundColor: '#4C8CFF' }}>
-                        <Ionicons name="person" size={48} color="#F5F7FF" />
-                      </View>
-                    )}
-                    <View style={{ gap: 4 }}>
-                      <Text style={{ fontSize: 20, color: '#F5F7FF', fontFamily: 'Lexend_700Bold' }}>
-                        {resolvedName}
-                      </Text>
-                      <Text style={{ fontSize: 14, color: '#6781A6', fontFamily: 'NotoSans_500Medium' }}>
-                        Level {level}
-                      </Text>
-                      <Text style={{ fontSize: 14, color: '#6781A6', fontFamily: 'NotoSans_500Medium' }}>
-                        Weight: {headerWeight}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {isEditing ? (
-                    <View style={{ width: '100%', gap: 12 }}>
-                      <TextInput
-                        style={{ borderRadius: 16, borderWidth: 1, borderColor: '#1B2E4A', backgroundColor: '#0D2036', paddingHorizontal: 16, paddingVertical: 12, color: '#F5F7FF', fontFamily: 'NotoSans_500Medium' }}
-                        value={displayName}
-                        onChangeText={setDisplayName}
-                        placeholder="Display name"
-                        placeholderTextColor="#5F789A"
-                        autoFocus
-                      />
-                      <View style={{ flexDirection: 'row', gap: 12 }}>
-                        <TouchableOpacity
-                          style={{ flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 24, borderWidth: 1, borderColor: '#1B2E4A', backgroundColor: '#13263C', paddingVertical: 12 }}
-                          onPress={() => {
-                            setIsEditing(false);
-                            setDisplayName(displayNameFallback);
-                          }}
-                        >
-                          <Text style={{ fontSize: 14, color: '#F5F7FF', fontFamily: 'NotoSans_500Medium' }}>
-                            Cancel
-                          </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={{ flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 24, backgroundColor: '#4C8CFF', paddingVertical: 12 }}
-                          onPress={handleUpdateProfile}
-                          disabled={isUpdating}
-                        >
-                          <Text style={{ fontSize: 14, color: '#FFFFFF', fontFamily: 'NotoSans_700Bold' }}>
-                            {isUpdating ? 'Saving…' : 'Save'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ) : (
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <TouchableOpacity
-                        style={{ alignItems: 'center', justifyContent: 'center', borderRadius: 24, borderWidth: 1, borderColor: '#1B2E4A', backgroundColor: '#13263C', paddingHorizontal: 16, paddingVertical: 8 }}
-                        onPress={() => setIsEditing(true)}
-                      >
-                        <Text style={{ fontSize: 14, color: '#F5F7FF', fontFamily: 'NotoSans_500Medium' }}>
-                          Edit Profile
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              </View>
-            </LinearGradient>
-          </View>
-
-          <Text style={{ paddingHorizontal: 16, paddingBottom: 12, paddingTop: 24, fontSize: 22, color: '#FFFFFF', fontFamily: 'Lexend_700Bold' }}>
-            Your Week
-          </Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, paddingHorizontal: 16 }}>
-            <StatTile label="Days Trained" value={daysTrained} />
-            <StatTile label="Total Workouts" value={totalWorkouts} />
-          </View>
-
-          <View style={{ paddingHorizontal: 16 }}>
-            <ProfileHealth />
-          </View>
-
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16, paddingHorizontal: 16, paddingVertical: 20, marginTop: 16 }}>
-            <Pressable
-              style={{ flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 24, backgroundColor: '#4C8CFF', paddingVertical: 12 }}
-              onPress={() => router.push('/add-workout')}
-            >
-              <Text style={{ fontSize: 14, color: '#FFFFFF', fontFamily: 'Lexend_700Bold' }}>
-                Start Workout
-              </Text>
-            </Pressable>
-            <Pressable
-              style={{ flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 24, backgroundColor: '#13263C', paddingVertical: 12 }}
-              onPress={() => router.push('/add-food')}
-            >
-              <Text style={{ fontSize: 14, color: '#FFFFFF', fontFamily: 'Lexend_700Bold' }}>
-                Log Food
-              </Text>
-            </Pressable>
-          </View>
-        </ScrollView>
+      {/* Account Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Account</Text>
+        <View style={styles.menuGroup}>
+          <MenuItem icon="person-outline" title="Edit Profile" onPress={() => {}} />
+          <MenuItem icon="notifications-outline" title="Notifications" onPress={() => {}} />
+          <MenuItem icon="lock-closed-outline" title="Privacy & Security" onPress={() => {}} />
+        </View>
       </View>
-    </SafeAreaView>
+
+      {/* App Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>App</Text>
+        <View style={styles.menuGroup}>
+          <MenuItem icon="help-circle-outline" title="Help & Support" onPress={() => {}} />
+          <MenuItem icon="information-circle-outline" title="About" onPress={() => {}} />
+        </View>
+      </View>
+
+      {/* Sign Out */}
+      <View style={styles.section}>
+        <MenuItem icon="log-out-outline" title="Sign Out" onPress={handleSignOut} danger />
+      </View>
+
+      {/* Bottom Padding */}
+      <View style={{ height: 100 }} />
+    </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#050E1F',
+  },
+  content: {
+    padding: 24,
+  },
+  headerCard: {
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#1B2E4A',
+    marginBottom: 32,
+  },
+  avatarContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(76, 140, 255, 0.2)',
+    borderWidth: 2,
+    borderColor: '#4C8CFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  avatarText: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#4C8CFF',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+  },
+  emailText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#F5F7FF',
+    marginBottom: 4,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+  },
+  memberSince: {
+    fontSize: 14,
+    color: '#9AACD1',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#9AACD1',
+    marginBottom: 12,
+    marginLeft: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+  },
+  menuGroup: {
+    gap: 8,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#1B2E4A',
+  },
+  menuIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(76, 140, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  menuText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#F5F7FF',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+  },
+  menuTextDanger: {
+    color: '#FF3B30',
+  },
+  debugButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 204, 0, 0.3)',
+    gap: 8,
+  },
+  debugButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFCC00',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+  },
+  debugHint: {
+    fontSize: 12,
+    color: '#6781A6',
+    marginTop: 8,
+    marginLeft: 4,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+  },
+  debugStatsCard: {
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#1B2E4A',
+    marginBottom: 12,
+  },
+  debugStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    marginBottom: 12,
+  },
+  debugStat: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  debugStatValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#F5F7FF',
+    marginBottom: 4,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+  },
+  debugStatLabel: {
+    fontSize: 12,
+    color: '#9AACD1',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+  },
+  debugStatDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: '#1B2E4A',
+  },
+  debugStatOnline: {
+    color: '#34C759',
+  },
+  debugStatOffline: {
+    color: '#9AACD1',
+  },
+  refreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+  },
+  refreshText: {
+    fontSize: 14,
+    color: '#4C8CFF',
+    fontWeight: '500',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+  },
+  debugActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+});

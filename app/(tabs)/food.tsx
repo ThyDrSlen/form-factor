@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Swipeable } from 'react-native-gesture-handler';
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import {
   FlatList,
   RefreshControl,
@@ -18,12 +18,17 @@ export default function FoodScreen() {
   const router = useRouter();
   const { foods, deleteFood, refreshFoods, loading } = useFood();
   const { show: showToast } = useToast();
+  const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
 
   const handleDeleteFood = useCallback(
     async (id: string, name: string) => {
       try {
+        // Close swipeable before delete
+        swipeableRefs.current.get(id)?.close();
         await deleteFood(id);
         showToast(`Removed ${name}`, { type: 'info' });
+        // Clean up ref
+        swipeableRefs.current.delete(id);
       } catch (error) {
         console.error('[Food] delete failed', error);
         showToast('Failed to delete entry', { type: 'error' });
@@ -32,10 +37,10 @@ export default function FoodScreen() {
     [deleteFood, showToast]
   );
 
-  const renderRightActions = (id: string) => (
+  const renderRightActions = (id: string, name: string) => (
     <TouchableOpacity
       accessibilityRole="button"
-      onPress={() => handleDeleteFood(id, foods.find((f) => f.id === id)?.name ?? 'meal')}
+      onPress={() => handleDeleteFood(id, name)}
       style={styles.swipeDelete}
     >
       <Ionicons name="trash-outline" size={20} color="#fff" />
@@ -44,7 +49,14 @@ export default function FoodScreen() {
   );
 
   const renderItem = ({ item }: { item: FoodEntry }) => (
-    <Swipeable renderRightActions={() => renderRightActions(item.id)}>
+    <Swipeable 
+      ref={(ref) => {
+        if (ref) {
+          swipeableRefs.current.set(item.id, ref);
+        }
+      }}
+      renderRightActions={() => renderRightActions(item.id, item.name)}
+    >
       <TouchableOpacity activeOpacity={0.9} style={styles.cardWrapper}>
         <LinearGradient
           colors={['#0F2339', '#081526']}

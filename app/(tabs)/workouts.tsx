@@ -31,6 +31,7 @@ export default function WorkoutsScreen() {
   const { show: showToast } = useToast();
   const scrollY = useRef(new Animated.Value(0)).current;
   const refreshing = useRef(false);
+  const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
 
   const onRefresh = useCallback(async () => {
     refreshing.current = true;
@@ -47,8 +48,12 @@ export default function WorkoutsScreen() {
   const handleDeleteWorkout = useCallback(
     async (id: string, title: string) => {
       try {
+        // Close swipeable before delete
+        swipeableRefs.current.get(id)?.close();
         await deleteWorkout(id);
         showToast(`Removed ${title}`, { type: 'info' });
+        // Clean up ref
+        swipeableRefs.current.delete(id);
       } catch (error) {
         console.error('[Workouts] delete failed', error);
         showToast('Failed to delete workout', { type: 'error' });
@@ -88,7 +93,14 @@ export default function WorkoutsScreen() {
     });
 
     return (
-      <Swipeable renderRightActions={() => renderRightActions(item.id, item.exercise)}>
+      <Swipeable 
+        ref={(ref) => {
+          if (ref) {
+            swipeableRefs.current.set(item.id, ref);
+          }
+        }}
+        renderRightActions={() => renderRightActions(item.id, item.exercise)}
+      >
         <Animated.View style={[styles.card, { opacity, transform: [{ scale }] }]}>
           <TouchableOpacity 
             activeOpacity={0.9}
