@@ -11,13 +11,13 @@
     "preview": {
       "distribution": "internal",
       "ios": {
-        "simulator": true
+        "simulator": false
       },
-      "android": { "buildType": "apk" },
-      "withoutCredentials": true
+      "android": { "buildType": "apk" }
     },
     "staging": {
       "distribution": "store",
+        
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "$SUPABASE_STAGING_URL",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "$SUPABASE_STAGING_ANON_KEY"
@@ -26,6 +26,7 @@
     },
     "production": {
       "distribution": "store",
+      
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "$SUPABASE_PRODUCTION_URL",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "$SUPABASE_PRODUCTION_ANON_KEY"
@@ -36,11 +37,11 @@
   "submit": {
     "staging": {
       "android": { "track": "internal", "releaseStatus": "draft" },
-      "ios": { "appleTeamId": "$APPLE_TEAM_ID" }
+      "ios": { "appleTeamId": "NCTLNFGC6G" }
     },
     "production": {
       "android": { "track": "production", "releaseStatus": "draft" },
-      "ios": { "appleTeamId": "$APPLE_TEAM_ID" }
+      "ios": { "appleTeamId": "NCTLNFGC6G" }
     }
   }
 }
