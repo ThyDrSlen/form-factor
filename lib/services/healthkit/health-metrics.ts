@@ -216,7 +216,7 @@ export async function getWeightHistoryAsync(days = 7): Promise<HealthMetricPoint
         startDate: range.start.toISOString(),
         endDate: range.end.toISOString(),
         unit: 'kg',
-        limit: days * 2,
+        limit: days * 3, // Increased limit to handle more frequent measurements
         ascending: false,
       } as const;
 
