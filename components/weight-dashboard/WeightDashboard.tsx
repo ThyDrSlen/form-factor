@@ -14,7 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useHealthKit } from '../../contexts/HealthKitContext';
 import { useUnits } from '../../contexts/UnitsContext';
-import { WeightTrendChart } from './WeightTrendChart';
+import { WeightTrendChart } from './WeightTrendChart.chartkit';
 import { WeightInsights } from './WeightInsights';
 import { WeightStatistics } from './WeightStatistics';
 import { WeightGoals } from './WeightGoals';
@@ -25,9 +25,9 @@ interface WeightDashboardProps {
 }
 
 export function WeightDashboard({ onClose }: WeightDashboardProps) {
-  const { weightAnalysis, weightHistory90Days } = useHealthKit();
+  const { weightAnalysis, weightHistory90Days, weightHistory180Days } = useHealthKit();
   const { convertWeight, getWeightLabel } = useUnits();
-  const [selectedPeriod, setSelectedPeriod] = useState<'7d' | '30d' | '90d'>('90d');
+  const [selectedPeriod, setSelectedPeriod] = useState<'7d' | '30d' | '90d' | '180d'>('90d');
   const [activeTab, setActiveTab] = useState<'overview' | 'trends' | 'insights' | 'goals'>('overview');
 
   // Get data for selected period
@@ -39,11 +39,13 @@ export function WeightDashboard({ onClose }: WeightDashboardProps) {
       '7d': 7 * 24 * 60 * 60 * 1000,
       '30d': 30 * 24 * 60 * 60 * 1000,
       '90d': 90 * 24 * 60 * 60 * 1000,
+      '180d': 180 * 24 * 60 * 60 * 1000,
     };
     
     const cutoff = now - periodMs[selectedPeriod];
-    return weightHistory90Days.filter(point => point.date >= cutoff);
-  }, [weightHistory90Days, selectedPeriod, weightAnalysis]);
+    // Use 180-day history for better data coverage
+    return weightHistory180Days.filter(point => point.date >= cutoff);
+  }, [weightHistory180Days, selectedPeriod, weightAnalysis]);
 
   // Convert weights to user's preferred unit
   const convertedData = useMemo(() => {
@@ -170,7 +172,7 @@ export function WeightDashboard({ onClose }: WeightDashboardProps) {
 
       {/* Period Selector */}
       <View style={styles.periodSelector}>
-        {(['7d', '30d', '90d'] as const).map((period) => (
+        {(['7d', '30d', '90d', '180d'] as const).map((period) => (
           <TouchableOpacity
             key={period}
             style={[
@@ -183,7 +185,7 @@ export function WeightDashboard({ onClose }: WeightDashboardProps) {
               styles.periodButtonText,
               selectedPeriod === period && styles.periodButtonTextActive,
             ]}>
-              {period === '7d' ? '7 Days' : period === '30d' ? '30 Days' : '90 Days'}
+              {period === '7d' ? '7D' : period === '30d' ? '30D' : period === '90d' ? '90D' : '6M'}
             </Text>
           </TouchableOpacity>
         ))}
