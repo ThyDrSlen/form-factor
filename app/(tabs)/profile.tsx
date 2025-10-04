@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { router } from 'expo-router';
 import { syncService } from '@/lib/services/database/sync-service';
 import { localDB } from '@/lib/services/database/local-db';
-import fixInvalidUUIDs from '@/scripts/fix-invalid-uuids';
+import { fixInvalidUUIDs } from '@/scripts/fix-invalid-uuids';
 import { useDebugInfo } from '@/hooks/use-debug-info';
 
 export default function ProfileScreen() {
@@ -62,7 +62,7 @@ export default function ProfileScreen() {
               } else {
                 Alert.alert('Error', result.error || 'Failed to fix sync');
               }
-            } catch (error) {
+            } catch {
               Alert.alert('Error', 'Failed to fix sync issues');
             } finally {
               setIsFixing(false);
@@ -79,7 +79,7 @@ export default function ProfileScreen() {
       await syncService.fullSync();
       await refreshDebugInfo();
       Alert.alert('✅ Sync Complete', 'All data has been synchronized');
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to sync data');
     } finally {
       setIsSyncing(false);
@@ -101,7 +101,7 @@ export default function ProfileScreen() {
               await localDB.clearAllData();
               await refreshDebugInfo();
               Alert.alert('✅ Cleared', 'All local data has been cleared');
-            } catch (error) {
+            } catch {
               Alert.alert('Error', 'Failed to clear data');
             } finally {
               setIsClearing(false);
@@ -129,7 +129,7 @@ export default function ProfileScreen() {
         queueDetails,
         [{ text: 'OK' }]
       );
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to fetch queue');
     }
   };
