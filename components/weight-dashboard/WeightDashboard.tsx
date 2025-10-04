@@ -25,7 +25,7 @@ interface WeightDashboardProps {
 }
 
 export function WeightDashboard({ onClose }: WeightDashboardProps) {
-  const { weightAnalysis, weightHistory90Days, weightHistory180Days } = useHealthKit();
+  const { weightAnalysis, /* weightHistory90Days, */ weightHistory180Days } = useHealthKit();
   const { convertWeight, getWeightLabel } = useUnits();
   const [selectedPeriod, setSelectedPeriod] = useState<'7d' | '30d' | '90d' | '180d'>('90d');
   const [activeTab, setActiveTab] = useState<'overview' | 'trends' | 'insights' | 'goals'>('overview');
