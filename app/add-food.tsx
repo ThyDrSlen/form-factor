@@ -1,14 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Crypto from 'expo-crypto';
+import * as Haptics from 'expo-haptics';
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View, Platform, Keyboard, InputAccessoryView, KeyboardAvoidingView, ScrollView } from 'react-native';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View, Platform, Keyboard, InputAccessoryView, KeyboardAvoidingView, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFood } from '../contexts/FoodContext';
+import { useToast } from '../contexts/ToastContext';
 import { useSafeBack } from '../hooks/use-safe-back';
 
 export default function AddFoodScreen() {
   const { addFood } = useFood();
+  const { show: showToast } = useToast();
 
   const [name, setName] = useState('');
   const [calories, setCalories] = useState('');
@@ -67,12 +70,19 @@ export default function AddFoodScreen() {
       console.log('Saving food:', foodEntry);
       addFood(foodEntry);
       
-      Alert.alert('Success', 'Meal logged successfully!', [
-        { text: 'OK', onPress: () => safeBack() }
-      ]);
+      // Haptic feedback
+      if (Platform.OS === 'ios') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      
+      // Show toast
+      showToast('Meal logged successfully! 🍽️', { type: 'success' });
+      
+      // Navigate back after short delay
+      setTimeout(() => safeBack(), 500);
     } catch (error) {
       console.error('Error saving food:', error);
-      Alert.alert('Error', 'Failed to save meal. Please try again.');
+      showToast('Failed to save meal. Please try again.', { type: 'error' });
     } finally {
       setSaving(false);
     }
