@@ -207,7 +207,7 @@ async function loadNativeCircularProgress() {
   }
 
   try {
-    const module = await import('@expo/ui/Progress');
+    const module = await import('@/lib/shims/expo-ui-progress');
     NativeCircularProgressRef.current = module.CircularProgress as React.ComponentType<{ style?: unknown }>;
   } catch (error) {
     console.warn('[ProfileHealth] Failed to load @expo/ui/Progress', error);
@@ -318,7 +318,7 @@ export function ProfileHealth() {
     bodyMassKg?.kg ?? (weightHistory.length ? weightHistory[weightHistory.length - 1].value : null);
   const currentWeight = currentWeightKg ? convertWeight(currentWeightKg) : null;
   const stepsDeltaLabel = `${stepsDelta.delta >= 0 ? '+' : ''}${Math.round(stepsDelta.delta)}%`;
-  const weightDeltaLabel = `${weightDelta.delta >= 0 ? '+' : ''}${Math.round(weightDelta.delta)}%`;
+  // Removed unused local: weightDeltaLabel (lint)
   const weightChangeLabel = formatWeightDelta(weightDataToShow, convertWeight, getWeightLabel);
   const sourceLabel = dataSource === 'supabase' ? 'Synced from Supabase' : 'HealthKit Live';
   const updatedLabel = formatUpdatedAt(lastUpdatedAt);

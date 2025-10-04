@@ -19,36 +19,20 @@ interface WeightTrendChartProps {
   showPredictions?: boolean;
 }
 
-export function WeightTrendChart({ 
-  data, 
-  period, 
-  weightUnit, 
-  showPredictions = false 
+export function WeightTrendChart({
+  data,
+  period,
+  weightUnit,
+  showPredictions = false,
 }: WeightTrendChartProps) {
-  if (data.length === 0) {
-    return (
-      <View style={styles.chartContainer}>
-        <View style={styles.noDataContainer}>
-          <Text style={styles.noDataText}>No weight data available</Text>
-          <Text style={styles.noDataSubtext}>
-            Connect HealthKit to start tracking your weight
-          </Text>
-        </View>
-      </View>
-    );
-  }
 
-  // Sort data by date
+  // Memoize all derived values unconditionally to satisfy hooks rules
   const sortedData = useMemo(() => {
     return [...data].sort((a, b) => a.date - b.date);
   }, [data]);
 
-  // Transform data for chart-kit
-  const chartData = useMemo(() => {
-    const values = sortedData.map(point => point.value);
-    
-    // Generate labels based on period
-    const labels = sortedData.map((point) => {
+  const labels = useMemo(() => {
+    return sortedData.map((point) => {
       const d = new Date(point.date);
       switch (period) {
         case '7d':
@@ -62,29 +46,47 @@ export function WeightTrendChart({
           return '';
       }
     });
+  }, [sortedData, period]);
 
-    // Show only some labels to avoid crowding
-    const labelFrequency = Math.ceil(sortedData.length / 5);
-    const displayLabels = labels.map((label, index) => 
+  const displayLabels = useMemo(() => {
+    const labelFrequency = Math.ceil(Math.max(1, sortedData.length) / 5);
+    return labels.map((label, index) =>
       index % labelFrequency === 0 || index === labels.length - 1 ? label : ''
     );
+  }, [labels, sortedData.length]);
 
+  const values = useMemo(() => sortedData.map((point) => point.value), [sortedData]);
+
+  const chartData = useMemo(() => {
     return {
       labels: displayLabels,
       datasets: [
         {
           data: values,
-          color: (opacity = 1) => `rgba(60, 200, 169, ${opacity})`, // #3CC8A9
+          color: (opacity = 1) => `rgba(60, 200, 169, ${opacity})`,
           strokeWidth: 3,
         },
       ],
     };
-  }, [sortedData, period]);
+  }, [displayLabels, values]);
 
   // Calculate statistics
-  const latestWeight = sortedData[sortedData.length - 1].value;
-  const firstWeight = sortedData[0].value;
+  const latestWeight = sortedData[sortedData.length - 1]?.value ?? 0;
+  const firstWeight = sortedData[0]?.value ?? 0;
   const weightChange = latestWeight - firstWeight;
+
+  if (data.length === 0) {
+    return (
+      <View style={styles.chartContainer}>
+        <View style={styles.noDataContainer}>
+          <Text style={styles.noDataText}>No weight data available</Text>
+          <Text style={styles.noDataSubtext}>
+            Connect HealthKit to start tracking your weight
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.chartContainer}>
