@@ -1,40 +1,73 @@
-# ARKit Body Tracking Guide - The Right Approach
+# ARKit Body Tracking Guide - Apple's Official APIs
 
-## Why ARKit > Vision Framework for Fitness
+## Overview
 
-### Vision Framework Issues
-- ❌ Screen-space coordinates (not real-world)
-- ❌ Frame-by-frame analysis (no motion tracking)
-- ❌ Poor depth perception
-- ❌ Inaccurate for measuring form
+This guide implements ARKit body tracking using **Apple's official APIs**:
+- `ARBodyTrackingConfiguration` - Configure 3D body tracking session
+- `ARBodyAnchor` - Contains detected body data
+- `ARSkeleton3D` - Provides 91 joints with 3D transforms
+- `ARSession` - Manages the AR session and delegate callbacks
 
-### ARKit Body Tracking Benefits
-- ✅ **Real 3D joints in meters** (perfect for form analysis!)
-- ✅ **Continuous tracking** (smooth motion capture)
-- ✅ **Accurate depth** (measure squat depth, ROM, etc.)
-- ✅ **Occlusion handling** (tracks even when partially hidden)
-- ✅ **iPhone 15 Pro optimized** (LiDAR + A17 Pro)
+## Why ARKit > Vision Framework
 
-## ARKit Body Tracking Capabilities
+### Vision Framework Limitations
+- ❌ Screen-space 2D coordinates only (VNDetectHumanBodyPose3DRequest is limited)
+- ❌ Frame-by-frame analysis without persistent tracking
+- ❌ No real-world depth measurements
+- ❌ Requires frame processor overhead
 
-### Joint Data You Get
+### ARKit Body Tracking Advantages
+- ✅ **Real 3D world-space coordinates in meters** via `ARBodyAnchor.skeleton`
+- ✅ **Continuous tracking** with `ARSession` delegate callbacks
+- ✅ **Accurate depth** using device sensors (LiDAR on iPhone 15 Pro)
+- ✅ **91 tracked joints** including hands and spine
+- ✅ **Occlusion handling** and temporal smoothing
+- ✅ **Automatic scale estimation** for body height
+
+## Apple's ARKit Body Tracking Architecture
+
+### Core Components
+
+1. **ARBodyTrackingConfiguration**
+   - Configures the AR session for body tracking
+   - Requires A12 Bionic chip or later (iPhone XS+)
+   - Automatically uses LiDAR when available
+
+2. **ARSession + Delegate**
+   - Manages the tracking session lifecycle
+   - Receives `ARBodyAnchor` updates via `session(_:didUpdate:)`
+   - Handles interruptions and errors
+
+3. **ARBodyAnchor**
+   - Contains `skeleton` property (ARSkeleton3D)
+   - Provides `estimatedScaleFactor` for body height
+   - Updated every frame when body is detected
+
+4. **ARSkeleton3D**
+   - 91 joints with `modelTransform(for:)` returning 4x4 matrices
+   - `isJointTracked()` to check tracking state
+   - Joint positions in local body space (meters)
+
+### Joint Data Structure
 ```swift
-// Real-world 3D position in meters!
-joint.position: simd_float3  // (x, y, z) in world space
-joint.rotation: simd_quatf   // Rotation quaternion
+// Access joint transform (4x4 matrix)
+let transform = skeleton.modelTransform(for: .left_leg_joint)
 
-// 91 joints total including:
-- Major: hips, spine, chest, shoulders, elbows, wrists, knees, ankles
-- Hands: All finger joints (thumbs, index, middle, ring, pinky)
-- Face: Head orientation
+// Extract 3D position from matrix (4th column)
+let position = transform.columns.3  // simd_float4
+// position.x, position.y, position.z are in meters
+
+// Check tracking state
+let isTracked = skeleton.isJointTracked(.left_leg_joint)
 ```
 
-### What You Can Measure
-1. **Joint Angles** - Exact knee/elbow angles in 3D
-2. **Range of Motion** - Squat depth, overhead reach
-3. **Symmetry** - Left vs right side comparison
-4. **Velocity** - Speed of movement
-5. **Stability** - Balance and wobble detection
+### Available Joints (91 total)
+- **Root**: `.root`, `.hips_joint`
+- **Spine**: `.spine_1_joint` through `.spine_7_joint`
+- **Neck/Head**: `.neck_1_joint` through `.neck_4_joint`, `.head_joint`
+- **Arms**: `.left_shoulder_1_joint`, `.left_arm_joint`, `.left_forearm_joint`, `.left_hand_joint`
+- **Legs**: `.left_upLeg_joint`, `.left_leg_joint`, `.left_foot_joint`
+- **Hands**: Full finger tracking (thumbs, index, middle, ring, pinky)
 
 ## Implementation
 
