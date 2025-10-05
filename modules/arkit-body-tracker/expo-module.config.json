@@ -1,6 +1,4 @@
 {
-  "platforms": ["ios"],
-  "ios": {
-    "modules": ["ARKitBodyTrackerModule"]
-  }
+  "platforms": ["ios"]
 }
+ 
