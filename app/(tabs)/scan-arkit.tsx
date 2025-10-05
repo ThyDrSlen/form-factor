@@ -6,33 +6,8 @@ import { useRouter } from 'expo-router';
 import { Svg, Circle, Line } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 
-// Lazy load to prevent crash before prebuild
-let BodyTracker: any;
-try {
-  const module = require('@/lib/arkit/ARKitBodyTracker');
-  BodyTracker = module.BodyTracker;
-} catch (error) {
-  console.log('ARKit module not available yet - run prebuild');
-}
-
-// Type definitions (will be replaced by real types after prebuild)
-type BodyPose = {
-  joints: any[];
-  timestamp: number;
-  isTracking: boolean;
-  estimatedHeight?: number;
-} | null;
-
-type JointAngles = {
-  leftKnee: number;
-  rightKnee: number;
-  leftElbow: number;
-  rightElbow: number;
-  leftHip: number;
-  rightHip: number;
-  leftShoulder: number;
-  rightShoulder: number;
-} | null;
+// Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
+import { BodyTracker, type BodyPose, type JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 
 export default function ScanARKitScreen() {
   const router = useRouter();
@@ -46,16 +21,20 @@ export default function ScanARKitScreen() {
 
   // Check support on mount
   useEffect(() => {
-    if (!BodyTracker) {
+    console.log('[ARKit] Component mounted, checking support...');
+    
+    // On web, show platform not supported message
+    if (Platform.OS === 'web') {
       Alert.alert(
-        'Module Not Ready',
-        'ARKit module needs to be built. Run: npx expo prebuild --platform ios --clean',
+        'Platform Not Supported',
+        'ARKit body tracking is only available on iOS devices.',
         [{ text: 'OK', onPress: () => router.back() }]
       );
       return;
     }
-    
+
     const supported = BodyTracker.isSupported();
+    console.log('[ARKit] Support check result:', supported);
     setIsSupported(supported);
     
     if (!supported) {
@@ -84,7 +63,11 @@ export default function ScanARKitScreen() {
       intervalRef.current = setInterval(() => {
         const currentPose = BodyTracker.getCurrentPose();
         
+        // Debug logging
+        console.log('[ARKit] Pose data:', currentPose ? `${currentPose.joints.length} joints` : 'null');
+        
         if (currentPose) {
+          console.log('[ARKit] First joint:', currentPose.joints[0]);
           setBodyPose(currentPose);
           
           // Calculate joint angles for form analysis
@@ -102,8 +85,8 @@ export default function ScanARKitScreen() {
         }
       }, 1000 / 30); // 30fps
     } catch (error) {
-      console.error('Failed to start tracking:', error);
-      Alert.alert('Error', 'Failed to start body tracking');
+      console.error('[ARKit] Failed to start tracking:', error);
+      Alert.alert('Error', `Failed to start body tracking: ${error}`);
     }
   }, []);
 
