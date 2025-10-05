@@ -34,16 +34,22 @@ public class ARKitBodyTrackerModule: Module {
     
     // Start ARKit body tracking session
     AsyncFunction("startTracking") { (promise: Promise) in
+      print("[ARKit] startTracking called")
+      
       guard ARBodyTrackingConfiguration.isSupported else {
+        print("[ARKit] Body tracking not supported on this device")
         promise.reject("UNSUPPORTED", "ARKit body tracking requires iPhone XS or newer with A12 Bionic chip or later")
         return
       }
+      
+      print("[ARKit] Body tracking is supported, starting session...")
       
       DispatchQueue.main.async { [weak self] in
         guard let self = self else { return }
         
         // Create AR session if not exists
         if self.arSession == nil {
+          print("[ARKit] Creating new AR session")
           self.arSession = ARSession()
           self.arSession?.delegate = self
         }
@@ -60,9 +66,11 @@ public class ARKitBodyTrackerModule: Module {
         }
         
         // Run the session
+        print("[ARKit] Running AR session with body tracking configuration")
         self.arSession?.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         self.isRunning = true
         
+        print("[ARKit] AR session started successfully")
         promise.resolve(true)
       }
     }
@@ -70,9 +78,11 @@ public class ARKitBodyTrackerModule: Module {
     // Get current body pose with all joint positions
     Function("getCurrentPose") { () -> BodyPose? in
       guard let bodyAnchor = self.currentBodyAnchor else {
+        print("[ARKit] getCurrentPose: No body anchor available")
         return nil
       }
       
+      print("[ARKit] getCurrentPose: Body anchor found, extracting joints...")
       let skeleton = bodyAnchor.skeleton
       var joints: [Joint3D] = []
       
@@ -193,6 +203,7 @@ extension ARKitBodyTrackerModule: ARSessionDelegate {
     // Update current body anchor when ARKit detects or updates body tracking
     for anchor in anchors {
       if let bodyAnchor = anchor as? ARBodyAnchor {
+        print("[ARKit] Body detected! Updating body anchor. Tracked: \(bodyAnchor.isTracked)")
         self.currentBodyAnchor = bodyAnchor
         break
       }
