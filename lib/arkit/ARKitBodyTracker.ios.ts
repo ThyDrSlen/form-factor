@@ -8,11 +8,17 @@ import { requireNativeModule } from 'expo-modules-core';
 // Load native module safely (don't throw during import)
 let ARKitBodyTracker: any = null;
 try {
+  console.log('[ARKitBodyTracker] Attempting to load native module...');
   ARKitBodyTracker = requireNativeModule('ARKitBodyTracker');
+  console.log('[ARKitBodyTracker] Native module loaded successfully:', !!ARKitBodyTracker);
+  if (ARKitBodyTracker) {
+    console.log('[ARKitBodyTracker] Available methods:', Object.keys(ARKitBodyTracker));
+  }
 } catch (e) {
+  console.error('[ARKitBodyTracker] Failed to load native module:', e);
   if (__DEV__) {
     // eslint-disable-next-line no-console
-    console.warn('[ARKitBodyTracker] Native module not found. Run `npx expo prebuild --platform ios && cd ios && pod install`');
+    console.warn('[ARKitBodyTracker] Native module not found. Run `bunx expo prebuild --clean --platform ios && cd ios && pod install`');
   }
 }
 
@@ -61,10 +67,22 @@ export class BodyTracker {
    * Requires iPhone XS or newer (A12 Bionic chip or later)
    */
   static isSupported(): boolean {
+    console.log('[BodyTracker] isSupported() called');
+    console.log('[BodyTracker] ARKitBodyTracker module exists:', !!ARKitBodyTracker);
+    
     if (!ARKitBodyTracker) {
+      console.error('[BodyTracker] Native module not loaded - returning false');
+      console.error('[BodyTracker] This means the module failed to load at import time');
+      console.error('[BodyTracker] You MUST run: bunx expo prebuild --clean --platform ios');
       return false;
     }
-    return ARKitBodyTracker.isSupported();
+    
+    console.log('[BodyTracker] Calling native isSupported()...');
+    const supported = ARKitBodyTracker.isSupported();
+    console.log('[BodyTracker] Native isSupported() returned:', supported);
+    console.log('[BodyTracker] Device: iPhone 15 Pro should return TRUE');
+    
+    return supported;
   }
 
   /**
