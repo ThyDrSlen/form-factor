@@ -5,9 +5,23 @@
   },
   "terminals": [
     {
-      "name": "dev-server",
-      "command": "bun run start",
+      "name": "quality-checks",
+      "command": "echo '🔍 Running quality checks...' && bun run tsc --noEmit && bun run lint",
+      "autostart": false
+    },
+    {
+      "name": "type-check",
+      "command": "bun run tsc --noEmit --watch",
+      "autostart": false
+    },
+    {
+      "name": "security-audit",
+      "command": "bun audit --audit-level moderate",
       "autostart": false
     }
-  ]
+  ],
+  "environment": {
+    "NODE_ENV": "development",
+    "CI": "true"
+  }
 }
