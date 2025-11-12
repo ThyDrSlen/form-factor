@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useHealthKit } from '../../contexts/HealthKitContext';
 import { useUnits } from '../../contexts/UnitsContext';
 import { WeightTrendChart } from './WeightTrendChart.chartkit';
@@ -19,6 +20,7 @@ import { WeightInsights } from './WeightInsights';
 import { WeightStatistics } from './WeightStatistics';
 import { WeightGoals } from './WeightGoals';
 import { WeightPredictions } from './WeightPredictions';
+import { TestChart } from './TestChart';
 
 interface WeightDashboardProps {
   onClose?: () => void;
@@ -26,6 +28,13 @@ interface WeightDashboardProps {
 
 export function WeightDashboard({ onClose }: WeightDashboardProps) {
   const { weightAnalysis, /* weightHistory90Days, */ weightHistory180Days } = useHealthKit();
+  
+  // Debug logging
+  console.log('WeightDashboard - HealthKit data:', {
+    hasWeightAnalysis: !!weightAnalysis,
+    weightHistory180DaysLength: weightHistory180Days.length,
+    weightHistory180DaysSample: weightHistory180Days.slice(0, 3)
+  });
   const { convertWeight, getWeightLabel } = useUnits();
   const [selectedPeriod, setSelectedPeriod] = useState<'7d' | '30d' | '90d' | '180d'>('90d');
   const [activeTab, setActiveTab] = useState<'overview' | 'trends' | 'insights' | 'goals'>('overview');
@@ -49,11 +58,24 @@ export function WeightDashboard({ onClose }: WeightDashboardProps) {
 
   // Convert weights to user's preferred unit
   const convertedData = useMemo(() => {
-    return getDataForPeriod.map(point => ({
+    const converted = getDataForPeriod.map(point => ({
       ...point,
       value: convertWeight(point.value),
     }));
-  }, [getDataForPeriod, convertWeight]);
+    
+    // Debug logging
+    console.log('WeightDashboard - Data flow:', {
+      weightAnalysis: !!weightAnalysis,
+      weightHistory180DaysLength: weightHistory180Days.length,
+      selectedPeriod,
+      getDataForPeriodLength: getDataForPeriod.length,
+      convertedDataLength: converted.length,
+      firstConvertedPoint: converted[0],
+      lastConvertedPoint: converted[converted.length - 1]
+    });
+    
+    return converted;
+  }, [getDataForPeriod, convertWeight, weightAnalysis, weightHistory180Days.length, selectedPeriod]);
 
   const getCurrentWeight = () => {
     if (!weightAnalysis) return null;
@@ -179,7 +201,10 @@ export function WeightDashboard({ onClose }: WeightDashboardProps) {
               styles.periodButton,
               selectedPeriod === period && styles.periodButtonActive,
             ]}
-            onPress={() => setSelectedPeriod(period)}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setSelectedPeriod(period);
+            }}
           >
             <Text style={[
               styles.periodButtonText,
@@ -205,7 +230,10 @@ export function WeightDashboard({ onClose }: WeightDashboardProps) {
               styles.tabButton,
               activeTab === tab.key && styles.tabButtonActive,
             ]}
-            onPress={() => setActiveTab(tab.key as any)}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setActiveTab(tab.key as any);
+            }}
           >
             <Ionicons 
               name={tab.icon as any} 
@@ -225,6 +253,7 @@ export function WeightDashboard({ onClose }: WeightDashboardProps) {
       {/* Content */}
       {activeTab === 'overview' && (
         <View style={styles.tabContent}>
+          <TestChart />
           <WeightTrendChart 
             data={convertedData} 
             period={selectedPeriod}

@@ -116,14 +116,14 @@ function LineChart({ data, gradientId, stroke }: { data: HealthMetricPoint[]; gr
 function BarChart({ data, color }: { data: HealthMetricPoint[]; color: string }) {
   const bars = useMemo(() => {
     if (!data.length) return [] as { x: number; y: number; h: number; w: number }[];
-    const values = data.map((point) => point.value);
+    const values = data.map((point) => point.value ?? 0);
     const max = Math.max(...values, 0.1);
     const gap = 4;
-    const barWidth = (100 - gap * (data.length + 1)) / data.length;
+    const barWidth = Math.max(1, (100 - gap * (data.length + 1)) / data.length);
 
     return data.map((point, index) => {
-      const height = ((point.value ?? 0) / max) * 45;
-      const h = Number.isFinite(height) ? height : 0;
+      const height = max > 0 ? ((point.value ?? 0) / max) * 45 : 0;
+      const h = Number.isFinite(height) ? Math.max(0, height) : 0;
       const x = gap + index * (barWidth + gap);
       const y = 55 - h;
       return { x, y, h, w: barWidth };

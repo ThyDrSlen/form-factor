@@ -25,6 +25,16 @@ export function WeightTrendChart({
   weightUnit,
   showPredictions = false,
 }: WeightTrendChartProps) {
+  
+  // Debug logging
+  console.log('WeightTrendChart.chartkit - Data received:', {
+    dataLength: data.length,
+    period,
+    weightUnit,
+    showPredictions,
+    firstDataPoint: data[0],
+    lastDataPoint: data[data.length - 1]
+  });
 
   // Memoize all derived values unconditionally to satisfy hooks rules
   const sortedData = useMemo(() => {
@@ -49,7 +59,8 @@ export function WeightTrendChart({
   }, [sortedData, period]);
 
   const displayLabels = useMemo(() => {
-    const labelFrequency = Math.ceil(Math.max(1, sortedData.length) / 5);
+    if (sortedData.length === 0) return [];
+    const labelFrequency = Math.max(1, Math.ceil(sortedData.length / 5));
     return labels.map((label, index) =>
       index % labelFrequency === 0 || index === labels.length - 1 ? label : ''
     );
@@ -70,9 +81,9 @@ export function WeightTrendChart({
     };
   }, [displayLabels, values]);
 
-  // Calculate statistics
-  const latestWeight = sortedData[sortedData.length - 1]?.value ?? 0;
-  const firstWeight = sortedData[0]?.value ?? 0;
+  // Calculate statistics with proper validation
+  const latestWeight = sortedData.length > 0 ? sortedData[sortedData.length - 1]?.value ?? 0 : 0;
+  const firstWeight = sortedData.length > 0 ? sortedData[0]?.value ?? 0 : 0;
   const weightChange = latestWeight - firstWeight;
 
   if (data.length === 0) {
