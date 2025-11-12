@@ -204,7 +204,10 @@ export default function AddFoodScreen() {
         <View style={styles.inputContainer}>
           <Text style={styles.label}>Entry Time</Text>
           <TouchableOpacity 
-            onPress={() => setShowPicker(true)} 
+            onPress={() => {
+              Haptics.selectionAsync();
+              setShowPicker(true);
+            }} 
             style={styles.dateInput}
             disabled={saving}
           >
@@ -237,6 +240,7 @@ export default function AddFoodScreen() {
               normalized.setSeconds(0, 0);
               setDate(normalized);
               setShowPicker(false);
+              Haptics.selectionAsync();
             }}
           />
         )}

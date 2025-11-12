@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Crypto from 'expo-crypto';
+import * as Haptics from 'expo-haptics';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
@@ -88,6 +89,9 @@ function WheelPicker({ label, values, selectedValue, onChange, accessibilityLabe
     if (centeredIndex !== rawIndex) {
       listRef.current?.scrollToOffset({ offset: centeredIndex * WHEEL_ITEM_HEIGHT, animated: false });
     }
+    
+    // Add haptic feedback when value changes
+    Haptics.selectionAsync();
     onChange(value);
   };
 
@@ -177,6 +181,7 @@ export default function AddWorkoutScreen() {
   };
 
   const handleExercisePress = () => {
+    Haptics.selectionAsync();
     if (Platform.OS === 'ios') {
       showExerciseActionSheet();
     } else {
@@ -335,6 +340,7 @@ export default function AddWorkoutScreen() {
                 <Pressable
                   style={({ pressed }) => [styles.modalRow, pressed && styles.modalRowPressed]}
                   onPress={() => {
+                    Haptics.selectionAsync();
                     setExercise(item);
                     setExerciseSearch('');
                     setExerciseModalVisible(false);
@@ -357,6 +363,7 @@ export default function AddWorkoutScreen() {
               onPress={() => {
                 const custom = exerciseSearch.trim();
                 if (!custom) return;
+                Haptics.selectionAsync();
                 setExercise(custom);
                 setExerciseSearch('');
                 setExerciseModalVisible(false);

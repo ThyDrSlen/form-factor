@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
   actionGrid: {
     flexDirection: 'row',
     gap: 16,
-    marginBottom: 32,
+    marginBottom: 16,
   },
   actionCardWrapper: {
     flex: 1,
@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   statsSection: {
-    marginTop: 16,
+    marginTop: 8,
   },
   statsGrid: {
     flexDirection: 'row',
