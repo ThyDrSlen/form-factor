@@ -87,13 +87,25 @@ export default function TabsLayout() {
           }}
         />
         <Tabs.Screen
-          name="scan"
+          name="health-trends"
+          options={{
+            title: 'Trends',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="trending-up-outline" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="scan-arkit"
           options={{
             title: 'Scan',
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="scan-outline" size={size} color={color} />
             ),
+            // Hide tab bar when this screen is active
             tabBarStyle: { display: 'none' },
+            // Optional: remove from tab list entirely so it's only reachable via navigation
+            // href: null,
           }}
         />
         <Tabs.Screen

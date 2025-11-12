@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, Alert, StyleSheet, Platform, 
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
+import { ActivityRings } from '@/components/ActivityRings';
 import { router } from 'expo-router';
 import { syncService } from '@/lib/services/database/sync-service';
 import { localDB } from '@/lib/services/database/local-db';
@@ -208,6 +209,35 @@ Generated: ${new Date().toISOString()}
         <Text style={styles.emailText}>{user?.email || 'Not signed in'}</Text>
         <Text style={styles.memberSince}>Member since {new Date().getFullYear()}</Text>
       </LinearGradient>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Health Overview</Text>
+        <ActivityRings />
+
+        <TouchableOpacity
+          onPress={() => router.push('/health-trends')}
+          activeOpacity={0.8}
+          style={{ marginTop: 12 }}
+        >
+          <LinearGradient
+            colors={[ 'rgba(76, 140, 255, 0.2)', 'rgba(76, 140, 255, 0.1)' ]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+              borderRadius: 16,
+              paddingVertical: 12,
+              paddingHorizontal: 16,
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: '#1B2E4A',
+            }}
+          >
+            <Text style={{ color: '#4C8CFF', fontSize: 16, fontWeight: '700' }}>
+              View Trends
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
 
       {/* Debug Section - Remove before production */}
       {__DEV__ && (
@@ -520,5 +550,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  periodSelector: {
+    flexDirection: 'row',
+    backgroundColor: '#0F2339',
+    borderRadius: 16,
+    padding: 4,
+    marginTop: 8,
+    marginBottom: 16,
+    alignSelf: 'center',
+  },
+  periodButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  periodButtonActive: {
+    backgroundColor: '#4C8CFF',
+  },
+  periodButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#9AACD1',
+  },
+  periodButtonTextActive: {
+    color: '#FFFFFF',
   },
 });
