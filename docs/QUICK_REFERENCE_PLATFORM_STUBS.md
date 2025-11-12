@@ -254,7 +254,6 @@ static getData(): MyData[] { } // ❌ Missing Promise
 ## 📖 Full Documentation
 
 - **Complete Guide**: `docs/PLATFORM_SPECIFIC_CODE_GUIDE.md`
-- **Implementation Summary**: `PLATFORM_STUBS_SUMMARY.md`
 - **Templates**: `lib/examples/native-module-template.{ios,web}.ts`
 
 ## 🆘 Getting Help
