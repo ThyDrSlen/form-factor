@@ -9,9 +9,10 @@ import { Svg, Line, Circle, Path, Defs, LinearGradient, Stop } from 'react-nativ
 import type { HealthMetricPoint } from '../../lib/services/healthkit/health-metrics';
 
 const { width: screenWidth } = Dimensions.get('window');
-const chartWidth = screenWidth - 40;
+const chartWidth = screenWidth - 48;
 const chartHeight = 200;
-const padding = { top: 20, right: 20, bottom: 40, left: 20 };
+const padding = { top: 20, right: 36, bottom: 40, left: 48 };
+const LABEL_WIDTH = 48;
 
 interface WeightTrendChartProps {
   data: HealthMetricPoint[];
@@ -26,7 +27,44 @@ export function WeightTrendChart({
   weightUnit, 
   showPredictions = false 
 }: WeightTrendChartProps) {
-  if (data.length === 0) {
+  const normalizedData = React.useMemo(() => {
+    if (data.length === 0) return [] as HealthMetricPoint[];
+
+    const buckets = new Map<string, { sum: number; count: number; latestDate: number }>();
+
+    data.forEach((point) => {
+      const dayKey = new Date(point.date).toISOString().slice(0, 10);
+      const bucket = buckets.get(dayKey);
+      if (bucket) {
+        bucket.sum += point.value;
+        bucket.count += 1;
+        if (point.date > bucket.latestDate) {
+          bucket.latestDate = point.date;
+        }
+      } else {
+        buckets.set(dayKey, { sum: point.value, count: 1, latestDate: point.date });
+      }
+    });
+
+    return Array.from(buckets.values())
+      .map((bucket) => ({
+        date: bucket.latestDate,
+        value: bucket.sum / bucket.count,
+      }))
+      .sort((a, b) => a.date - b.date);
+  }, [data]);
+
+  // Debug logging
+  console.log('WeightTrendChart.svg - Data received:', {
+    dataLength: normalizedData.length,
+    period,
+    weightUnit,
+    showPredictions,
+    firstDataPoint: normalizedData[0],
+    lastDataPoint: normalizedData[normalizedData.length - 1]
+  });
+  
+  if (normalizedData.length === 0) {
     return (
       <View style={styles.chartContainer}>
         <View style={styles.noDataContainer}>
@@ -40,36 +78,66 @@ export function WeightTrendChart({
   }
 
   // Sort data by date
-  const sortedData = [...data].sort((a, b) => a.date - b.date);
+  const sortedData = normalizedData;
+  
+  const pointsToRender = React.useMemo(() => {
+    const maxPoints = period === '7d' ? 7 : period === '30d' ? 10 : 12;
+    if (sortedData.length <= maxPoints) {
+      return sortedData;
+    }
+
+    const stride = Math.max(1, Math.floor(sortedData.length / maxPoints));
+    const sampled: typeof sortedData = [];
+    for (let i = 0; i < sortedData.length; i += stride) {
+      sampled.push(sortedData[i]);
+    }
+
+    const lastPoint = sortedData[sortedData.length - 1];
+    if (sampled[sampled.length - 1] !== lastPoint) {
+      sampled.push(lastPoint);
+    }
+
+    return sampled;
+  }, [sortedData, period]);
   
   // Calculate chart dimensions
   const chartInnerWidth = chartWidth - padding.left - padding.right;
   const chartInnerHeight = chartHeight - padding.top - padding.bottom;
   
-  // Find min/max values for scaling
+  // Find min/max values for scaling with proper validation
   const values = sortedData.map(d => d.value);
-  const minValue = Math.min(...values);
-  const maxValue = Math.max(...values);
+  const minValue = values.length > 0 ? Math.min(...values) : 0;
+  const maxValue = values.length > 0 ? Math.max(...values) : 0;
   const valueRange = maxValue - minValue;
   
-  // Add some padding to the range
-  const paddedMin = minValue - valueRange * 0.1;
-  const paddedMax = maxValue + valueRange * 0.1;
+  // Add some padding to the range, handle edge case where min === max
+  const paddingFactor = valueRange === 0 ? 0.1 : 0.1;
+  const paddedMin = minValue - Math.max(valueRange * paddingFactor, 1);
+  const paddedMax = maxValue + Math.max(valueRange * paddingFactor, 1);
   const paddedRange = paddedMax - paddedMin;
 
-  // Helper functions for coordinate conversion
-  const getX = (index: number) => padding.left + (index / (sortedData.length - 1)) * chartInnerWidth;
-  const getY = (value: number) => padding.top + chartInnerHeight - ((value - paddedMin) / paddedRange) * chartInnerHeight;
+  // Helper functions for coordinate conversion with proper validation
+  const getX = (index: number) => {
+    if (sortedData.length <= 1) return padding.left + chartInnerWidth / 2;
+    return padding.left + (index / (sortedData.length - 1)) * chartInnerWidth;
+  };
+  
+  const getY = (value: number) => {
+    if (paddedRange === 0) return padding.top + chartInnerHeight / 2;
+    return padding.top + chartInnerHeight - ((value - paddedMin) / paddedRange) * chartInnerHeight;
+  };
 
   // Generate trend line path
   const trendPath = sortedData
     .map((point, index) => `${index === 0 ? 'M' : 'L'} ${getX(index)} ${getY(point.value)}`)
     .join(' ');
 
-  // Generate area path for gradient fill
-  const areaPath = `${trendPath} L ${getX(sortedData.length - 1)} ${padding.top + chartInnerHeight} L ${getX(0)} ${padding.top + chartInnerHeight} Z`;
+  // Generate area path for gradient fill with proper validation
+  const areaPath = sortedData.length > 0 
+    ? `${trendPath} L ${getX(sortedData.length - 1)} ${padding.top + chartInnerHeight} L ${getX(0)} ${padding.top + chartInnerHeight} Z`
+    : '';
 
-  // Calculate trend line using linear regression
+  // Calculate trend line using linear regression with proper validation
   const getTrendLine = () => {
     if (sortedData.length < 2) return null;
     
@@ -79,7 +147,10 @@ export function WeightTrendChart({
     const sumXY = sortedData.reduce((sum, point, i) => sum + i * point.value, 0);
     const sumXX = sortedData.reduce((sum, _, i) => sum + i * i, 0);
     
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    const denominator = n * sumXX - sumX * sumX;
+    if (denominator === 0) return null; // Avoid division by zero
+    
+    const slope = (n * sumXY - sumX * sumY) / denominator;
     const intercept = (sumY - slope * sumX) / n;
     
     const startY = intercept;
@@ -110,12 +181,12 @@ export function WeightTrendChart({
     }
   };
 
-  // Generate y-axis labels
+  // Generate y-axis labels with proper validation
   const generateYLabels = () => {
     const numLabels = 5;
     const labels = [];
     for (let i = 0; i <= numLabels; i++) {
-      const value = paddedMin + (paddedRange * i) / numLabels;
+      const value = paddedRange === 0 ? paddedMin : paddedMin + (paddedRange * i) / numLabels;
       labels.push({
         value: value.toFixed(1),
         y: getY(value),
@@ -183,17 +254,20 @@ export function WeightTrendChart({
           )}
           
           {/* Data points */}
-          {sortedData.map((point, index) => (
-            <Circle
-              key={index}
-              cx={getX(index)}
-              cy={getY(point.value)}
-              r="4"
-              fill="#3CC8A9"
-              stroke="#FFFFFF"
-              strokeWidth="2"
-            />
-          ))}
+          {pointsToRender.map((point) => {
+            const originalIndex = sortedData.indexOf(point);
+            return (
+              <Circle
+                key={point.date}
+                cx={getX(originalIndex)}
+                cy={getY(point.value)}
+                r="4"
+                fill="#3CC8A9"
+                stroke="#FFFFFF"
+                strokeWidth="2"
+              />
+            );
+          })}
           
           {/* Latest point highlight */}
           {sortedData.length > 0 && (
@@ -219,15 +293,36 @@ export function WeightTrendChart({
         
         {/* X-axis labels */}
         <View style={styles.xAxisLabels}>
-          {sortedData.map((point, index) => {
-            if (index % Math.ceil(sortedData.length / 5) === 0 || index === sortedData.length - 1) {
-              return (
-                <Text key={index} style={[styles.xAxisLabel, { left: getX(index) - 20 }]}>
-                  {getDateLabel(point.date)}
-                </Text>
-              );
+          {pointsToRender.map((point, renderIndex) => {
+            const originalIndex = sortedData.indexOf(point);
+            const shouldRenderLabel = renderIndex % Math.max(1, Math.ceil(pointsToRender.length / 5)) === 0
+              || originalIndex === sortedData.length - 1;
+
+            if (!shouldRenderLabel) {
+              return null;
             }
-            return null;
+
+            return (
+              <Text
+                key={`label-${point.date}`}
+                style={[
+                  styles.xAxisLabel,
+                  {
+                    left: (() => {
+                      const relativeX = getX(originalIndex) - padding.left;
+                      const chartContentWidth = chartWidth - padding.left - padding.right;
+                      const clamped = Math.max(
+                        0,
+                        Math.min(chartContentWidth - LABEL_WIDTH, relativeX - LABEL_WIDTH / 2)
+                      );
+                      return clamped;
+                    })(),
+                  },
+                ]}
+              >
+                {getDateLabel(point.date)}
+              </Text>
+            );
           })}
         </View>
       </View>

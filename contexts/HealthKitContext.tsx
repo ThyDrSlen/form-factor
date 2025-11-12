@@ -11,10 +11,16 @@ import {
   type HealthMetricPoint,
 } from '@/lib/services/healthkit/health-metrics';
 import { analyzeWeightTrends, type WeightAnalysis } from '@/lib/services/healthkit/weight-trends';
-import { syncHealthMetricsToSupabase } from '@/lib/services/healthkit/health-sync';
-import { fetchSupabaseHealthSnapshot } from '@/lib/services/healthkit/health-supabase';
+import { 
+  syncAllHealthKitDataToSupabase, 
+  getExistingDataRange, 
+  type BulkSyncProgress 
+} from '@/lib/services/healthkit/health-bulk-sync';
+import { localDB } from '@/lib/services/database/local-db';
+import { syncService } from '@/lib/services/database/sync-service';
 import { useAuth } from './AuthContext';
 import { useWorkouts } from './WorkoutsContext';
+import { useNetwork } from './NetworkContext';
 
 interface HealthKitContextValue {
   isAvailable: boolean;
@@ -36,6 +42,12 @@ interface HealthKitContextValue {
   enableHighFrequency: () => void;
   disableHighFrequency: () => void;
   refreshWeightAnalysis: () => Promise<void>;
+  // Bulk sync functions
+  isSyncing: boolean;
+  syncProgress: BulkSyncProgress | null;
+  hasSyncedBefore: boolean;
+  syncAllHistoricalData: (days?: number) => Promise<void>;
+  checkDataRange: () => Promise<{ earliest: string | null; latest: string | null; count: number }>;
 }
 
 const HealthKitContext = createContext<HealthKitContextValue | undefined>(undefined);
@@ -48,6 +60,7 @@ const DEFAULT_PERMISSIONS: HealthKitPermissions = {
 export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { isWorkoutInProgress } = useWorkouts();
+  const { isOnline } = useNetwork();
   const [isAvailable, setIsAvailable] = useState<boolean>(false);
   const [status, setStatus] = useState<HealthPermissionStatus | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -65,6 +78,11 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const lastSyncedSignatureRef = useRef<string | null>(null);
   const highFrequencyRef = useRef<boolean>(false);
+  
+  // Bulk sync state
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncProgress, setSyncProgress] = useState<BulkSyncProgress | null>(null);
+  const [hasSyncedBefore, setHasSyncedBefore] = useState<boolean>(false);
 
   // Weight analysis refresh function
   const refreshWeightAnalysis = useCallback(async () => {
@@ -190,44 +208,63 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
             weightTs: normalizedWeightPayload.timestamp,
           });
 
+          // Local-first: Write to local DB, then sync to Supabase
           if (user?.id && metricsSignature !== lastSyncedSignatureRef.current) {
             try {
-              const synced = await syncHealthMetricsToSupabase({
-                userId: user.id,
-                summaryDate: new Date(),
+              const today = new Date();
+              const summaryDate = today.toISOString().slice(0, 10);
+              const metricId = `${user.id}_${summaryDate}`;
+
+              // Write to local DB first (instant, offline-capable)
+              await localDB.insertHealthMetric({
+                id: metricId,
+                user_id: user.id,
+                summary_date: summaryDate,
                 steps: normalizedSteps,
-                heartRateBpm: normalizedHeartRate,
-                heartRateTimestamp: normalizedHeartRatePayload.timestamp,
-                weightKg: normalizedWeight,
-                weightTimestamp: normalizedWeightPayload.timestamp,
+                heart_rate_bpm: normalizedHeartRate,
+                heart_rate_timestamp: normalizedHeartRatePayload.timestamp ? new Date(normalizedHeartRatePayload.timestamp).toISOString() : null,
+                weight_kg: normalizedWeight,
+                weight_timestamp: normalizedWeightPayload.timestamp ? new Date(normalizedWeightPayload.timestamp).toISOString() : null,
               });
-              if (synced) {
-                lastSyncedSignatureRef.current = metricsSignature;
+
+              // Trigger background sync if online
+              if (isOnline) {
+                syncService.syncToSupabase().catch(err => {
+                  console.warn('[HealthKitContext] Background sync failed', err);
+                });
               }
+
+              lastSyncedSignatureRef.current = metricsSignature;
             } catch (syncError) {
-              console.warn('[HealthKitContext] Failed to sync metrics to Supabase', syncError);
+              console.warn('[HealthKitContext] Failed to write metrics to local DB', syncError);
             }
           }
           return;
         }
 
+        // Fallback: Try local DB first, then Supabase if needed
         if (user?.id) {
-          const supabaseSnapshot = await fetchSupabaseHealthSnapshot(user.id, 7);
-          if (supabaseSnapshot) {
-            setStepsToday(supabaseSnapshot.steps ?? null);
-            setLatestHeartRate({
-              bpm: supabaseSnapshot.heartRateBpm ?? null,
-              timestamp: supabaseSnapshot.heartRateTimestamp ?? null,
-            });
-            setBodyMassKg({
-              kg: supabaseSnapshot.weightKg ?? null,
-              timestamp: supabaseSnapshot.weightTimestamp ?? null,
-            });
-            setStepHistory(supabaseSnapshot.stepHistory);
-            setWeightHistory(supabaseSnapshot.weightHistory);
-            setDataSource('supabase');
-            setLastUpdatedAt(supabaseSnapshot.lastUpdatedAt ?? null);
-            return;
+          try {
+            // Check local DB
+            const today = new Date().toISOString().slice(0, 10);
+            const localMetric = await localDB.getHealthMetricByDate(user.id, today);
+            
+            if (localMetric) {
+              setStepsToday(localMetric.steps ?? null);
+              setLatestHeartRate({
+                bpm: localMetric.heart_rate_bpm ?? null,
+                timestamp: localMetric.heart_rate_timestamp ? new Date(localMetric.heart_rate_timestamp).getTime() : null,
+              });
+              setBodyMassKg({
+                kg: localMetric.weight_kg ?? null,
+                timestamp: localMetric.weight_timestamp ? new Date(localMetric.weight_timestamp).getTime() : null,
+              });
+              setDataSource('supabase'); // Still label as supabase since it's synced
+              setLastUpdatedAt(new Date(localMetric.updated_at).getTime());
+              return;
+            }
+          } catch (localError) {
+            console.warn('[HealthKitContext] Failed to read from local DB, trying Supabase', localError);
           }
         }
 
@@ -298,6 +335,81 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
     try { rescheduleRef.current?.(); } catch {}
   }, []);
 
+  // Check if user has synced data before
+  const checkDataRange = useCallback(async () => {
+    if (!user?.id) {
+      return { earliest: null, latest: null, count: 0 };
+    }
+    return await getExistingDataRange(user.id);
+  }, [user?.id]);
+
+  // Sync all historical data
+  const syncAllHistoricalData = useCallback(async (days: number = 365) => {
+    if (!user?.id || isSyncing) {
+      console.log('[HealthKitContext] Cannot sync: no user or already syncing');
+      return;
+    }
+
+    setIsSyncing(true);
+    setSyncProgress({
+      phase: 'fetching',
+      current: 0,
+      total: days,
+      message: 'Starting sync...',
+    });
+
+    try {
+      console.log('[HealthKitContext] Starting bulk sync for', days, 'days');
+      
+      const result = await syncAllHealthKitDataToSupabase(
+        user.id,
+        days,
+        (progress) => {
+          setSyncProgress(progress);
+        }
+      );
+
+      if (result.success) {
+        console.log('[HealthKitContext] Bulk sync completed successfully', result);
+        setHasSyncedBefore(true);
+        
+        // Refresh the metrics after sync
+        setTimeout(() => {
+          try { rescheduleRef.current?.(); } catch {}
+        }, 1000);
+      } else {
+        console.warn('[HealthKitContext] Bulk sync completed with errors', result);
+      }
+    } catch (error) {
+      console.error('[HealthKitContext] Bulk sync failed', error);
+      setSyncProgress({
+        phase: 'error',
+        current: 0,
+        total: 0,
+        message: error instanceof Error ? error.message : 'Sync failed',
+      });
+    } finally {
+      setIsSyncing(false);
+      
+      // Clear progress after a few seconds
+      setTimeout(() => {
+        setSyncProgress(null);
+      }, 5000);
+    }
+  }, [user?.id, isSyncing]);
+
+  // Check if user has synced before on mount
+  useEffect(() => {
+    if (user?.id) {
+      checkDataRange().then((range) => {
+        if (range.count > 0) {
+          setHasSyncedBefore(true);
+          console.log('[HealthKitContext] User has', range.count, 'days of synced data');
+        }
+      });
+    }
+  }, [user?.id, checkDataRange]);
+
   const value = useMemo<HealthKitContextValue>(
     () => ({
       isAvailable,
@@ -319,6 +431,11 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
       enableHighFrequency,
       disableHighFrequency,
       refreshWeightAnalysis,
+      isSyncing,
+      syncProgress,
+      hasSyncedBefore,
+      syncAllHistoricalData,
+      checkDataRange,
     }),
     [
       isAvailable,
@@ -340,6 +457,11 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
       enableHighFrequency,
       disableHighFrequency,
       refreshWeightAnalysis,
+      isSyncing,
+      syncProgress,
+      hasSyncedBefore,
+      syncAllHistoricalData,
+      checkDataRange,
     ]
   );
 
