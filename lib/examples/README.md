@@ -55,7 +55,6 @@ See working examples in the codebase:
 
 - **Quick Reference**: `docs/QUICK_REFERENCE_PLATFORM_STUBS.md`
 - **Complete Guide**: `docs/PLATFORM_SPECIFIC_CODE_GUIDE.md`
-- **Summary**: `PLATFORM_STUBS_SUMMARY.md`
 
 ## Template Contents
 
