@@ -19,4 +19,8 @@ Pod::Spec.new do |s|
 
   # Swift source files
   s.source_files = "ios/**/*.{h,m,swift}"
+  s.exclude_files = [
+    "ios/**/*Tests.swift",
+    "ios/ARKitTest.swift"
+  ]
 end
