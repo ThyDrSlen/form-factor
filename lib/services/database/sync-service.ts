@@ -1,12 +1,13 @@
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../../supabase';
-import { localDB, LocalFood, LocalWorkout } from './local-db';
+import { localDB, LocalFood, LocalWorkout, LocalHealthMetric } from './local-db';
 
 type SyncCallback = () => void;
 
 class SyncService {
   private foodChannel: RealtimeChannel | null = null;
   private workoutChannel: RealtimeChannel | null = null;
+  private healthChannel: RealtimeChannel | null = null;
   private isSyncing = false;
   private syncCallbacks: SyncCallback[] = [];
 
@@ -25,7 +26,7 @@ class SyncService {
   // Initialize Realtime subscriptions
   async initializeRealtimeSync(userId: string): Promise<void> {
     // Prevent duplicate subscriptions
-    if (this.foodChannel || this.workoutChannel) {
+    if (this.foodChannel || this.workoutChannel || this.healthChannel) {
       console.log('[SyncService] Realtime already initialized, skipping');
       return;
     }
@@ -85,6 +86,34 @@ class SyncService {
           console.warn('[SyncService] ⏱️ Workouts channel timeout, will retry');
         } else {
           console.log('[SyncService] Workouts channel status:', status);
+        }
+      });
+
+    // Subscribe to health_metrics table changes
+    this.healthChannel = supabase
+      .channel('health_metrics_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'health_metrics',
+          filter: `user_id=eq.${userId}`,
+        },
+        async (payload) => {
+          console.log('[SyncService] Realtime health metric change:', payload);
+          await this.handleRealtimeHealthMetricChange(payload);
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[SyncService] ✅ Health metrics channel subscribed');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[SyncService] ❌ Health metrics channel error:', err);
+        } else if (status === 'TIMED_OUT') {
+          console.warn('[SyncService] ⏱️ Health metrics channel timeout, will retry');
+        } else {
+          console.log('[SyncService] Health metrics channel status:', status);
         }
       });
   }
@@ -183,6 +212,59 @@ class SyncService {
     }
   }
 
+  // Handle realtime health metric changes from Supabase with conflict detection
+  private async handleRealtimeHealthMetricChange(payload: any): Promise<void> {
+    try {
+      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+        // Check if we have a local unsynced version (conflict detection)
+        const allLocalMetrics = await localDB.db!.getAllAsync<LocalHealthMetric>(
+          'SELECT * FROM health_metrics WHERE id = ?',
+          [payload.new.id]
+        );
+        const localMetric = allLocalMetrics[0];
+        
+        // If local has unsaved changes, don't overwrite (local wins, will sync later)
+        if (localMetric && localMetric.synced === 0) {
+          console.log(`[SyncService] Local health metric ${payload.new.id} has unsaved changes, keeping local version`);
+          return;
+        }
+
+        const metric: LocalHealthMetric = {
+          id: payload.new.id || `${payload.new.user_id}_${payload.new.summary_date}`,
+          user_id: payload.new.user_id,
+          summary_date: payload.new.summary_date,
+          steps: payload.new.steps,
+          heart_rate_bpm: payload.new.heart_rate_bpm,
+          heart_rate_timestamp: payload.new.heart_rate_timestamp,
+          weight_kg: payload.new.weight_kg,
+          weight_timestamp: payload.new.weight_timestamp,
+          synced: 1,
+          updated_at: payload.new.updated_at || payload.new.recorded_at || new Date().toISOString(),
+        };
+        
+        // Check if exists locally, update or insert atomically
+        const existing = await localDB.db!.getAllAsync<LocalHealthMetric>(
+          'SELECT id FROM health_metrics WHERE id = ?',
+          [metric.id]
+        );
+        
+        if (existing.length > 0) {
+          await localDB.updateHealthMetric(metric.id, metric);
+        } else {
+          await localDB.insertHealthMetric(metric);
+          await localDB.updateHealthMetricSyncStatus(metric.id, true);
+        }
+        
+        this.notifySyncComplete();
+      } else if (payload.eventType === 'DELETE') {
+        await localDB.deleteHealthMetric(payload.old.id);
+        this.notifySyncComplete();
+      }
+    } catch (error) {
+      console.error('[SyncService] Error handling realtime health metric change:', error);
+    }
+  }
+
   // Cleanup Realtime subscriptions
   async cleanupRealtimeSync(): Promise<void> {
     console.log('[SyncService] Cleaning up Realtime subscriptions');
@@ -195,6 +277,11 @@ class SyncService {
     if (this.workoutChannel) {
       await supabase.removeChannel(this.workoutChannel);
       this.workoutChannel = null;
+    }
+
+    if (this.healthChannel) {
+      await supabase.removeChannel(this.healthChannel);
+      this.healthChannel = null;
     }
   }
 
@@ -221,6 +308,9 @@ class SyncService {
 
       // Sync workouts
       await this.syncWorkoutsToSupabase();
+
+      // Sync health metrics
+      await this.syncHealthMetricsToSupabase();
 
       // Process sync queue
       await this.processSyncQueue();
@@ -381,6 +471,70 @@ class SyncService {
     }
   }
 
+  // Sync health metrics to Supabase with Last-Write-Wins conflict resolution
+  private async syncHealthMetricsToSupabase(): Promise<void> {
+    const unsyncedMetrics = await localDB.getUnsyncedHealthMetrics();
+    console.log(`[SyncService] Syncing ${unsyncedMetrics.length} health metrics to Supabase`);
+
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.warn('[SyncService] No authenticated user, cannot sync health metrics');
+      return;
+    }
+
+    for (const metric of unsyncedMetrics) {
+      try {
+        // Check if record exists on server and compare timestamps (Last-Write-Wins)
+        const { data: existing, error: fetchError } = await supabase
+          .from('health_metrics')
+          .select('updated_at')
+          .eq('user_id', metric.user_id)
+          .eq('summary_date', metric.summary_date)
+          .single();
+
+        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = not found
+          throw fetchError;
+        }
+
+        // If server version is newer, skip local update (server wins)
+        if (existing && new Date(existing.updated_at) > new Date(metric.updated_at)) {
+          console.log(`[SyncService] Server version of health metric ${metric.id} is newer, skipping local update`);
+          await localDB.updateHealthMetricSyncStatus(metric.id, true);
+          continue;
+        }
+
+        // Local version is newer or doesn't exist on server, push to server
+        const metricData = {
+          user_id: metric.user_id,
+          summary_date: metric.summary_date,
+          steps: metric.steps,
+          heart_rate_bpm: metric.heart_rate_bpm,
+          heart_rate_timestamp: metric.heart_rate_timestamp,
+          weight_kg: metric.weight_kg,
+          weight_timestamp: metric.weight_timestamp,
+          recorded_at: metric.updated_at,
+          updated_at: metric.updated_at,
+        };
+
+        const { error } = await supabase
+          .from('health_metrics')
+          .upsert([metricData], {
+            onConflict: 'user_id,summary_date'
+          });
+
+        if (error) throw error;
+        await localDB.updateHealthMetricSyncStatus(metric.id, true);
+        console.log(`[SyncService] Synced health metric ${metric.id} to server (local was newer)`);
+      } catch (error) {
+        console.error(`[SyncService] Failed to sync health metric ${metric.id}:`, error);
+        // Add to sync queue for retry
+        const { synced, ...cleanMetric } = metric;
+        await localDB.addToSyncQueue('health_metrics', 'upsert', metric.id, cleanMetric);
+      }
+    }
+  }
+
   // Process items in sync queue
   private async processSyncQueue(): Promise<void> {
     const queue = await localDB.getSyncQueue();
@@ -438,6 +592,8 @@ class SyncService {
           await localDB.updateFoodSyncStatus(item.record_id, true);
         } else if (item.table_name === 'workouts') {
           await localDB.updateWorkoutSyncStatus(item.record_id, true);
+        } else if (item.table_name === 'health_metrics') {
+          await localDB.updateHealthMetricSyncStatus(item.record_id, true);
         }
       } catch (error) {
         console.error(`[SyncService] Failed to process queue item ${item.id}:`, error);

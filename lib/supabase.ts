@@ -4,6 +4,8 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import 'react-native-url-polyfill/auto';
 
+const DEV = __DEV__;
+
 // Expo-compatible polyfills for Hermes
 if (Platform.OS !== 'web') {
   // Use React Native's built-in Buffer for base64 operations
@@ -58,10 +60,12 @@ function validateEnvironment() {
 
   if (!(looksLikeJwt || looksLikePublishable)) {
     // Do not throw to allow newer formats moving forward; warn for visibility in dev logs.
-    console.warn(
-      '[Supabase] EXPO_PUBLIC_SUPABASE_ANON_KEY does not look like a typical JWT or publishable key. Continuing anyway. '
-      + 'If auth fails, re-check the key in your Supabase project settings.'
-    );
+    if (DEV) {
+      console.warn(
+        '[Supabase] EXPO_PUBLIC_SUPABASE_ANON_KEY does not look like a typical JWT or publishable key. Continuing anyway. '
+        + 'If auth fails, re-check the key in your Supabase project settings.'
+      );
+    }
   }
 
   return { supabaseUrl, supabaseAnonKey };
@@ -70,11 +74,13 @@ function validateEnvironment() {
 // Get validated environment variables
 const { supabaseUrl, supabaseAnonKey } = validateEnvironment();
 
-console.log('[Supabase] Initializing client:', {
-  url: supabaseUrl,
-  platform: Platform.OS,
-  hasAsyncStorage: Platform.OS !== 'web',
-});
+if (DEV) {
+  console.log('[Supabase] Initializing client:', {
+    url: supabaseUrl,
+    platform: Platform.OS,
+    hasAsyncStorage: Platform.OS !== 'web',
+  });
+}
 
 // Create Supabase client with optimized configuration
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -94,5 +100,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-// Log successful initialization
-console.log('[Supabase] Client initialized successfully');
+// Log successful initialization (dev only)
+if (DEV) {
+  console.log('[Supabase] Client initialized successfully');
+}
