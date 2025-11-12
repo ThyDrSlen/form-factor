@@ -26,6 +26,19 @@ export interface LocalWorkout {
   updated_at: string;
 }
 
+export interface LocalHealthMetric {
+  id: string;
+  user_id: string;
+  summary_date: string; // YYYY-MM-DD
+  steps: number | null;
+  heart_rate_bpm: number | null;
+  heart_rate_timestamp: string | null;
+  weight_kg: number | null;
+  weight_timestamp: string | null;
+  synced: number; // 0 = not synced, 1 = synced
+  updated_at: string;
+}
+
 class LocalDatabase {
   public db: SQLite.SQLiteDatabase | null = null;
   private initPromise: Promise<void> | null = null;
@@ -86,6 +99,23 @@ class LocalDatabase {
       );
     `);
 
+    // Create health_metrics table
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS health_metrics (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        summary_date TEXT NOT NULL,
+        steps INTEGER,
+        heart_rate_bpm REAL,
+        heart_rate_timestamp TEXT,
+        weight_kg REAL,
+        weight_timestamp TEXT,
+        synced INTEGER DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        UNIQUE(user_id, summary_date)
+      );
+    `);
+
     // Create sync queue table for operations that failed to sync
     await this.db.execAsync(`
       CREATE TABLE IF NOT EXISTS sync_queue (
@@ -105,6 +135,8 @@ class LocalDatabase {
       CREATE INDEX IF NOT EXISTS idx_foods_synced ON foods(synced);
       CREATE INDEX IF NOT EXISTS idx_workouts_date ON workouts(date DESC);
       CREATE INDEX IF NOT EXISTS idx_workouts_synced ON workouts(synced);
+      CREATE INDEX IF NOT EXISTS idx_health_metrics_user_date ON health_metrics(user_id, summary_date DESC);
+      CREATE INDEX IF NOT EXISTS idx_health_metrics_synced ON health_metrics(synced);
     `);
 
     console.log('[LocalDB] Tables created successfully');
@@ -263,6 +295,117 @@ class LocalDatabase {
     );
   }
 
+  // Health Metric operations
+  async insertHealthMetric(metric: Omit<LocalHealthMetric, 'synced' | 'updated_at'>): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO health_metrics 
+       (id, user_id, summary_date, steps, heart_rate_bpm, heart_rate_timestamp, weight_kg, weight_timestamp, synced, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+      [
+        metric.id,
+        metric.user_id,
+        metric.summary_date,
+        metric.steps,
+        metric.heart_rate_bpm,
+        metric.heart_rate_timestamp,
+        metric.weight_kg,
+        metric.weight_timestamp,
+        new Date().toISOString()
+      ]
+    );
+  }
+
+  async getHealthMetricsForRange(userId: string, startDate: string, endDate: string): Promise<LocalHealthMetric[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getAllAsync<LocalHealthMetric>(
+      `SELECT * FROM health_metrics 
+       WHERE user_id = ? AND summary_date >= ? AND summary_date <= ?
+       ORDER BY summary_date DESC`,
+      [userId, startDate, endDate]
+    );
+    return result;
+  }
+
+  async getLatestHealthMetric(userId: string): Promise<LocalHealthMetric | null> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getAllAsync<LocalHealthMetric>(
+      `SELECT * FROM health_metrics 
+       WHERE user_id = ?
+       ORDER BY summary_date DESC
+       LIMIT 1`,
+      [userId]
+    );
+    return result[0] || null;
+  }
+
+  async getHealthMetricByDate(userId: string, summaryDate: string): Promise<LocalHealthMetric | null> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getAllAsync<LocalHealthMetric>(
+      `SELECT * FROM health_metrics 
+       WHERE user_id = ? AND summary_date = ?`,
+      [userId, summaryDate]
+    );
+    return result[0] || null;
+  }
+
+  async getUnsyncedHealthMetrics(): Promise<LocalHealthMetric[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getAllAsync<LocalHealthMetric>(
+      'SELECT * FROM health_metrics WHERE synced = 0 ORDER BY summary_date ASC'
+    );
+    return result;
+  }
+
+  async updateHealthMetricSyncStatus(id: string, synced: boolean): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    await this.db.runAsync(
+      'UPDATE health_metrics SET synced = ?, updated_at = ? WHERE id = ?',
+      [synced ? 1 : 0, new Date().toISOString(), id]
+    );
+  }
+
+  async updateHealthMetric(id: string, updates: Partial<LocalHealthMetric>): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const fields = Object.keys(updates).filter(k => k !== 'id');
+    if (fields.length === 0) return;
+
+    const setClauses = fields.map(f => `${f} = ?`).join(', ');
+    const values = fields.map(f => {
+      const val = updates[f as keyof LocalHealthMetric];
+      return val === undefined ? null : val;
+    });
+    values.push(id);
+
+    await this.db.runAsync(
+      `UPDATE health_metrics SET ${setClauses} WHERE id = ?`,
+      values
+    );
+  }
+
+  async deleteHealthMetric(id: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    await this.db.runAsync('DELETE FROM health_metrics WHERE id = ?', [id]);
+  }
+
+  async getHealthMetricsCount(userId: string): Promise<number> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getAllAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM health_metrics WHERE user_id = ?',
+      [userId]
+    );
+    return result[0]?.count || 0;
+  }
+
   // Sync queue operations
   async addToSyncQueue(tableName: string, operation: string, recordId: string, data?: any): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
@@ -297,6 +440,7 @@ class LocalDatabase {
 
     await this.db.runAsync('DELETE FROM foods WHERE deleted = 1 AND synced = 1');
     await this.db.runAsync('DELETE FROM workouts WHERE deleted = 1 AND synced = 1');
+    // Health metrics don't have soft deletes, so no cleanup needed
   }
 
   async clearSyncQueue(): Promise<void> {
@@ -313,6 +457,7 @@ class LocalDatabase {
     await this.db.execAsync(`
       DELETE FROM foods;
       DELETE FROM workouts;
+      DELETE FROM health_metrics;
       DELETE FROM sync_queue;
     `);
     console.log('[LocalDB] All data cleared');

@@ -8,10 +8,10 @@ import { requireNativeModule } from 'expo-modules-core';
 // Load native module safely (don't throw during import)
 let ARKitBodyTracker: any = null;
 try {
-  console.log('[ARKitBodyTracker] Attempting to load native module...');
+  if (__DEV__) console.log('[ARKitBodyTracker] Attempting to load native module...');
   ARKitBodyTracker = requireNativeModule('ARKitBodyTracker');
-  console.log('[ARKitBodyTracker] Native module loaded successfully:', !!ARKitBodyTracker);
-  if (ARKitBodyTracker) {
+  if (__DEV__) console.log('[ARKitBodyTracker] Native module loaded successfully:', !!ARKitBodyTracker);
+  if (__DEV__ && ARKitBodyTracker) {
     console.log('[ARKitBodyTracker] Available methods:', Object.keys(ARKitBodyTracker));
   }
 } catch (e) {
@@ -43,6 +43,19 @@ export interface BodyPose {
   estimatedHeight?: number;
 }
 
+export interface Joint2D {
+  name: string;
+  x: number;
+  y: number;
+  isTracked: boolean;
+}
+
+export interface BodyPose2D {
+  joints: Joint2D[];
+  timestamp: number;
+  isTracking: boolean;
+}
+
 /**
  * Joint angles for common body movements
  */
@@ -67,20 +80,22 @@ export class BodyTracker {
    * Requires iPhone XS or newer (A12 Bionic chip or later)
    */
   static isSupported(): boolean {
-    console.log('[BodyTracker] isSupported() called');
-    console.log('[BodyTracker] ARKitBodyTracker module exists:', !!ARKitBodyTracker);
+    if (__DEV__) console.log('[BodyTracker] isSupported() called');
+    if (__DEV__) console.log('[BodyTracker] ARKitBodyTracker module exists:', !!ARKitBodyTracker);
     
     if (!ARKitBodyTracker) {
-      console.error('[BodyTracker] Native module not loaded - returning false');
-      console.error('[BodyTracker] This means the module failed to load at import time');
-      console.error('[BodyTracker] You MUST run: bunx expo prebuild --clean --platform ios');
+      if (__DEV__) {
+        console.error('[BodyTracker] Native module not loaded - returning false');
+        console.error('[BodyTracker] This means the module failed to load at import time');
+        console.error('[BodyTracker] You MUST run: bunx expo prebuild --clean --platform ios');
+      }
       return false;
     }
     
-    console.log('[BodyTracker] Calling native isSupported()...');
+    if (__DEV__) console.log('[BodyTracker] Calling native isSupported()...');
     const supported = ARKitBodyTracker.isSupported();
-    console.log('[BodyTracker] Native isSupported() returned:', supported);
-    console.log('[BodyTracker] Device: iPhone 15 Pro should return TRUE');
+    if (__DEV__) console.log('[BodyTracker] Native isSupported() returned:', supported);
+    if (__DEV__) console.log('[BodyTracker] Device: iPhone 15 Pro should return TRUE');
     
     return supported;
   }
@@ -105,6 +120,16 @@ export class BodyTracker {
       return null;
     }
     return ARKitBodyTracker.getCurrentPose();
+  }
+
+  static getCurrentPose2D(): BodyPose2D | null {
+    if (!ARKitBodyTracker) {
+      return null;
+    }
+    if (typeof ARKitBodyTracker.getCurrentPose2D !== 'function') {
+      return null;
+    }
+    return ARKitBodyTracker.getCurrentPose2D();
   }
 
   /**
@@ -253,9 +278,12 @@ export class BodyTracker {
  */
 export function useBodyTracking(fps: number = 30) {
   const [pose, setPose] = React.useState<BodyPose | null>(null);
+  const [pose2D, setPose2D] = React.useState<BodyPose2D | null>(null);
   const [isSupported, setIsSupported] = React.useState(false);
   const [isTracking, setIsTracking] = React.useState(false);
   const intervalRef = React.useRef<NodeJS.Timeout | null>(null);
+  const lastTimestampRef = React.useRef<number>(0);
+  const poseRef = React.useRef<BodyPose | null>(null);
 
   React.useEffect(() => {
     // Check support on mount
@@ -265,14 +293,37 @@ export function useBodyTracking(fps: number = 30) {
 
   const startTracking = React.useCallback(async () => {
     try {
+      // Ensure ARKit view mounts before starting the session to prefer ARView.session
+      // Give it more time to ensure the view is laid out and ready
+      await new Promise((r) => setTimeout(r, 300));
       await BodyTracker.startTracking();
       setIsTracking(true);
 
       // Poll for poses at specified FPS
+      if (intervalRef.current) return;
       intervalRef.current = setInterval(() => {
         const currentPose = BodyTracker.getCurrentPose();
-        if (currentPose) {
-          setPose(currentPose);
+        if (!currentPose || !currentPose.isTracking) {
+          if (poseRef.current !== null) {
+            poseRef.current = null;
+            lastTimestampRef.current = 0;
+            setPose(null);
+            setPose2D(null);
+          }
+          return;
+        }
+        if (currentPose.timestamp === lastTimestampRef.current) {
+          return;
+        }
+        lastTimestampRef.current = currentPose.timestamp;
+        poseRef.current = currentPose;
+        setPose(currentPose);
+
+        const projected = BodyTracker.getCurrentPose2D();
+        if (projected && projected.isTracking && projected.joints.length > 0) {
+          setPose2D(projected);
+        } else {
+          setPose2D(null);
         }
       }, 1000 / fps);
     } catch (error) {
@@ -289,6 +340,9 @@ export function useBodyTracking(fps: number = 30) {
     BodyTracker.stopTracking();
     setIsTracking(false);
     setPose(null);
+    setPose2D(null);
+    poseRef.current = null;
+    lastTimestampRef.current = 0;
   }, []);
 
   React.useEffect(() => {
@@ -299,6 +353,7 @@ export function useBodyTracking(fps: number = 30) {
 
   return {
     pose,
+    pose2D,
     isSupported,
     isTracking,
     startTracking,

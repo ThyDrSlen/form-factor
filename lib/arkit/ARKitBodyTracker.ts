@@ -37,6 +37,19 @@ export interface BodyPose {
   estimatedHeight?: number;
 }
 
+export interface Joint2D {
+  name: string;
+  x: number;
+  y: number;
+  isTracked: boolean;
+}
+
+export interface BodyPose2D {
+  joints: Joint2D[];
+  timestamp: number;
+  isTracking: boolean;
+}
+
 /**
  * Joint angles for common body movements
  */
@@ -87,6 +100,16 @@ export class BodyTracker {
       return null;
     }
     return ARKitBodyTracker.getCurrentPose();
+  }
+
+  static getCurrentPose2D(): BodyPose2D | null {
+    if (!ARKitBodyTracker) {
+      return null;
+    }
+    if (typeof ARKitBodyTracker.getCurrentPose2D !== 'function') {
+      return null;
+    }
+    return ARKitBodyTracker.getCurrentPose2D();
   }
 
   /**
@@ -235,6 +258,7 @@ export class BodyTracker {
  */
 export function useBodyTracking(fps: number = 30) {
   const [pose, setPose] = React.useState<BodyPose | null>(null);
+  const [pose2D, setPose2D] = React.useState<BodyPose2D | null>(null);
   const [isSupported, setIsSupported] = React.useState(false);
   const [isTracking, setIsTracking] = React.useState(false);
   const intervalRef = React.useRef<NodeJS.Timeout | null>(null);
@@ -255,6 +279,12 @@ export function useBodyTracking(fps: number = 30) {
         const currentPose = BodyTracker.getCurrentPose();
         if (currentPose) {
           setPose(currentPose);
+          const projected = BodyTracker.getCurrentPose2D();
+          if (projected && projected.isTracking) {
+            setPose2D(projected);
+          } else {
+            setPose2D(null);
+          }
         }
       }, 1000 / fps);
     } catch (error) {
@@ -271,6 +301,7 @@ export function useBodyTracking(fps: number = 30) {
     BodyTracker.stopTracking();
     setIsTracking(false);
     setPose(null);
+    setPose2D(null);
   }, []);
 
   React.useEffect(() => {
@@ -281,6 +312,7 @@ export function useBodyTracking(fps: number = 30) {
 
   return {
     pose,
+    pose2D,
     isSupported,
     isTracking,
     startTracking,
