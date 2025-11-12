@@ -1,5 +1,12 @@
 {
   "expo": {
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "enabled": false,
+      "fallbackToCacheTimeout": 0
+    },
     "name": "form-factor-eas",
     "jsEngine": "hermes",
     "slug": "form-factor-eas",
@@ -9,7 +16,6 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "plugins": [
-      "./plugins/withARKitBodyTracker",
       "expo-router",
       "expo-web-browser",
       "react-native-vision-camera",
@@ -22,7 +28,8 @@
           "healthClinicalDescription": "We access clinical health records (e.g., labs and immunizations) to enhance your health insights."
         }
       ],
-      "expo-font"
+      "expo-font",
+      "./plugins/withDisableAssetThinning.js"
     ],
     "android": {
       "package": "com.slenthekid.formfactoreas",
@@ -52,15 +59,16 @@
       ]
     },
     "ios": {
-      "bundleIdentifier": "com.slenthekid.form-factor-eas",
+      "bundleIdentifier": "com.slenthekid.formfactoreas",
       "supportsTablet": true,
       "icon": "./assets/images/ff-logo.png",
+      "buildNumber": "1",
       "infoPlist": {
         "NSHealthShareUsageDescription": "This app reads your health data to show activity insights.",
         "NSHealthUpdateUsageDescription": "This app writes health data to record your activity.",
         "NSCameraUsageDescription": "We need camera access to scan your form and provide skeleton tracking.",
         "NSMicrophoneUsageDescription": "Optional: for recording workout videos",
-        "WKCompanionAppBundleIdentifier": "com.slenthekid.form-factor-eas"
+        "WKCompanionAppBundleIdentifier": "com.slenthekid.formfactoreas"
       },
       "entitlements": {
         "com.apple.developer.healthkit": true
@@ -70,6 +78,10 @@
       "bundler": "metro",
       "output": "static"
     },
+    "assetBundlePatterns": [
+      "assets/**",
+      "**/*.{png,jpg,jpeg,svg,ttf,otf}"
+    ],
     "owner": "slenthekid",
     "extra": {
       "router": {},

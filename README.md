@@ -2,7 +2,7 @@
 
 ## Contributor Guide
 
-See [`AGENTS.md`](AGENTS.md) for repository guidelines covering project layout, commands, coding standards, and pull request expectations.
+See [`docs/AGENTS.md`](docs/AGENTS.md) for repository guidelines covering project layout, commands, coding standards, and pull request expectations.
 
 ## Project Overview
 
