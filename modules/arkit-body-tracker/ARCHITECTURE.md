@@ -1,6 +1,6 @@
 # ARKit Body Tracker Architecture
 
-## 🏗️ System Overview
+## System Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -68,7 +68,7 @@
 
 ---
 
-## 📞 Call Flow: TypeScript → Swift
+## Call Flow: TypeScript → Swift
 
 ```
 USER CALLS:                  BodyTracker.isSupported()
@@ -103,7 +103,7 @@ TYPESCRIPT:                  returns boolean to your app
 
 ---
 
-## 📁 File Structure & Responsibilities
+## File Structure & Responsibilities
 
 ```
 form-factor-eas/
@@ -141,7 +141,7 @@ form-factor-eas/
 
 ---
 
-## 🔍 How Module Discovery Works
+## How Module Discovery Works
 
 ### 1. **Autolinking Discovery** (During `expo prebuild`)
 
@@ -192,7 +192,7 @@ requireNativeModule('ARKitBodyTracker')
 
 ---
 
-## 🧪 Testing Options Explained
+## Testing Options Explained
 
 ### **Option 1: Full Stack Test** (What you're doing now)
 ```
@@ -252,7 +252,7 @@ ARKitTest.testBodyTrackingSupport()
 
 ---
 
-## 🎯 Current Problem: Module Not Found
+## Current Problem: Module Not Found
 
 ```
 ERROR: requireNativeModule('ARKitBodyTracker')
@@ -260,25 +260,25 @@ ERROR: requireNativeModule('ARKitBodyTracker')
           └─ Why?
 
 Possible causes:
-1. ❌ Module not registered (prebuild didn't run)
-2. ❌ Name mismatch (TypeScript vs Swift)
-3. ❌ Module not compiled into app
-4. ❌ Metro cache has old code
+1. Module not registered (prebuild didn't run)
+2. Name mismatch (TypeScript vs Swift)
+3. Module not compiled into app
+4. Metro cache has old code
 ```
 
 **The fix we did:**
 ```
-✅ Fixed expo-module.config.json
-✅ Created package.json for module
-✅ Linked in main package.json
-✅ Cleared Metro cache
-✅ Ran prebuild to regenerate iOS project
-✅ Rebuilt app
+- Fixed expo-module.config.json
+- Created package.json for module
+- Linked in main package.json
+- Cleared Metro cache
+- Ran prebuild to regenerate iOS project
+- Rebuilt app
 ```
 
 ---
 
-## 🔑 Key Concept: Name Matching
+## Key Concept: Name Matching
 
 **These MUST match exactly:**
 
@@ -303,7 +303,7 @@ If they don't match → "Cannot find native module" error!
 
 ---
 
-## 📊 Debugging Checklist
+## Debugging Checklist
 
 ```
 □ Module file exists: modules/arkit-body-tracker/ios/ARKitBodyTrackerModule.swift
@@ -319,7 +319,7 @@ If they don't match → "Cannot find native module" error!
 
 ---
 
-## 🚀 Next Steps for Debugging
+## Next Steps for Debugging
 
 ### See if module is registered:
 ```bash
@@ -336,6 +336,6 @@ bun run logs:ios
 bun run test:swift
 # Set breakpoint at line 32 in isSupported()
 # Run app (⌘R)
-# Does breakpoint hit? → Module is registered ✅
-# Doesn't hit? → Module not found ❌
+# Does breakpoint hit? → Module is registered
+# Doesn't hit? → Module not found
 ```
