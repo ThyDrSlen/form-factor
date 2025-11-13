@@ -13,6 +13,8 @@
     "ios:device": "xcodebuild -workspace ios/formfactoreas.xcworkspace -scheme formfactoreas -configuration Debug -sdk iphoneos26.1 -destination 'name=fc' build",
     "web": "expo start --web",
     "lint": "expo lint",
+    "check:types": "tsc --noEmit",
+    "ci:local": "bun run lint && bun run check:types",
     "kill": "lsof -ti :8081 | xargs kill -9 && lsof -ti :8082 | xargs kill -9 && lsof -ti :8083 | xargs kill -9 && lsof -ti :8084 | xargs kill -9 && lsof -ti :8085 | xargs kill -9",
     "fix:ios": "./scripts/fix-ios-build.sh",
     "screenshot": "./scripts/capture-device-screen.sh",
@@ -23,8 +25,9 @@
     "build:local:android:apk": "./scripts/build-local-android.sh apk",
     "test:swift": "open ios/formfactoreas.xcworkspace",
     "logs:ios": "xcrun simctl spawn booted log stream --predicate 'processImagePath endswith \"formfactoreas\"' --level=debug",
-    "check:dead-code": "knip --include files,exports,dependencies",
-    "check:dead-code:all": "knip"
+    "check:dead-code": "knip --config ./config/knip.json --include files,exports,dependencies",
+    "check:dead-code:all": "knip --config ./config/knip.json",
+    "prepare": "husky"
   },
   "resolutions": {
     "framer-motion": "^12.18.1",
@@ -87,6 +90,7 @@
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
     "expo-module-scripts": "^4.1.7",
+    "husky": "^9.1.7",
     "knip": "^5.66.2"
   },
   "expo": {
@@ -97,7 +101,10 @@
     },
     "doctor": {
       "reactNativeDirectoryCheck": {
-        "exclude": ["react-native-health", "react-native-watch-connectivity"]
+        "exclude": [
+          "react-native-health",
+          "react-native-watch-connectivity"
+        ]
       }
     }
   },
