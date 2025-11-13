@@ -1,6 +1,6 @@
 # Quick Reference: Platform Stubs for Native Modules
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Create a new native module with web stub:
 
@@ -17,7 +17,7 @@ cp lib/examples/native-module-template.web.ts lib/my-module/MyModule.web.ts
 # 4. Implement iOS version, keep web version as stubs
 ```
 
-## 📝 File Naming Pattern
+## File Naming Pattern
 
 ```
 lib/
@@ -28,18 +28,18 @@ lib/
     types.ts              ← Shared types (optional)
 ```
 
-## 💡 Import Pattern
+## Import Pattern
 
 **Always import without extension:**
 ```typescript
-// ✅ Correct - Metro auto-resolves
+// Correct - Metro auto-resolves
 import { MyModule } from '@/lib/my-feature/MyModule';
 
-// ❌ Wrong - Don't specify extension
+// Wrong - Don't specify extension
 import { MyModule } from '@/lib/my-feature/MyModule.ios';
 ```
 
-## 🎯 Resolution Order
+## Resolution Order
 
 Metro resolves files in this order:
 1. `.ios.ts` → iOS
@@ -48,7 +48,7 @@ Metro resolves files in this order:
 4. `.web.ts` → Web
 5. `.ts` → All platforms (fallback)
 
-## ✨ Usage in Components
+## Usage in Components
 
 ### Pattern 1: Hide on Web
 ```typescript
@@ -91,7 +91,7 @@ export function MyComponent() {
 }
 ```
 
-## 🏗️ iOS Implementation Template
+## iOS Implementation Template
 
 ```typescript
 // MyModule.ios.ts
@@ -114,7 +114,7 @@ export class MyModule {
 }
 ```
 
-## 🌐 Web Stub Template
+## Web Stub Template
 
 ```typescript
 // MyModule.web.ts
@@ -136,7 +136,7 @@ export class MyModule {
 }
 ```
 
-## 🔧 Helper Utilities
+## Helper Utilities
 
 ```typescript
 import { 
@@ -168,7 +168,7 @@ runOnPlatform('ios', () => {
 });
 ```
 
-## ✅ Checklist for New Modules
+## Checklist for New Modules
 
 - [ ] Create `.ios.ts` with native implementation
 - [ ] Create `.web.ts` with type-compatible stubs
@@ -181,23 +181,23 @@ runOnPlatform('ios', () => {
 - [ ] Add platform checks in UI components
 - [ ] Update documentation
 
-## 📚 Examples in Codebase
+## Examples in Codebase
 
-### ARKit Body Tracking ✅
+### ARKit Body Tracking
 - **iOS**: `lib/arkit/ARKitBodyTracker.ios.ts`
 - **Web**: `lib/arkit/ARKitBodyTracker.web.ts`
 - **Usage**: `app/(tabs)/scan-arkit.tsx`
 
-### HealthKit ✅
+### HealthKit
 - **Pattern**: Runtime checks with `Platform.OS`
 - **Files**: `lib/services/healthkit/*.ts`
 - **Context**: `contexts/HealthKitContext.tsx`
 
-### Session Manager ✅
+### Session Manager
 - **Pattern**: Runtime checks for web vs native storage
 - **File**: `lib/services/SessionManager.ts`
 
-## 🧪 Testing
+## Testing
 
 ### Test Web Build
 ```bash
@@ -213,14 +213,14 @@ bun run ios
 
 **Expected**: Native features work normally
 
-## ⚠️ Common Mistakes
+## Common Mistakes
 
-### ❌ Don't: Import with extension
+### Don't: Import with extension
 ```typescript
 import { MyModule } from '@/lib/my-module/MyModule.ios';
 ```
 
-### ❌ Don't: Throw errors for getters in web stubs
+### Don't: Throw errors for getters in web stubs
 ```typescript
 // Bad
 static getData(): MyData[] {
@@ -233,7 +233,7 @@ static getData(): MyData[] {
 }
 ```
 
-### ❌ Don't: Platform checks inside platform-specific files
+### Don't: Platform checks inside platform-specific files
 ```typescript
 // MyModule.ios.ts
 static isAvailable(): boolean {
@@ -242,21 +242,21 @@ static isAvailable(): boolean {
 }
 ```
 
-### ❌ Don't: Different types between iOS and web
+### Don't: Different types between iOS and web
 ```typescript
 // MyModule.ios.ts
 static getData(): Promise<MyData[]> { }
 
 // MyModule.web.ts
-static getData(): MyData[] { } // ❌ Missing Promise
+static getData(): MyData[] { } // Missing Promise
 ```
 
-## 📖 Full Documentation
+## Full Documentation
 
 - **Complete Guide**: `docs/PLATFORM_SPECIFIC_CODE_GUIDE.md`
 - **Templates**: `lib/examples/native-module-template.{ios,web}.ts`
 
-## 🆘 Getting Help
+## Getting Help
 
 1. Check existing patterns: ARKit, HealthKit
 2. Read full guide: `docs/PLATFORM_SPECIFIC_CODE_GUIDE.md`
