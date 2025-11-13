@@ -1,6 +1,6 @@
 # HealthKit Sync & Trends - Quick Start Guide
 
-## 🚀 What's New
+## What's New
 
 You now have a complete HealthKit sync and trends system that:
 - **Imports ALL your historical health data** (up to 1+ year)
@@ -8,7 +8,7 @@ You now have a complete HealthKit sync and trends system that:
 - **Stores data in Supabase** for cross-device access
 - **Displays real-time sync progress**
 
-## 📱 How to Use
+## How to Use
 
 ### First Time Setup
 
@@ -37,7 +37,7 @@ Automatically generated insights like:
 - "5 workouts completed"
 - "Weight decreased 2.5%"
 
-## 🔧 Using in Your Code
+## Using in Your Code
 
 ### Trigger a Manual Sync
 
@@ -103,7 +103,7 @@ console.log('Previous week avg steps:', comparison.previous?.avgSteps);
 console.log('Change %:', comparison.stepsChange); // e.g., +12.5
 ```
 
-## 📊 Example: Custom Trends Component
+## Example: Custom Trends Component
 
 ```typescript
 import React, { useEffect, useState } from 'react';
@@ -141,7 +141,7 @@ export function WeeklyStepsTrend() {
 }
 ```
 
-## 🎯 Best Practices
+## Best Practices
 
 ### When to Trigger Sync
 
@@ -162,7 +162,7 @@ export function WeeklyStepsTrend() {
 3. **Handle errors**: Catch and display errors gracefully
 4. **Test on device**: Simulator doesn't have real HealthKit data
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### "No data available"
 
@@ -187,7 +187,7 @@ export function WeeklyStepsTrend() {
 3. Check console logs for details
 4. Retry sync (it's safe to re-run)
 
-## 📈 What Gets Synced
+## What Gets Synced
 
 | Metric | Frequency | Aggregation |
 |--------|-----------|-------------|
@@ -195,15 +195,15 @@ export function WeeklyStepsTrend() {
 | Weight | Latest per day | Weekly/monthly averages + min/max |
 | Heart Rate | Latest per day | Weekly/monthly averages |
 
-## 🔮 Coming Soon
+## Coming Soon
 
-- ✨ Automatic background sync
-- 📊 Advanced charts and visualizations  
-- 🎯 Goal tracking with predictions
-- 📤 Export data to CSV/PDF
-- 🔔 Trend alerts and notifications
+- Automatic background sync
+- Advanced charts and visualizations  
+- Goal tracking with predictions
+- Export data to CSV/PDF
+- Trend alerts and notifications
 
-## 💡 Tips
+## Tips
 
 1. **Sync regularly**: Re-sync weekly to keep data fresh
 2. **Check data range**: Use `checkDataRange()` to verify what's synced
@@ -211,7 +211,7 @@ export function WeeklyStepsTrend() {
 4. **Use aggregations**: Weekly/monthly views are great for long-term patterns
 5. **Export strategy**: All data is in Supabase `health_metrics` table
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 ```
 User Action → HealthKit Context → Bulk Sync Service → Supabase
@@ -221,7 +221,7 @@ User Action → HealthKit Context → Bulk Sync Service → Supabase
 Trends Screen ← Aggregation Service ← health_metrics table
 ```
 
-## 📝 Key Files
+## Key Files
 
 - `lib/services/healthkit/health-bulk-sync.ts` - Bulk sync logic
 - `lib/services/healthkit/health-aggregation.ts` - Weekly/monthly aggregations
@@ -229,7 +229,7 @@ Trends Screen ← Aggregation Service ← health_metrics table
 - `app/(tabs)/health-trends.tsx` - Trends UI screen
 - `supabase/migrations/002_create_health_metrics_table.sql` - Database schema
 
-## ✅ Checklist: First Sync
+## Checklist: First Sync
 
 - [ ] Grant HealthKit read permissions
 - [ ] Tap "Sync HealthKit Data" button
@@ -239,7 +239,7 @@ Trends Screen ← Aggregation Service ← health_metrics table
 - [ ] Check for % change indicators
 - [ ] View Quick Insights section
 
-## 🎉 You're All Set!
+## You're All Set!
 
 Your health data is now synced and you can view comprehensive trends. The data will persist in Supabase and sync across devices when you sign in.
 

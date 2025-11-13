@@ -10,10 +10,10 @@ This guide explains the comprehensive HealthKit data sync and trends analysis sy
 
 You can now import **all** your historical HealthKit data (up to 365 days or more) into Supabase with a single action. This enables:
 
-- **Persistent data storage**: Your health metrics are backed up to the cloud
-- **Cross-device access**: View your data even when HealthKit is unavailable
-- **Historical trends**: Analyze your health patterns over weeks and months
-- **Offline resilience**: Access your data without requiring HealthKit permissions every time
+- Persistent data storage: Your health metrics are backed up to the cloud
+- Cross-device access: View your data even when HealthKit is unavailable
+- Historical trends: Analyze your health patterns over weeks and months
+- Offline resilience: Access your data without requiring HealthKit permissions every time
 
 ### 2. Weekly and Monthly Aggregations
 

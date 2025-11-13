@@ -11,18 +11,18 @@ This guide implements ARKit body tracking using **Apple's official APIs**:
 ## Why ARKit > Vision Framework
 
 ### Vision Framework Limitations
-- ❌ Screen-space 2D coordinates only (VNDetectHumanBodyPose3DRequest is limited)
-- ❌ Frame-by-frame analysis without persistent tracking
-- ❌ No real-world depth measurements
-- ❌ Requires frame processor overhead
+- Screen-space 2D coordinates only (VNDetectHumanBodyPose3DRequest is limited)
+- Frame-by-frame analysis without persistent tracking
+- No real-world depth measurements
+- Requires frame processor overhead
 
 ### ARKit Body Tracking Advantages
-- ✅ **Real 3D world-space coordinates in meters** via `ARBodyAnchor.skeleton`
-- ✅ **Continuous tracking** with `ARSession` delegate callbacks
-- ✅ **Accurate depth** using device sensors (LiDAR on iPhone 15 Pro)
-- ✅ **91 tracked joints** including hands and spine
-- ✅ **Occlusion handling** and temporal smoothing
-- ✅ **Automatic scale estimation** for body height
+- **Real 3D world-space coordinates in meters** via `ARBodyAnchor.skeleton`
+- **Continuous tracking** with `ARSession` delegate callbacks
+- **Accurate depth** using device sensors (LiDAR on iPhone 15 Pro)
+- **91 tracked joints** including hands and spine
+- **Occlusion handling** and temporal smoothing
+- **Automatic scale estimation** for body height
 
 ## Apple's ARKit Body Tracking Architecture
 
@@ -422,10 +422,10 @@ cd ios && pod install && cd ..
 
 | Metric | Vision | ARKit |
 |--------|---------|-------|
-| Squat depth accuracy | ❌ 2D projection | ✅ ±2cm |
-| Joint angle accuracy | ❌ ±15° | ✅ ±3° |
-| Tracking smoothness | ⚠️ Jittery | ✅ Smooth |
-| Occlusion handling | ❌ Poor | ✅ Excellent |
+| Squat depth accuracy | 2D projection | ±2cm |
+| Joint angle accuracy | ±15° | ±3° |
+| Tracking smoothness | Jittery | Smooth |
+| Occlusion handling | Poor | Excellent |
 | Setup complexity | Medium | **Simple** |
 
 ## Recommendation
@@ -437,7 +437,5 @@ The iPhone 15 Pro is literally designed for this. You'll get:
 - Simpler code (no `.m` files!)
 - Real fitness metrics
 - Professional-grade tracking
-
-Your users will love the difference! 🎯
 
 
