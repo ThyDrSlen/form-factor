@@ -34,7 +34,7 @@ cd ..
 
 **Why**: `react-native-vision-camera` frame processors need Objective-C registration.
 
-**Better Solution**: See `SIMPLIFIED_VISION_SETUP.md` for Expo-native approach.
+**Better Solution**: Use ARKit body tracking instead (see `docs/ARKIT_BODY_TRACKING_GUIDE.md`).
 
 ## 📱 Screenshot Automation
 
@@ -167,7 +167,7 @@ npx expo prebuild --platform ios --clean
 
 **Problem**: Complex frame processor setup.
 
-**Solution**: Consider migrating to simplified approach (see `SIMPLIFIED_VISION_SETUP.md`).
+**Solution**: Use ARKit body tracking instead (see `docs/ARKIT_BODY_TRACKING_GUIDE.md`).
 
 ## 📊 Debug Tips
 
@@ -223,7 +223,7 @@ If you're tired of the complex `.m` file setup:
 
 1. **Read the guide**:
    ```bash
-   cat docs/SIMPLIFIED_VISION_SETUP.md
+   cat docs/ARKIT_BODY_TRACKING_GUIDE.md
    ```
 
 2. **Benefits**:

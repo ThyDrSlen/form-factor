@@ -473,5 +473,5 @@ For each native module in the project:
 - [Metro Platform-Specific Extensions](https://facebook.github.io/metro/docs/configuration/#platformspecific-extensions)
 - [React Native Platform Module](https://reactnative.dev/docs/platform-specific-code)
 - [Expo Module API](https://docs.expo.dev/modules/module-api/)
-- Project docs: `ARKIT_BODY_TRACKING_GUIDE.md`, `SIMPLIFIED_VISION_SETUP.md`
+- Project docs: `ARKIT_BODY_TRACKING_GUIDE.md`
 
