@@ -4,6 +4,10 @@
 
 See [`docs/AGENTS.md`](docs/AGENTS.md) for repository guidelines covering project layout, commands, coding standards, and pull request expectations.
 
+## Configuration Files
+
+Tooling configurations such as Babel, Metro, Tailwind, ESLint, Playwright, and the custom `tslib` shim now live in `etc/` to keep the project root clean. The root-level stubs simply re-export the real configs, so existing scripts continue to work without changes.
+
 ## Project Overview
 
 PT Expo App is a cross-platform fitness social media application built with Expo (React Native) that enables users to:
