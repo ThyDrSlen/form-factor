@@ -3,9 +3,8 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
-import { Dimensions } from 'react-native';
 
 const { width: screenWidth } = Dimensions.get('window');
 const chartWidth = screenWidth - 40;

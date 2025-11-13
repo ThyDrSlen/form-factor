@@ -54,6 +54,27 @@ export function WeightTrendChart({
       .sort((a, b) => a.date - b.date);
   }, [data]);
 
+  const pointsToRender = React.useMemo(() => {
+    const arr = normalizedData;
+    const maxPoints = period === '7d' ? 7 : period === '30d' ? 10 : 12;
+    if (arr.length <= maxPoints) {
+      return arr;
+    }
+
+    const stride = Math.max(1, Math.floor(arr.length / maxPoints));
+    const sampled: typeof arr = [];
+    for (let i = 0; i < arr.length; i += stride) {
+      sampled.push(arr[i]);
+    }
+
+    const lastPoint = arr[arr.length - 1];
+    if (sampled[sampled.length - 1] !== lastPoint) {
+      sampled.push(lastPoint);
+    }
+
+    return sampled;
+  }, [normalizedData, period]);
+
   // Debug logging
   console.log('WeightTrendChart.svg - Data received:', {
     dataLength: normalizedData.length,
@@ -79,26 +100,6 @@ export function WeightTrendChart({
 
   // Sort data by date
   const sortedData = normalizedData;
-  
-  const pointsToRender = React.useMemo(() => {
-    const maxPoints = period === '7d' ? 7 : period === '30d' ? 10 : 12;
-    if (sortedData.length <= maxPoints) {
-      return sortedData;
-    }
-
-    const stride = Math.max(1, Math.floor(sortedData.length / maxPoints));
-    const sampled: typeof sortedData = [];
-    for (let i = 0; i < sortedData.length; i += stride) {
-      sampled.push(sortedData[i]);
-    }
-
-    const lastPoint = sortedData[sortedData.length - 1];
-    if (sampled[sampled.length - 1] !== lastPoint) {
-      sampled.push(lastPoint);
-    }
-
-    return sampled;
-  }, [sortedData, period]);
   
   // Calculate chart dimensions
   const chartInnerWidth = chartWidth - padding.left - padding.right;
