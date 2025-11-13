@@ -24,7 +24,7 @@ eas build --platform ios --profile preview
 - **Users**: Team members with simulators
 - **Use when**: Reviewing UI changes, demos
 
-### 3. Staging (TestFlight) ⭐ **Start Here for Real Users**
+### 3. Staging (TestFlight) - Start Here for Real Users
 ```bash
 eas build --platform ios --profile staging --auto-submit
 ```
@@ -58,7 +58,7 @@ eas build --platform ios --profile production --auto-submit
 2. Test features on device/simulator
 3. Fix bugs and iterate quickly
 
-### Phase 2: Beta Testing (First Real Users) 🎯
+### Phase 2: Beta Testing (First Real Users)
 1. **Build staging**: `eas build --platform ios --profile staging --auto-submit`
 2. **Wait for TestFlight**: Build appears in App Store Connect (~15-20 min build + 5-10 min processing)
 3. **Create test group**: In App Store Connect > TestFlight > External Testing
@@ -146,20 +146,20 @@ eas submit:list
 ## Best Practices
 
 ### For Staging/TestFlight
-- ✅ Test with 10-50 users initially, then scale up
-- ✅ Use staging Supabase to avoid affecting production data
-- ✅ Push frequent updates (daily/weekly) during beta
-- ✅ Monitor TestFlight crash reports in App Store Connect
-- ✅ Request feedback from testers regularly
-- ✅ Keep beta period to 2-4 weeks for focused testing
+- Test with 10-50 users initially, then scale up
+- Use staging Supabase to avoid affecting production data
+- Push frequent updates (daily/weekly) during beta
+- Monitor TestFlight crash reports in App Store Connect
+- Request feedback from testers regularly
+- Keep beta period to 2-4 weeks for focused testing
 
 ### For Production
-- ✅ Only release after thorough staging validation
-- ✅ Use production Supabase with proper backups
-- ✅ Test app review criteria compliance
-- ✅ Prepare App Store screenshots and descriptions
-- ✅ Have support contact ready for users
-- ✅ Monitor production analytics closely after launch
+- Only release after thorough staging validation
+- Use production Supabase with proper backups
+- Test app review criteria compliance
+- Prepare App Store screenshots and descriptions
+- Have support contact ready for users
+- Monitor production analytics closely after launch
 
 ## Troubleshooting
 

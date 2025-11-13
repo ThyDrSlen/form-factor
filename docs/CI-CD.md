@@ -2,11 +2,11 @@
 
 This document describes the CI/CD pipeline setup for the Form Factor EAS React Native/Expo application.
 
-## 🚀 Overview
+## Overview
 
 The CI/CD pipeline provides automated testing, building, and deployment for your React Native/Expo application using GitHub Actions, EAS Build, and Supabase.
 
-## 📋 Pipeline Jobs
+## Pipeline Jobs
 
 ### 1. Code Quality & Testing (`quality`)
 - **Triggers**: All pushes and PRs
@@ -57,7 +57,7 @@ The CI/CD pipeline provides automated testing, building, and deployment for your
   - Dependency security audit
   - Secret scanning
 
-## 🔧 Required Setup
+## Required Setup
 
 ### GitHub Secrets
 Add these secrets in your GitHub repository settings:
@@ -83,7 +83,7 @@ Ensure your `eas.json` is properly configured with:
 - Staging profile with environment variables
 - Production profile with environment variables
 
-## 🛠️ Tools Used
+## Tools Used
 
 - **Bun**: Package manager and runtime
 - **EAS Build**: Expo's build service
@@ -93,7 +93,7 @@ Ensure your `eas.json` is properly configured with:
 - **TypeScript**: Type checking
 - **ESLint**: Code linting
 
-## 📊 Workflow Triggers
+## Workflow Triggers
 
 | Event | Branch | Action |
 |-------|--------|--------|
@@ -102,7 +102,7 @@ Ensure your `eas.json` is properly configured with:
 | Push | Other | Quality checks + build verification |
 | Pull Request | Any | Quality checks + preview build |
 
-## 🔍 Monitoring
+## Monitoring
 
 ### GitHub Actions
 - View workflow runs: `https://github.com/[owner]/[repo]/actions`
@@ -119,7 +119,7 @@ Ensure your `eas.json` is properly configured with:
 - Check migration status
 - View project logs
 
-## 🚨 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -152,21 +152,21 @@ bun run android
 bun run ios
 ```
 
-## 📈 Performance Optimization
+## Performance Optimization
 
 - **Caching**: Dependencies are cached between runs
 - **Parallel Jobs**: Jobs run in parallel where possible
 - **Conditional Execution**: Jobs only run when needed
 - **Resource Optimization**: Uses appropriate runner sizes
 
-## 🔒 Security Features
+## Security Features
 
 - **Secret Scanning**: TruffleHog scans for exposed secrets
 - **Dependency Auditing**: Regular security audits
 - **Environment Protection**: Production requires approval
 - **Token Rotation**: Regular token updates recommended
 
-## 📝 Best Practices
+## Best Practices
 
 1. **Branch Strategy**
    - Use `main` for production
@@ -188,7 +188,7 @@ bun run ios
    - Monitor build success rates
    - Review security scan results
 
-## 🆘 Support
+## Support
 
 For issues with the CI/CD pipeline:
 
