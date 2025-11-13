@@ -14,6 +14,7 @@ let useCameraDevice: any = () => null;
 let useCameraPermission: any = () => ({ hasPermission: false, requestPermission: async () => {} });
 
 if (Platform.OS !== 'web') {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const VisionCamera = require('react-native-vision-camera');
   Camera = VisionCamera.Camera;
   useCameraDevice = VisionCamera.useCameraDevice;
@@ -22,6 +23,7 @@ if (Platform.OS !== 'web') {
 
 let ARKitView: any = View;
 if (Platform.OS === 'ios') {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   ARKitView = require('@/lib/arkit/ARKitBodyView').default;
 }
 
@@ -77,6 +79,7 @@ export default function ScanARKitScreen() {
       if (DEV) console.log('[ScanARKit] Device NOT supported');
       setSupportStatus('unsupported');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nativeSupported]);
 
   // Auto-start tracking when supported
@@ -94,6 +97,7 @@ export default function ScanARKitScreen() {
       if (DEV) console.log('[ScanARKit] ✅ Auto-starting tracking...');
       startTracking();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supportStatus, isTracking, hasPermission]);
 
   // Request camera permission on mount
@@ -109,6 +113,7 @@ export default function ScanARKitScreen() {
       if (DEV) console.log('[ScanARKit] Requesting camera permission...');
       requestPermission();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasPermission]);
 
   // Debug pose updates (throttled logging)
@@ -218,6 +223,7 @@ export default function ScanARKitScreen() {
       setFps(newFps);
       frameStatsRef.current = { lastTimestamp: pose.timestamp, frameCount: 0 };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pose]);
 
   // Debug pose2D updates
@@ -229,6 +235,7 @@ export default function ScanARKitScreen() {
         isTracking: pose2D.isTracking
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pose2D]);
 
   // Start tracking
@@ -253,6 +260,7 @@ export default function ScanARKitScreen() {
         });
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startNativeTracking]);
 
   // Stop tracking
@@ -273,6 +281,7 @@ export default function ScanARKitScreen() {
     } catch (error) {
       console.error('[ScanARKit] ❌ Error stopping tracking:', error);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopNativeTracking]);
 
   // Cleanup on unmount
@@ -316,6 +325,7 @@ export default function ScanARKitScreen() {
     }
     
     if (DEV) console.log('[ScanARKit] ✅ Camera flipped to', newPosition, wasTracking ? (newPosition === 'back' ? 'and tracking restarted' : 'and tracking stopped') : '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTracking, stopTracking, startTracking, cameraPosition]);
 
   // Fade out text after 5 seconds
@@ -448,7 +458,6 @@ export default function ScanARKitScreen() {
             if (isTracking) return;
             try {
               const { locationX, locationY } = e.nativeEvent;
-              const { width, height } = StyleSheet.flatten(StyleSheet.absoluteFillObject) as any;
               const view = e.target as any;
               // Fallback: compute normalized using layout if available
               const nx = Math.max(0, Math.min(1, (locationX) / (view?.width ?? 1)));

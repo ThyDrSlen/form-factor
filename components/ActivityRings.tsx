@@ -111,7 +111,7 @@ export function ActivityRings() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Today's Activity</Text>
+      <Text style={styles.title}>Today&#39;s Activity</Text>
       <View style={styles.ringsContainer}>
         <ActivityRing
           progress={stepProgress}

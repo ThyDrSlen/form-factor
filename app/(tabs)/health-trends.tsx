@@ -134,7 +134,6 @@ export default function HealthTrendsScreen() {
     stepsToday, 
     latestHeartRate, 
     bodyMassKg, 
-    stepHistory, 
     weightHistory,
     weightHistory30Days,
     weightHistory90Days,
