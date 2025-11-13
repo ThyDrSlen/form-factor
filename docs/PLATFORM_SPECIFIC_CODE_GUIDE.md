@@ -373,7 +373,7 @@ export function MyComponent() {
 
 ## Best Practices
 
-### ✅ DO
+### DO
 
 1. **Use platform-specific files** for clean separation
 2. **Export the same interface** from both `.ios.ts` and `.web.ts`
@@ -384,7 +384,7 @@ export function MyComponent() {
 7. **Hide UI completely** on unsupported platforms using `Platform.OS`
 8. **Document platform requirements** in comments
 
-### ❌ DON'T
+### DON'T
 
 1. **Don't throw errors** in web stubs for read-only methods (use `null`/`false`)
 2. **Don't import native modules** at the top level of `.web.ts` files
@@ -408,12 +408,12 @@ export function MyComponent() {
 - **Files**: `lib/services/healthkit/*.ts`
 - **Pattern**: Runtime checks + context
 - **Usage**: `contexts/HealthKitContext.tsx`, `components/dashboard-health/`
-- **Status**: ✅ Already handles web properly
+- **Status**: Already handles web properly
 
 ### AsyncStorage
 - **Files**: `lib/services/SessionManager.ts`
 - **Pattern**: Runtime `Platform.OS === 'web'` checks
-- **Status**: ✅ Working correctly
+- **Status**: Working correctly
 
 ---
 
@@ -431,10 +431,10 @@ bun run web
 4. Confirm alternative UI or hidden sections work
 
 ### Expected Behavior
-- ✅ No module import errors
-- ✅ Feature detection returns `false`
-- ✅ UI gracefully hides or shows alternatives
-- ✅ Console shows helpful warnings (not errors)
+- No module import errors
+- Feature detection returns `false`
+- UI gracefully hides or shows alternatives
+- Console shows helpful warnings (not errors)
 
 ---
 

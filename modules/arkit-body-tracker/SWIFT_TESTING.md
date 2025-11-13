@@ -76,7 +76,7 @@
 
 4. Run playground (⌘⇧↩)
 
-⚠️ **Note:** Playgrounds don't have camera access, so you can only test API availability
+**Note:** Playgrounds don't have camera access, so you can only test API availability
 
 ---
 
