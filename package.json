@@ -18,7 +18,6 @@
     "screenshot": "./scripts/capture-device-screen.sh",
     "watch:device": "./scripts/watch-device-screen.sh",
     "docs:arkit": "cat docs/ARKIT_BODY_TRACKING_GUIDE.md",
-    "docs:migration": "cat docs/MIGRATION_TO_ARKIT.md",
     "docs:build": "cat docs/IOS_BUILD_AND_DEBUG_GUIDE.md",
     "build:local:ios": "./scripts/build-local-ios.sh",
     "build:local:android:aab": "./scripts/build-local-android.sh aab",

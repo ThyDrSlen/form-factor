@@ -1,0 +1,26 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "app/**/*.{ts,tsx}"
+      ],
+      "project": [
+        "**/*.{ts,tsx,js}",
+        "!**/*.test.{ts,tsx}",
+        "!tests/**"
+      ],
+      "ignore": [
+        "scripts/**",
+        "**/*.{ios,android,native,web}.{ts,tsx}",
+        "plugins/**",
+        "modules/**/index.ts"
+      ],
+      "ignoreDependencies": [
+        "arkit-body-tracker",
+        "expo-module-scripts"
+      ]
+    }
+  }
+}
+
