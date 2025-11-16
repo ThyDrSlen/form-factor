@@ -1,8 +1,6 @@
-# Product Requirements Document
+# Form Factor
 
-## Contributor Guide
-
-See [`docs/AGENTS.md`](docs/AGENTS.md) for repository guidelines covering project layout, commands, coding standards, and pull request expectations.
+Form Factor is an iOS-first fitness and health tracking app built with Expo and Supabase. It focuses on fast offline logging of workouts and foods, HealthKit integration, and an experimental ARKit body tracking module. Web is display-focused; Android is planned.
 
 ## Configuration Files
 
@@ -10,14 +8,30 @@ Tooling configurations such as Babel, Metro, Tailwind, ESLint, Playwright, and t
 
 ## Project Overview
 
-PT Expo App is a cross-platform fitness social media application built with Expo (React Native) that enables users to:
+Form Factor helps you:
 
-- Track workouts and performance metrics
-- Analyze exercise form in real time with on-device MediaPipe/OpenCV overlays
-- Share posts, comments, and progress with a community
-- Receive audio/visual feedback and personalized recommendations
+- Log workouts and foods quickly
+- View health trends from Apple Health (HealthKit)
+- Experiment with on-device form insights (Vision/ARKit)
+- Work reliably offline with automatic Supabase sync
 
-The primary focus is on iOS (local device) for the MVP, with web as a display-based interface, and Android support planned subsequently. By leveraging Expo’s Managed Workflow, Supabase for backend services, and GitHub-based CI/CD, we ensure rapid iteration, team collaboration, and seamless deployment.
+MVP focus: iOS. Web is display-only. Android planned.
+
+## Current Status
+
+- Implemented
+  - Auth: email/password via Supabase Auth.
+  - Offline-first data: SQLite queue/sync for foods and workouts with network detection, retry, and soft-delete.
+  - Health metrics: reads from Apple Health (HealthKit) with a trends dashboard.
+  - Navigation/UI: Expo Router, NativeWind/Tailwind.
+- In progress
+  - ARKit body tracking module and on-device pose insights (Vision/ARKit), iOS only.
+  - E2E testing via Playwright.
+  - Error handling and telemetry polish.
+- Planned
+  - Android support.
+  - Social/feed features and notifications.
+  - Advanced analytics and ML recommendations.
 
 ## MVP Features
 
@@ -29,15 +43,9 @@ Tech: Expo, @supabase/supabase-js, Supabase Edge Functions (TypeScript), Supabas
 
 User Registration & Login Screens (iOS-focused)
 
-Description: SwiftUI-inspired UI implemented in React Native (Expo) for registration, login, and forgot-password flows. Tested on local iOS Simulator and physical devices via Expo Go or EAS Dev Client.
+Description: SwiftUI-inspired UI implemented in React Native (Expo) for registration, login, and forgot-password flows. Tested on local iOS Simulator and physical devices via Expo Go.
 
-Tech: React Navigation, React Native Paper/UI Kit, Expo DevTools, Expo Dev Client
-
-Post Creation & Feed
-
-Description: Users can create text/image/video posts; view a real-time feed filtered by friends/followers. Web interface provides read-only access to feeds for display purposes.
-
-Tech: Expo Video/Asset, Supabase Realtime, FlatList, Expo for Web (ReactDOM)
+Tech: React Navigation, React Native Paper/UI Kit, Expo DevTools
 
 Real-Time Form Feedback
 
@@ -45,23 +53,18 @@ Description: Capture camera frames on-device, run MediaPipe (WASM) or OpenCV.js 
 
 Tech: react-native-vision-camera, MediaPipe WASM, OpenCV.js modules, device orientation APIs
 
-On-Screen Visual & Audio Cues
-
-Description: Color-coded overlays indicate form status; audio prompts via Expo AV name joints or suggest adjustments. Supports custom calibration workflow at first launch to align camera perspective.
-
-Tech: Expo AV, React Native Reanimated, Expo Sensors API
-
 Workout History & Metrics
 
 Description: Save rep counts, durations, form-score snapshots to Supabase DB with offline caching in Expo SQLite. Automatic sync when network resumes.
 
 Tech: Supabase Database with Row-Level Security, Expo SQLite, Supabase Webhooks for sync acknowledgement
 
-**Offline-First Architecture** ✅ IMPLEMENTED
+### Offline-First Architecture
 
 Description: Complete offline support with local SQLite database and automatic bidirectional sync with Supabase. Users can add/delete foods and workouts while offline, with changes automatically synced when network is available. Includes Supabase Realtime websockets for live updates across devices.
 
 Features:
+
 - Local SQLite database for instant data access
 - Network detection and automatic sync triggers
 - Supabase Realtime for live cross-device updates
@@ -71,176 +74,6 @@ Features:
 
 Tech: `expo-sqlite`, `expo-network`, Supabase Realtime, PostgreSQL with RLS
 
-Community Engagement
-
-Description: Like/comment on posts; follow/unfollow users; view activity feed. Push notifications via Supabase Edge Functions hooking into Firebase Cloud Messaging.
-
-Tech: Supabase Realtime, FCM via Expo Notifications
-
-## CI/CD & Developer Collaboration
-
-### Automated Deployment Pipeline
-
-This project uses a comprehensive CI/CD pipeline with GitHub Actions, EAS Build, and Supabase for seamless development and deployment workflows.
-
-#### GitHub Actions Workflow (`.github/workflows/ci-cd.yml`)
-
-**Triggers:**
-- Pull Requests → Preview builds for testing
-- Push to `develop` → Staging deployment 
-- Push to `main` → Production deployment
-
-**Pipeline Stages:**
-
-1. **Test & Lint** (All branches)
-   ```bash
-   npm ci
-   npx tsc --noEmit          # TypeScript check
-   npx eslint . --ext .ts,.tsx  # Linting
-   npm test                   # Unit tests
-   ```
-
-2. **Preview Builds** (Pull Requests)
-   ```bash
-   eas build --platform all --profile preview --non-interactive
-   ```
-
-3. **Staging Deployment** (`develop` branch)
-   ```bash
-   # Deploy database changes
-   supabase db push --project-ref $SUPABASE_STAGING_PROJECT_REF
-   
-   # Build and submit to internal tracks
-   eas build --platform all --profile staging --auto-submit --non-interactive
-   
-   # Deploy OTA updates
-   eas update --branch staging --message "Staging deployment"
-   ```
-
-4. **Production Deployment** (`main` branch)
-   ```bash
-   # Deploy database changes
-   supabase db push --project-ref $SUPABASE_PRODUCTION_PROJECT_REF
-   
-   # Build and submit to app stores
-   eas build --platform all --profile production --auto-submit --non-interactive
-   
-   # Deploy OTA updates
-   eas update --branch production --message "Production deployment"
-   
-   # Create GitHub release
-   gh release create v${{ github.run_number }}
-   ```
-
-#### EAS Build Profiles (`eas.json`)
-
-- **`development`**: Local development builds with development client
-- **`preview`**: Internal testing builds (APK/IPA) 
-- **`staging`**: Staging environment with staging Supabase config
-- **`production`**: Production app store builds with production config
-
-#### Environment Management
-
-**Staging Environment:**
-- Supabase staging project for safe testing
-- Internal app distribution (TestFlight/Internal Track)
-- Staging domain for web builds
-
-**Production Environment:**
-- Production Supabase project
-- App Store/Play Store distribution
-- Production domain with CDN
-
-#### Required GitHub Secrets
-
-Add these secrets to your GitHub repository settings:
-
-```bash
-# Expo Configuration
-EXPO_TOKEN=your_expo_access_token
-
-# Supabase Configuration  
-SUPABASE_ACCESS_TOKEN=your_supabase_access_token
-SUPABASE_STAGING_PROJECT_REF=your_staging_project_ref
-SUPABASE_PRODUCTION_PROJECT_REF=your_production_project_ref
-SUPABASE_STAGING_URL=https://your-staging-project.supabase.co
-SUPABASE_STAGING_ANON_KEY=your_staging_anon_key
-SUPABASE_PRODUCTION_URL=https://your-production-project.supabase.co
-SUPABASE_PRODUCTION_ANON_KEY=your_production_anon_key
-
-# App Store Configuration
-APPLE_TEAM_ID=your_apple_team_id
-```
-
-#### Developer Workflow
-
-1. **Feature Development:**
-   ```bash
-   git checkout -b feature/your-feature
-   # Make changes
-   git push origin feature/your-feature
-   # Create PR → Triggers preview build
-   ```
-
-2. **Staging Release:**
-   ```bash
-   git checkout develop
-   git merge feature/your-feature
-   git push origin develop
-   # → Triggers staging deployment
-   ```
-
-3. **Production Release:**
-   ```bash
-   git checkout main
-   git merge develop
-   git push origin main
-   # → Triggers production deployment + app store submission
-   ```
-
-#### Local Development Commands
-
-```bash
-# Setup CI/CD (run once)
-./scripts/setup-cicd.sh
-
-# Local development
-npm start                    # Start Expo dev server
-npm run ios                  # Run on iOS simulator
-npm run web                  # Run web version
-
-# Manual builds
-eas build --profile preview  # Create preview build
-eas submit --profile production  # Submit to app stores
-eas update --branch production   # Push OTA update
-
-# Database operations
-supabase start              # Start local Supabase
-supabase db push            # Deploy migrations
-supabase gen types typescript  # Generate TypeScript types
-```
-
-#### Monitoring & Quality
-
-**Error Tracking:** Sentry integration for runtime error monitoring
-**Performance:** Expo Performance APIs + New Relic for backend monitoring  
-**Testing:** Jest for unit tests, Cypress for E2E web testing
-**Code Quality:** ESLint + Prettier with pre-commit hooks
-
-### Version Control & Branching
-
-**GitFlow Strategy:**
-- `main` → Production releases
-- `develop` → Staging/integration branch
-- `feature/*` → Feature development
-- `hotfix/*` → Emergency production fixes
-
-**Code Review Process:**
-- All PRs require review approval
-- Automated tests must pass
-- Preview builds generated for testing
-- Merge only after QA approval
-
 ## Architecture Overview
 
 ### Frontend (Expo React Native)
@@ -249,9 +82,9 @@ Managed Workflow: Single codebase for iOS & web; Android added after MVP.
 
 Camera & ML: react-native-vision-camera + MediaPipe WASM or OpenCV.js on-device inference for low latency.
 
-UI & Navigation: React Navigation (native-stack), shadcn/ui or React Native Paper for consistent styling.
+UI & Navigation: React Navigation (native-stack), React Native Paper for consistent styling.
 
-Local Development: expo start --ios to run on local iOS Simulator or physical device; expo run:ios via EAS Dev Client for custom native modules.
+Local Development: expo start --ios for Simulator; use Xcode workspace for device builds and native module development.
 
 Web: expo start --web renders read-only feeds and dashboards in browser.
 
@@ -273,18 +106,20 @@ Vertex AI Recommendations: Python FastAPI backend on GCP for training/inference;
 
 ### Infrastructure & Monitoring
 
-Build Services: EAS Build for iOS binaries; expo build:web + Vercel for web.
-
 Error Tracking: Sentry (Expo plugin) for runtime errors; LogRocket for session replay.
 
 Performance Monitoring: Expo Performance APIs; New Relic on Edge Functions.
 
 ## Platform Focus & Roadmap
 
-Phase 1 (MVP): iOS-first app, core features + community feed + basic calibration. Web: read-only dashboard and feed display.
+Phase 1 (MVP): iOS-first app, offline food/workout logging, HealthKit trends, experimental ARKit body tracking. Web: read-only dashboard.
 
-Phase 2: Android support via Expo, advanced Supabase→BigQuery analytics, ML-based recommendations.
+Phase 2: Android support, expanded analytics, and early social features.
 
-Phase 3: Body composition estimator, deeper integrations (HealthKit, Google Fit), localization, accessibility compliance.
+Phase 3: Body composition estimator, deeper integrations (HealthKit, Google Fit), localization, accessibility.
 
-By aligning on Expo’s Managed Workflow capabilities for iOS and web, leveraging Supabase’s complete backend suite, and establishing robust CI/CD and collaboration practices, this PRD reflects an up-to-date, scalable architecture ready for team-based development and rapid iteration.
+By aligning on Expo’s Managed Workflow for iOS and web and leveraging Supabase’s backend, Form Factor provides a pragmatic foundation for iterative development.
+
+## Contributor Guide
+
+See [`docs/AGENTS.md`](docs/AGENTS.md) for repository guidelines covering project layout, commands, coding standards, and pull request expectations.
