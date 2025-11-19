@@ -9,7 +9,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>form-factor-eas</string>
+    <string>Form Factor</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -57,6 +57,8 @@
     <string>We read your step count and heart rate to display insights on your dashboard.</string>
     <key>NSHealthUpdateUsageDescription</key>
     <string>We write selected health metrics only when you explicitly enable it.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>This app does not use your location, but it is required by Apple Health for workout routes.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Optional: for recording workout videos</string>
     <key>NSUserActivityTypes</key>

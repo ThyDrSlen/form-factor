@@ -83,7 +83,21 @@ echo "📦 Outputs:"
 echo "   Archive: $ARCHIVE_PATH"
 echo "   IPA: $EXPORT_PATH/$SCHEME.ipa"
 echo ""
-echo "📤 Upload to TestFlight:"
-echo "   xcrun altool --upload-app --file $EXPORT_PATH/$SCHEME.ipa --type ios --apiKey YOUR_KEY --apiIssuer YOUR_ISSUER"
-echo ""
-echo "   Or use Xcode: Window > Organizer > Archives > Upload to App Store Connect"
+
+if [ -n "$API_KEY" ] && [ -n "$API_ISSUER" ]; then
+  echo "📤 Uploading to TestFlight..."
+  xcrun altool --upload-app \
+    --file "$EXPORT_PATH/$SCHEME.ipa" \
+    --type ios \
+    --apiKey "$API_KEY" \
+    --apiIssuer "$API_ISSUER"
+else
+  echo "📤 Upload to TestFlight:"
+  echo "   To auto-upload, set API_KEY and API_ISSUER env vars."
+  echo ""
+  echo "   Manual command:"
+  echo "   xcrun altool --upload-app --file $EXPORT_PATH/$SCHEME.ipa --type ios --apiKey YOUR_KEY --apiIssuer YOUR_ISSUER"
+  echo ""
+  echo "   Or use Xcode: Window > Organizer > Archives > Upload to App Store Connect"
+  echo "   Or use 'Transporter' app from the Mac App Store."
+fi
