@@ -8,6 +8,23 @@ import * as Haptics from 'expo-haptics';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D } from '@/lib/arkit/ARKitBodyTracker';
+import { useSpeechFeedback } from '@/hooks/use-speech-feedback';
+
+type PullUpPhase = 'idle' | 'hang' | 'pull' | 'top';
+
+const PULL_UP_THRESHOLDS = {
+  hang: 150,
+  engage: 135,
+  top: 85,
+  release: 145,
+} as const;
+
+interface PullUpMetrics {
+  avgElbow: number;
+  avgShoulder: number;
+  headToHand: number | null;
+  armsTracked: boolean;
+}
 
 let Camera: any = View;
 let useCameraDevice: any = () => null;
@@ -60,6 +77,106 @@ export default function ScanARKitScreen() {
   const textOpacity = React.useRef(new Animated.Value(1)).current;
   const frameStatsRef = React.useRef({ lastTimestamp: 0, frameCount: 0 });
   const smoothedAnglesRef = React.useRef<JointAngles | null>(null);
+  const jointAnglesStateRef = React.useRef<JointAngles | null>(null);
+  const [repCount, setRepCount] = useState(0);
+  const [pullUpPhase, setPullUpPhase] = useState<PullUpPhase>('idle');
+  const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
+  const phaseRef = React.useRef<PullUpPhase>('idle');
+  const repStateRef = React.useRef<PullUpPhase>('idle');
+  const lastRepTimestampRef = React.useRef(0);
+  const [pullUpMetrics, setPullUpMetrics] = useState<PullUpMetrics | null>(null);
+  const pullUpMetricsThrottleRef = React.useRef(0);
+  const [smoothedPose2DJoints, setSmoothedPose2DJoints] = useState<Joint2D[] | null>(null);
+  const smoothedPose2DRef = React.useRef<Joint2D[] | null>(null);
+  const pose2DCacheRef = React.useRef<Record<string, { x: number; y: number }>>({});
+  const lastSpokenCueRef = React.useRef<{ cue: string; timestamp: number } | null>(null);
+
+  const { speak: speakCue, stop: stopSpeech } = useSpeechFeedback({
+    enabled: audioFeedbackEnabled,
+    voiceId: undefined, // Use default system voice
+    rate: 0.52,
+    pitch: 1.0,
+    volume: 1,
+    minIntervalMs: 2000,
+  });
+
+  useEffect(() => {
+    if (!audioFeedbackEnabled) {
+      lastSpokenCueRef.current = null;
+      stopSpeech();
+    }
+  }, [audioFeedbackEnabled, stopSpeech]);
+
+  const transitionPhase = useCallback(
+    (next: PullUpPhase) => {
+      if (phaseRef.current !== next) {
+        phaseRef.current = next;
+        setPullUpPhase(next);
+      }
+    },
+    []
+  );
+
+  const updatePullUpCycle = useCallback(
+    (angles: JointAngles, metrics: PullUpMetrics) => {
+      if (!metrics.armsTracked) {
+        if (repStateRef.current !== 'idle') {
+          repStateRef.current = 'idle';
+          transitionPhase('idle');
+        }
+        return;
+      }
+
+      const avgElbow = metrics.avgElbow;
+      const state = repStateRef.current;
+
+      if (state === 'idle') {
+        if (avgElbow >= PULL_UP_THRESHOLDS.hang) {
+          repStateRef.current = 'hang';
+          transitionPhase('hang');
+        } else if (avgElbow <= PULL_UP_THRESHOLDS.engage) {
+          repStateRef.current = 'pull';
+          transitionPhase('pull');
+        }
+        return;
+      }
+
+      if (state === 'hang') {
+        if (avgElbow <= PULL_UP_THRESHOLDS.engage) {
+          repStateRef.current = 'pull';
+          transitionPhase('pull');
+        }
+        return;
+      }
+
+      if (state === 'pull') {
+        if (avgElbow <= PULL_UP_THRESHOLDS.top) {
+          const now = Date.now();
+          if (now - lastRepTimestampRef.current > 400) {
+            repStateRef.current = 'top';
+            transitionPhase('top');
+            lastRepTimestampRef.current = now;
+            setRepCount((prev) => prev + 1);
+            if (Platform.OS === 'ios') {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            }
+          }
+        } else if (avgElbow >= PULL_UP_THRESHOLDS.hang) {
+          repStateRef.current = 'hang';
+          transitionPhase('hang');
+        }
+        return;
+      }
+
+      if (state === 'top') {
+        if (avgElbow >= PULL_UP_THRESHOLDS.release) {
+          repStateRef.current = 'hang';
+          transitionPhase('hang');
+        }
+      }
+    },
+    [transitionPhase]
+  );
 
   useEffect(() => {
     if (DEV) {
@@ -122,8 +239,15 @@ export default function ScanARKitScreen() {
       if (DEV) console.log('[ScanARKit] ℹ️ No pose data');
       frameStatsRef.current = { lastTimestamp: 0, frameCount: 0 };
       setJointAngles(null);
+      jointAnglesStateRef.current = null;
       smoothedAnglesRef.current = null;
       setFps(0);
+      setSmoothedPose2DJoints(null);
+      smoothedPose2DRef.current = null;
+      pose2DCacheRef.current = {};
+      setPullUpMetrics(null);
+      repStateRef.current = 'idle';
+      transitionPhase('idle');
       return;
     }
 
@@ -199,7 +323,51 @@ export default function ScanARKitScreen() {
       
       if (next) {
         smoothedAnglesRef.current = next;
-        setJointAngles(next);
+        const existingAngles = jointAnglesStateRef.current;
+        const angleDrift =
+          !existingAngles ||
+          Math.abs(existingAngles.leftElbow - next.leftElbow) > 0.25 ||
+          Math.abs(existingAngles.rightElbow - next.rightElbow) > 0.25 ||
+          Math.abs(existingAngles.leftShoulder - next.leftShoulder) > 0.35 ||
+          Math.abs(existingAngles.rightShoulder - next.rightShoulder) > 0.35 ||
+          Math.abs(existingAngles.leftKnee - next.leftKnee) > 0.5 ||
+          Math.abs(existingAngles.rightKnee - next.rightKnee) > 0.5;
+
+        if (angleDrift) {
+          jointAnglesStateRef.current = next;
+          setJointAngles(next);
+        }
+
+        const avgElbow = (next.leftElbow + next.rightElbow) / 2;
+        const avgShoulder = (next.leftShoulder + next.rightShoulder) / 2;
+        const head = get('head') ?? neck;
+        let headToHand: number | null = null;
+        if (head?.isTracked && lw?.isTracked && rw?.isTracked) {
+          headToHand = head.y - (lw.y + rw.y) / 2;
+        }
+
+        const metrics: PullUpMetrics = {
+          avgElbow,
+          avgShoulder,
+          headToHand,
+          armsTracked: !!(valid.leftElbow && valid.rightElbow),
+        };
+        const now = Date.now();
+        const prevMetrics = pullUpMetricsThrottleRef.current;
+        const metricsChanged =
+          !pullUpMetrics ||
+          Math.abs((pullUpMetrics.avgElbow ?? 0) - metrics.avgElbow) > 0.5 ||
+          Math.abs((pullUpMetrics.avgShoulder ?? 0) - metrics.avgShoulder) > 0.5 ||
+          pullUpMetrics.armsTracked !== metrics.armsTracked;
+        if (metricsChanged || now - prevMetrics > 80) {
+          pullUpMetricsThrottleRef.current = now;
+          setPullUpMetrics(metrics);
+        }
+        updatePullUpCycle(next, metrics);
+      } else {
+        setPullUpMetrics(null);
+        repStateRef.current = 'idle';
+        transitionPhase('idle');
       }
     } catch (error) {
       console.error('[ScanARKit] ❌ Error calculating angles:', error);
@@ -223,8 +391,9 @@ export default function ScanARKitScreen() {
       setFps(newFps);
       frameStatsRef.current = { lastTimestamp: pose.timestamp, frameCount: 0 };
     }
+    // DEV is a stable constant; pullUpMetrics would cause infinite loop (read + set in same effect)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pose]);
+  }, [pose, transitionPhase, updatePullUpCycle]);
 
   // Debug pose2D updates
   useEffect(() => {
@@ -238,10 +407,74 @@ export default function ScanARKitScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pose2D]);
 
+  useEffect(() => {
+    if (!pose2D || pose2D.joints.length === 0) {
+      pose2DCacheRef.current = {};
+      smoothedPose2DRef.current = null;
+      setSmoothedPose2DJoints(null);
+      return;
+    }
+
+    const alpha = 0.35;
+    const cache = pose2DCacheRef.current;
+    const joints = pose2D.joints;
+    const nextJoints = joints.map((joint) => {
+      if (!joint.isTracked) {
+        return { ...joint };
+      }
+      const key = joint.name.toLowerCase();
+      const prev = cache[key];
+      const targetX = joint.x;
+      const targetY = joint.y;
+      const easedX = prev ? prev.x + (targetX - prev.x) * alpha : targetX;
+      const easedY = prev ? prev.y + (targetY - prev.y) * alpha : targetY;
+      cache[key] = { x: easedX, y: easedY };
+      return { ...joint, x: easedX, y: easedY };
+    });
+
+    Object.keys(cache).forEach((key) => {
+      if (!joints.some((joint) => joint.name.toLowerCase() === key && joint.isTracked)) {
+        delete cache[key];
+      }
+    });
+
+    const prevSmoothed = smoothedPose2DRef.current;
+    const changed =
+      !prevSmoothed ||
+      prevSmoothed.length !== nextJoints.length ||
+      nextJoints.some((joint, idx) => {
+        const prev = prevSmoothed[idx];
+        if (!prev) return true;
+        if (prev.name !== joint.name) return true;
+        if (joint.isTracked !== prev.isTracked) return true;
+        return (
+          Math.abs(prev.x - joint.x) > 0.002 ||
+          Math.abs(prev.y - joint.y) > 0.002
+        );
+      });
+
+    if (changed) {
+      smoothedPose2DRef.current = nextJoints;
+      let rafId = requestAnimationFrame(() => {
+        setSmoothedPose2DJoints(nextJoints);
+      });
+      return () => cancelAnimationFrame(rafId);
+    }
+
+    return undefined;
+  }, [pose2D]);
+
   // Start tracking
   const startTracking = useCallback(async () => {
     if (DEV) console.log('[ScanARKit] 🎬 Starting tracking...');
     try {
+      repStateRef.current = 'idle';
+      phaseRef.current = 'idle';
+      transitionPhase('idle');
+      setRepCount(0);
+      setPullUpMetrics(null);
+      lastRepTimestampRef.current = 0;
+
       const startTime = Date.now();
       await startNativeTracking();
       const elapsed = Date.now() - startTime;
@@ -261,7 +494,7 @@ export default function ScanARKitScreen() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startNativeTracking]);
+  }, [startNativeTracking, transitionPhase]);
 
   // Stop tracking
   const stopTracking = useCallback(() => {
@@ -271,6 +504,11 @@ export default function ScanARKitScreen() {
       stopNativeTracking();
       frameStatsRef.current = { lastTimestamp: 0, frameCount: 0 };
       setJointAngles(null);
+      setPullUpMetrics(null);
+      repStateRef.current = 'idle';
+      phaseRef.current = 'idle';
+      transitionPhase('idle');
+      lastRepTimestampRef.current = 0;
       setFps(0);
       
       if (DEV) console.log('[ScanARKit] ✅ Tracking stopped');
@@ -282,7 +520,7 @@ export default function ScanARKitScreen() {
       console.error('[ScanARKit] ❌ Error stopping tracking:', error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stopNativeTracking]);
+  }, [stopNativeTracking, transitionPhase]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -345,36 +583,63 @@ export default function ScanARKitScreen() {
   const analyzeForm = useCallback(() => {
     if (!jointAngles) return null;
 
-    const feedback: string[] = [];
+    const messages: string[] = [];
 
-    // Check squat depth
-    const avgKneeAngle = (jointAngles.leftKnee + jointAngles.rightKnee) / 2;
-    if (avgKneeAngle > 90) {
-      feedback.push('⚠️ Go deeper - aim for 90° or below');
-    } else if (avgKneeAngle < 70) {
-      feedback.push('✅ Great squat depth!');
+    if (!pullUpMetrics) {
+      messages.push('Move fully into frame so we can track your arms.');
+      return messages;
     }
 
-    // Check symmetry
-    const kneeSymmetry = BodyTracker.checkSymmetry(
-      jointAngles.leftKnee,
-      jointAngles.rightKnee,
-      10
-    );
-    if (!kneeSymmetry) {
-      feedback.push('⚠️ Keep knees aligned');
+    const phasePrompts: Record<PullUpPhase, string> = {
+      idle: 'Get set beneath the bar and brace your core.',
+      hang: 'Engage your shoulders before you start the pull.',
+      pull: 'Drive elbows toward your ribs and stay tight.',
+      top: 'Squeeze at the top, then lower with control.',
+    };
+
+    messages.push(phasePrompts[pullUpPhase]);
+
+    if (!pullUpMetrics.armsTracked) {
+      messages.push('Keep both elbows and hands visible to the camera.');
+      return messages;
     }
 
-    // Check elbow position
-    const avgElbowAngle = (jointAngles.leftElbow + jointAngles.rightElbow) / 2;
-    if (avgElbowAngle < 160 && avgElbowAngle > 0) {
-      feedback.push('💪 Arms engaged');
+    const { avgElbow, avgShoulder } = pullUpMetrics;
+
+    if (pullUpPhase === 'hang' && avgElbow < PULL_UP_THRESHOLDS.hang - 5) {
+      messages.push('Fully extend your arms before the next rep.');
     }
 
-    return feedback.length > 0 ? feedback : ['👍 Good form!'];
-  }, [jointAngles]);
+    if (pullUpPhase === 'top' && avgElbow > PULL_UP_THRESHOLDS.top + 15) {
+      messages.push('Pull higher to bring your chin past the bar.');
+    }
+
+    if (avgShoulder > 115) {
+      messages.push('Draw your shoulders down to keep your lats engaged.');
+    }
+
+    if (messages.length < 2) {
+      messages.push('Strong reps — keep the descent smooth.');
+    }
+
+    return messages;
+  }, [jointAngles, pullUpMetrics, pullUpPhase]);
 
   const feedback = analyzeForm();
+  const primaryCue = feedback?.[0];
+
+  useEffect(() => {
+    if (!primaryCue || !audioFeedbackEnabled) {
+      return;
+    }
+    const now = Date.now();
+    const last = lastSpokenCueRef.current;
+    if (last && last.cue === primaryCue && now - last.timestamp < 5000) {
+      return;
+    }
+    lastSpokenCueRef.current = { cue: primaryCue, timestamp: now };
+    speakCue(primaryCue);
+  }, [primaryCue, audioFeedbackEnabled, speakCue]);
 
   if (supportStatus === 'unknown') {
     return (
@@ -496,28 +761,36 @@ export default function ScanARKitScreen() {
           )}
 
           {/* Skeleton Overlay (2D projected) */}
-          {pose2D && pose2D.joints.length > 0 && (
+        {smoothedPose2DJoints && smoothedPose2DJoints.length > 0 && (
             <Svg
               style={StyleSheet.absoluteFill}
               viewBox="0 0 1 1"
-              preserveAspectRatio="none"
+            preserveAspectRatio="none"
               pointerEvents="none"
             >
               {(() => {
+                const jointsByName = new Map<string, Joint2D>();
+                smoothedPose2DJoints.forEach((joint) => {
+                  jointsByName.set(joint.name.toLowerCase(), joint);
+                });
+
                 const findJoint2D = (name: string) => {
-                  // Try exact match first, then partial match
-                  const exactMatch = pose2D.joints.find(
-                    (j: Joint2D) => j.isTracked && j.name.toLowerCase() === name.toLowerCase()
-                  );
-                  if (exactMatch) return exactMatch;
-                  
-                  // Try partial match (for joint names with/without _joint suffix)
-                  return pose2D.joints.find(
-                    (j: Joint2D) => j.isTracked && (
-                      j.name.toLowerCase().includes(name.toLowerCase()) ||
-                      name.toLowerCase().includes(j.name.toLowerCase().replace('_joint', ''))
-                    )
-                  );
+                  const lower = name.toLowerCase();
+                  const direct = jointsByName.get(lower);
+                  if (direct && direct.isTracked) {
+                    return direct;
+                  }
+                  for (const joint of smoothedPose2DJoints) {
+                    const key = joint.name.toLowerCase();
+                    if (!joint.isTracked) continue;
+                    if (
+                      key.includes(lower) ||
+                      lower.includes(key.replace('_joint', ''))
+                    ) {
+                      return joint;
+                    }
+                  }
+                  return undefined;
                 };
 
                 const drawLine = (from: string, to: string, color: string = '#4C8CFF') => {
@@ -579,7 +852,7 @@ export default function ScanARKitScreen() {
               })()}
 
               {/* Draw joints */}
-              {pose2D.joints.map((joint: Joint2D, index: number) => {
+              {smoothedPose2DJoints.map((joint: Joint2D, index: number) => {
                 if (!joint.isTracked) return null;
                 return (
                   <Circle
@@ -596,26 +869,38 @@ export default function ScanARKitScreen() {
           )}
         </View>
 
-        {/* Joint angles display */}
-        {jointAngles && (
+        {/* Pull-up telemetry display */}
+        {(isTracking || repCount > 0) && (
           <View style={styles.anglesDisplay}>
-            <Text style={styles.anglesTitle}>Joint Angles</Text>
+            <Text style={styles.anglesTitle}>Pull-Up Tracker</Text>
             <View style={styles.anglesGrid}>
               <View style={styles.angleItem}>
-                <Text style={styles.angleLabel}>Left Knee</Text>
-                <Text style={styles.angleValue}>{jointAngles.leftKnee.toFixed(1)}°</Text>
+                <Text style={styles.angleLabel}>Reps</Text>
+                <Text style={styles.angleValue}>{repCount}</Text>
               </View>
               <View style={styles.angleItem}>
-                <Text style={styles.angleLabel}>Right Knee</Text>
-                <Text style={styles.angleValue}>{jointAngles.rightKnee.toFixed(1)}°</Text>
+                <Text style={styles.angleLabel}>Phase</Text>
+                <Text style={styles.angleValue}>
+                  {pullUpPhase === 'idle'
+                    ? 'Waiting'
+                    : pullUpPhase === 'hang'
+                    ? 'Hang'
+                    : pullUpPhase === 'pull'
+                    ? 'Pull'
+                    : 'Top'}
+                </Text>
               </View>
               <View style={styles.angleItem}>
-                <Text style={styles.angleLabel}>Left Elbow</Text>
-                <Text style={styles.angleValue}>{jointAngles.leftElbow.toFixed(1)}°</Text>
+                <Text style={styles.angleLabel}>Avg Elbow</Text>
+                <Text style={styles.angleValue}>
+                  {pullUpMetrics?.armsTracked ? `${pullUpMetrics.avgElbow.toFixed(1)}°` : '--'}
+                </Text>
               </View>
               <View style={styles.angleItem}>
-                <Text style={styles.angleLabel}>Right Elbow</Text>
-                <Text style={styles.angleValue}>{jointAngles.rightElbow.toFixed(1)}°</Text>
+                <Text style={styles.angleLabel}>Avg Shoulder</Text>
+                <Text style={styles.angleValue}>
+                  {pullUpMetrics?.armsTracked ? `${pullUpMetrics.avgShoulder.toFixed(1)}°` : '--'}
+                </Text>
               </View>
             </View>
           </View>
@@ -638,6 +923,8 @@ export default function ScanARKitScreen() {
         <TouchableOpacity
           style={styles.cameraFlipButton}
           onPress={flipCameraDuringTracking}
+          accessibilityRole="button"
+          accessibilityLabel="Flip camera"
         >
           <Ionicons
             name="camera-reverse"
@@ -646,6 +933,23 @@ export default function ScanARKitScreen() {
           />
         </TouchableOpacity>
       )}
+
+      {/* Audio feedback toggle */}
+      <TouchableOpacity
+        style={[
+          styles.audioToggleButton,
+          audioFeedbackEnabled && styles.audioToggleButtonActive
+        ]}
+        onPress={() => setAudioFeedbackEnabled((value) => !value)}
+        accessibilityRole="button"
+        accessibilityLabel={audioFeedbackEnabled ? 'Disable audio cues' : 'Enable audio cues'}
+      >
+        <Ionicons
+          name={audioFeedbackEnabled ? 'volume-high' : 'volume-mute'}
+          size={22}
+          color={audioFeedbackEnabled ? '#0B1F3A' : '#F5F7FF'}
+        />
+      </TouchableOpacity>
 
       {/* Controls */}
       <View style={[styles.controls, { bottom: insets.bottom + 16 }]}>
@@ -922,6 +1226,36 @@ const styles = StyleSheet.create({
         elevation: 10,
       },
     }),
+  },
+  audioToggleButton: {
+    position: 'absolute',
+    top: 120,
+    right: 72,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 35, 57, 0.9)',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#1B2E4A',
+    zIndex: 100,
+    ...Platform.select({
+      web: {
+        boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+        elevation: 10,
+      },
+    }),
+  },
+  audioToggleButtonActive: {
+    backgroundColor: '#F5F7FF',
+    borderColor: '#7AA9FF',
   },
   controlButtonText: {
     fontSize: 16,

@@ -6,6 +6,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { SessionManager } from '../lib/services/SessionManager';
 import { supabase } from '../lib/supabase';
 import { runDiagnostics } from '../lib/network-utils';
+import { signInWithApple as nativeAppleSignIn } from '../lib/auth-utils';
 
 // In Expo Router, group folders like (auth) are omitted from the URL path.
 // The file app/(auth)/callback.tsx resolves to '/callback', not '/auth/callback'.
@@ -293,28 +294,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsSigningIn(true);
       setError(null);
 
-      console.log('[Auth] Starting Apple OAuth with OAuthHandler');
-      const result = await oauthHandler.initiateOAuth('apple');
+      console.log('[Auth] Starting native Apple sign in');
+      const result = await nativeAppleSignIn();
 
-      if (result.success && result.session) {
-        console.log('[Auth] Apple OAuth successful');
-        // Session will be handled by the auth state change listener
-        return {};
-      } else {
-        const appErr = createError('oauth', 'OAUTH_START_FAILED', result.error || 'Apple sign-in failed', {
-          retryable: true,
-          severity: 'warning',
-          details: result,
-        });
-        logError(appErr, { feature: 'auth', location: 'signInWithApple' });
-        setError(mapToUserMessage(appErr));
-        return { 
-          error: { 
-            message: result?.error || 'Apple sign-in failed', 
-            status: 500 
-          } as AuthError 
-        };
+      if (!result) {
+        // Likely cancelled by user
+        return { error: { message: 'Sign-in was cancelled', status: 0 } as AuthError };
       }
+
+      // Session will be handled by the auth state change listener
+      return {};
     } catch (error) {
       const appErr = createError('oauth', 'OAUTH_EXCEPTION', error instanceof Error ? error.message : 'An unexpected error occurred', {
         retryable: true,
@@ -332,7 +321,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsSigningIn(false);
     }
-  }, [oauthHandler]);
+  }, []);
 
   const signOut = useCallback(async () => {
     try {
