@@ -1,3 +1,4 @@
+import './global.css';
 import { ThemeProvider } from '@/design-system/ThemeProvider';
 import { Slot, usePathname, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
