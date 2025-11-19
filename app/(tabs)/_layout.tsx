@@ -19,21 +19,39 @@ export default function TabsLayout() {
           tabBarInactiveTintColor: '#6781A6',
           tabBarStyle: {
             backgroundColor: '#0F2339',
-            borderTopWidth: 1,
             borderTopColor: '#1B2E4A',
             height: 60 + (Platform.OS === 'ios' ? insets.bottom / 2 : 0),
             paddingBottom: Platform.OS === 'ios' ? insets.bottom / 2 : 8,
             paddingTop: 8,
             elevation: 0,
             position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
+            ...(Platform.OS === 'web' ? {
+              width: '90%',
+              maxWidth: 500,
+              left: '50%',
+              transform: [{ translateX: '-50%' as any }],
+              borderRadius: 24,
+              bottom: 24,
+              borderTopWidth: 0,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 12,
+            } : {
+              borderTopWidth: 1,
+              bottom: 0,
+              left: 0,
+              right: 0,
+            }),
           },
           tabBarLabelStyle: { 
             fontSize: 11, 
             fontWeight: '500',
-            fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+            fontFamily: Platform.select({
+              ios: 'System',
+              web: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+              default: 'sans-serif-medium',
+            }),
             marginTop: 4,
           },
           tabBarItemStyle: {
@@ -83,15 +101,6 @@ export default function TabsLayout() {
             title: 'Food',
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="fast-food-outline" size={size} color={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="health-trends"
-          options={{
-            title: 'Trends',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="trending-up-outline" size={size} color={color} />
             ),
           }}
         />
