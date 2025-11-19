@@ -2459,7 +2459,7 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  arkit-body-tracker: 7d8a9f5a75a88a7a0f363cd8e28ad1fa9677a462
+  arkit-body-tracker: 1cb0b4509ea1f06a61abb8eb1ceeda974806306e
   EXApplication: 296622817d459f46b6c5fe8691f4aac44d2b79e7
   EXAV: e3fefaca88f14624bca01d9a128562a5f8e738f8
   EXConstants: fd688cef4e401dcf798a021cfb5d87c890c30ba3
