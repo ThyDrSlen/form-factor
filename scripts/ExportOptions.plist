@@ -12,10 +12,5 @@
     <false/>
     <key>signingStyle</key>
     <string>automatic</string>
-    <key>provisioningProfiles</key>
-    <dict>
-        <key>com.slenthekid.form-factor-eas</key>
-        <string>match AppStore com.slenthekid.form-factor-eas</string>
-    </dict>
 </dict>
 </plist>
