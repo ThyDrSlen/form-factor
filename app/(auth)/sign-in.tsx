@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button, Text } from '@/design-system';
 
@@ -149,6 +149,14 @@ export default function SignInScreen() {
 
           {/* Main card container */}
           <View style={styles.card}>
+            <View style={styles.logoContainer}>
+              <Image
+                source={require('../../assets/images/ff-logo.png')}
+                style={styles.logo}
+                resizeMode="contain"
+              />
+            </View>
+
             <Text variant="largeTitle" weight="normal" color="#FFFFFF" align="center" style={styles.welcomeTitle}>
               Welcome to Form Factor
             </Text>
@@ -278,6 +286,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 16,
     elevation: 8,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  logo: {
+    width: 80,
+    height: 80,
   },
   welcomeTitle: {
     marginBottom: 32,
