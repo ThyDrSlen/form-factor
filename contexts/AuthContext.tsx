@@ -2,11 +2,13 @@ import { OAuthHandler } from '@/lib/services/OAuthHandler';
 import { createError, mapToUserMessage, logError } from '@/lib/services/ErrorHandler';
 import { AuthError, Session, User } from '@supabase/supabase-js';
 import * as Linking from 'expo-linking';
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { SessionManager } from '../lib/services/SessionManager';
 import { supabase } from '../lib/supabase';
 import { runDiagnostics } from '../lib/network-utils';
 import { signInWithApple as nativeAppleSignIn } from '../lib/auth-utils';
+import { localDB } from '../lib/services/database/local-db';
+import { syncService } from '../lib/services/database/sync-service';
 
 // In Expo Router, group folders like (auth) are omitted from the URL path.
 // The file app/(auth)/callback.tsx resolves to '/callback', not '/auth/callback'.
@@ -83,6 +85,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isMockUser, setIsMockUser] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const previousUserIdRef = useRef<string | null>(null);
+
   const sessionManager = SessionManager.getInstance();
   const oauthHandler = OAuthHandler.getInstance();
 
@@ -99,8 +103,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userId: newSession?.user?.id
       });
 
+      const previousUserId = previousUserIdRef.current;
+      const newUserId = newSession?.user?.id ?? null;
+      const userChanged = Boolean(previousUserId && newUserId && previousUserId !== newUserId);
+      const signedOut = Boolean(previousUserId && !newUserId);
+
+      if (userChanged || signedOut) {
+        try {
+          await syncService.cleanupRealtimeSync();
+        } catch (cleanupError) {
+          console.error('[Auth] Error cleaning up realtime subscriptions on user change:', cleanupError);
+        }
+
+        try {
+          await localDB.clearAllData();
+        } catch (dbError) {
+          console.error('[Auth] Error clearing local DB on user change:', dbError);
+        }
+      }
+
       setSession(newSession);
       setUser(newSession ? newSession.user : null);
+
+      previousUserIdRef.current = newUserId;
 
       // Store or clear session based on state
       if (newSession && !isMockUser) {

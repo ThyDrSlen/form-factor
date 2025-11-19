@@ -11,6 +11,43 @@ class SyncService {
   private isSyncing = false;
   private syncCallbacks: SyncCallback[] = [];
 
+  private getErrorCode(error: unknown): string | undefined {
+    if (error && typeof error === 'object' && 'code' in error) {
+      const code = (error as { code?: unknown }).code;
+      return typeof code === 'string' ? code : undefined;
+    }
+    return undefined;
+  }
+
+  private isRlsViolation(error: unknown): boolean {
+    return this.getErrorCode(error) === '42501';
+  }
+
+  private isInvalidUuid(error: unknown): boolean {
+    return this.getErrorCode(error) === '22P02';
+  }
+
+  private isManagedTable(table: string): table is 'foods' | 'workouts' | 'health_metrics' {
+    return table === 'foods' || table === 'workouts' || table === 'health_metrics';
+  }
+
+  private async purgeLocalRecord(table: 'foods' | 'workouts' | 'health_metrics', id: string): Promise<void> {
+    try {
+      if (table === 'foods') {
+        await localDB.hardDeleteFood(id);
+        console.warn('[SyncService] Removed foreign food from local cache:', id);
+      } else if (table === 'workouts') {
+        await localDB.hardDeleteWorkout(id);
+        console.warn('[SyncService] Removed foreign workout from local cache:', id);
+      } else if (table === 'health_metrics') {
+        await localDB.deleteHealthMetric(id);
+        console.warn('[SyncService] Removed foreign health metric from local cache:', id);
+      }
+    } catch (purgeError) {
+      console.error('[SyncService] Failed to purge local record', { table, id, purgeError });
+    }
+  }
+
   // Register callback for sync completion
   onSyncComplete(callback: SyncCallback) {
     this.syncCallbacks.push(callback);
@@ -391,6 +428,12 @@ class SyncService {
           console.log(`[SyncService] Synced food ${food.id} to server (local was newer)`);
         }
       } catch (error) {
+        if (this.isRlsViolation(error)) {
+          console.warn(`[SyncService] Food ${food.id} rejected by RLS, purging local copy`);
+          await this.purgeLocalRecord('foods', food.id);
+          continue;
+        }
+
         console.error(`[SyncService] Failed to sync food ${food.id}:`, error);
         // Add to sync queue for retry (strip local-only fields)
         const { deleted, synced, ...cleanFood } = food;
@@ -463,6 +506,12 @@ class SyncService {
           console.log(`[SyncService] Synced workout ${workout.id} to server (local was newer)`);
         }
       } catch (error) {
+        if (this.isRlsViolation(error)) {
+          console.warn(`[SyncService] Workout ${workout.id} rejected by RLS, purging local copy`);
+          await this.purgeLocalRecord('workouts', workout.id);
+          continue;
+        }
+
         console.error(`[SyncService] Failed to sync workout ${workout.id}:`, error);
         // Add to sync queue for retry (strip local-only fields)
         const { deleted, synced, ...cleanWorkout } = workout;
@@ -485,11 +534,19 @@ class SyncService {
 
     for (const metric of unsyncedMetrics) {
       try {
+        if (!metric.user_id || metric.user_id !== user.id) {
+          console.warn(
+            `[SyncService] Skipping health metric ${metric.id} because it belongs to another user (${metric.user_id})`
+          );
+          await this.purgeLocalRecord('health_metrics', metric.id);
+          continue;
+        }
+
         // Check if record exists on server and compare timestamps (Last-Write-Wins)
         const { data: existing, error: fetchError } = await supabase
           .from('health_metrics')
           .select('updated_at')
-          .eq('user_id', metric.user_id)
+          .eq('user_id', user.id)
           .eq('summary_date', metric.summary_date)
           .single();
 
@@ -506,7 +563,7 @@ class SyncService {
 
         // Local version is newer or doesn't exist on server, push to server
         const metricData = {
-          user_id: metric.user_id,
+          user_id: user.id,
           summary_date: metric.summary_date,
           steps: metric.steps,
           heart_rate_bpm: metric.heart_rate_bpm,
@@ -527,6 +584,12 @@ class SyncService {
         await localDB.updateHealthMetricSyncStatus(metric.id, true);
         console.log(`[SyncService] Synced health metric ${metric.id} to server (local was newer)`);
       } catch (error) {
+        if (this.isRlsViolation(error)) {
+          console.warn(`[SyncService] Health metric ${metric.id} rejected by RLS, purging local copy`);
+          await this.purgeLocalRecord('health_metrics', metric.id);
+          continue;
+        }
+
         console.error(`[SyncService] Failed to sync health metric ${metric.id}:`, error);
         // Add to sync queue for retry
         const { synced, ...cleanMetric } = metric;
@@ -569,7 +632,7 @@ class SyncService {
           const { deleted, synced, ...cleanData } = data;
           
           // Prepare data for Supabase with required fields
-          const upsertData = {
+          const upsertData: Record<string, any> = {
             ...cleanData,
             user_id: user.id,
             updated_at: cleanData.updated_at || new Date().toISOString(),
@@ -577,11 +640,24 @@ class SyncService {
             ...(item.table_name === 'workouts' && { date: cleanData.date || new Date().toISOString() }),
           };
 
-          const { error } = await supabase
-            .from(item.table_name)
-            .upsert([upsertData]);
+          if (item.table_name === 'health_metrics') {
+            delete upsertData.id;
+          }
 
-          if (error) throw error;
+          let upsertError;
+          if (item.table_name === 'health_metrics') {
+            const { error } = await supabase
+              .from('health_metrics')
+              .upsert([upsertData], { onConflict: 'user_id,summary_date' });
+            upsertError = error;
+          } else {
+            const { error } = await supabase
+              .from(item.table_name)
+              .upsert([upsertData]);
+            upsertError = error;
+          }
+
+          if (upsertError) throw upsertError;
         }
 
         // Remove from queue on success
@@ -596,6 +672,22 @@ class SyncService {
           await localDB.updateHealthMetricSyncStatus(item.record_id, true);
         }
       } catch (error) {
+        if (this.isRlsViolation(error)) {
+          console.warn(`[SyncService] Queue item ${item.id} was rejected by RLS, purging local record`);
+          if (this.isManagedTable(item.table_name)) {
+            await this.purgeLocalRecord(item.table_name, item.record_id);
+          }
+          await localDB.removeSyncQueueItem(item.id);
+          continue;
+        }
+
+        if (this.isInvalidUuid(error) && item.table_name === 'health_metrics') {
+          console.warn(`[SyncService] Queue item ${item.id} had invalid UUID, dropping metric`);
+          await this.purgeLocalRecord('health_metrics', item.record_id);
+          await localDB.removeSyncQueueItem(item.id);
+          continue;
+        }
+
         console.error(`[SyncService] Failed to process queue item ${item.id}:`, error);
         await localDB.incrementSyncQueueRetry(item.id);
       }

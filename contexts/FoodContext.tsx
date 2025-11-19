@@ -4,6 +4,7 @@ import { localDB } from '../lib/services/database/local-db';
 import { syncService } from '../lib/services/database/sync-service';
 import { supabase } from '../lib/supabase';
 import { useNetwork } from './NetworkContext';
+import { useAuth } from './AuthContext';
 
 export interface FoodEntry {
   id: string;
@@ -38,6 +39,7 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const { isOnline } = useNetwork();
+  const { user } = useAuth();
 
   // Initialize local DB and set up sync
   useEffect(() => {
@@ -62,7 +64,7 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
       unsubscribe();
       syncService.cleanupRealtimeSync();
     };
-  }, [isOnline]);
+  }, [isOnline, user?.id]);
 
   // Sync when coming online
   useEffect(() => {

@@ -4,6 +4,7 @@ import { localDB } from '../lib/services/database/local-db';
 import { syncService } from '../lib/services/database/sync-service';
 import { supabase } from '../lib/supabase';
 import { useNetwork } from './NetworkContext';
+import { useAuth } from './AuthContext';
 
 export interface Workout {
   id: string;
@@ -45,6 +46,7 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isWorkoutInProgress, setIsWorkoutInProgress] = useState(false);
   const { isOnline } = useNetwork();
+  const { user } = useAuth();
 
   // Initialize local DB and set up sync
   useEffect(() => {
@@ -69,7 +71,7 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
       unsubscribe();
       syncService.cleanupRealtimeSync();
     };
-  }, [isOnline]);
+  }, [isOnline, user?.id]);
 
   // Sync when coming online
   useEffect(() => {

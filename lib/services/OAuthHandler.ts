@@ -25,6 +25,7 @@ export class OAuthHandler {
   constructor() {
     // In Expo Router, group folders like (auth) are omitted from the URL path
     this.redirectUrl = Linking.createURL('/callback');
+    console.log('[OAuthHandler] Configured redirect URL:', this.redirectUrl);
   }
 
   static getInstance(): OAuthHandler {
