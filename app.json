@@ -7,7 +7,7 @@
       "enabled": false,
       "fallbackToCacheTimeout": 0
     },
-    "name": "form-factor-eas",
+    "name": "Form Factor",
     "jsEngine": "hermes",
     "slug": "form-factor-eas",
     "version": "1.0.0",
@@ -69,6 +69,7 @@
         "NSHealthUpdateUsageDescription": "This app writes health data to record your activity.",
         "NSCameraUsageDescription": "We need camera access to scan your form and provide skeleton tracking.",
         "NSMicrophoneUsageDescription": "Optional: for recording workout videos",
+        "NSLocationWhenInUseUsageDescription": "This app does not use your location, but it is required by Apple Health for workout routes.",
         "WKCompanionAppBundleIdentifier": "com.slenthekid.formfactoreas",
         "ITSAppUsesNonExemptEncryption": false
       },
