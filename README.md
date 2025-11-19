@@ -15,7 +15,7 @@ Form Factor helps you:
 - Experiment with on-device form insights (Vision/ARKit)
 - Work reliably offline with automatic Supabase sync
 
-MVP focus: iOS. Web is display-only. Android planned.
+MVP focus: iOS. Web is display-only. Android planned for when they have paying users.
 
 ## Current Status
 
