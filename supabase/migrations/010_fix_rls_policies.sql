@@ -12,7 +12,6 @@ CREATE POLICY "Only owners can manage foods" ON public.foods
   TO authenticated
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
-x
 CREATE POLICY "Only owners can manage workouts" ON public.workouts
   FOR ALL
   TO authenticated
