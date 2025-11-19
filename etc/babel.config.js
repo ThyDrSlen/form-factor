@@ -11,9 +11,9 @@ module.exports = function (api) {
         regenerator: true,
       }],
       ['module-resolver', {
-        root: [projectRoot],
+        root: ['./'],
         alias: {
-          '@': projectRoot,
+          '@': './',
         },
       }],
       'react-native-reanimated/plugin',

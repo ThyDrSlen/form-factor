@@ -6,6 +6,7 @@ export default function ({ config }: ConfigContext): ExpoConfig {
     ...config,
     name: config.name ?? 'form-factor-eas',
     slug: config.slug ?? 'form-factor-eas',
+    scheme: config.scheme ?? 'formfactoreas',
     extra: {
       ...(config.extra ?? {}),
       supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
