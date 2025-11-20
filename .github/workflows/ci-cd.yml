@@ -90,7 +90,7 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Verify EAS configuration
-        run: npx eas build --platform all --profile preview --dry-run --non-interactive
+        run: eas build --platform all --profile preview --dry-run --non-interactive
 
   # Job 3: Preview Build (PR only)
   build-preview:
@@ -128,7 +128,7 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Build preview
-        run: npx eas build --platform all --profile preview --non-interactive
+        run: eas build --platform all --profile preview --non-interactive
 
       - name: Comment PR with build info
         uses: actions/github-script@v7
@@ -209,11 +209,11 @@ jobs:
 
       - name: Build and submit staging
         run: |
-          npx eas build --platform all --profile staging --auto-submit --non-interactive
+          eas build --platform all --profile staging --auto-submit --non-interactive
 
       - name: Deploy OTA update
         run: |
-          npx eas update --branch staging --message "Staging deployment from ${{ github.sha }}"
+          eas update --branch staging --message "Staging deployment from ${{ github.sha }}"
 
       - name: Notify deployment
         uses: 8398a7/action-slack@v3
@@ -274,11 +274,11 @@ jobs:
 
       - name: Build and submit production
         run: |
-          npx eas build --platform all --profile production --auto-submit --non-interactive
+          eas build --platform all --profile production --auto-submit --non-interactive
 
       - name: Deploy OTA update
         run: |
-          npx eas update --branch production --message "Production deployment from ${{ github.sha }}"
+          eas update --branch production --message "Production deployment from ${{ github.sha }}"
 
       - name: Create GitHub Release
         uses: actions/create-release@v1
