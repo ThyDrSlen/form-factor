@@ -8,10 +8,8 @@ import {
     ActivityIndicator,
     Animated,
     FlatList,
-    Platform,
     RefreshControl,
     ScrollView,
-    StyleSheet,
     Text,
     TouchableOpacity,
     View
@@ -19,11 +17,9 @@ import {
 import { Swipeable } from 'react-native-gesture-handler';
 import { useWorkouts, type Workout } from '../../contexts/WorkoutsContext';
 import { useToast } from '../../contexts/ToastContext';
+import { CARD_HEIGHT, CARD_MARGIN, styles } from './workouts.styles';
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as unknown as React.ComponentType<React.ComponentProps<typeof Animated.FlatList<Workout>>>;
-
-const CARD_HEIGHT = 140;
-const CARD_MARGIN = 12;
 
 export default function WorkoutsScreen() {
   const router = useRouter();
@@ -254,193 +250,3 @@ export default function WorkoutsScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#050E1F',
-  },
-  loadingContainer: { 
-    justifyContent: 'center', 
-    alignItems: 'center',
-    backgroundColor: '#050E1F',
-  },
-  loadingText: { 
-    marginTop: 16, 
-    fontSize: 16, 
-    color: '#9AACD1',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
-  },
-  list: { 
-    padding: 16,
-    paddingBottom: 100,
-  },
-  card: {
-    marginBottom: CARD_MARGIN,
-    borderRadius: 16,
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    elevation: 2,
-    backgroundColor: 'transparent',
-  },
-  cardGradient: {
-    borderRadius: 16,
-    padding: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#1B2E4A',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#F5F7FF',
-    flex: 1,
-    marginRight: 12,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
-  },
-  cardDateContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  cardDate: {
-    fontSize: 14,
-    color: '#9AACD1',
-    marginLeft: 4,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
-  },
-  cardDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-    paddingHorizontal: 8,
-  },
-  detailItem: {
-    alignItems: 'center',
-    minWidth: 60,
-  },
-  detailValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#4C8CFF',
-    marginBottom: 2,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
-  },
-  detailLabel: {
-    fontSize: 12,
-    color: '#9AACD1',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: '#1B2E4A',
-    paddingTop: 12,
-    marginTop: 12,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  actionText: {
-    color: '#4C8CFF',
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 6,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
-  },
-  divider: {
-    width: 1,
-    backgroundColor: '#1B2E4A',
-    marginVertical: 4,
-  },
-  swipeDelete: {
-    backgroundColor: '#FF3B30',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 88,
-    borderRadius: 16,
-    marginBottom: CARD_MARGIN,
-    flexDirection: 'column',
-  },
-  swipeDeleteText: {
-    color: '#fff',
-    fontSize: 12,
-    marginTop: 4,
-    fontWeight: '600',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-    backgroundColor: '#050E1F',
-  },
-  emptyIllustration: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: 'rgba(76, 140, 255, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  emptyTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#F5F7FF',
-    marginBottom: 8,
-    textAlign: 'center',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
-  },
-  emptyDescription: {
-    fontSize: 16,
-    color: '#9AACD1',
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 24,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
-  },
-  addFirstButton: {
-    backgroundColor: '#4C8CFF',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-    shadowColor: '#4C8CFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  addFirstButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
-  },
-  addButton: {
-    position: 'absolute',
-    right: 20,
-    bottom: 100, // Position above the tab bar
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#4C8CFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#4C8CFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-});
