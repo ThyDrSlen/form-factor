@@ -129,6 +129,12 @@ public class ARKitBodyTrackerModule: Module {
             if #available(iOS 14.0, *) {
               configuration.automaticSkeletonScaleEstimationEnabled = true
             }
+            if #available(iOS 11.3, *) {
+              configuration.isAutoFocusEnabled = true
+            }
+            if let bestFormat = ARBodyTrackingConfiguration.supportedVideoFormats.max(by: { $0.framesPerSecond < $1.framesPerSecond }) {
+              configuration.videoFormat = bestFormat
+            }
             
             // Run the session on the view's session - this will display the camera feed
             print("[ARKit] Running AR session with body tracking configuration on ARView.session")
@@ -150,6 +156,12 @@ public class ARKitBodyTrackerModule: Module {
           configuration.automaticImageScaleEstimationEnabled = true
           if #available(iOS 14.0, *) {
             configuration.automaticSkeletonScaleEstimationEnabled = true
+          }
+          if #available(iOS 11.3, *) {
+            configuration.isAutoFocusEnabled = true
+          }
+          if let bestFormat = ARBodyTrackingConfiguration.supportedVideoFormats.max(by: { $0.framesPerSecond < $1.framesPerSecond }) {
+            configuration.videoFormat = bestFormat
           }
           
           // Run the session
@@ -439,6 +451,14 @@ fileprivate final class ARKitSessionDelegate: NSObject, ARSessionDelegate {
 
     if #available(iOS 14.0, *) {
       configuration.automaticSkeletonScaleEstimationEnabled = true
+    }
+
+    if #available(iOS 11.3, *) {
+      configuration.isAutoFocusEnabled = true
+    }
+
+    if let bestFormat = ARBodyTrackingConfiguration.supportedVideoFormats.max(by: { $0.framesPerSecond < $1.framesPerSecond }) {
+      configuration.videoFormat = bestFormat
     }
 
     session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
