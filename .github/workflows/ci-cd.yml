@@ -90,7 +90,7 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Verify EAS configuration
-        run: eas build --platform all --profile preview --dry-run --non-interactive
+        run: eas build --platform all --profile preview --non-interactive
 
   # Job 3: Preview Build (PR only)
   build-preview:
