@@ -1,16 +1,36 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, Platform, Animated } from 'react-native';
+import { Alert, Text, TouchableOpacity, View, Platform, Animated, ActivityIndicator, ToastAndroid, LayoutChangeEvent } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Svg, Circle, Line } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D } from '@/lib/arkit/ARKitBodyTracker';
 import { useSpeechFeedback } from '@/hooks/use-speech-feedback';
+import { uploadWorkoutVideo } from '@/lib/services/video-service';
+import { styles } from './scan-arkit.styles';
 
 type PullUpPhase = 'idle' | 'hang' | 'pull' | 'top';
+type PushUpPhase = 'setup' | 'plank' | 'lowering' | 'bottom' | 'press';
+type DetectionMode = 'pullup' | 'pushup';
+type UploadMetrics =
+  | {
+      mode: 'pullup';
+      reps: number;
+      avgElbowDeg: number | null;
+      avgShoulderDeg: number | null;
+      headToHand: number | null;
+    }
+  | {
+      mode: 'pushup';
+      reps: number;
+      avgElbowDeg: number | null;
+      hipDropRatio: number | null;
+    };
 
 const PULL_UP_THRESHOLDS = {
   hang: 150,
@@ -19,11 +39,29 @@ const PULL_UP_THRESHOLDS = {
   release: 145,
 } as const;
 
+const PUSH_UP_THRESHOLDS = {
+  readyElbow: 155,     // Arms nearly locked out
+  loweringStart: 140,  // Begin counting a descent
+  bottom: 90,          // Bottom position
+  press: 120,          // On the way up
+  finish: 155,         // Completed press
+  hipSagMax: 0.18,     // Meters of allowed hip drop vs shoulders
+} as const;
+
+const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
+
 interface PullUpMetrics {
   avgElbow: number;
   avgShoulder: number;
   headToHand: number | null;
   armsTracked: boolean;
+}
+
+interface PushUpMetrics {
+  avgElbow: number;
+  hipDrop: number | null;
+  armsTracked: boolean;
+  wristsTracked: boolean;
 }
 
 let Camera: any = View;
@@ -80,16 +118,26 @@ export default function ScanARKitScreen() {
   const jointAnglesStateRef = React.useRef<JointAngles | null>(null);
   const [repCount, setRepCount] = useState(0);
   const [pullUpPhase, setPullUpPhase] = useState<PullUpPhase>('idle');
+  const [detectionMode, setDetectionMode] = useState<DetectionMode>('pullup');
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
   const phaseRef = React.useRef<PullUpPhase>('idle');
   const repStateRef = React.useRef<PullUpPhase>('idle');
   const lastRepTimestampRef = React.useRef(0);
   const [pullUpMetrics, setPullUpMetrics] = useState<PullUpMetrics | null>(null);
   const pullUpMetricsThrottleRef = React.useRef(0);
+  const [pushUpPhase, setPushUpPhase] = useState<PushUpPhase>('setup');
+  const [pushUpReps, setPushUpReps] = useState(0);
+  const [pushUpMetrics, setPushUpMetrics] = useState<PushUpMetrics | null>(null);
+  const pushUpStateRef = React.useRef<PushUpPhase>('setup');
+  const lastPushUpRepRef = React.useRef(0);
+  const [uploading, setUploading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const recordedUriRef = React.useRef<string | null>(null);
   const [smoothedPose2DJoints, setSmoothedPose2DJoints] = useState<Joint2D[] | null>(null);
   const smoothedPose2DRef = React.useRef<Joint2D[] | null>(null);
   const pose2DCacheRef = React.useRef<Record<string, { x: number; y: number }>>({});
   const lastSpokenCueRef = React.useRef<{ cue: string; timestamp: number } | null>(null);
+  const overlayLayout = React.useRef<{ width: number; height: number } | null>(null);
 
   const { speak: speakCue, stop: stopSpeech } = useSpeechFeedback({
     enabled: audioFeedbackEnabled,
@@ -106,6 +154,23 @@ export default function ScanARKitScreen() {
       stopSpeech();
     }
   }, [audioFeedbackEnabled, stopSpeech]);
+
+  useEffect(() => {
+    if (detectionMode === 'pullup') {
+      pushUpStateRef.current = 'setup';
+      setPushUpPhase('setup');
+      setPushUpReps(0);
+      setPushUpMetrics(null);
+      lastPushUpRepRef.current = 0;
+    } else {
+      repStateRef.current = 'idle';
+      phaseRef.current = 'idle';
+      setPullUpPhase('idle');
+      setRepCount(0);
+      setPullUpMetrics(null);
+      lastRepTimestampRef.current = 0;
+    }
+  }, [detectionMode]);
 
   const transitionPhase = useCallback(
     (next: PullUpPhase) => {
@@ -178,6 +243,65 @@ export default function ScanARKitScreen() {
     [transitionPhase]
   );
 
+  const updatePushUpCycle = useCallback((metrics: PushUpMetrics) => {
+    if (!metrics.armsTracked || !metrics.wristsTracked) {
+      pushUpStateRef.current = 'setup';
+      setPushUpPhase('setup');
+      return;
+    }
+
+    const now = Date.now();
+    const state = pushUpStateRef.current;
+    const hipStable = metrics.hipDrop === null ? true : metrics.hipDrop <= PUSH_UP_THRESHOLDS.hipSagMax;
+    const elbow = metrics.avgElbow;
+
+    if (state === 'setup') {
+      if (elbow >= PUSH_UP_THRESHOLDS.readyElbow && hipStable) {
+        pushUpStateRef.current = 'plank';
+        setPushUpPhase('plank');
+      }
+      return;
+    }
+
+    if (state === 'plank') {
+      if (elbow <= PUSH_UP_THRESHOLDS.loweringStart) {
+        pushUpStateRef.current = 'lowering';
+        setPushUpPhase('lowering');
+      }
+      return;
+    }
+
+    if (state === 'lowering') {
+      if (elbow <= PUSH_UP_THRESHOLDS.bottom) {
+        pushUpStateRef.current = 'bottom';
+        setPushUpPhase('bottom');
+      }
+      return;
+    }
+
+    if (state === 'bottom') {
+      if (elbow >= PUSH_UP_THRESHOLDS.press) {
+        pushUpStateRef.current = 'press';
+        setPushUpPhase('press');
+      }
+      return;
+    }
+
+    if (state === 'press') {
+      if (elbow >= PUSH_UP_THRESHOLDS.finish && hipStable) {
+        if (now - lastPushUpRepRef.current > 400) {
+          lastPushUpRepRef.current = now;
+          setPushUpReps((prev) => prev + 1);
+          if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+          }
+        }
+        pushUpStateRef.current = 'plank';
+        setPushUpPhase('plank');
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (DEV) {
       console.log('[ScanARKit] Component mounted - Platform:', Platform.OS);
@@ -246,6 +370,9 @@ export default function ScanARKitScreen() {
       smoothedPose2DRef.current = null;
       pose2DCacheRef.current = {};
       setPullUpMetrics(null);
+      setPushUpPhase('setup');
+      setPushUpReps(0);
+      setPushUpMetrics(null);
       repStateRef.current = 'idle';
       transitionPhase('idle');
       return;
@@ -280,6 +407,8 @@ export default function ScanARKitScreen() {
       const rw = get('right_hand');
       const spine = get('spine_4');
       const neck = get('neck');
+      const leftAnkle = get('left_foot');
+      const rightAnkle = get('right_foot');
       const valid = {
         leftKnee: !!(lh?.isTracked && lk?.isTracked && la?.isTracked),
         rightKnee: !!(rh?.isTracked && rk?.isTracked && ra?.isTracked),
@@ -346,24 +475,46 @@ export default function ScanARKitScreen() {
           headToHand = head.y - (lw.y + rw.y) / 2;
         }
 
-        const metrics: PullUpMetrics = {
-          avgElbow,
-          avgShoulder,
-          headToHand,
-          armsTracked: !!(valid.leftElbow && valid.rightElbow),
-        };
-        const now = Date.now();
-        const prevMetrics = pullUpMetricsThrottleRef.current;
-        const metricsChanged =
-          !pullUpMetrics ||
-          Math.abs((pullUpMetrics.avgElbow ?? 0) - metrics.avgElbow) > 0.5 ||
-          Math.abs((pullUpMetrics.avgShoulder ?? 0) - metrics.avgShoulder) > 0.5 ||
-          pullUpMetrics.armsTracked !== metrics.armsTracked;
-        if (metricsChanged || now - prevMetrics > 80) {
-          pullUpMetricsThrottleRef.current = now;
-          setPullUpMetrics(metrics);
+        if (detectionMode === 'pullup') {
+          const metrics: PullUpMetrics = {
+            avgElbow,
+            avgShoulder,
+            headToHand,
+            armsTracked: !!(valid.leftElbow && valid.rightElbow),
+          };
+          const now = Date.now();
+          const prevMetrics = pullUpMetricsThrottleRef.current;
+          const metricsChanged =
+            !pullUpMetrics ||
+            Math.abs((pullUpMetrics.avgElbow ?? 0) - metrics.avgElbow) > 0.5 ||
+            Math.abs((pullUpMetrics.avgShoulder ?? 0) - metrics.avgShoulder) > 0.5 ||
+            pullUpMetrics.armsTracked !== metrics.armsTracked;
+          if (metricsChanged || now - prevMetrics > 80) {
+            pullUpMetricsThrottleRef.current = now;
+            setPullUpMetrics(metrics);
+          }
+          updatePullUpCycle(next, metrics);
+        } else if (detectionMode === 'pushup') {
+          // Push-up metrics using elbow angle and hip drop vs shoulders
+          const shouldersTracked = valid.leftShoulder && valid.rightShoulder;
+          const hipsTracked = valid.leftHip && valid.rightHip;
+          let hipDrop: number | null = null;
+          if (shouldersTracked && hipsTracked && ls && rs && lh && rh && leftAnkle && rightAnkle) {
+            const shoulderY = (ls.y + rs.y) / 2;
+            const hipY = (lh.y + rh.y) / 2;
+            const ankleY = (leftAnkle.y + rightAnkle.y) / 2;
+            const torsoLength = Math.max(0.001, Math.abs(shoulderY - ankleY));
+            hipDrop = Math.abs(hipY - shoulderY) / torsoLength;
+          }
+          const pushMetrics: PushUpMetrics = {
+            avgElbow,
+            hipDrop,
+            armsTracked: !!(valid.leftElbow && valid.rightElbow),
+            wristsTracked: !!(lw?.isTracked && rw?.isTracked),
+          };
+          setPushUpMetrics(pushMetrics);
+          updatePushUpCycle(pushMetrics);
         }
-        updatePullUpCycle(next, metrics);
       } else {
         setPullUpMetrics(null);
         repStateRef.current = 'idle';
@@ -393,7 +544,7 @@ export default function ScanARKitScreen() {
     }
     // DEV is a stable constant; pullUpMetrics would cause infinite loop (read + set in same effect)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pose, transitionPhase, updatePullUpCycle]);
+  }, [pose, transitionPhase, updatePullUpCycle, updatePushUpCycle, detectionMode]);
 
   // Debug pose2D updates
   useEffect(() => {
@@ -474,6 +625,11 @@ export default function ScanARKitScreen() {
       setRepCount(0);
       setPullUpMetrics(null);
       lastRepTimestampRef.current = 0;
+      pushUpStateRef.current = 'setup';
+      setPushUpPhase('setup');
+      setPushUpReps(0);
+      setPushUpMetrics(null);
+      lastPushUpRepRef.current = 0;
 
       const startTime = Date.now();
       await startNativeTracking();
@@ -509,6 +665,11 @@ export default function ScanARKitScreen() {
       phaseRef.current = 'idle';
       transitionPhase('idle');
       lastRepTimestampRef.current = 0;
+      pushUpStateRef.current = 'setup';
+      setPushUpPhase('setup');
+      setPushUpReps(0);
+      setPushUpMetrics(null);
+      lastPushUpRepRef.current = 0;
       setFps(0);
       
       if (DEV) console.log('[ScanARKit] ✅ Tracking stopped');
@@ -566,6 +727,11 @@ export default function ScanARKitScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTracking, stopTracking, startTracking, cameraPosition]);
 
+  const handleOverlayLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    overlayLayout.current = { width, height };
+  }, []);
+
   // Fade out text after 5 seconds
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -580,7 +746,7 @@ export default function ScanARKitScreen() {
   }, [textOpacity]);
 
   // Analyze form and provide feedback
-  const analyzeForm = useCallback(() => {
+  const analyzePullUpForm = useCallback(() => {
     if (!jointAngles) return null;
 
     const messages: string[] = [];
@@ -625,21 +791,213 @@ export default function ScanARKitScreen() {
     return messages;
   }, [jointAngles, pullUpMetrics, pullUpPhase]);
 
-  const feedback = analyzeForm();
-  const primaryCue = feedback?.[0];
+  const analyzePushUpForm = useCallback(() => {
+    if (!jointAngles) return null;
 
-  useEffect(() => {
-    if (!primaryCue || !audioFeedbackEnabled) {
-      return;
+    const messages: string[] = [];
+    if (!pushUpMetrics) {
+      messages.push('Step into frame and set a straight high plank.');
+      return messages;
     }
-    const now = Date.now();
-    const last = lastSpokenCueRef.current;
-    if (last && last.cue === primaryCue && now - last.timestamp < 5000) {
-      return;
+
+    const phasePrompts: Record<PushUpPhase, string> = {
+      setup: 'Set a strong plank: hands under shoulders, glutes tight.',
+      plank: 'Lower under control; keep hips level.',
+      lowering: 'Elbows ~45°; keep core braced.',
+      bottom: 'Pause briefly, chest just above the floor.',
+      press: 'Drive the floor away and lock out.',
+    };
+    messages.push(phasePrompts[pushUpPhase]);
+
+    if (!pushUpMetrics.armsTracked || !pushUpMetrics.wristsTracked) {
+      messages.push('Keep both hands and elbows visible to the camera.');
+      return messages;
     }
-    lastSpokenCueRef.current = { cue: primaryCue, timestamp: now };
-    speakCue(primaryCue);
-  }, [primaryCue, audioFeedbackEnabled, speakCue]);
+
+    if (pushUpMetrics.hipDrop !== null && pushUpMetrics.hipDrop > PUSH_UP_THRESHOLDS.hipSagMax) {
+      messages.push('Squeeze glutes to stop hip sag.');
+    }
+
+    if (pushUpPhase === 'plank' && pushUpMetrics.avgElbow < PUSH_UP_THRESHOLDS.readyElbow - 5) {
+      messages.push('Start from a full lockout to count clean reps.');
+    }
+
+    if (pushUpPhase === 'bottom' && pushUpMetrics.avgElbow > PUSH_UP_THRESHOLDS.bottom + 10) {
+      messages.push('Lower deeper until elbows hit ~90°.');
+    }
+
+    if (messages.length < 2) {
+      messages.push('Smooth tempo — steady down, strong press up.');
+    }
+
+    return messages;
+  }, [jointAngles, pushUpMetrics, pushUpPhase]);
+
+    const feedback = detectionMode === 'pullup' ? analyzePullUpForm() : analyzePushUpForm();
+    const primaryCue = feedback?.[0];
+    const latestMetricsForUpload: UploadMetrics =
+      detectionMode === 'pullup'
+        ? {
+            mode: 'pullup',
+            reps: repCount,
+            avgElbowDeg: pullUpMetrics?.avgElbow ?? null,
+            avgShoulderDeg: pullUpMetrics?.avgShoulder ?? null,
+            headToHand: pullUpMetrics?.headToHand ?? null,
+          }
+        : {
+            mode: 'pushup',
+            reps: pushUpReps,
+            avgElbowDeg: pushUpMetrics?.avgElbow ?? null,
+            hipDropRatio: pushUpMetrics?.hipDrop ?? null,
+          };
+
+    useEffect(() => {
+      if (!primaryCue || !audioFeedbackEnabled) {
+        return;
+      }
+      const now = Date.now();
+      const last = lastSpokenCueRef.current;
+      if (last && last.cue === primaryCue && now - last.timestamp < 5000) {
+        return;
+      }
+      lastSpokenCueRef.current = { cue: primaryCue, timestamp: now };
+      speakCue(primaryCue);
+    }, [primaryCue, audioFeedbackEnabled, speakCue]);
+
+    const handleUploadWithMetrics = useCallback(async () => {
+      if (uploading) return;
+      try {
+        const picked = await DocumentPicker.getDocumentAsync({
+          type: 'video/*',
+          copyToCacheDirectory: true,
+          multiple: false,
+        });
+
+        if (picked.canceled || !picked.assets?.length) {
+          return;
+        }
+
+        const asset = picked.assets[0];
+        if (asset.mimeType && !asset.mimeType.toLowerCase().startsWith('video')) {
+          Alert.alert('Invalid file', 'Please select a video file.');
+          return;
+        }
+
+        const info = await FileSystem.getInfoAsync(asset.uri);
+        if (!info.exists) {
+          Alert.alert('Invalid file', 'Selected file is not accessible.');
+          return;
+        }
+        if (info.size && info.size > MAX_UPLOAD_BYTES) {
+          Alert.alert('File too large', 'Max file size is 250MB.');
+          return;
+        }
+
+        if (latestMetricsForUpload.reps === 0) {
+          Alert.alert('No reps detected', 'Track a set to attach metrics before uploading.');
+          return;
+        }
+
+        setUploading(true);
+
+        await uploadWorkoutVideo({
+          fileUri: asset.uri,
+          exercise: detectionMode === 'pullup' ? 'Pull-Up' : 'Push-Up',
+          metrics: latestMetricsForUpload,
+        });
+
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Uploaded with metrics', ToastAndroid.SHORT);
+        } else {
+          Alert.alert('Uploaded', 'Video saved with metrics attached.');
+        }
+      } catch (error) {
+        console.error('[ScanARKit] Upload failed', error);
+        Alert.alert('Upload failed', error instanceof Error ? error.message : 'Could not upload video.');
+      } finally {
+        setUploading(false);
+      }
+    }, [detectionMode, latestMetricsForUpload, uploading]);
+
+    const uploadRecordedVideo = useCallback(async (uri: string) => {
+      if (uploading) return;
+      try {
+        const info = await FileSystem.getInfoAsync(uri);
+        if (!info.exists) {
+          Alert.alert('Recording missing', 'Recorded file is not accessible.');
+          return;
+        }
+        if (info.size && info.size > MAX_UPLOAD_BYTES) {
+          Alert.alert('File too large', 'Max file size is 250MB.');
+          return;
+        }
+        setUploading(true);
+        await uploadWorkoutVideo({
+          fileUri: uri,
+          exercise: detectionMode === 'pullup' ? 'Pull-Up' : 'Push-Up',
+          metrics: latestMetricsForUpload,
+        });
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Recorded set uploaded', ToastAndroid.SHORT);
+        } else {
+          Alert.alert('Uploaded', 'Recorded set saved with metrics.');
+        }
+      } catch (error) {
+        console.error('[ScanARKit] Upload recorded video failed', error);
+        Alert.alert('Upload failed', error instanceof Error ? error.message : 'Could not upload recording.');
+      } finally {
+        setUploading(false);
+      }
+    }, [detectionMode, latestMetricsForUpload, uploading]);
+
+    const startRecordingVideo = useCallback(async () => {
+      if (isRecording) return;
+      if (!cameraRef.current) {
+        Alert.alert('No camera', 'Camera is not ready to record.');
+        return;
+      }
+      if (!isTracking) {
+        Alert.alert('Start tracking first', 'Begin tracking before recording your set.');
+        return;
+      }
+      try {
+        setIsRecording(true);
+        recordedUriRef.current = null;
+        await cameraRef.current.startRecording({
+          flash: 'off',
+          onRecordingFinished: (video: any) => {
+            setIsRecording(false);
+            const uri = video?.path || video?.filePath || video?.outputURL || video?.uri;
+            if (uri) {
+              recordedUriRef.current = uri;
+              uploadRecordedVideo(uri);
+            } else {
+              Alert.alert('Recording failed', 'No file path returned from camera.');
+            }
+          },
+          onRecordingError: (error: any) => {
+            console.error('[ScanARKit] Recording error', error);
+            setIsRecording(false);
+            Alert.alert('Recording error', error?.message || 'Could not record video.');
+          },
+        });
+      } catch (error) {
+        console.error('[ScanARKit] Failed to start recording', error);
+        setIsRecording(false);
+        Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not start recording.');
+      }
+    }, [isRecording, isTracking, uploadRecordedVideo]);
+
+    const stopRecordingVideo = useCallback(async () => {
+      if (!isRecording || !cameraRef.current) return;
+      try {
+        await cameraRef.current.stopRecording();
+      } catch (error) {
+        console.error('[ScanARKit] Failed to stop recording', error);
+        setIsRecording(false);
+        Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not stop recording.');
+      }
+    }, [isRecording]);
 
   if (supportStatus === 'unknown') {
     return (
@@ -677,10 +1035,49 @@ export default function ScanARKitScreen() {
     );
   }
 
+  const showTelemetry = detectionMode === 'pullup' ? (isTracking || repCount > 0) : (isTracking || pushUpReps > 0);
+  const telemetryTitle = detectionMode === 'pullup' ? 'Pull-Up Tracker' : 'Push-Up Tracker';
+  const telemetryReps = detectionMode === 'pullup' ? repCount : pushUpReps;
+  const telemetryPhaseLabel =
+    detectionMode === 'pullup'
+      ? pullUpPhase === 'idle'
+        ? 'Waiting'
+        : pullUpPhase === 'hang'
+        ? 'Hang'
+        : pullUpPhase === 'pull'
+        ? 'Pull'
+        : 'Top'
+      : pushUpPhase === 'setup'
+      ? 'Setup'
+      : pushUpPhase === 'plank'
+      ? 'Plank'
+      : pushUpPhase === 'lowering'
+      ? 'Lowering'
+      : pushUpPhase === 'bottom'
+      ? 'Bottom'
+      : 'Press';
+  const telemetryElbow =
+    detectionMode === 'pullup'
+      ? pullUpMetrics?.armsTracked
+        ? `${pullUpMetrics.avgElbow.toFixed(1)}°`
+        : '--'
+      : pushUpMetrics?.armsTracked
+      ? `${pushUpMetrics.avgElbow.toFixed(1)}°`
+      : '--';
+  const telemetrySecondaryLabel = detectionMode === 'pullup' ? 'Avg Shoulder' : 'Hip Drop';
+  const telemetrySecondaryValue =
+    detectionMode === 'pullup'
+      ? pullUpMetrics?.armsTracked
+        ? `${pullUpMetrics.avgShoulder.toFixed(1)}°`
+        : '--'
+      : pushUpMetrics?.hipDrop !== null && pushUpMetrics?.hipDrop !== undefined
+      ? `${Math.round(pushUpMetrics.hipDrop * 100)}%`
+      : '--';
+
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={[styles.header, { top: Math.max(0, insets.top - 48) }]}>
+      <View style={[styles.header, { paddingTop: insets.top, height: 60 + insets.top }]}>
         <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
           <Ionicons name="close" size={28} color="#F5F7FF" />
         </TouchableOpacity>
@@ -695,7 +1092,7 @@ export default function ScanARKitScreen() {
         {/* VisionCamera preview - show when not tracking OR when front camera is selected (ARKit only supports back) */}
         {device && hasPermission && (!isTracking || cameraPosition === 'front') && (
           <Camera
-            style={StyleSheet.absoluteFill}
+            style={styles.fullFill}
             ref={cameraRef}
             device={device}
             isActive={true}
@@ -707,26 +1104,46 @@ export default function ScanARKitScreen() {
           <ARKitView
             key={`arkit-${cameraPosition}`}
             style={[
-              StyleSheet.absoluteFill,
+              styles.fullFill,
               !isTracking && { opacity: 0, pointerEvents: 'none' }
             ]}
             pointerEvents={isTracking ? "box-none" : "none"}
           />
         )}
+
+        {/* Mode toggle */}
+        <View style={[styles.modeToggle, { top: insets.top + 70 }]}>
+          <TouchableOpacity
+            onPress={() => setDetectionMode('pullup')}
+            style={[styles.modeChip, detectionMode === 'pullup' && styles.modeChipActive]}
+          >
+            <Ionicons name="barbell-outline" size={16} color={detectionMode === 'pullup' ? '#0B1F3A' : '#9AACD1'} />
+            <Text style={[styles.modeChipText, detectionMode === 'pullup' && styles.modeChipTextActive]}>Pull-Ups</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setDetectionMode('pushup')}
+            style={[styles.modeChip, detectionMode === 'pushup' && styles.modeChipActive]}
+          >
+            <Ionicons name="duplicate-outline" size={16} color={detectionMode === 'pushup' ? '#0B1F3A' : '#9AACD1'} />
+            <Text style={[styles.modeChipText, detectionMode === 'pushup' && styles.modeChipTextActive]}>Push-Ups</Text>
+          </TouchableOpacity>
+        </View>
         
         {/* Overlay guides */}
         <View
           style={[styles.overlay, { zIndex: 100 }]}
           pointerEvents={isTracking ? 'none' : 'auto'}
           onStartShouldSetResponder={() => !isTracking}
+          onLayout={handleOverlayLayout}
           onResponderRelease={async (e) => {
             if (isTracking) return;
             try {
               const { locationX, locationY } = e.nativeEvent;
-              const view = e.target as any;
-              // Fallback: compute normalized using layout if available
-              const nx = Math.max(0, Math.min(1, (locationX) / (view?.width ?? 1)));
-              const ny = Math.max(0, Math.min(1, (locationY) / (view?.height ?? 1)));
+              const size = overlayLayout.current;
+              const width = size?.width && size.width > 0 ? size.width : 1;
+              const height = size?.height && size.height > 0 ? size.height : 1;
+              const nx = Math.max(0, Math.min(1, locationX / width));
+              const ny = Math.max(0, Math.min(1, locationY / height));
               setFocusPoint({ x: locationX, y: locationY });
               setTimeout(() => setFocusPoint(null), 800);
               if (cameraRef.current && typeof cameraRef.current.focus === 'function') {
@@ -741,7 +1158,7 @@ export default function ScanARKitScreen() {
           }}
         >
 
-          <Animated.View style={[styles.topGuide, { opacity: textOpacity }]}>
+          <Animated.View style={[styles.topGuide, { top: insets.top + 140, opacity: textOpacity }]}>
             <Text style={styles.guideText}>
               {isTracking ? 'Tracking Active' : 'Press Start to Begin'}
             </Text>
@@ -763,7 +1180,7 @@ export default function ScanARKitScreen() {
           {/* Skeleton Overlay (2D projected) */}
         {smoothedPose2DJoints && smoothedPose2DJoints.length > 0 && (
             <Svg
-              style={StyleSheet.absoluteFill}
+              style={styles.fullFill}
               viewBox="0 0 1 1"
             preserveAspectRatio="none"
               pointerEvents="none"
@@ -870,39 +1287,56 @@ export default function ScanARKitScreen() {
         </View>
 
         {/* Pull-up telemetry display */}
-        {(isTracking || repCount > 0) && (
-          <View style={styles.anglesDisplay}>
-            <Text style={styles.anglesTitle}>Pull-Up Tracker</Text>
+        {showTelemetry && (
+          <View style={[styles.anglesDisplay, { top: insets.top + 130 }]}>
+            <Text style={styles.anglesTitle}>{telemetryTitle}</Text>
             <View style={styles.anglesGrid}>
               <View style={styles.angleItem}>
                 <Text style={styles.angleLabel}>Reps</Text>
-                <Text style={styles.angleValue}>{repCount}</Text>
+                <Text style={styles.angleValue}>{telemetryReps}</Text>
               </View>
               <View style={styles.angleItem}>
                 <Text style={styles.angleLabel}>Phase</Text>
-                <Text style={styles.angleValue}>
-                  {pullUpPhase === 'idle'
-                    ? 'Waiting'
-                    : pullUpPhase === 'hang'
-                    ? 'Hang'
-                    : pullUpPhase === 'pull'
-                    ? 'Pull'
-                    : 'Top'}
-                </Text>
+                <Text style={styles.angleValue}>{telemetryPhaseLabel}</Text>
               </View>
               <View style={styles.angleItem}>
                 <Text style={styles.angleLabel}>Avg Elbow</Text>
-                <Text style={styles.angleValue}>
-                  {pullUpMetrics?.armsTracked ? `${pullUpMetrics.avgElbow.toFixed(1)}°` : '--'}
-                </Text>
+                <Text style={styles.angleValue}>{telemetryElbow}</Text>
               </View>
               <View style={styles.angleItem}>
-                <Text style={styles.angleLabel}>Avg Shoulder</Text>
-                <Text style={styles.angleValue}>
-                  {pullUpMetrics?.armsTracked ? `${pullUpMetrics.avgShoulder.toFixed(1)}°` : '--'}
-                </Text>
+                <Text style={styles.angleLabel}>{telemetrySecondaryLabel}</Text>
+                <Text style={styles.angleValue}>{telemetrySecondaryValue}</Text>
               </View>
             </View>
+            <View style={styles.metricsUploadHint}>
+              <Text style={styles.metricsUploadLabel}>Metrics ready for upload</Text>
+              <Text style={styles.metricsUploadValue}>
+                {latestMetricsForUpload.mode === 'pullup'
+                  ? `${latestMetricsForUpload.reps} reps • elbow ${latestMetricsForUpload.avgElbowDeg ? latestMetricsForUpload.avgElbowDeg.toFixed(1) + '°' : '--'}`
+                  : `${latestMetricsForUpload.reps} reps • elbow ${latestMetricsForUpload.avgElbowDeg ? latestMetricsForUpload.avgElbowDeg.toFixed(1) + '°' : '--'} • hip drop ${
+                      latestMetricsForUpload.hipDropRatio !== null && latestMetricsForUpload.hipDropRatio !== undefined
+                        ? `${Math.round(latestMetricsForUpload.hipDropRatio * 100)}%`
+                        : '--'
+                    }`}
+              </Text>
+              <Text style={styles.metricsUploadSubtext}>
+                Select the set you just recorded to upload it with these metrics attached.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.uploadButton, uploading && styles.uploadButtonDisabled]}
+              onPress={handleUploadWithMetrics}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <ActivityIndicator color="#0B1F3A" />
+              ) : (
+                <>
+                  <Ionicons name="cloud-upload-outline" size={18} color="#0B1F3A" />
+                  <Text style={styles.uploadButtonText}>Upload video with metrics</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         )}
 
@@ -921,7 +1355,7 @@ export default function ScanARKitScreen() {
       {/* Camera flip button - show always when tracking or when front camera is selected */}
       {(isTracking || cameraPosition === 'front') && (
         <TouchableOpacity
-          style={styles.cameraFlipButton}
+          style={[styles.cameraFlipButton, { top: insets.top + 130 }]}
           onPress={flipCameraDuringTracking}
           accessibilityRole="button"
           accessibilityLabel="Flip camera"
@@ -938,6 +1372,7 @@ export default function ScanARKitScreen() {
       <TouchableOpacity
         style={[
           styles.audioToggleButton,
+          { top: insets.top + 130 },
           audioFeedbackEnabled && styles.audioToggleButtonActive
         ]}
         onPress={() => setAudioFeedbackEnabled((value) => !value)}
@@ -958,16 +1393,36 @@ export default function ScanARKitScreen() {
           style={[styles.controlButton, isTracking && styles.stopButton, isTracking && styles.controlButtonSmall]}
           onPress={isTracking ? stopTracking : (supportStatus === 'supported' && hasPermission ? startTracking : requestPermission)}
           disabled={!isTracking && !(supportStatus === 'supported' && hasPermission)}
-        >
-          <Ionicons
-            name={isTracking ? 'stop' : 'play'}
-            size={isTracking ? 24 : 32}
-            color="#FFFFFF"
-          />
-          <Text style={styles.controlButtonText}>
-            {isTracking ? 'Stop' : 'Start'} Tracking
-          </Text>
-        </TouchableOpacity>
+          >
+            <Ionicons
+              name={isTracking ? 'stop' : 'play'}
+              size={isTracking ? 24 : 32}
+              color="#FFFFFF"
+            />
+            <Text style={styles.controlButtonText}>
+              {isTracking ? 'Stop' : 'Start'} Tracking
+            </Text>
+          </TouchableOpacity>
+
+        {isTracking && (
+          <TouchableOpacity
+            style={[
+              styles.controlButton,
+              styles.recordButton,
+              isRecording && styles.recordButtonActive
+            ]}
+            onPress={isRecording ? stopRecordingVideo : startRecordingVideo}
+          >
+            <Ionicons
+              name={isRecording ? 'stop-circle' : 'radio-button-on'}
+              size={isRecording ? 22 : 20}
+              color="#FFFFFF"
+            />
+            <Text style={styles.controlButtonText}>
+              {isRecording ? 'Stop Recording' : 'Record Set'}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {!isTracking && (
           <TouchableOpacity
@@ -999,7 +1454,7 @@ export default function ScanARKitScreen() {
       </View>
 
       {/* Status badge */}
-      <View style={[styles.statusBadge, { top: Math.max(8, insets.top + 8) }]}>
+      <View style={[styles.statusBadge, { top: insets.top + 70 }]}>
         <View style={[styles.statusDot, isTracking && styles.statusDotActive]} />
         <View>
           <Text style={styles.statusText}>
@@ -1010,353 +1465,7 @@ export default function ScanARKitScreen() {
           </Text>
         </View>
       </View>
-    </View>
+</View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#050E1F',
-  },
-  header: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    zIndex: 10,
-  },
-  closeButton: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(15, 35, 57, 0.8)',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#1B2E4A',
-  },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#F5F7FF',
-  },
-  infoButton: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(15, 35, 57, 0.8)',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#1B2E4A',
-  },
-  trackingContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-  },
-  focusRing: {
-    position: 'absolute',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    backgroundColor: 'transparent',
-    opacity: 0.8,
-  },
-  topGuide: {
-    position: 'absolute',
-    top: 60,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  guideText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#F5F7FF',
-  },
-  guideSubtext: {
-    fontSize: 12,
-    color: '#9AACD1',
-    marginTop: 4,
-  },
-  qualityIndicator: {
-    width: 100,
-    height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 2,
-    marginTop: 8,
-    overflow: 'hidden',
-  },
-  qualityBar: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#3CC8A9',
-    borderRadius: 2,
-  },
-  controls: {
-    position: 'absolute',
-    bottom: 40,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    zIndex: 10,
-  },
-  zoomControls: {
-    position: 'absolute',
-    right: 16,
-    bottom: 16,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  zoomButton: {
-    minWidth: 44,
-    height: 44,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(15, 35, 57, 0.9)',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#1B2E4A',
-    ...Platform.select({
-      web: { boxShadow: '0 2px 6px rgba(0,0,0,0.3)' },
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-        elevation: 4,
-      },
-    }),
-  },
-  zoomButtonLeft: {},
-  zoomButtonRight: {},
-  zoomButtonText: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  controlButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4C8CFF',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 28,
-    gap: 12,
-    ...Platform.select({
-      web: {
-        boxShadow: '0px 4px 8px rgba(76, 140, 255, 0.4)',
-      },
-      default: {
-        shadowColor: '#4C8CFF',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 8,
-        elevation: 8,
-      },
-    }),
-  },
-  controlButtonSmall: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 24,
-    gap: 8,
-  },
-  stopButton: {
-    backgroundColor: '#FF6B6B',
-    ...Platform.select({
-      web: {
-        boxShadow: '0px 4px 8px rgba(255, 107, 107, 0.4)',
-      },
-      default: {
-        shadowColor: '#FF6B6B',
-      },
-    }),
-  },
-  secondaryButton: {
-    marginTop: 12,
-    backgroundColor: 'rgba(15, 35, 57, 0.9)',
-    borderWidth: 1,
-    borderColor: '#1B2E4A',
-  },
-  disabledButton: {
-    opacity: 0.6,
-    borderColor: '#2A3F5A',
-  },
-  cameraFlipButton: {
-    position: 'absolute',
-    top: 120,
-    right: 16,
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(15, 35, 57, 0.9)',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#1B2E4A',
-    zIndex: 100,
-    ...Platform.select({
-      web: {
-        boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-      },
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-        elevation: 10,
-      },
-    }),
-  },
-  audioToggleButton: {
-    position: 'absolute',
-    top: 120,
-    right: 72,
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(15, 35, 57, 0.9)',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#1B2E4A',
-    zIndex: 100,
-    ...Platform.select({
-      web: {
-        boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-      },
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-        elevation: 10,
-      },
-    }),
-  },
-  audioToggleButtonActive: {
-    backgroundColor: '#F5F7FF',
-    borderColor: '#7AA9FF',
-  },
-  controlButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  statusBadge: {
-    position: 'absolute',
-    top: 100,
-    right: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(15, 35, 57, 0.9)',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: '#1B2E4A',
-    zIndex: 11,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#9AACD1',
-    marginRight: 6,
-  },
-  statusDotActive: {
-    backgroundColor: '#3CC8A9',
-  },
-  statusText: {
-    fontSize: 12,
-    color: '#F5F7FF',
-    fontWeight: '600',
-  },
-  statusSubtext: {
-    fontSize: 10,
-    color: '#9AACD1',
-    marginTop: 2,
-  },
-  errorContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-  },
-  errorText: {
-    fontSize: 18,
-    color: '#FF6B6B',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  anglesDisplay: {
-    position: 'absolute',
-    top: 150,
-    left: 16,
-    backgroundColor: 'rgba(15, 35, 57, 0.9)',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#1B2E4A',
-  },
-  anglesTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#F5F7FF',
-    marginBottom: 8,
-  },
-  anglesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  angleItem: {
-    minWidth: 80,
-  },
-  angleLabel: {
-    fontSize: 10,
-    color: '#9AACD1',
-    marginBottom: 2,
-  },
-  angleValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#4C8CFF',
-  },
-  feedbackContainer: {
-    position: 'absolute',
-    bottom: 120,
-    left: 16,
-    right: 16,
-    backgroundColor: 'rgba(15, 35, 57, 0.9)',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#1B2E4A',
-  },
-  feedbackText: {
-    fontSize: 14,
-    color: '#F5F7FF',
-    marginBottom: 4,
-    lineHeight: 20,
-  },
-});
