@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert, StyleSheet, Platform, Share } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert, StyleSheet, Platform, Share, Modal, TextInput, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
@@ -12,11 +12,18 @@ import { fixInvalidUUIDs } from '@/scripts/fix-invalid-uuids';
 import { useDebugInfo } from '@/hooks/use-debug-info';
 
 export default function ProfileScreen() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, updateProfile } = useAuth();
   const [isFixing, setIsFixing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [isEditProfileVisible, setIsEditProfileVisible] = useState(false);
+  const [fullName, setFullName] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
   const { debugInfo, loading: debugLoading, refresh: refreshDebugInfo } = useDebugInfo();
+  const currentName = user?.user_metadata?.full_name || user?.user_metadata?.name || '';
+  const memberSinceYear = user?.created_at ? new Date(user.created_at).getFullYear() : new Date().getFullYear();
+  const displayName = currentName || user?.email?.split('@')[0] || 'User';
+  const displayInitial = (displayName || 'U').charAt(0).toUpperCase();
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -176,6 +183,34 @@ Generated: ${new Date().toISOString()}
     }
   };
 
+  const handleOpenEditProfile = () => {
+    setFullName(currentName);
+    setIsEditProfileVisible(true);
+  };
+
+  const handleSaveProfile = async () => {
+    const trimmedName = fullName.trim();
+    if (!trimmedName) {
+      Alert.alert('Name required', 'Please enter your full name.');
+      return;
+    }
+
+    try {
+      setIsSavingName(true);
+      const { error } = await updateProfile({ fullName: trimmedName });
+      if (error) {
+        Alert.alert('Error', error.message || 'Could not update profile.');
+        return;
+      }
+      setIsEditProfileVisible(false);
+      Alert.alert('Profile updated', 'Your name has been saved.');
+    } catch (error) {
+      Alert.alert('Error', error instanceof Error ? error.message : 'Could not update profile.');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
   const MenuItem = ({ icon, title, onPress, danger = false }: any) => (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
       <LinearGradient
@@ -204,11 +239,12 @@ Generated: ${new Date().toISOString()}
       >
         <View style={styles.avatarContainer}>
           <Text style={styles.avatarText}>
-            {user?.email?.charAt(0).toUpperCase() || 'U'}
+            {displayInitial}
           </Text>
         </View>
+        <Text style={styles.nameText}>{displayName}</Text>
         <Text style={styles.emailText}>{user?.email || 'Not signed in'}</Text>
-        <Text style={styles.memberSince}>Member since {new Date().getFullYear()}</Text>
+        <Text style={styles.memberSince}>Member since {memberSinceYear}</Text>
       </LinearGradient>
 
       <View style={styles.section}>
@@ -333,7 +369,7 @@ Generated: ${new Date().toISOString()}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account</Text>
         <View style={styles.menuGroup}>
-          <MenuItem icon="person-outline" title="Edit Profile" onPress={() => {}} />
+          <MenuItem icon="person-outline" title="Edit Profile" onPress={handleOpenEditProfile} />
           <MenuItem icon="notifications-outline" title="Notifications" onPress={() => {}} />
           <MenuItem icon="lock-closed-outline" title="Privacy & Security" onPress={() => {}} />
         </View>
@@ -355,6 +391,51 @@ Generated: ${new Date().toISOString()}
 
       {/* Bottom Padding */}
       <View style={{ height: 100 }} />
+
+      <Modal visible={isEditProfileVisible} animationType="slide" transparent onRequestClose={() => setIsEditProfileVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => (!isSavingName ? setIsEditProfileVisible(false) : null)}
+          />
+          <View style={styles.modalContent}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Edit Profile</Text>
+            <Text style={styles.modalLabel}>Full Name</Text>
+            <TextInput
+              value={fullName}
+              onChangeText={setFullName}
+              placeholder="Enter your name"
+              placeholderTextColor="#6781A6"
+              style={styles.modalInput}
+              autoCapitalize="words"
+              autoCorrect={false}
+              editable={!isSavingName}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSecondary]}
+                onPress={() => setIsEditProfileVisible(false)}
+                disabled={isSavingName}
+              >
+                <Text style={[styles.modalButtonText, styles.modalButtonTextSecondary]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonPrimary]}
+                onPress={handleSaveProfile}
+                disabled={isSavingName}
+              >
+                {isSavingName ? (
+                  <ActivityIndicator color="#0F2339" />
+                ) : (
+                  <Text style={[styles.modalButtonText, styles.modalButtonTextPrimary]}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -390,6 +471,13 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     color: '#4C8CFF',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+  },
+  nameText: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#F5F7FF',
+    marginBottom: 6,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
   },
   emailText: {
@@ -552,5 +640,78 @@ const styles = StyleSheet.create({
   },
   periodButtonTextActive: {
     color: '#FFFFFF',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    flex: 1,
+  },
+  modalContent: {
+    backgroundColor: '#0F2339',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#1B2E4A',
+  },
+  modalHandle: {
+    width: 44,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#1B2E4A',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#F5F7FF',
+    marginBottom: 12,
+  },
+  modalLabel: {
+    fontSize: 14,
+    color: '#9AACD1',
+    marginBottom: 8,
+  },
+  modalInput: {
+    backgroundColor: '#050E1F',
+    borderWidth: 1,
+    borderColor: '#1B2E4A',
+    borderRadius: 12,
+    padding: 12,
+    color: '#F5F7FF',
+    marginBottom: 20,
+    fontSize: 16,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  modalButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  modalButtonSecondary: {
+    borderColor: '#1B2E4A',
+  },
+  modalButtonPrimary: {
+    backgroundColor: '#4C8CFF',
+    borderColor: '#4C8CFF',
+  },
+  modalButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  modalButtonTextSecondary: {
+    color: '#9AACD1',
+  },
+  modalButtonTextPrimary: {
+    color: '#0F2339',
   },
 });

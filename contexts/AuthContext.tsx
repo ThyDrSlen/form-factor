@@ -70,6 +70,7 @@ type AuthContextType = {
   signInWithEmail: (email: string, password: string) => Promise<{ error?: AuthError }>;
   signUpWithEmail: (email: string, password: string, userData?: { fullName?: string }) => Promise<{ error?: AuthError }>;
   resetPassword: (email: string) => Promise<{ error?: AuthError }>;
+  updateProfile: (updates: { fullName?: string }) => Promise<{ error?: AuthError | Error }>;
   signOut: () => Promise<{ error?: Error }>;
   handleAuthCallback: (url: string) => Promise<void>;
   clearError: () => void;
@@ -496,6 +497,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const updateProfile = useCallback(async (updates: { fullName?: string }) => {
+    try {
+      if (!user) {
+        return { error: new Error('Not signed in') };
+      }
+
+      const { data, error } = await supabase.auth.updateUser({
+        data: {
+          full_name: updates.fullName ?? user.user_metadata?.full_name ?? '',
+          name: updates.fullName ?? user.user_metadata?.name ?? '',
+        },
+      });
+
+      if (error) {
+        return { error };
+      }
+
+      let updatedUser = data?.user ?? user;
+      let refreshedSession: Session | null = null;
+
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        refreshedSession = sessionData.session ?? null;
+        if (refreshedSession?.user) {
+          updatedUser = refreshedSession.user;
+          previousUserIdRef.current = refreshedSession.user.id;
+          setSession(refreshedSession);
+          if (!isMockUser) {
+            await sessionManager.storeSession(refreshedSession);
+          }
+        }
+      } catch (storeError) {
+        console.warn('[Auth] Failed to refresh stored session after profile update:', storeError);
+      }
+
+      if (updatedUser) {
+        setUser(updatedUser);
+        if (!refreshedSession) {
+          setSession((prev) => (prev ? { ...prev, user: updatedUser } : prev));
+        }
+      }
+
+      return { error: undefined };
+    } catch (error) {
+      console.error('[Auth] Error updating profile:', error);
+      return { error: error as Error };
+    }
+  }, [user, isMockUser, sessionManager]);
+
   const resetPassword = useCallback(async (email: string) => {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -526,6 +576,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signInWithEmail,
     signUpWithEmail,
     resetPassword,
+    updateProfile,
     signOut,
     handleAuthCallback,
     clearError,
