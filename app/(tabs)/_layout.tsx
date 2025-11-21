@@ -20,19 +20,20 @@ export default function TabsLayout() {
           tabBarStyle: {
             backgroundColor: '#0F2339',
             borderTopColor: '#1B2E4A',
-            height: 60 + (Platform.OS === 'ios' ? insets.bottom / 2 : 0),
-            paddingBottom: Platform.OS === 'ios' ? insets.bottom / 2 : 8,
-            paddingTop: 8,
+            height: 70 + (Platform.OS === 'ios' ? insets.bottom / 2 : 0),
+            paddingBottom: Platform.OS === 'ios' ? insets.bottom / 2 + 4 : 12,
+            paddingTop: 6,
             elevation: 0,
             position: 'absolute',
             ...(Platform.OS === 'web' ? {
               width: '90%',
-              maxWidth: 500,
+              maxWidth: 600,
               left: '50%',
               transform: [{ translateX: '-50%' as any }],
               borderRadius: 24,
               bottom: 24,
               borderTopWidth: 0,
+              paddingHorizontal: 16,
               shadowColor: '#000',
               shadowOffset: { width: 0, height: 4 },
               shadowOpacity: 0.3,
@@ -42,6 +43,7 @@ export default function TabsLayout() {
               bottom: 0,
               left: 0,
               right: 0,
+              paddingHorizontal: 16,
             }),
           },
           tabBarLabelStyle: { 
@@ -55,7 +57,7 @@ export default function TabsLayout() {
             marginTop: 4,
           },
           tabBarItemStyle: {
-            paddingVertical: 4,
+            paddingVertical: 6,
           },
           headerStyle: {
             backgroundColor: '#050E1F',
@@ -76,7 +78,7 @@ export default function TabsLayout() {
             tabBarIcon: ({ color, size }) => (
               <Ionicons 
                 name="home-outline" 
-                size={size} 
+                size={20}
                 color={color} 
               />
             ),
@@ -89,7 +91,7 @@ export default function TabsLayout() {
             tabBarIcon: ({ color, size }) => (
               <Ionicons
                 name="barbell-outline"
-                size={size}
+                size={20}
                 color={color}
               />
             ),
@@ -100,7 +102,7 @@ export default function TabsLayout() {
           options={{
             title: 'Food',
             tabBarIcon: ({ color, size }) => (
-              <Ionicons name="fast-food-outline" size={size} color={color} />
+              <Ionicons name="fast-food-outline" size={20} color={color} />
             ),
           }}
         />
@@ -109,7 +111,7 @@ export default function TabsLayout() {
           options={{
             title: 'Scan',
             tabBarIcon: ({ color, size }) => (
-              <Ionicons name="scan-outline" size={size} color={color} />
+              <Ionicons name="scan-outline" size={20} color={color} />
             ),
             // Hide tab bar when this screen is active
             tabBarStyle: { display: 'none' },
@@ -122,7 +124,7 @@ export default function TabsLayout() {
           options={{
             title: 'Profile',
             tabBarIcon: ({ color, size }) => (
-              <Ionicons name="person-outline" size={size} color={color} />
+              <Ionicons name="person-outline" size={20} color={color} />
             ),
           }}
         />
