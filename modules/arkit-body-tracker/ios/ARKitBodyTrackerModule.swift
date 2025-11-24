@@ -2,6 +2,7 @@ import ExpoModulesCore
 import ARKit
 import RealityKit
 import UIKit
+import AVFoundation
 
 // Represents a 3D joint with position and tracking state
 public struct Joint3D: Record {
@@ -77,6 +78,7 @@ public class ARKitBodyTrackerModule: Module {
   private lazy var sessionDelegate = ARKitSessionDelegate(owner: self)
   // If an ARKitBodyView is mounted, it will set this reference so we can drive its session
   public static var sharedARView: ARView?
+  fileprivate let videoRecorder = ARVideoRecorder()
   
   public func definition() -> ModuleDefinition {
     Name("ARKitBodyTracker")
@@ -370,6 +372,64 @@ public class ARKitBodyTrackerModule: Module {
       }
     }
 
+    AsyncFunction("startRecording") { (promise: Promise) in
+      DispatchQueue.main.async { [weak self] in
+        guard let self = self else {
+          promise.reject("ERROR", "Module deallocated before recording could start")
+          return
+        }
+
+        guard self.isRunning else {
+          promise.reject("NOT_RUNNING", "Body tracking must be running before recording")
+          return
+        }
+
+        let activeSession = self.arSession ?? ARKitBodyTrackerModule.sharedARView?.session
+        guard let session = activeSession,
+              let configuration = session.configuration as? ARBodyTrackingConfiguration else {
+          promise.reject("NO_SESSION", "No active ARKit body tracking session")
+          return
+        }
+
+        let resolution = configuration.videoFormat.imageResolution
+        let width = Int(resolution.width)
+        let height = Int(resolution.height)
+
+        if width <= 0 || height <= 0 {
+          promise.reject("INVALID_RESOLUTION", "Invalid video resolution for recording")
+          return
+        }
+
+        if self.videoRecorder.isRecording {
+          promise.resolve(true)
+          return
+        }
+
+        do {
+          try self.videoRecorder.startRecording(width: width, height: height)
+          promise.resolve(true)
+        } catch {
+          promise.reject("REC_START_FAILED", "Failed to start recording: \(error.localizedDescription)")
+        }
+      }
+    }
+
+    AsyncFunction("stopRecording") { (promise: Promise) in
+      if !self.videoRecorder.isRecording {
+        promise.resolve(nil)
+        return
+      }
+
+      self.videoRecorder.stopRecording { result in
+        switch result {
+        case .success(let url):
+          promise.resolve(url.path)
+        case .failure(let error):
+          promise.reject("REC_STOP_FAILED", error.localizedDescription)
+        }
+      }
+    }
+
     // Expose the native AR view so JS can render it
     View(ARKitBodyView.self) {}
 
@@ -400,6 +460,150 @@ public class ARKitBodyTrackerModule: Module {
     }
   }
 }
+fileprivate final class ARVideoRecorder {
+  private var assetWriter: AVAssetWriter?
+  private var videoInput: AVAssetWriterInput?
+  private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+  private var outputURL: URL?
+  private let queue = DispatchQueue(label: "com.formfactor.arkit.videorecorder")
+  private(set) var isRecording = false
+  private var lastPresentationTime = CMTime.zero
+  private let timeScale: CMTimeScale = 600
+  private var hasWrittenFrame = false
+
+  func startRecording(width: Int, height: Int) throws {
+    if isRecording {
+      return
+    }
+
+    let tempDir = FileManager.default.temporaryDirectory
+    let url = tempDir.appendingPathComponent("arkit-set-\(UUID().uuidString).mov")
+
+    let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+
+    let videoSettings: [String: Any] = [
+      AVVideoCodecKey: AVVideoCodecType.h264,
+      AVVideoWidthKey: NSNumber(value: width),
+      AVVideoHeightKey: NSNumber(value: height)
+    ]
+
+    let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+    input.expectsMediaDataInRealTime = true
+
+    let attrs: [String: Any] = [
+      kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
+      kCVPixelBufferWidthKey as String: NSNumber(value: width),
+      kCVPixelBufferHeightKey as String: NSNumber(value: height)
+    ]
+
+    let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+      assetWriterInput: input,
+      sourcePixelBufferAttributes: attrs
+    )
+
+    if writer.canAdd(input) {
+      writer.add(input)
+    } else {
+      throw NSError(domain: "ARVideoRecorder", code: -1, userInfo: [NSLocalizedDescriptionKey: "Cannot add video input"])
+    }
+
+    assetWriter = writer
+    videoInput = input
+    pixelBufferAdaptor = adaptor
+    outputURL = url
+    isRecording = true
+    lastPresentationTime = .zero
+    hasWrittenFrame = false
+  }
+
+  func appendFrame(_ frame: ARFrame) {
+    guard isRecording,
+          let writer = assetWriter,
+          let input = videoInput,
+          let adaptor = pixelBufferAdaptor else {
+      return
+    }
+
+    var timestamp = CMTime(seconds: frame.timestamp, preferredTimescale: timeScale)
+    if timestamp <= lastPresentationTime {
+      let increment = CMTime(value: 1, timescale: timeScale)
+      timestamp = lastPresentationTime + increment
+    }
+    lastPresentationTime = timestamp
+    let pixelBuffer = frame.capturedImage
+
+    queue.async {
+      if writer.status == .unknown {
+        writer.startWriting()
+        writer.startSession(atSourceTime: timestamp)
+      }
+
+      if writer.status == .writing && input.isReadyForMoreMediaData {
+        if adaptor.append(pixelBuffer, withPresentationTime: timestamp) {
+          self.hasWrittenFrame = true
+        } else if let error = writer.error {
+          print("[ARVideoRecorder] Failed to append frame: \(error.localizedDescription)")
+        }
+      }
+    }
+  }
+
+  func stopRecording(completion: @escaping (Result<URL, Error>) -> Void) {
+    guard isRecording, let writer = assetWriter, let input = videoInput else {
+      let error = NSError(domain: "ARVideoRecorder", code: -2, userInfo: [NSLocalizedDescriptionKey: "No active recording"])
+      completion(.failure(error))
+      return
+    }
+
+    isRecording = false
+    let recordedFrames = hasWrittenFrame
+    hasWrittenFrame = false
+    lastPresentationTime = .zero
+
+    queue.async {
+      input.markAsFinished()
+
+      writer.finishWriting {
+        let status = writer.status
+        let writerError = writer.error
+        let url = self.outputURL
+
+        self.assetWriter = nil
+        self.videoInput = nil
+        self.pixelBufferAdaptor = nil
+        self.outputURL = nil
+
+        DispatchQueue.main.async {
+            if status == .completed, let finalURL = url {
+            completion(.success(finalURL))
+          } else if !recordedFrames {
+            let noFramesError = NSError(
+              domain: "ARVideoRecorder",
+              code: -4,
+              userInfo: [NSLocalizedDescriptionKey: "No frames were captured before stopping the recording."]
+            )
+            completion(.failure(noFramesError))
+          } else if let finalURL = url, FileManager.default.fileExists(atPath: finalURL.path) {
+            completion(.success(finalURL))
+          } else {
+            let errorDescription: String
+            if let writerError = writerError as NSError? {
+              errorDescription = "Failed to finalize recording (\(writerError.domain) \(writerError.code)): \(writerError.localizedDescription)"
+            } else {
+              errorDescription = "Failed to finalize recording (status: \(status.rawValue))"
+            }
+            let error = NSError(
+              domain: "ARVideoRecorder",
+              code: writerError.map { ($0 as NSError).code } ?? -3,
+              userInfo: [NSLocalizedDescriptionKey: errorDescription]
+            )
+            completion(.failure(error))
+          }
+        }
+      }
+    }
+  }
+}
 
 // MARK: - ARKit Session Delegate Helper
 
@@ -419,6 +623,14 @@ fileprivate final class ARKitSessionDelegate: NSObject, ARSessionDelegate {
         owner.currentBodyAnchor = bodyAnchor
         break
       }
+    }
+  }
+
+  func session(_ session: ARSession, didUpdate frame: ARFrame) {
+    guard let owner else { return }
+
+    if owner.videoRecorder.isRecording {
+      owner.videoRecorder.appendFrame(frame)
     }
   }
 
@@ -464,3 +676,4 @@ fileprivate final class ARKitSessionDelegate: NSObject, ARSessionDelegate {
     session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
   }
 }
+

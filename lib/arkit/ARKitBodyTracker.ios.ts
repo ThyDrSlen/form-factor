@@ -143,6 +143,31 @@ export class BodyTracker {
   }
 
   /**
+   * Start recording the ARKit camera feed while body tracking is running.
+   * The recording is handled natively inside the AR session.
+   */
+  static async startRecording(): Promise<void> {
+    if (!ARKitBodyTracker) {
+      throw new Error('ARKitBodyTracker native module missing. Run `npx expo prebuild --platform ios` and rebuild.');
+    }
+    if (typeof ARKitBodyTracker.startRecording !== 'function') {
+      throw new Error('ARKit recording is not available on this build. Make sure the native module is up to date.');
+    }
+    await ARKitBodyTracker.startRecording();
+  }
+
+  /**
+   * Stop recording and return the local file path of the recorded video, if any.
+   */
+  static async stopRecording(): Promise<string | null> {
+    if (!ARKitBodyTracker || typeof ARKitBodyTracker.stopRecording !== 'function') {
+      return null;
+    }
+    const path: string | null | undefined = await ARKitBodyTracker.stopRecording();
+    return path ?? null;
+  }
+
+  /**
    * Calculate angle between three joints (in degrees)
    * @param joint1 First joint (e.g., hip)
    * @param joint2 Middle joint (e.g., knee) - the vertex of the angle
