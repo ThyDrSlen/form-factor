@@ -2,7 +2,7 @@ import { OAuthHandler } from '@/lib/services/OAuthHandler';
 import * as Linking from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SessionManager } from '../../lib/services/SessionManager';
 
 export default function AuthCallback() {
@@ -47,9 +47,20 @@ export default function AuthCallback() {
   }, [router, params.code, oauthHandler, sessionManager]);
 
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+    <View style={styles.container}>
       <ActivityIndicator size="large" />
-      <Text style={{ marginTop: 10 }}>Completing sign in...</Text>
+      <Text style={styles.message}>Completing sign in...</Text>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  message: {
+    marginTop: 10,
+  },
+});

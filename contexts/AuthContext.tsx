@@ -9,6 +9,7 @@ import { runDiagnostics } from '../lib/network-utils';
 import { signInWithApple as nativeAppleSignIn } from '../lib/auth-utils';
 import { localDB } from '../lib/services/database/local-db';
 import { syncService } from '../lib/services/database/sync-service';
+import { registerDevicePushToken, unregisterDevicePushToken } from '../lib/services/notifications';
 
 // In Expo Router, group folders like (auth) are omitted from the URL path.
 // The file app/(auth)/callback.tsx resolves to '/callback', not '/auth/callback'.
@@ -208,6 +209,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [updateAuthState, sessionManager, isMockUser]);
 
+  // Refresh push token when a real user signs in
+  useEffect(() => {
+    const syncPushToken = async () => {
+      if (!user || isMockUser) return;
+
+      try {
+        const result = await registerDevicePushToken(user.id, { requestPermission: false });
+        if (result.error) {
+          console.warn('[Auth] Push token registration warning:', result.error);
+        }
+      } catch (err) {
+        console.warn('[Auth] Failed to register push token:', err);
+      }
+    };
+
+    syncPushToken();
+  }, [user?.id, isMockUser]);
+
   const handleAuthCallback = useCallback(async (url: string): Promise<void> => {
     try {
       console.log('[Auth] Handling auth callback with OAuthHandler');
@@ -350,6 +369,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    const currentUserId = user?.id;
+
     try {
       console.log('[Auth] Signing out user');
 
@@ -360,6 +381,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsMockUser(false);
         await sessionManager.clearSession();
         return {};
+      }
+
+      if (currentUserId) {
+        try {
+          await unregisterDevicePushToken(currentUserId);
+        } catch (cleanupError) {
+          console.warn('[Auth] Failed to unregister push token on sign-out:', cleanupError);
+        }
       }
 
       // Optimistically clear local state and storage first so UI responds immediately
@@ -385,7 +414,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('[Auth] Error in signOut:', error);
       return { error: error as Error };
     }
-  }, [isMockUser, sessionManager]);
+  }, [isMockUser, sessionManager, user]);
 
   const signInWithEmail = useCallback(async (email: string, password: string) => {
     try {
