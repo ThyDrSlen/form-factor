@@ -29,7 +29,14 @@
         }
       ],
       "expo-font",
-      "./plugins/withDisableAssetThinning.js"
+      "./plugins/withDisableAssetThinning.js",
+      [
+        "expo-video",
+        {
+          "supportsBackgroundPlayback": true,
+          "supportsPictureInPicture": true
+        }
+      ]
     ],
     "android": {
       "package": "com.slenthekid.formfactoreas",

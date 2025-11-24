@@ -27,6 +27,19 @@ export interface LocalWorkout {
   updated_at: string;
 }
 
+export interface LocalHealthMetric {
+  id: string;
+  user_id: string;
+  summary_date: string; // YYYY-MM-DD
+  steps: number | null;
+  heart_rate_bpm: number | null;
+  heart_rate_timestamp: string | null;
+  weight_kg: number | null;
+  weight_timestamp: string | null;
+  synced: number; // 0 = not synced, 1 = synced
+  updated_at: string;
+}
+
 export interface SyncQueueItem {
   id: number;
   table_name: string;
@@ -46,28 +59,45 @@ class LocalDatabase {
     this.initialized = true;
   }
 
-  private getStorageKey(type: 'foods' | 'workouts' | 'sync_queue'): string {
+  private getStorageKey(type: 'foods' | 'workouts' | 'health_metrics' | 'sync_queue'): string {
     return `formfactor_${type}`;
   }
 
   private getData<T>(key: string): T[] {
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : [];
+    try {
+      const data = localStorage.getItem(key);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      console.warn(`[LocalDB-Web] Failed to parse data for key ${key}`, e);
+      return [];
+    }
   }
 
   private setData<T>(key: string, data: T[]): void {
-    localStorage.setItem(key, JSON.stringify(data));
+    try {
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (e) {
+      console.error(`[LocalDB-Web] Failed to save data for key ${key}`, e);
+    }
   }
 
   // Food operations
   async insertFood(food: Omit<LocalFood, 'synced' | 'deleted' | 'updated_at'>): Promise<void> {
     const foods = this.getData<LocalFood>(this.getStorageKey('foods'));
-    foods.push({
+    // Check if exists and replace
+    const existingIndex = foods.findIndex(f => f.id === food.id);
+    const newFood = {
       ...food,
       synced: 0,
       deleted: 0,
       updated_at: new Date().toISOString(),
-    });
+    };
+    
+    if (existingIndex >= 0) {
+      foods[existingIndex] = newFood;
+    } else {
+      foods.push(newFood);
+    }
     this.setData(this.getStorageKey('foods'), foods);
   }
 
@@ -100,6 +130,18 @@ class LocalDatabase {
       .filter(f => f.synced === 0);
   }
 
+  async getFoodById(id: string, includeDeleted = true): Promise<LocalFood | null> {
+    const foods = this.getData<LocalFood>(this.getStorageKey('foods'));
+    const predicate = includeDeleted
+      ? (f: LocalFood) => f.id === id
+      : (f: LocalFood) => f.id === id && f.deleted === 0;
+    return foods.find(predicate) || null;
+  }
+
+  async getAllFoodsWithDeleted(): Promise<LocalFood[]> {
+    return this.getData<LocalFood>(this.getStorageKey('foods'));
+  }
+
   async updateFoodSyncStatus(id: string, synced: boolean): Promise<void> {
     await this.updateFood(id, { synced: synced ? 1 : 0 });
   }
@@ -117,12 +159,19 @@ class LocalDatabase {
   // Workout operations
   async insertWorkout(workout: Omit<LocalWorkout, 'synced' | 'deleted' | 'updated_at'>): Promise<void> {
     const workouts = this.getData<LocalWorkout>(this.getStorageKey('workouts'));
-    workouts.push({
+    const existingIndex = workouts.findIndex(w => w.id === workout.id);
+    const newWorkout = {
       ...workout,
       synced: 0,
       deleted: 0,
       updated_at: new Date().toISOString(),
-    });
+    };
+
+    if (existingIndex >= 0) {
+      workouts[existingIndex] = newWorkout;
+    } else {
+      workouts.push(newWorkout);
+    }
     this.setData(this.getStorageKey('workouts'), workouts);
   }
 
@@ -152,7 +201,19 @@ class LocalDatabase {
 
   async getUnsyncedWorkouts(): Promise<LocalWorkout[]> {
     return this.getData<LocalWorkout>(this.getStorageKey('workouts'))
-      .filter(w => w.synced === 0);
+      .filter(w => w.synced === 0 && w.deleted === 0);
+  }
+
+  async getWorkoutById(id: string, includeDeleted = true): Promise<LocalWorkout | null> {
+    const workouts = this.getData<LocalWorkout>(this.getStorageKey('workouts'));
+    const predicate = includeDeleted
+      ? (w: LocalWorkout) => w.id === id
+      : (w: LocalWorkout) => w.id === id && w.deleted === 0;
+    return workouts.find(predicate) || null;
+  }
+
+  async getAllWorkoutsWithDeleted(): Promise<LocalWorkout[]> {
+    return this.getData<LocalWorkout>(this.getStorageKey('workouts'));
   }
 
   async updateWorkoutSyncStatus(id: string, synced: boolean): Promise<void> {
@@ -167,6 +228,81 @@ class LocalDatabase {
   async countUnsyncedWorkouts(): Promise<number> {
     return this.getData<LocalWorkout>(this.getStorageKey('workouts'))
       .filter(w => w.synced === 0 && w.deleted === 0).length;
+  }
+
+  // Health Metric operations
+  async insertHealthMetric(metric: Omit<LocalHealthMetric, 'synced' | 'updated_at'>): Promise<void> {
+    const metrics = this.getData<LocalHealthMetric>(this.getStorageKey('health_metrics'));
+    const existingIndex = metrics.findIndex(m => m.id === metric.id || (m.user_id === metric.user_id && m.summary_date === metric.summary_date));
+    
+    const newMetric = {
+      ...metric,
+      synced: 0,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (existingIndex >= 0) {
+      metrics[existingIndex] = newMetric;
+    } else {
+      metrics.push(newMetric);
+    }
+    this.setData(this.getStorageKey('health_metrics'), metrics);
+  }
+
+  async getHealthMetricsForRange(userId: string, startDate: string, endDate: string): Promise<LocalHealthMetric[]> {
+    const metrics = this.getData<LocalHealthMetric>(this.getStorageKey('health_metrics'));
+    return metrics
+      .filter(m => m.user_id === userId && m.summary_date >= startDate && m.summary_date <= endDate)
+      .sort((a, b) => b.summary_date.localeCompare(a.summary_date));
+  }
+
+  async getLatestHealthMetric(userId: string): Promise<LocalHealthMetric | null> {
+    const metrics = this.getData<LocalHealthMetric>(this.getStorageKey('health_metrics'));
+    const userMetrics = metrics
+      .filter(m => m.user_id === userId)
+      .sort((a, b) => b.summary_date.localeCompare(a.summary_date));
+    
+    return userMetrics.length > 0 ? userMetrics[0] : null;
+  }
+
+  async getHealthMetricByDate(userId: string, summaryDate: string): Promise<LocalHealthMetric | null> {
+    const metrics = this.getData<LocalHealthMetric>(this.getStorageKey('health_metrics'));
+    return metrics.find(m => m.user_id === userId && m.summary_date === summaryDate) || null;
+  }
+
+  async getHealthMetricById(id: string): Promise<LocalHealthMetric | null> {
+    const metrics = this.getData<LocalHealthMetric>(this.getStorageKey('health_metrics'));
+    return metrics.find(m => m.id === id) || null;
+  }
+
+  async getUnsyncedHealthMetrics(): Promise<LocalHealthMetric[]> {
+    const metrics = this.getData<LocalHealthMetric>(this.getStorageKey('health_metrics'));
+    return metrics
+      .filter(m => m.synced === 0)
+      .sort((a, b) => a.summary_date.localeCompare(b.summary_date));
+  }
+
+  async updateHealthMetricSyncStatus(id: string, synced: boolean): Promise<void> {
+    await this.updateHealthMetric(id, { synced: synced ? 1 : 0 });
+  }
+
+  async updateHealthMetric(id: string, updates: Partial<LocalHealthMetric>): Promise<void> {
+    const metrics = this.getData<LocalHealthMetric>(this.getStorageKey('health_metrics'));
+    const index = metrics.findIndex(m => m.id === id);
+    if (index !== -1) {
+      metrics[index] = { ...metrics[index], ...updates, updated_at: new Date().toISOString() };
+      this.setData(this.getStorageKey('health_metrics'), metrics);
+    }
+  }
+
+  async deleteHealthMetric(id: string): Promise<void> {
+    const metrics = this.getData<LocalHealthMetric>(this.getStorageKey('health_metrics'));
+    this.setData(this.getStorageKey('health_metrics'), metrics.filter(m => m.id !== id));
+  }
+
+  async getHealthMetricsCount(userId: string): Promise<number> {
+    const metrics = this.getData<LocalHealthMetric>(this.getStorageKey('health_metrics'));
+    return metrics.filter(m => m.user_id === userId).length;
   }
 
   // Sync queue operations
@@ -216,9 +352,30 @@ class LocalDatabase {
     return this.getData<SyncQueueItem>(this.getStorageKey('sync_queue')).length;
   }
 
+  // Cleanup operations (for web interface compat)
+  async cleanupSyncedDeletes(): Promise<void> {
+    // In web version, we hard delete immediately in hardDelete* methods, 
+    // but we keep soft deleted items until they are synced?
+    // Actually softDelete sets deleted=1.
+    // We should remove items that are deleted=1 AND synced=1
+    
+    const foods = this.getData<LocalFood>(this.getStorageKey('foods'));
+    const activeFoods = foods.filter(f => !(f.deleted === 1 && f.synced === 1));
+    if (activeFoods.length !== foods.length) {
+      this.setData(this.getStorageKey('foods'), activeFoods);
+    }
+
+    const workouts = this.getData<LocalWorkout>(this.getStorageKey('workouts'));
+    const activeWorkouts = workouts.filter(w => !(w.deleted === 1 && w.synced === 1));
+    if (activeWorkouts.length !== workouts.length) {
+      this.setData(this.getStorageKey('workouts'), activeWorkouts);
+    }
+  }
+
   async clearAllData(): Promise<void> {
     localStorage.removeItem(this.getStorageKey('foods'));
     localStorage.removeItem(this.getStorageKey('workouts'));
+    localStorage.removeItem(this.getStorageKey('health_metrics'));
     localStorage.removeItem(this.getStorageKey('sync_queue'));
     console.log('[LocalDB-Web] All data cleared');
   }

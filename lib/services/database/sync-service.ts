@@ -9,6 +9,7 @@ class SyncService {
   private workoutChannel: RealtimeChannel | null = null;
   private healthChannel: RealtimeChannel | null = null;
   private isSyncing = false;
+  private syncPromise: Promise<void> | null = null;
   private syncCallbacks: SyncCallback[] = [];
 
   private getErrorCode(error: unknown): string | undefined {
@@ -161,8 +162,7 @@ class SyncService {
       if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
         // Check if we have a local unsynced version (conflict detection)
         // Query all foods including soft-deleted ones to detect conflicts
-        const allLocalFoods = await localDB.db!.getAllAsync<LocalFood>('SELECT * FROM foods WHERE id = ?', [payload.new.id]);
-        const localFood = allLocalFoods[0];
+        const localFood = await localDB.getFoodById(payload.new.id, true);
         
         // If local has unsaved changes, don't overwrite (local wins, will sync later)
         if (localFood && localFood.synced === 0) {
@@ -184,8 +184,7 @@ class SyncService {
         };
         
         // Check if exists locally, update or insert atomically
-        const existing = await localDB.db!.getAllAsync<LocalFood>('SELECT id FROM foods WHERE id = ?', [food.id]);
-        if (existing.length > 0) {
+        if (localFood) {
           await localDB.updateFood(food.id, food);
         } else {
           await localDB.insertFood(food);
@@ -208,8 +207,7 @@ class SyncService {
       if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
         // Check if we have a local unsynced version (conflict detection)
         // Query all workouts including soft-deleted ones to detect conflicts
-        const allLocalWorkouts = await localDB.db!.getAllAsync<LocalWorkout>('SELECT * FROM workouts WHERE id = ?', [payload.new.id]);
-        const localWorkout = allLocalWorkouts[0];
+        const localWorkout = await localDB.getWorkoutById(payload.new.id, true);
         
         // If local has unsaved changes, don't overwrite (local wins, will sync later)
         if (localWorkout && localWorkout.synced === 0) {
@@ -231,8 +229,7 @@ class SyncService {
         };
         
         // Check if exists locally, update or insert atomically
-        const existing = await localDB.db!.getAllAsync<LocalWorkout>('SELECT id FROM workouts WHERE id = ?', [workout.id]);
-        if (existing.length > 0) {
+        if (localWorkout) {
           await localDB.updateWorkout(workout.id, workout);
         } else {
           await localDB.insertWorkout(workout);
@@ -254,11 +251,7 @@ class SyncService {
     try {
       if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
         // Check if we have a local unsynced version (conflict detection)
-        const allLocalMetrics = await localDB.db!.getAllAsync<LocalHealthMetric>(
-          'SELECT * FROM health_metrics WHERE id = ?',
-          [payload.new.id]
-        );
-        const localMetric = allLocalMetrics[0];
+        const localMetric = await localDB.getHealthMetricById(payload.new.id);
         
         // If local has unsaved changes, don't overwrite (local wins, will sync later)
         if (localMetric && localMetric.synced === 0) {
@@ -280,12 +273,7 @@ class SyncService {
         };
         
         // Check if exists locally, update or insert atomically
-        const existing = await localDB.db!.getAllAsync<LocalHealthMetric>(
-          'SELECT id FROM health_metrics WHERE id = ?',
-          [metric.id]
-        );
-        
-        if (existing.length > 0) {
+        if (localMetric) {
           await localDB.updateHealthMetric(metric.id, metric);
         } else {
           await localDB.insertHealthMetric(metric);
@@ -367,6 +355,8 @@ class SyncService {
   // Sync foods to Supabase with Last-Write-Wins conflict resolution
   private async syncFoodsToSupabase(): Promise<void> {
     const unsyncedFoods = await localDB.getUnsyncedFoods();
+    if (unsyncedFoods.length === 0) return;
+
     console.log(`[SyncService] Syncing ${unsyncedFoods.length} foods to Supabase`);
 
     // Get current user
@@ -445,6 +435,8 @@ class SyncService {
   // Sync workouts to Supabase with Last-Write-Wins conflict resolution
   private async syncWorkoutsToSupabase(): Promise<void> {
     const unsyncedWorkouts = await localDB.getUnsyncedWorkouts();
+    if (unsyncedWorkouts.length === 0) return;
+
     console.log(`[SyncService] Syncing ${unsyncedWorkouts.length} workouts to Supabase`);
 
     // Get current user
@@ -710,7 +702,7 @@ class SyncService {
       }
 
       // Get all local foods (including deleted ones) to check for conflicts
-      const allLocalFoods = await localDB.db!.getAllAsync<LocalFood>('SELECT * FROM foods');
+      const allLocalFoods = await localDB.getAllFoodsWithDeleted();
       const localFoodMap = new Map(allLocalFoods.map(f => [f.id, f]));
       const serverFoodIds = new Set((foods || []).map(f => f.id));
 
@@ -778,7 +770,7 @@ class SyncService {
       }
 
       // Get all local workouts (including deleted ones) to check for conflicts
-      const allLocalWorkouts = await localDB.db!.getAllAsync<LocalWorkout>('SELECT * FROM workouts');
+      const allLocalWorkouts = await localDB.getAllWorkoutsWithDeleted();
       const localWorkoutMap = new Map(allLocalWorkouts.map(w => [w.id, w]));
       const serverWorkoutIds = new Set((workouts || []).map(w => w.id));
 
@@ -841,12 +833,7 @@ class SyncService {
   // Clean up soft-deleted items that have been successfully synced
   private async cleanupSyncedDeletes(): Promise<void> {
     try {
-      // Hard delete foods that are deleted and synced
-      await localDB.db!.runAsync('DELETE FROM foods WHERE deleted = 1 AND synced = 1');
-      
-      // Hard delete workouts that are deleted and synced
-      await localDB.db!.runAsync('DELETE FROM workouts WHERE deleted = 1 AND synced = 1');
-      
+      await localDB.cleanupSyncedDeletes();
       console.log('[SyncService] Cleaned up synced deleted items');
     } catch (error) {
       console.error('[SyncService] Error cleaning up deleted items:', error);
@@ -855,10 +842,25 @@ class SyncService {
 
   // Full sync: download from Supabase then push local changes
   async fullSync(): Promise<void> {
-    console.log('[SyncService] Starting full sync...');
-    await this.downloadFromSupabase();
-    await this.syncToSupabase();
-    console.log('[SyncService] Full sync completed');
+    if (this.syncPromise) {
+      console.log('[SyncService] Joining existing sync request');
+      return this.syncPromise;
+    }
+
+    this.syncPromise = (async () => {
+      console.log('[SyncService] Starting full sync...');
+      try {
+        await this.downloadFromSupabase();
+        await this.syncToSupabase();
+        console.log('[SyncService] Full sync completed');
+      } catch (error) {
+        console.error('[SyncService] Error during full sync:', error);
+      } finally {
+        this.syncPromise = null;
+      }
+    })();
+
+    return this.syncPromise;
   }
 
   // Clear stuck sync queue items (useful for fixing corrupted queue)
