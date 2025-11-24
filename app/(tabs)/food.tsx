@@ -10,13 +10,39 @@ import {
   FlatList,
   RefreshControl,
   ScrollView,
+  Share,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { FoodEntry, useFood } from '../../contexts/FoodContext';
 import { useToast } from '../../contexts/ToastContext';
-import { styles } from './food.styles';
+import { styles } from './styles/_food.styles';
+
+const buildFoodShareMessage = (food: FoodEntry): string => {
+  const dateLabel = new Date(food.date).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const macros = [
+    typeof food.protein === 'number' ? `${food.protein}g protein` : null,
+    typeof food.carbs === 'number' ? `${food.carbs}g carbs` : null,
+    typeof food.fat === 'number' ? `${food.fat}g fat` : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(' • ');
+
+  return [
+    `${food.name} (${dateLabel})`,
+    typeof food.calories === 'number' ? `${food.calories} kcal` : null,
+    macros || null,
+    '',
+    'Shared from Form Factor',
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join('\n');
+};
 
 export default function FoodScreen() {
   const router = useRouter();
@@ -45,6 +71,20 @@ export default function FoodScreen() {
       }
     },
     [deleteFood, showToast]
+  );
+
+  const handleShareFood = useCallback(
+    async (food: FoodEntry) => {
+      try {
+        const message = buildFoodShareMessage(food);
+        await Share.share({ message });
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      } catch (error) {
+        console.warn('[Food] Share failed', error);
+        showToast('Unable to share meal right now', { type: 'error' });
+      }
+    },
+    [showToast]
   );
 
   const renderRightActions = (id: string, name: string) => (
@@ -85,14 +125,16 @@ export default function FoodScreen() {
             <Text style={styles.cardTitle} numberOfLines={1}>
               {item.name}
             </Text>
-            <View style={styles.cardDateContainer}>
-              <Ionicons name="time-outline" size={14} color="#8E8E93" />
-              <Text style={styles.cardDate}>
-                {new Date(item.date).toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                })}
-              </Text>
+            <View style={styles.cardHeaderActions}>
+              <View style={styles.cardDateContainer}>
+                <Ionicons name="time-outline" size={14} color="#8E8E93" />
+                <Text style={styles.cardDate}>
+                  {new Date(item.date).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -130,9 +172,16 @@ export default function FoodScreen() {
               <Text style={styles.actionText}>View</Text>
             </TouchableOpacity>
             <View style={styles.divider} />
-            <TouchableOpacity style={styles.actionButton}>
-              <Ionicons name="share-outline" size={16} color="#007AFF" />
-              <Text style={styles.actionText}>Share</Text>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.shareActionButton]}
+              onPress={() => handleShareFood(item)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="share-outline" size={18} color="#4C8CFF" />
+              <View style={styles.shareTextWrapper}>
+                <Text style={[styles.actionText, styles.shareActionTitle]}>Share</Text>
+                <Text style={styles.actionSubtext}>Send stats</Text>
+              </View>
             </TouchableOpacity>
             <View style={styles.divider} />
             <DeleteAction
@@ -141,7 +190,7 @@ export default function FoodScreen() {
               variant="icon"
               confirmTitle="Delete meal?"
               confirmMessage={`This will permanently remove "${item.name}".`}
-              style={{ paddingHorizontal: 8 }}
+              style={styles.deleteAction}
             />
           </View>
         </LinearGradient>
@@ -173,7 +222,7 @@ export default function FoodScreen() {
           }
         >
           <View style={styles.emptyIllustration}>
-            <Ionicons name="fast-food-outline" size={80} color="#E5E5EA" />
+            <Ionicons name="nutrition-outline" size={80} color="#E5E5EA" />
           </View>
           <Text style={styles.emptyTitle}>No Meals Yet</Text>
           <Text style={styles.emptyDescription}>

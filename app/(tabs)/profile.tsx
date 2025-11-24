@@ -10,7 +10,7 @@ import { syncService } from '@/lib/services/database/sync-service';
 import { localDB } from '@/lib/services/database/local-db';
 import { fixInvalidUUIDs } from '@/scripts/fix-invalid-uuids';
 import { useDebugInfo } from '@/hooks/use-debug-info';
-import { styles } from './profile.styles';
+import { styles } from './styles/_profile.styles';
 
 export default function ProfileScreen() {
   const { user, signOut, updateProfile } = useAuth();
@@ -187,6 +187,10 @@ Generated: ${new Date().toISOString()}
   const handleOpenEditProfile = () => {
     setFullName(currentName);
     setIsEditProfileVisible(true);
+  };
+
+  const handleOpenNotifications = () => {
+    router.push('/(modals)/notifications');
   };
 
   const handleSaveProfile = async () => {
@@ -371,7 +375,7 @@ Generated: ${new Date().toISOString()}
         <Text style={styles.sectionTitle}>Account</Text>
         <View style={styles.menuGroup}>
           <MenuItem icon="person-outline" title="Edit Profile" onPress={handleOpenEditProfile} />
-          <MenuItem icon="notifications-outline" title="Notifications" onPress={() => {}} />
+          <MenuItem icon="notifications-outline" title="Notifications" onPress={handleOpenNotifications} />
           <MenuItem icon="lock-closed-outline" title="Privacy & Security" onPress={() => {}} />
         </View>
       </View>
@@ -391,7 +395,7 @@ Generated: ${new Date().toISOString()}
       </View>
 
       {/* Bottom Padding */}
-      <View style={{ height: 100 }} />
+      <View style={styles.bottomSpacer} />
 
       <Modal visible={isEditProfileVisible} animationType="slide" transparent onRequestClose={() => setIsEditProfileVisible(false)}>
         <View style={styles.modalOverlay}>

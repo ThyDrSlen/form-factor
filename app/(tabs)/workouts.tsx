@@ -10,6 +10,7 @@ import {
     FlatList,
     RefreshControl,
     ScrollView,
+    Share,
     Text,
     TouchableOpacity,
     View
@@ -17,7 +18,23 @@ import {
 import { Swipeable } from 'react-native-gesture-handler';
 import { useWorkouts, type Workout } from '../../contexts/WorkoutsContext';
 import { useToast } from '../../contexts/ToastContext';
-import { CARD_HEIGHT, CARD_MARGIN, styles } from './workouts.styles';
+import { CARD_HEIGHT, styles } from './styles/_workouts.styles';
+
+const buildWorkoutShareMessage = (workout: Workout): string => {
+  const workoutDate = workout.date ? new Date(workout.date) : null;
+  const lines: string[] = [
+    `Workout: ${workout.exercise}`,
+    workoutDate
+      ? `Date: ${workoutDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
+      : null,
+    `Sets: ${workout.sets}`,
+    typeof workout.reps === 'number' && workout.reps > 0 ? `Reps: ${workout.reps}` : null,
+    typeof workout.weight === 'number' && workout.weight > 0 ? `Weight: ${workout.weight} lbs` : null,
+    typeof workout.duration === 'number' && workout.duration > 0 ? `Duration: ${workout.duration} min` : null,
+  ].filter((line): line is string => Boolean(line));
+
+  return [...lines, '', 'Shared from Form Factor'].join('\n');
+};
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as unknown as React.ComponentType<React.ComponentProps<typeof Animated.FlatList<Workout>>>;
 
@@ -67,6 +84,20 @@ export default function WorkoutsScreen() {
       <Ionicons name="trash-outline" size={20} color="#fff" />
       <Text style={styles.swipeDeleteText}>Delete</Text>
     </TouchableOpacity>
+  );
+
+  const handleShareWorkout = useCallback(
+    async (workout: Workout) => {
+      try {
+        const message = buildWorkoutShareMessage(workout);
+        await Share.share({ message });
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      } catch (error) {
+        console.warn('[Workouts] share failed', error);
+        showToast('Unable to share this workout right now.', { type: 'error' });
+      }
+    },
+    [showToast]
   );
 
   const renderItem = (info: { item: Workout; index: number }) => {
@@ -160,9 +191,16 @@ export default function WorkoutsScreen() {
                 <Text style={styles.actionText}>View</Text>
               </TouchableOpacity>
               <View style={styles.divider} />
-              <TouchableOpacity style={styles.actionButton}>
-                <Ionicons name="share-outline" size={16} color="#007AFF" />
-                <Text style={styles.actionText}>Share</Text>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.shareActionButton]}
+                onPress={() => handleShareWorkout(item)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="share-outline" size={18} color="#4C8CFF" />
+                <View style={styles.shareTextWrapper}>
+                  <Text style={[styles.actionText, styles.shareActionTitle]}>Share</Text>
+                  <Text style={styles.actionSubtext}>Send stats</Text>
+                </View>
               </TouchableOpacity>
               <View style={styles.divider} />
               <DeleteAction
@@ -171,7 +209,7 @@ export default function WorkoutsScreen() {
                 variant="icon"
                 confirmTitle="Delete workout?"
                 confirmMessage={`This will permanently remove \"${item.exercise}\".`}
-                style={{ paddingHorizontal: 8 }}
+                style={styles.deleteAction}
               />
             </View>
           </LinearGradient>
