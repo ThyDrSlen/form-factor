@@ -1,5 +1,5 @@
 import * as Crypto from 'expo-crypto';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { Buffer } from 'buffer';
 import { supabase } from '@/lib/supabase';
@@ -96,7 +96,7 @@ export async function uploadWorkoutVideo(opts: {
   const videoPath = `${user.id}/${videoId}.mp4`;
 
   // Upload video
-  const videoBase64 = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 });
+  const videoBase64 = await FileSystem.readAsStringAsync(fileUri, { encoding: 'base64' });
   const videoBytes = base64ToUint8Array(videoBase64);
   const { error: uploadError } = await supabase.storage
     .from(VIDEO_BUCKET)
@@ -109,7 +109,7 @@ export async function uploadWorkoutVideo(opts: {
   let thumbnailPath: string | null = null;
   try {
     const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(fileUri, { time: thumbnailTimeMs });
-    const thumbBase64 = await FileSystem.readAsStringAsync(thumbUri, { encoding: FileSystem.EncodingType.Base64 });
+    const thumbBase64 = await FileSystem.readAsStringAsync(thumbUri, { encoding: 'base64' });
     const thumbBytes = base64ToUint8Array(thumbBase64);
     thumbnailPath = `${user.id}/${videoId}.jpg`;
     const targetBucket = usePrivateThumbnail ? VIDEO_BUCKET : THUMBNAIL_BUCKET;
@@ -256,5 +256,41 @@ export async function recordVideoView(videoId: string) {
   }
   const { error } = await supabase.from('video_views').insert(payload);
   if (error) throw error;
+  return true;
+}
+
+export async function deleteVideo(videoId: string) {
+  const user = await ensureUser();
+  const { data, error } = await supabase
+    .from('videos')
+    .select('id, user_id, path, thumbnail_path')
+    .eq('id', videoId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) {
+    throw new Error('Video not found');
+  }
+  if (data.user_id !== user.id) {
+    throw new Error('You can only delete your own videos');
+  }
+
+  const { error: deleteError } = await supabase.from('videos').delete().eq('id', videoId);
+  if (deleteError) throw deleteError;
+
+  const removeFromBucket = async (bucket: string, path?: string | null) => {
+    if (!path) return;
+    const { error: storageError } = await supabase.storage.from(bucket).remove([path]);
+    if (storageError) {
+      console.warn(`[video-service] Failed to remove ${path} from ${bucket}`, storageError);
+    }
+  };
+
+  await removeFromBucket(VIDEO_BUCKET, data.path);
+  if (data.thumbnail_path) {
+    await removeFromBucket(THUMBNAIL_BUCKET, data.thumbnail_path);
+    await removeFromBucket(VIDEO_BUCKET, data.thumbnail_path);
+  }
+
   return true;
 }

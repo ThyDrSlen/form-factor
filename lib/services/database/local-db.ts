@@ -171,6 +171,23 @@ class LocalDatabase {
     return result;
   }
 
+  async getFoodById(id: string, includeDeleted = true): Promise<LocalFood | null> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = includeDeleted
+      ? 'SELECT * FROM foods WHERE id = ?'
+      : 'SELECT * FROM foods WHERE id = ? AND deleted = 0';
+
+    const result = await this.db.getAllAsync<LocalFood>(query, [id]);
+    return result[0] || null;
+  }
+
+  async getAllFoodsWithDeleted(): Promise<LocalFood[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return await this.db.getAllAsync<LocalFood>('SELECT * FROM foods');
+  }
+
   async updateFoodSyncStatus(id: string, synced: boolean): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -250,6 +267,23 @@ class LocalDatabase {
       'SELECT * FROM workouts WHERE synced = 0 AND deleted = 0'
     );
     return result;
+  }
+
+  async getWorkoutById(id: string, includeDeleted = true): Promise<LocalWorkout | null> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = includeDeleted
+      ? 'SELECT * FROM workouts WHERE id = ?'
+      : 'SELECT * FROM workouts WHERE id = ? AND deleted = 0';
+
+    const result = await this.db.getAllAsync<LocalWorkout>(query, [id]);
+    return result[0] || null;
+  }
+
+  async getAllWorkoutsWithDeleted(): Promise<LocalWorkout[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return await this.db.getAllAsync<LocalWorkout>('SELECT * FROM workouts');
   }
 
   async updateWorkoutSyncStatus(id: string, synced: boolean): Promise<void> {
@@ -349,6 +383,16 @@ class LocalDatabase {
       `SELECT * FROM health_metrics 
        WHERE user_id = ? AND summary_date = ?`,
       [userId, summaryDate]
+    );
+    return result[0] || null;
+  }
+
+  async getHealthMetricById(id: string): Promise<LocalHealthMetric | null> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getAllAsync<LocalHealthMetric>(
+      'SELECT * FROM health_metrics WHERE id = ?',
+      [id]
     );
     return result[0] || null;
   }

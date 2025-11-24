@@ -18,6 +18,8 @@ node_modules/
 *.key
 *.mobileprovision
 
+.windsurf
+
 # Metro
 # .metro-health-check*
 
