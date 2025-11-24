@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform, Linking } from 'rea
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useHealthKit } from '@/contexts/HealthKitContext';
+import { useUnits } from '@/contexts/UnitsContext';
 import { getHealthKitGuidance } from '@/components/health-kit/healthkit-guidance';
 
 interface StatProps {
@@ -19,12 +20,12 @@ function StatCard({ label, value, sublabel, isStale }: StatProps & { isStale?: b
       end={{ x: 1, y: 1 }}
       style={styles.statCard}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <View style={styles.statRow}>
         <Text style={styles.statNumber}>{value}</Text>
         {isStale && <Ionicons name="alert-circle" size={18} color="#FF6B6B" />}
       </View>
       <Text style={styles.statLabel}>{label}</Text>
-      {sublabel ? <Text style={[styles.statSublabel, isStale && { color: '#FF6B6B' }]}>{sublabel}</Text> : null}
+      {sublabel ? <Text style={[styles.statSublabel, isStale && styles.statSublabelStale]}>{sublabel}</Text> : null}
     </LinearGradient>
   );
 }
@@ -81,6 +82,8 @@ export function DashboardHealth() {
   }
 
   const stepsDisplay = stepsToday == null ? '—' : new Intl.NumberFormat().format(Math.max(0, stepsToday));
+  
+  // Heart Rate
   const hrBpm = latestHeartRate?.bpm ?? null;
   const hrTime = latestHeartRate?.timestamp ? new Date(latestHeartRate.timestamp) : null;
   const hrIsStale = hrTime ? (Date.now() - hrTime.getTime() > 1000 * 60 * 15) : false; // >15min = stale
@@ -135,6 +138,14 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 12,
     color: '#6781A6',
+  },
+  statSublabelStale: {
+    color: '#FF6B6B',
+  },
+  statRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   permissionCard: {
     borderRadius: 24,

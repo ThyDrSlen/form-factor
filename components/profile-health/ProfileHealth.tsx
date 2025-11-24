@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ActivityIndicator, Linking, Platform, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 
 import { useHealthKit } from '@/contexts/HealthKitContext';
@@ -92,8 +92,8 @@ function LineChart({ data, gradientId, stroke }: { data: HealthMetricPoint[]; gr
 
   if (!line) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontSize: 12, color: '#6781A6' }}>No step data yet</Text>
+      <View style={styles.chartEmpty}>
+        <Text style={styles.chartEmptyText}>No step data yet</Text>
       </View>
     );
   }
@@ -112,6 +112,137 @@ function LineChart({ data, gradientId, stroke }: { data: HealthMetricPoint[]; gr
     </Svg>
   );
 }
+
+const styles = StyleSheet.create({
+  chartEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chartEmptyText: {
+    fontSize: 12,
+    color: '#6781A6',
+  },
+  loadingIndicator: {
+    width: 72,
+    height: 72,
+  },
+  cardBase: {
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#1B2E4A',
+    backgroundColor: '#0D2036',
+  },
+  card: {
+    padding: 24,
+  },
+  metricCard: {
+    padding: 20,
+  },
+  metricHeader: {
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  metricHeaderContent: {
+    gap: 4,
+  },
+  metricTitle: {
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    color: '#6781A6',
+  },
+  metricHeadline: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#F5F7FF',
+  },
+  metricSubtitle: {
+    fontSize: 12,
+    color: '#9AACD1',
+  },
+  metricDelta: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6781A6',
+  },
+  metricDeltaPositive: {
+    color: '#3CC8A9',
+  },
+  chartArea: {
+    height: 144,
+  },
+  metricLabels: {
+    marginTop: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  metricLabel: {
+    fontSize: 11,
+    color: '#6781A6',
+  },
+  loadingCard: {
+    marginTop: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: '#9AACD1',
+  },
+  guidanceHeadline: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#F5F7FF',
+  },
+  guidanceDescription: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#9AACD1',
+  },
+  primaryButton: {
+    marginTop: 16,
+    alignItems: 'center',
+    borderRadius: 16,
+    backgroundColor: '#4C8CFF',
+    paddingVertical: 12,
+  },
+  primaryButtonText: {
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  settingsButton: {
+    marginTop: 12,
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  settingsButtonText: {
+    fontWeight: '600',
+    color: '#4C8CFF',
+  },
+  footnote: {
+    marginTop: 12,
+    fontSize: 12,
+    color: '#6781A6',
+  },
+  progressSection: {
+    marginTop: 32,
+    gap: 24,
+  },
+  progressTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#F5F7FF',
+  },
+  progressSubtitle: {
+    fontSize: 12,
+    color: '#6781A6',
+  },
+});
 
 function BarChart({ data, color }: { data: HealthMetricPoint[]; color: string }) {
   const bars = useMemo(() => {
@@ -132,8 +263,8 @@ function BarChart({ data, color }: { data: HealthMetricPoint[]; color: string })
 
   if (!bars.length) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontSize: 12, color: '#6781A6' }}>No weight entries</Text>
+      <View style={styles.chartEmpty}>
+        <Text style={styles.chartEmptyText}>No weight entries</Text>
       </View>
     );
   }
@@ -168,19 +299,19 @@ interface MetricCardProps {
 
 function MetricCard({ title, headline, subtitle, deltaLabel, deltaPositive, labels, children }: MetricCardProps) {
   return (
-    <View style={{ borderRadius: 24, borderWidth: 1, borderColor: '#1B2E4A', backgroundColor: '#0D2036', padding: 20 }}>
-      <View style={{ marginBottom: 16, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <View style={{ gap: 4 }}>
-          <Text style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, color: '#6781A6' }}>{title}</Text>
-          <Text style={{ fontSize: 24, fontWeight: '600', color: '#F5F7FF' }}>{headline}</Text>
-          <Text style={{ fontSize: 12, color: '#9AACD1' }}>{subtitle}</Text>
+    <View style={[styles.cardBase, styles.metricCard]}>
+      <View style={styles.metricHeader}>
+        <View style={styles.metricHeaderContent}>
+          <Text style={styles.metricTitle}>{title}</Text>
+          <Text style={styles.metricHeadline}>{headline}</Text>
+          <Text style={styles.metricSubtitle}>{subtitle}</Text>
         </View>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: deltaPositive ? '#3CC8A9' : '#6781A6' }}>{deltaLabel}</Text>
+        <Text style={[styles.metricDelta, deltaPositive && styles.metricDeltaPositive]}>{deltaLabel}</Text>
       </View>
-      <View style={{ height: 144 }}>{children}</View>
-      <View style={{ marginTop: 12, flexDirection: 'row', justifyContent: 'space-between' }}>
+      <View style={styles.chartArea}>{children}</View>
+      <View style={styles.metricLabels}>
         {labels.map((label, index) => (
-          <Text key={`${label}-${index}`} style={{ fontSize: 11, color: '#6781A6' }}>
+          <Text key={`${label}-${index}`} style={styles.metricLabel}>
             {label}
           </Text>
         ))}
@@ -236,7 +367,7 @@ function SwiftUILoadingIndicator() {
     return <ActivityIndicator size="large" color="#4C8CFF" />;
   }
 
-  return <Component style={{ width: 72, height: 72 }} />;
+  return <Component style={styles.loadingIndicator} />;
 }
 
 export function ProfileHealth() {
@@ -265,34 +396,34 @@ export function ProfileHealth() {
 
   if (isLoading) {
     return (
-      <View style={{ marginTop: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 24, borderWidth: 1, borderColor: '#1B2E4A', backgroundColor: '#0D2036', padding: 24 }}>
+      <View style={[styles.cardBase, styles.card, styles.loadingCard]}>
         <SwiftUILoadingIndicator />
-        <Text style={{ marginTop: 16, fontSize: 14, color: '#9AACD1' }}>Loading health data…</Text>
+        <Text style={styles.loadingText}>Loading health data…</Text>
       </View>
     );
   }
 
   if (isIOS && !hasHealthKitRead && !hasSupabaseData) {
     return (
-      <View style={{ borderRadius: 24, borderWidth: 1, borderColor: '#1B2E4A', backgroundColor: '#0D2036', padding: 24 }}>
-        <Text style={{ fontSize: 18, fontWeight: '600', color: '#F5F7FF' }}>{guidance.headline}</Text>
-        <Text style={{ marginTop: 8, fontSize: 14, lineHeight: 20, color: '#9AACD1' }}>{guidance.description}</Text>
+      <View style={[styles.cardBase, styles.card]}>
+        <Text style={styles.guidanceHeadline}>{guidance.headline}</Text>
+        <Text style={styles.guidanceDescription}>{guidance.description}</Text>
         <TouchableOpacity
           onPress={requestPermissions}
           disabled={guidance.primaryDisabled}
-          style={{ marginTop: 16, alignItems: 'center', borderRadius: 16, backgroundColor: '#4C8CFF', paddingVertical: 12 }}
+          style={styles.primaryButton}
         >
-          <Text style={{ fontWeight: '600', color: '#FFFFFF' }}>
+          <Text style={styles.primaryButtonText}>
             {isLoading ? 'Requesting…' : guidance.primaryCtaLabel}
           </Text>
         </TouchableOpacity>
         {guidance.showSettingsShortcut ? (
-          <TouchableOpacity onPress={() => Linking.openSettings()} style={{ marginTop: 12, alignItems: 'center', paddingVertical: 8 }}>
-            <Text style={{ fontWeight: '600', color: '#4C8CFF' }}>Open iOS Settings</Text>
+          <TouchableOpacity onPress={() => Linking.openSettings()} style={styles.settingsButton}>
+            <Text style={styles.settingsButtonText}>Open iOS Settings</Text>
           </TouchableOpacity>
         ) : null}
         {guidance.footnote ? (
-          <Text style={{ marginTop: 12, fontSize: 12, color: '#6781A6' }}>{guidance.footnote}</Text>
+          <Text style={styles.footnote}>{guidance.footnote}</Text>
         ) : null}
       </View>
     );
@@ -324,12 +455,12 @@ export function ProfileHealth() {
   const updatedLabel = formatUpdatedAt(lastUpdatedAt);
 
   return (
-    <View style={{ marginTop: 32, gap: 24 }}>
-      <Text style={{ fontSize: 18, fontWeight: '600', color: '#F5F7FF' }}>Progress</Text>
+    <View style={styles.progressSection}>
+      <Text style={styles.progressTitle}>Progress</Text>
       {updatedLabel ? (
-        <Text style={{ fontSize: 12, color: '#6781A6' }}>{sourceLabel} • {updatedLabel}</Text>
+        <Text style={styles.progressSubtitle}>{sourceLabel} • {updatedLabel}</Text>
       ) : (
-        <Text style={{ fontSize: 12, color: '#6781A6' }}>{sourceLabel}</Text>
+        <Text style={styles.progressSubtitle}>{sourceLabel}</Text>
       )}
       <MetricCard
         title="Step Trends"
