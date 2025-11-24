@@ -1,8 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
-import { Button, Text } from '@/design-system';
 
 type FormData = {
   email: string;
@@ -139,7 +138,7 @@ export default function SignInScreen() {
         >
           {/* Header with help button */}
           <View style={styles.header}>
-            <Text variant="headline" weight="semibold" color="#FFFFFF">
+            <Text style={styles.headerTitle}>
               Form Factor
             </Text>
             <TouchableOpacity style={styles.helpButton}>
@@ -157,14 +156,14 @@ export default function SignInScreen() {
               />
             </View>
 
-            <Text variant="largeTitle" weight="normal" color="#FFFFFF" align="center" style={styles.welcomeTitle}>
+            <Text style={styles.welcomeTitle}>
               Welcome to Form Factor
             </Text>
 
             {/* Error message */}
             {(errorMessage || authError) && (
               <View style={styles.errorContainer}>
-                <Text variant="footnote" color="#FF453A" align="center">
+                <Text style={styles.errorText}>
                   {errorMessage || authError}
                 </Text>
               </View>
@@ -199,51 +198,49 @@ export default function SignInScreen() {
             </View>
 
             {/* Login button */}
-            <Button
-              title={isSigningIn ? 'Logging In...' : 'Log In'}
-              variant="primary"
-              size="large"
-              fullWidth
+            <TouchableOpacity
+              style={[styles.loginButton, isSigningIn && styles.buttonDisabled]}
               onPress={handleEmailAuth}
               disabled={isSigningIn}
-              style={styles.loginButton}
-            />
+            >
+              <Text style={styles.buttonText}>
+                {isSigningIn ? 'Logging In...' : 'Log In'}
+              </Text>
+            </TouchableOpacity>
 
             {/* Sign up link */}
             <View style={styles.signUpContainer}>
-              <Text variant="body" color="#8E8E93">
+              <Text style={styles.signUpText}>
                 Don&apos;t have an account?{' '}
               </Text>
               <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)} disabled={isSigningIn}>
-                <Text variant="body" color="#007AFF" style={styles.signUpLink}>
+                <Text style={styles.signUpLink}>
                   Sign up
                 </Text>
               </TouchableOpacity>
             </View>
 
             {/* Social login buttons */}
-            <Button
-              title="Continue with Google"
-              variant="secondary"
-              size="large"
-              fullWidth
+            <TouchableOpacity
+              style={[styles.socialButton, isSigningIn && styles.buttonDisabled]}
               onPress={() => handleSocialAuth('google')}
               disabled={isSigningIn}
-              style={styles.socialButton}
-              textStyle={{ color: '#FFFFFF' }}
-            />
+            >
+              <Text style={styles.socialButtonText}>
+                Continue with Google
+              </Text>
+            </TouchableOpacity>
 
             {Platform.OS === 'ios' && (
-              <Button
-                title="Continue with Apple"
-                variant="secondary"
-                size="large"
-                fullWidth
+              <TouchableOpacity
+                style={[styles.socialButton, isSigningIn && styles.buttonDisabled]}
                 onPress={() => handleSocialAuth('apple')}
                 disabled={isSigningIn}
-                style={styles.socialButton}
-                textStyle={{ color: '#FFFFFF' }}
-              />
+              >
+                <Text style={styles.socialButtonText}>
+                  Continue with Apple
+                </Text>
+              </TouchableOpacity>
             )}
           </View>
         </ScrollView>
@@ -296,8 +293,11 @@ const styles = StyleSheet.create({
     height: 80,
   },
   welcomeTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
     marginBottom: 32,
-    lineHeight: 40,
   },
   errorContainer: {
     backgroundColor: 'rgba(255, 69, 58, 0.1)',
@@ -322,9 +322,13 @@ const styles = StyleSheet.create({
     minHeight: 50,
   },
   loginButton: {
+    backgroundColor: '#007AFF',
     marginTop: 16,
     marginBottom: 24,
-    borderRadius: 25, // More rounded like in the design
+    borderRadius: 25,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   signUpContainer: {
     flexDirection: 'row',
@@ -333,6 +337,8 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   signUpLink: {
+    fontSize: 16,
+    color: '#007AFF',
     textDecorationLine: 'underline',
   },
   socialButton: {
@@ -340,5 +346,36 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#1B2E4A',
+    borderRadius: 25,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  errorText: {
+    fontSize: 13,
+    color: '#FF453A',
+    textAlign: 'center',
+  },
+  buttonText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  signUpText: {
+    fontSize: 16,
+    color: '#8E8E93',
+  },
+  socialButtonText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

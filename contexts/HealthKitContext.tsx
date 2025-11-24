@@ -21,6 +21,7 @@ import { syncService } from '@/lib/services/database/sync-service';
 import { useAuth } from './AuthContext';
 import { useWorkouts } from './WorkoutsContext';
 import { useNetwork } from './NetworkContext';
+import { updateWatchContext } from '@/lib/watch-connectivity';
 
 interface HealthKitContextValue {
   isAvailable: boolean;
@@ -78,6 +79,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const lastSyncedSignatureRef = useRef<string | null>(null);
   const highFrequencyRef = useRef<boolean>(false);
+  const watchContextSignatureRef = useRef<string | null>(null);
   
   // Bulk sync state
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -405,10 +407,34 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         if (range.count > 0) {
           setHasSyncedBefore(true);
           console.log('[HealthKitContext] User has', range.count, 'days of synced data');
+        } else {
+          // Auto-trigger a 6-month historical sync for first-time users to populate trends
+          syncAllHistoricalData(180).catch((err) => {
+            console.warn('[HealthKitContext] Auto historical sync failed', err);
+          });
         }
       });
     }
-  }, [user?.id, checkDataRange]);
+  }, [user?.id, checkDataRange, syncAllHistoricalData]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    const payload = {
+      steps: stepsToday ?? 0,
+      heartRate: latestHeartRate?.bpm ?? null,
+    };
+    const signature = JSON.stringify(payload);
+    if (signature === watchContextSignatureRef.current) {
+      return;
+    }
+    watchContextSignatureRef.current = signature;
+
+    try {
+      updateWatchContext(payload);
+    } catch (err) {
+      console.warn('[HealthKitContext] Failed to push watch context', err);
+    }
+  }, [stepsToday, latestHeartRate?.bpm]);
 
   const value = useMemo<HealthKitContextValue>(
     () => ({
