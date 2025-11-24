@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { WeightTrendChart } from '@/components/weight-dashboard/WeightTrendChart';
 import { useHealthKit } from '@/contexts/HealthKitContext';
+import { useUnits } from '@/contexts/UnitsContext';
 import { useWorkouts } from '@/contexts/WorkoutsContext';
 import { useFood } from '@/contexts/FoodContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -146,6 +147,7 @@ export function HealthTrendsView() {
   const { workouts } = useWorkouts();
   const { foods } = useFood();
   const { user } = useAuth();
+  const { weightUnit, toggleWeightUnit, convertWeight, getWeightLabel } = useUnits();
 
   // Load aggregated trend data
   useEffect(() => {
@@ -292,8 +294,17 @@ export function HealthTrendsView() {
   const comparison = getChangePercentage();
 
   // Weight series for chart based on selected range
-  const weightPeriod = selectedRange === 'daily' ? '7d' : selectedRange === 'weekly' ? '30d' : '90d';
-  const weightSeries = weightPeriod === '7d' ? weightHistory : weightPeriod === '30d' ? weightHistory30Days : weightPeriod === '90d' ? weightHistory90Days : weightHistory;
+  const weightPeriod = selectedRange === 'daily' ? '7d' : selectedRange === 'weekly' ? '30d' : '180d';
+  const weightSeriesRaw =
+    weightPeriod === '7d'
+      ? weightHistory
+      : weightPeriod === '30d'
+      ? weightHistory30Days
+      : weightHistory180Days;
+  const weightSeries = useMemo(
+    () => weightSeriesRaw.map(point => ({ ...point, value: convertWeight(point.value) })),
+    [weightSeriesRaw, weightUnit]
+  );
 
   const formatChange = (change: number | null): string | undefined => {
     if (change == null) return undefined;
@@ -315,9 +326,6 @@ export function HealthTrendsView() {
 
       {/* Time Range Selector */}
       <TimeRangeSelector selectedRange={selectedRange} onRangeChange={setSelectedRange} />
-
-      {/* Weight Trend Chart */}
-      <WeightTrendChart data={weightSeries} period={weightPeriod} weightUnit="kg" />
 
       {isLoadingTrends ? (
         <View style={styles.loadingContainer}>
@@ -358,14 +366,39 @@ export function HealthTrendsView() {
               color="#34C759"
             />
 
-            <MetricCard
-              title={selectedRange === 'daily' ? 'Weight' : 'Avg Weight'}
-              value={currentMetrics.weight ? `${currentMetrics.weight.toFixed(1)} kg` : '—'}
-              change={selectedRange !== 'daily' ? formatChange(comparison?.weightChange ?? null) : undefined}
-              icon="scale-outline"
-              color="#9D4EDD"
-            />
+          <MetricCard
+            title={selectedRange === 'daily' ? 'Weight' : 'Avg Weight'}
+            value={currentMetrics.weight ? `${convertWeight(currentMetrics.weight).toFixed(1)} ${getWeightLabel()}` : '—'}
+            change={selectedRange !== 'daily' ? formatChange(comparison?.weightChange ?? null) : undefined}
+            icon="scale-outline"
+            color="#9D4EDD"
+          />
+        </View>
+
+          <View style={styles.weightHeader}>
+            <Text style={styles.sectionTitle}>Weight trend</Text>
+            <View style={styles.unitToggle}>
+              <TouchableOpacity
+                style={[styles.unitButton, weightUnit === 'lbs' && styles.unitButtonActive]}
+                onPress={weightUnit === 'lbs' ? undefined : toggleWeightUnit}
+              >
+                <Text style={[styles.unitButtonText, weightUnit === 'lbs' && styles.unitButtonTextActive]}>
+                  lbs
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.unitButton, weightUnit === 'kg' && styles.unitButtonActive]}
+                onPress={weightUnit === 'kg' ? undefined : toggleWeightUnit}
+              >
+                <Text style={[styles.unitButtonText, weightUnit === 'kg' && styles.unitButtonTextActive]}>
+                  kg
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
+
+          {/* Weight Trend Chart */}
+          <WeightTrendChart data={weightSeries} period={weightPeriod} weightUnit={getWeightLabel()} />
 
           {/* Data Info */}
           {trendData && (
@@ -498,7 +531,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F2339',
     borderRadius: 16,
     padding: 4,
-    marginBottom: 24,
+    flex: 1,
   },
   timeRangeButton: {
     flex: 1,
@@ -516,6 +549,38 @@ const styles = StyleSheet.create({
     color: '#9AACD1',
   },
   timeRangeTextActive: {
+    color: '#FFFFFF',
+  },
+  weightHeader: {
+    marginTop: 8,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  unitToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#0F2339',
+    borderRadius: 12,
+    padding: 4,
+  },
+  unitButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    minWidth: 52,
+    alignItems: 'center',
+  },
+  unitButtonActive: {
+    backgroundColor: '#4C8CFF',
+  },
+  unitButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#9AACD1',
+  },
+  unitButtonTextActive: {
     color: '#FFFFFF',
   },
   metricsGrid: {

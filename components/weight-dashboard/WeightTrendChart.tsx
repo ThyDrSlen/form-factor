@@ -109,13 +109,24 @@ export function WeightTrendChart({
   const values = sortedData.map(d => d.value);
   const minValue = values.length > 0 ? Math.min(...values) : 0;
   const maxValue = values.length > 0 ? Math.max(...values) : 0;
-  const valueRange = maxValue - minValue;
-  
-  // Add some padding to the range, handle edge case where min === max
-  const paddingFactor = valueRange === 0 ? 0.1 : 0.1;
-  const paddedMin = minValue - Math.max(valueRange * paddingFactor, 1);
-  const paddedMax = maxValue + Math.max(valueRange * paddingFactor, 1);
-  const paddedRange = paddedMax - paddedMin;
+  const defaultMax = weightUnit === 'lbs' ? 260 : 120;
+  const buffer = Math.max(2, (maxValue - minValue) * 0.1);
+  let domainMin = Math.floor((minValue - buffer) / 10) * 10;
+  let domainMax = Math.ceil((maxValue + buffer) / 10) * 10;
+
+  // If the data looks unrealistic (very low range), fall back to a reasonable weight band
+  const looksTooSmall = domainMax < (weightUnit === 'lbs' ? 80 : 40);
+  if (looksTooSmall) {
+    domainMin = 0;
+    domainMax = defaultMax;
+  } else {
+    domainMin = Math.max(0, domainMin);
+    if (domainMax - domainMin < 20) {
+      domainMax = domainMin + 20;
+    }
+  }
+
+  const domainRange = domainMax - domainMin;
 
   // Helper functions for coordinate conversion with proper validation
   const getX = (index: number) => {
@@ -124,8 +135,8 @@ export function WeightTrendChart({
   };
   
   const getY = (value: number) => {
-    if (paddedRange === 0) return padding.top + chartInnerHeight / 2;
-    return padding.top + chartInnerHeight - ((value - paddedMin) / paddedRange) * chartInnerHeight;
+    if (domainRange === 0) return padding.top + chartInnerHeight / 2;
+    return padding.top + chartInnerHeight - ((value - domainMin) / domainRange) * chartInnerHeight;
   };
 
   // Generate trend line path
@@ -187,9 +198,9 @@ export function WeightTrendChart({
     const numLabels = 5;
     const labels = [];
     for (let i = 0; i <= numLabels; i++) {
-      const value = paddedRange === 0 ? paddedMin : paddedMin + (paddedRange * i) / numLabels;
+      const value = domainRange === 0 ? domainMin : domainMin + (domainRange * i) / numLabels;
       labels.push({
-        value: value.toFixed(1),
+        value: value.toFixed(0),
         y: getY(value),
       });
     }
