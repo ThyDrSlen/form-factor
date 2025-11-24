@@ -1,18 +1,20 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Alert, Text, TouchableOpacity, View, Platform, Animated, ActivityIndicator, ToastAndroid, LayoutChangeEvent } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Alert, Text, TouchableOpacity, View, Platform, Animated, ActivityIndicator, ToastAndroid, LayoutChangeEvent, Switch } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { Svg, Circle, Line } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import { watchEvents, sendMessage, updateWatchContext } from '@/lib/watch-connectivity';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D } from '@/lib/arkit/ARKitBodyTracker';
 import { useSpeechFeedback } from '@/hooks/use-speech-feedback';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
-import { styles } from './scan-arkit.styles';
+import { styles } from './styles/_scan-arkit.styles';
 
 type PullUpPhase = 'idle' | 'hang' | 'pull' | 'top';
 type PushUpPhase = 'setup' | 'plank' | 'lowering' | 'bottom' | 'press';
@@ -138,14 +140,19 @@ export default function ScanARKitScreen() {
   const pose2DCacheRef = React.useRef<Record<string, { x: number; y: number }>>({});
   const lastSpokenCueRef = React.useRef<{ cue: string; timestamp: number } | null>(null);
   const overlayLayout = React.useRef<{ width: number; height: number } | null>(null);
+  const [uploadPanelCollapsed, setUploadPanelCollapsed] = useState(false);
+  const [uploadEnabled, setUploadEnabled] = useState(true);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const isScreenFocused = useIsFocused();
 
   const { speak: speakCue, stop: stopSpeech } = useSpeechFeedback({
-    enabled: audioFeedbackEnabled,
+    enabled: audioFeedbackEnabled && isScreenFocused,
     voiceId: undefined, // Use default system voice
     rate: 0.52,
     pitch: 1.0,
     volume: 1,
     minIntervalMs: 2000,
+    shouldAllowRecording: isRecording,
   });
 
   useEffect(() => {
@@ -154,6 +161,13 @@ export default function ScanARKitScreen() {
       stopSpeech();
     }
   }, [audioFeedbackEnabled, stopSpeech]);
+
+  useEffect(() => {
+    if (!isScreenFocused) {
+      lastSpokenCueRef.current = null;
+      stopSpeech();
+    }
+  }, [isScreenFocused, stopSpeech]);
 
   useEffect(() => {
     if (detectionMode === 'pullup') {
@@ -657,6 +671,13 @@ export default function ScanARKitScreen() {
     if (DEV) console.log('[ScanARKit] ⏸️ Stopping tracking...');
     
     try {
+      if (isRecording) {
+        BodyTracker.stopRecording().catch((error: unknown) => {
+          console.error('[ScanARKit] ❌ Error stopping recording when stopping tracking:', error);
+        });
+        setIsRecording(false);
+      }
+
       stopNativeTracking();
       frameStatsRef.current = { lastTimestamp: 0, frameCount: 0 };
       setJointAngles(null);
@@ -681,7 +702,7 @@ export default function ScanARKitScreen() {
       console.error('[ScanARKit] ❌ Error stopping tracking:', error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stopNativeTracking, transitionPhase]);
+  }, [stopNativeTracking, transitionPhase, isRecording]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -835,21 +856,24 @@ export default function ScanARKitScreen() {
 
     const feedback = detectionMode === 'pullup' ? analyzePullUpForm() : analyzePushUpForm();
     const primaryCue = feedback?.[0];
-    const latestMetricsForUpload: UploadMetrics =
-      detectionMode === 'pullup'
-        ? {
-            mode: 'pullup',
-            reps: repCount,
-            avgElbowDeg: pullUpMetrics?.avgElbow ?? null,
-            avgShoulderDeg: pullUpMetrics?.avgShoulder ?? null,
-            headToHand: pullUpMetrics?.headToHand ?? null,
-          }
-        : {
-            mode: 'pushup',
-            reps: pushUpReps,
-            avgElbowDeg: pushUpMetrics?.avgElbow ?? null,
-            hipDropRatio: pushUpMetrics?.hipDrop ?? null,
-          };
+    const latestMetricsForUpload = useMemo<UploadMetrics>(
+      () =>
+        detectionMode === 'pullup'
+          ? {
+              mode: 'pullup',
+              reps: repCount,
+              avgElbowDeg: pullUpMetrics?.avgElbow ?? null,
+              avgShoulderDeg: pullUpMetrics?.avgShoulder ?? null,
+              headToHand: pullUpMetrics?.headToHand ?? null,
+            }
+          : {
+              mode: 'pushup',
+              reps: pushUpReps,
+              avgElbowDeg: pushUpMetrics?.avgElbow ?? null,
+              hipDropRatio: pushUpMetrics?.hipDrop ?? null,
+            },
+      [detectionMode, repCount, pullUpMetrics, pushUpReps, pushUpMetrics]
+    );
 
     useEffect(() => {
       if (!primaryCue || !audioFeedbackEnabled) {
@@ -863,6 +887,30 @@ export default function ScanARKitScreen() {
       lastSpokenCueRef.current = { cue: primaryCue, timestamp: now };
       speakCue(primaryCue);
     }, [primaryCue, audioFeedbackEnabled, speakCue]);
+
+    // Watch Connectivity: Listen for commands
+    useEffect(() => {
+      const unsubscribe = watchEvents.addListener('message', (message: { command?: string }) => {
+        if (message.command === 'start') {
+          if (!isTracking && supportStatus === 'supported') {
+            startTracking();
+          }
+        } else if (message.command === 'stop') {
+          if (isTracking) {
+            stopTracking();
+          }
+        }
+      });
+
+      return () => unsubscribe();
+    }, [isTracking, supportStatus, startTracking, stopTracking]);
+
+    // Watch Connectivity: Sync state
+    useEffect(() => {
+      const currentReps = detectionMode === 'pullup' ? repCount : pushUpReps;
+      sendMessage({ isTracking: !!isTracking, reps: currentReps });
+      updateWatchContext({ isTracking: !!isTracking, reps: currentReps });
+    }, [isTracking, repCount, pushUpReps, detectionMode]);
 
     const handleUploadWithMetrics = useCallback(async () => {
       if (uploading) return;
@@ -952,52 +1000,43 @@ export default function ScanARKitScreen() {
 
     const startRecordingVideo = useCallback(async () => {
       if (isRecording) return;
-      if (!cameraRef.current) {
-        Alert.alert('No camera', 'Camera is not ready to record.');
-        return;
-      }
       if (!isTracking) {
         Alert.alert('Start tracking first', 'Begin tracking before recording your set.');
+        return;
+      }
+      if (Platform.OS !== 'ios') {
+        Alert.alert('Recording unavailable', 'Native AR recording is only available on iOS.');
         return;
       }
       try {
         setIsRecording(true);
         recordedUriRef.current = null;
-        await cameraRef.current.startRecording({
-          flash: 'off',
-          onRecordingFinished: (video: any) => {
-            setIsRecording(false);
-            const uri = video?.path || video?.filePath || video?.outputURL || video?.uri;
-            if (uri) {
-              recordedUriRef.current = uri;
-              uploadRecordedVideo(uri);
-            } else {
-              Alert.alert('Recording failed', 'No file path returned from camera.');
-            }
-          },
-          onRecordingError: (error: any) => {
-            console.error('[ScanARKit] Recording error', error);
-            setIsRecording(false);
-            Alert.alert('Recording error', error?.message || 'Could not record video.');
-          },
-        });
+        await BodyTracker.startRecording();
       } catch (error) {
-        console.error('[ScanARKit] Failed to start recording', error);
+        console.error('[ScanARKit] Failed to start ARKit recording', error);
         setIsRecording(false);
         Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not start recording.');
       }
-    }, [isRecording, isTracking, uploadRecordedVideo]);
+    }, [isRecording, isTracking]);
 
     const stopRecordingVideo = useCallback(async () => {
-      if (!isRecording || !cameraRef.current) return;
+      if (!isRecording) return;
       try {
-        await cameraRef.current.stopRecording();
+        const path = await BodyTracker.stopRecording();
+        setIsRecording(false);
+        if (path) {
+          const uri = path.startsWith('file://') ? path : `file://${path}`;
+          recordedUriRef.current = uri;
+          await uploadRecordedVideo(uri);
+        } else {
+          Alert.alert('Recording', 'No video file was generated.');
+        }
       } catch (error) {
-        console.error('[ScanARKit] Failed to stop recording', error);
+        console.error('[ScanARKit] Failed to stop ARKit recording', error);
         setIsRecording(false);
         Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not stop recording.');
       }
-    }, [isRecording]);
+    }, [isRecording, uploadRecordedVideo]);
 
   if (supportStatus === 'unknown') {
     return (
@@ -1076,16 +1115,19 @@ export default function ScanARKitScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top, height: 60 + insets.top }]}>
-        <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
-          <Ionicons name="close" size={28} color="#F5F7FF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Form Tracking</Text>
-        <TouchableOpacity style={styles.infoButton}>
-          <Ionicons name="information-circle-outline" size={24} color="#9AACD1" />
-        </TouchableOpacity>
-      </View>
+      {/* Header Controls (Absolute) */}
+      <TouchableOpacity 
+        style={[styles.closeButton, { top: insets.top + 8 }]} 
+        onPress={() => router.back()}
+      >
+        <Ionicons name="close" size={28} color="#F5F7FF" />
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={[styles.infoButton, { top: insets.top + 8 }]}
+      >
+        <Ionicons name="information-circle-outline" size={24} color="#9AACD1" />
+      </TouchableOpacity>
 
       {/* Tracking view */}
       <View style={styles.trackingContainer}>
@@ -1111,22 +1153,45 @@ export default function ScanARKitScreen() {
           />
         )}
 
-        {/* Mode toggle */}
-        <View style={[styles.modeToggle, { top: insets.top + 70 }]}>
+        {/* Mode Selector (Dropdown) */}
+        <View style={[styles.workoutSelectorContainer, { top: insets.top + 8 }]}>
           <TouchableOpacity
-            onPress={() => setDetectionMode('pullup')}
-            style={[styles.modeChip, detectionMode === 'pullup' && styles.modeChipActive]}
+            style={styles.workoutSelectorButton}
+            onPress={() => setIsDropdownOpen(!isDropdownOpen)}
           >
-            <Ionicons name="barbell-outline" size={16} color={detectionMode === 'pullup' ? '#0B1F3A' : '#9AACD1'} />
-            <Text style={[styles.modeChipText, detectionMode === 'pullup' && styles.modeChipTextActive]}>Pull-Ups</Text>
+            <Ionicons 
+              name={detectionMode === 'pullup' ? "barbell-outline" : "duplicate-outline"} 
+              size={16} 
+              color="#F5F7FF" 
+            />
+            <Text style={styles.workoutSelectorText}>
+              {detectionMode === 'pullup' ? 'Pull-Ups' : 'Push-Ups'}
+            </Text>
+            <Ionicons name="chevron-down" size={16} color="#F5F7FF" />
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setDetectionMode('pushup')}
-            style={[styles.modeChip, detectionMode === 'pushup' && styles.modeChipActive]}
-          >
-            <Ionicons name="duplicate-outline" size={16} color={detectionMode === 'pushup' ? '#0B1F3A' : '#9AACD1'} />
-            <Text style={[styles.modeChipText, detectionMode === 'pushup' && styles.modeChipTextActive]}>Push-Ups</Text>
-          </TouchableOpacity>
+          
+          {isDropdownOpen && (
+            <View style={styles.dropdownMenu}>
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setDetectionMode('pullup');
+                  setIsDropdownOpen(false);
+                }}
+              >
+                <Text style={styles.dropdownItemText}>Pull-Ups</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setDetectionMode('pushup');
+                  setIsDropdownOpen(false);
+                }}
+              >
+                <Text style={styles.dropdownItemText}>Push-Ups</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
         
         {/* Overlay guides */}
@@ -1158,19 +1223,21 @@ export default function ScanARKitScreen() {
           }}
         >
 
-          <Animated.View style={[styles.topGuide, { top: insets.top + 140, opacity: textOpacity }]}>
-            <Text style={styles.guideText}>
-              {isTracking ? 'Tracking Active' : 'Press Start to Begin'}
-            </Text>
-            <Text style={styles.guideSubtext}>
-              Real-world 3D joint tracking • {fps} FPS
-            </Text>
-            {pose && (
-              <View style={styles.qualityIndicator}>
-                <View style={styles.qualityBar} />
-              </View>
-            )}
-          </Animated.View>
+          {!showTelemetry && (
+            <Animated.View style={[styles.topGuide, { top: insets.top + 60, opacity: textOpacity }]}>
+              <Text style={styles.guideText}>
+                {isTracking ? 'Tracking Active' : 'Press Start to Begin'}
+              </Text>
+              <Text style={styles.guideSubtext}>
+                Real-world 3D joint tracking • {fps} FPS
+              </Text>
+              {pose && (
+                <View style={styles.qualityIndicator}>
+                  <View style={styles.qualityBar} />
+                </View>
+              )}
+            </Animated.View>
+          )}
 
           {/* Focus ring */}
           {!isTracking && focusPoint && (
@@ -1183,7 +1250,7 @@ export default function ScanARKitScreen() {
               style={styles.fullFill}
               viewBox="0 0 1 1"
             preserveAspectRatio="none"
-              pointerEvents="none"
+            pointerEvents="none"
             >
               {(() => {
                 const jointsByName = new Map<string, Joint2D>();
@@ -1288,7 +1355,7 @@ export default function ScanARKitScreen() {
 
         {/* Pull-up telemetry display */}
         {showTelemetry && (
-          <View style={[styles.anglesDisplay, { top: insets.top + 130 }]}>
+          <View style={[styles.anglesDisplay, { top: insets.top + 54 }]}>
             <Text style={styles.anglesTitle}>{telemetryTitle}</Text>
             <View style={styles.anglesGrid}>
               <View style={styles.angleItem}>
@@ -1308,35 +1375,6 @@ export default function ScanARKitScreen() {
                 <Text style={styles.angleValue}>{telemetrySecondaryValue}</Text>
               </View>
             </View>
-            <View style={styles.metricsUploadHint}>
-              <Text style={styles.metricsUploadLabel}>Metrics ready for upload</Text>
-              <Text style={styles.metricsUploadValue}>
-                {latestMetricsForUpload.mode === 'pullup'
-                  ? `${latestMetricsForUpload.reps} reps • elbow ${latestMetricsForUpload.avgElbowDeg ? latestMetricsForUpload.avgElbowDeg.toFixed(1) + '°' : '--'}`
-                  : `${latestMetricsForUpload.reps} reps • elbow ${latestMetricsForUpload.avgElbowDeg ? latestMetricsForUpload.avgElbowDeg.toFixed(1) + '°' : '--'} • hip drop ${
-                      latestMetricsForUpload.hipDropRatio !== null && latestMetricsForUpload.hipDropRatio !== undefined
-                        ? `${Math.round(latestMetricsForUpload.hipDropRatio * 100)}%`
-                        : '--'
-                    }`}
-              </Text>
-              <Text style={styles.metricsUploadSubtext}>
-                Select the set you just recorded to upload it with these metrics attached.
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={[styles.uploadButton, uploading && styles.uploadButtonDisabled]}
-              onPress={handleUploadWithMetrics}
-              disabled={uploading}
-            >
-              {uploading ? (
-                <ActivityIndicator color="#0B1F3A" />
-              ) : (
-                <>
-                  <Ionicons name="cloud-upload-outline" size={18} color="#0B1F3A" />
-                  <Text style={styles.uploadButtonText}>Upload video with metrics</Text>
-                </>
-              )}
-            </TouchableOpacity>
           </View>
         )}
 
@@ -1355,7 +1393,7 @@ export default function ScanARKitScreen() {
       {/* Camera flip button - show always when tracking or when front camera is selected */}
       {(isTracking || cameraPosition === 'front') && (
         <TouchableOpacity
-          style={[styles.cameraFlipButton, { top: insets.top + 130 }]}
+          style={[styles.cameraFlipButton, { top: insets.top + 96 }]}
           onPress={flipCameraDuringTracking}
           accessibilityRole="button"
           accessibilityLabel="Flip camera"
@@ -1372,7 +1410,7 @@ export default function ScanARKitScreen() {
       <TouchableOpacity
         style={[
           styles.audioToggleButton,
-          { top: insets.top + 130 },
+          { top: insets.top + 96 },
           audioFeedbackEnabled && styles.audioToggleButtonActive
         ]}
         onPress={() => setAudioFeedbackEnabled((value) => !value)}
@@ -1387,23 +1425,7 @@ export default function ScanARKitScreen() {
       </TouchableOpacity>
 
       {/* Controls */}
-      <View style={[styles.controls, { bottom: insets.bottom + 16 }]}>
-        {/**/}
-        <TouchableOpacity
-          style={[styles.controlButton, isTracking && styles.stopButton, isTracking && styles.controlButtonSmall]}
-          onPress={isTracking ? stopTracking : (supportStatus === 'supported' && hasPermission ? startTracking : requestPermission)}
-          disabled={!isTracking && !(supportStatus === 'supported' && hasPermission)}
-          >
-            <Ionicons
-              name={isTracking ? 'stop' : 'play'}
-              size={isTracking ? 24 : 32}
-              color="#FFFFFF"
-            />
-            <Text style={styles.controlButtonText}>
-              {isTracking ? 'Stop' : 'Start'} Tracking
-            </Text>
-          </TouchableOpacity>
-
+      <View style={[styles.controls, { bottom: insets.bottom + 30 }]}>
         {isTracking && (
           <TouchableOpacity
             style={[
@@ -1422,6 +1444,16 @@ export default function ScanARKitScreen() {
               {isRecording ? 'Stop Recording' : 'Record Set'}
             </Text>
           </TouchableOpacity>
+        )}
+
+        {!isTracking && (
+           <TouchableOpacity
+             style={styles.controlButton}
+             onPress={supportStatus === 'supported' && hasPermission ? startTracking : requestPermission}
+           >
+             <Ionicons name="play" size={24} color="#FFFFFF" />
+             <Text style={styles.controlButtonText}>Start Tracking</Text>
+           </TouchableOpacity>
         )}
 
         {!isTracking && (
@@ -1454,7 +1486,7 @@ export default function ScanARKitScreen() {
       </View>
 
       {/* Status badge */}
-      <View style={[styles.statusBadge, { top: insets.top + 70 }]}>
+      <View style={[styles.statusBadge, { top: insets.top + 54 }]}>
         <View style={[styles.statusDot, isTracking && styles.statusDotActive]} />
         <View>
           <Text style={styles.statusText}>
@@ -1468,4 +1500,3 @@ export default function ScanARKitScreen() {
 </View>
   );
 }
-

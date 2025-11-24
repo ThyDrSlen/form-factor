@@ -1,8 +1,7 @@
 import './global.css';
-import { ThemeProvider } from '@/design-system/ThemeProvider';
 import { Slot, usePathname, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
-import { ActivityIndicator, View, Text as RNText } from 'react-native';
+import { ActivityIndicator, View, Text as RNText, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-url-polyfill/auto';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
@@ -31,30 +30,28 @@ function RootLayoutNav() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider>
-        <ToastProvider>
-          <AuthProvider>
-            <NetworkProvider>
-              <UnitsProvider>
-                <HealthKitProvider>
-                  <WorkoutsProvider>
-                    <FoodProvider>
-                      {!fontsLoaded ? (
-                        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#050E1F' }}>
-                          <ActivityIndicator color="#4C8CFF" />
-                        </View>
-                      ) : (
-                        <InitialLayout />
-                      )}
-                    </FoodProvider>
-                  </WorkoutsProvider>
-                </HealthKitProvider>
-              </UnitsProvider>
-            </NetworkProvider>
-          </AuthProvider>
-        </ToastProvider>
-      </ThemeProvider>
+    <GestureHandlerRootView style={styles.root}>
+      <ToastProvider>
+        <AuthProvider>
+          <NetworkProvider>
+            <UnitsProvider>
+              <HealthKitProvider>
+                <WorkoutsProvider>
+                  <FoodProvider>
+                    {!fontsLoaded ? (
+                      <View style={styles.splash}>
+                        <ActivityIndicator color="#4C8CFF" />
+                      </View>
+                    ) : (
+                      <InitialLayout />
+                    )}
+                  </FoodProvider>
+                </WorkoutsProvider>
+              </HealthKitProvider>
+            </UnitsProvider>
+          </NetworkProvider>
+        </AuthProvider>
+      </ToastProvider>
     </GestureHandlerRootView>
   );
 }
@@ -113,7 +110,7 @@ function InitialLayout() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={styles.authLoading}>
         <ActivityIndicator size="large" />
       </View>
     );
@@ -123,3 +120,20 @@ function InitialLayout() {
 }
 
 export default RootLayoutNav;
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+  splash: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#050E1F',
+  },
+  authLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+});
