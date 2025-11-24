@@ -60,12 +60,24 @@ function ensureContinuousHistory(points: HealthMetricPoint[], range: { start: Da
 
   const days: HealthMetricPoint[] = [];
   const cursor = new Date(range.start);
+  let lastValue: number | null = null;
+
   while (cursor <= range.end) {
     const key = cursor.getTime();
-    const value = byDay.get(key) ?? 0;
-    days.push({ date: key, value });
+    const valueForDay = byDay.get(key);
+
+    if (typeof valueForDay === 'number' && !Number.isNaN(valueForDay)) {
+      lastValue = valueForDay;
+    }
+
+    // Carry forward last known weight to avoid dropping to zero on missing days.
+    if (lastValue != null) {
+      days.push({ date: key, value: lastValue });
+    }
+
     cursor.setDate(cursor.getDate() + 1);
   }
+
   return days;
 }
 

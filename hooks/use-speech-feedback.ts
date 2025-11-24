@@ -11,6 +11,7 @@ interface SpeechFeedbackOptions {
   pitch?: number;
   volume?: number;
   minIntervalMs?: number;
+  shouldAllowRecording?: boolean;
 }
 
 interface SpeechFeedbackControls {
@@ -26,6 +27,7 @@ export function useSpeechFeedback({
   pitch = 1.0,
   volume = 1,
   minIntervalMs = 2000,
+  shouldAllowRecording = true,
 }: SpeechFeedbackOptions): SpeechFeedbackControls {
   const queueRef = useRef<string[]>([]);
   const isSpeakingRef = useRef(false);
@@ -34,28 +36,34 @@ export function useSpeechFeedback({
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const audioConfiguredRef = useRef(false);
 
+  // Reset audio config when recording requirement changes
+  useEffect(() => {
+    audioConfiguredRef.current = false;
+    ensureAudioMode().catch(() => {});
+  }, [shouldAllowRecording]);
+
   const ensureAudioMode = useCallback(async () => {
-    if (Platform.OS !== 'ios') {
-      return;
-    }
     if (audioConfiguredRef.current) {
       return;
     }
     try {
       await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        staysActiveInBackground: false,
+        allowsRecordingIOS: shouldAllowRecording,
+        staysActiveInBackground: true,
         playsInSilentModeIOS: true,
-        interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+        interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+        shouldDuckAndroid: false,
+        playThroughEarpieceAndroid: false,
       });
       audioConfiguredRef.current = true;
     } catch (error) {
+      audioConfiguredRef.current = false;
       if (__DEV__) {
         // eslint-disable-next-line no-console
         console.warn('[SpeechFeedback] Failed to set audio mode', error);
       }
     }
-  }, []);
+  }, [shouldAllowRecording]);
 
   const clearPendingTimeout = useCallback(() => {
     if (timeoutRef.current) {
@@ -121,7 +129,7 @@ export function useSpeechFeedback({
         flushQueue().catch(() => {});
       },
     });
-  }, [enabled, voiceId, language, rate, pitch, volume, minIntervalMs, clearPendingTimeout, ensureAudioMode]);
+  }, [enabled, voiceId, language, rate, pitch, volume, minIntervalMs, clearPendingTimeout, ensureAudioMode, shouldAllowRecording]);
 
   const speak = useCallback(
     (phrase: string, options?: { immediate?: boolean }) => {
@@ -178,4 +186,3 @@ export function useSpeechFeedback({
 
   return { speak, stop };
 }
-
