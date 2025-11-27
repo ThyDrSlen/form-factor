@@ -1,19 +1,22 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
 import { styles } from './styles/_index.styles';
+import { spacing } from './styles/_theme-constants';
 
 const coachIntroMessage: CoachMessage = {
   id: 'intro',
   role: 'assistant',
-  content: 'I am your Form Factor coach. Tell me your goal, available time, gear, or any injuries and I will craft a realistic plan or adjust your current routine.',
+  content: 'I am your Form Factor AI coach. Tell me your goal, available time, gear, or any injuries and I will craft a realistic plan or adjust your current routine.',
 };
 
 const coachQuickPrompts = [
-  'Plan a 30-minute strength session for today.',
+  'Plan a 75-minute strength session for today.',
   'Light recovery day ideas after heavy squats.',
   'Give me a 5-minute warm-up for pull day.',
   'High-protein meal ideas under 600 calories.',
@@ -21,11 +24,15 @@ const coachQuickPrompts = [
 
 export default function CoachScreen() {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const [coachMessages, setCoachMessages] = useState<CoachMessage[]>([coachIntroMessage]);
   const [coachInput, setCoachInput] = useState('');
   const [coachError, setCoachError] = useState<string | null>(null);
   const [coachSending, setCoachSending] = useState(false);
   const coachListRef = useRef<FlatList<CoachMessage>>(null);
+
+  const bottomOffset = Math.max(tabBarHeight, insets.bottom) + spacing.md;
 
   const coachContext = useMemo(
     () => ({
@@ -73,7 +80,7 @@ export default function CoachScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: bottomOffset }]}>
       <View style={styles.coachContainer}>
         <View style={styles.quickPrompts}>
           {coachQuickPrompts.map(prompt => (
