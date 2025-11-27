@@ -19,6 +19,7 @@ node_modules/
 *.mobileprovision
 
 .windsurf
+notion.md
 
 # Metro
 # .metro-health-check*
