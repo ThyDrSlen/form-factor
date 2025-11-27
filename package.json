@@ -15,7 +15,7 @@
     "ios:timed": "./scripts/measure-ios-run.sh",
     "ios:timed:fc": "./scripts/measure-ios-run.sh fc",
     "web": "expo start --web",
-    "lint": "expo lint",
+    "lint": "eslint --config ./etc/eslint.config.mjs app components",
     "check:types": "tsc --noEmit",
     "ci:local": "bun run lint && bun run check:types",
     "kill": "lsof -ti :8081 | xargs kill -9 && lsof -ti :8082 | xargs kill -9 && lsof -ti :8083 | xargs kill -9 && lsof -ti :8084 | xargs kill -9 && lsof -ti :8085 | xargs kill -9",
