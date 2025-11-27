@@ -5,9 +5,8 @@ import type * as ExpoDevice from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { PermissionStatus } from 'expo-modules-core';
 import { supabase } from '../supabase';
-
-type PermissionStatus = Notifications.PermissionStatus;
 
 let Device: typeof ExpoDevice | undefined;
 try {
@@ -47,9 +46,10 @@ Notifications.setNotificationHandler({
 });
 
 function getProjectId() {
-  return process.env.EXPO_PUBLIC_PUSH_PROJECT_ID
-    || Constants.expoConfig?.extra?.eas?.projectId
-    || Constants.expoConfig?.projectId;
+  const easProjectId = Constants.expoConfig?.extra?.eas?.projectId;
+  const configProjectId = (Constants.expoConfig as { projectId?: string } | undefined)?.projectId;
+
+  return process.env.EXPO_PUBLIC_PUSH_PROJECT_ID || easProjectId || configProjectId;
 }
 
 async function getDeviceId() {
@@ -93,12 +93,12 @@ export async function registerDevicePushToken(
   options: { requestPermission?: boolean } = {},
 ): Promise<RegisterResult> {
   if (!userId) {
-    return { status: 'undetermined', error: 'Missing userId' };
+    return { status: PermissionStatus.UNDETERMINED, error: 'Missing userId' };
   }
 
   if (!Device?.isDevice) {
     console.info('[notifications] Skipping push registration on simulator/web');
-    return { status: 'undetermined', error: 'Device push unsupported' };
+    return { status: PermissionStatus.UNDETERMINED, error: 'Device push unsupported' };
   }
 
   let permissions = await Notifications.getPermissionsAsync();
