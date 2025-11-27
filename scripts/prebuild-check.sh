@@ -55,7 +55,8 @@ echo ""
 
 # 5. Check Bundle Identifier
 echo "5️⃣ Checking bundle identifier..."
-BUNDLE_ID=$(grep -o '"bundleIdentifier": "[^"]*"' app.json | cut -d'"' -f4)
+APP_JSON="etc/app.json"
+BUNDLE_ID=$(grep -o '"bundleIdentifier": "[^"]*"' "$APP_JSON" | cut -d'"' -f4)
 echo "   Bundle ID: $BUNDLE_ID"
 if [ "$BUNDLE_ID" = "com.slenthekid.form-factor-eas" ]; then
   echo "✅ Bundle ID is correct"
@@ -87,11 +88,11 @@ echo ""
 
 # 8. Check for Common Issues
 echo "8️⃣ Checking for common issues..."
-if grep -q "usesARKit" app.json 2>/dev/null; then
-  echo "❌ Invalid usesARKit property found in app.json"
+if grep -q "usesARKit" "$APP_JSON" 2>/dev/null; then
+  echo "❌ Invalid usesARKit property found in $APP_JSON"
   ERRORS=$((ERRORS + 1))
 else
-  echo "✅ No invalid properties in app.json"
+  echo "✅ No invalid properties in $APP_JSON"
 fi
 echo ""
 
