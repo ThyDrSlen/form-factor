@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform, Linking } from 'rea
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useHealthKit } from '@/contexts/HealthKitContext';
-import { useUnits } from '@/contexts/UnitsContext';
 import { getHealthKitGuidance } from '@/components/health-kit/healthkit-guidance';
 
 interface StatProps {

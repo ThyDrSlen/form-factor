@@ -16,7 +16,7 @@ const LABEL_WIDTH = 48;
 
 interface WeightTrendChartProps {
   data: HealthMetricPoint[];
-  period: '7d' | '30d' | '90d';
+  period: '7d' | '30d' | '90d' | '180d';
   weightUnit: string;
   showPredictions?: boolean;
 }
@@ -56,7 +56,7 @@ export function WeightTrendChart({
 
   const pointsToRender = React.useMemo(() => {
     const arr = normalizedData;
-    const maxPoints = period === '7d' ? 7 : period === '30d' ? 10 : 12;
+    const maxPoints = period === '7d' ? 7 : period === '30d' ? 10 : period === '90d' ? 12 : 18;
     if (arr.length <= maxPoints) {
       return arr;
     }
@@ -187,6 +187,7 @@ export function WeightTrendChart({
       case '30d':
         return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       case '90d':
+      case '180d':
         return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       default:
         return '';

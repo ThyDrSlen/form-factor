@@ -14,6 +14,7 @@ import {
   type HealthTrendData,
   type AggregatedHealthMetrics 
 } from '@/lib/services/healthkit/health-aggregation';
+import { type HealthMetricPoint } from '@/lib/services/healthkit/health-metrics';
 
 type TimeRange = 'daily' | 'weekly' | 'monthly';
 
@@ -137,7 +138,7 @@ export function HealthTrendsView() {
     bodyMassKg, 
     weightHistory,
     weightHistory30Days,
-    weightHistory90Days,
+    weightHistory180Days,
     isSyncing,
     syncProgress,
     hasSyncedBefore,
@@ -295,7 +296,7 @@ export function HealthTrendsView() {
 
   // Weight series for chart based on selected range
   const weightPeriod = selectedRange === 'daily' ? '7d' : selectedRange === 'weekly' ? '30d' : '180d';
-  const weightSeriesRaw =
+  const weightSeriesRaw: HealthMetricPoint[] =
     weightPeriod === '7d'
       ? weightHistory
       : weightPeriod === '30d'
@@ -303,7 +304,7 @@ export function HealthTrendsView() {
       : weightHistory180Days;
   const weightSeries = useMemo(
     () => weightSeriesRaw.map(point => ({ ...point, value: convertWeight(point.value) })),
-    [weightSeriesRaw, weightUnit]
+    [weightSeriesRaw, convertWeight]
   );
 
   const formatChange = (change: number | null): string | undefined => {
