@@ -15,6 +15,31 @@ Common issues and solutions for development and troubleshooting.
 - If it persists, ensure you've run `npx expo prebuild --platform ios --clean` after adding the plugin
 - Check that `./plugins/withDisableAssetThinning.js` is in your `app.json` plugins array
 
+### CocoaPods: object version `70`
+
+**Error**
+
+```
+ArgumentError - [Xcodeproj] Unable to find compatibility version string for object version `70`.
+```
+
+**Why it happens**
+
+Xcode 16 bumps the project’s `objectVersion` to `70`, but the version of `xcodeproj` bundled with CocoaPods 1.16.x only knows up to 63. When Pods regenerate the workspace they fail before creating the Pods project, so `pod install` dies and `bunx expo run:ios` never finishes.
+
+**Quick fix**
+
+1. Open `ios/formfactoreas.xcodeproj/project.pbxproj`.
+2. Change the top-level `objectVersion` back to `63`.
+3. Save the file and rerun `npx pod-install` (or `cd ios && pod install`).
+
+Once the project builds, you can open Xcode and continue working normally. Xcode may try to upgrade the format again when you add new targets—if it does, repeat the steps above or use a lightweight text replace (`rg -g "*.pbxproj" objectVersion`) to confirm the value.
+
+**Prevention tips**
+
+- In Xcode’s “Project Format” dropdown (File ▸ Project Settings), leave the format set to “Xcode 15.0-compatible” until CocoaPods ships a release that understands objectVersion 70.
+- Avoid converting folders to the new “buildable folders” feature in Xcode 16, because that migration also updates the project format.
+
 ### Code Signing Required
 
 **Error**: Code signing errors during build
