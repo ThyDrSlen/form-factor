@@ -19,6 +19,7 @@ node_modules/
 *.mobileprovision
 
 .windsurf
+test-results.txt
 notion.md
 
 # Metro
