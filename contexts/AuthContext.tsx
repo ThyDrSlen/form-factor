@@ -3,13 +3,13 @@ import { createError, mapToUserMessage, logError } from '@/lib/services/ErrorHan
 import { AuthError, Session, User } from '@supabase/supabase-js';
 import * as Linking from 'expo-linking';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { SessionManager } from '../lib/services/SessionManager';
-import { supabase } from '../lib/supabase';
-import { runDiagnostics } from '../lib/network-utils';
-import { signInWithApple as nativeAppleSignIn } from '../lib/auth-utils';
-import { localDB } from '../lib/services/database/local-db';
-import { syncService } from '../lib/services/database/sync-service';
-import { registerDevicePushToken, unregisterDevicePushToken } from '../lib/services/notifications';
+import { SessionManager } from '@/lib/services/SessionManager';
+import { supabase } from '@/lib/supabase';
+import { runDiagnostics } from '@/lib/network-utils';
+import { signInWithApple as nativeAppleSignIn } from '@/lib/auth-utils';
+import { localDB } from '@/lib/services/database/local-db';
+import { syncService } from '@/lib/services/database/sync-service';
+import { registerDevicePushToken, unregisterDevicePushToken } from '@/lib/services/notifications';
 
 // In Expo Router, group folders like (auth) are omitted from the URL path.
 // The file app/(auth)/callback.tsx resolves to '/callback', not '/auth/callback'.
