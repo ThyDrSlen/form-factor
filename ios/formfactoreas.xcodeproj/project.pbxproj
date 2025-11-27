@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 70;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -54,9 +54,39 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		E35398BB2ED2A82F0047A389 /* FormFactorWatch Watch App */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "FormFactorWatch Watch App"; sourceTree = "<group>"; };
-		E35398C92ED2A8320047A389 /* FormFactorWatch Watch AppTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "FormFactorWatch Watch AppTests"; sourceTree = "<group>"; };
-		E35398D32ED2A8320047A389 /* FormFactorWatch Watch AppUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "FormFactorWatch Watch AppUITests"; sourceTree = "<group>"; };
+		E35398BB2ED2A82F0047A389 /* FormFactorWatch Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = "FormFactorWatch Watch App";
+			sourceTree = "<group>";
+		};
+		E35398C92ED2A8320047A389 /* FormFactorWatch Watch AppTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = "FormFactorWatch Watch AppTests";
+			sourceTree = "<group>";
+		};
+		E35398D32ED2A8320047A389 /* FormFactorWatch Watch AppUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = "FormFactorWatch Watch AppUITests";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
