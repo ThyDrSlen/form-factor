@@ -6,7 +6,12 @@ export interface HealthMetricPoint {
   value: number;
 }
 
-function parseNumeric(value: unknown): number | null {
+export function parseNumeric(value: unknown): number | null {
+  // Treat null/undefined as missing data instead of coercing to 0.
+  if (value == null) {
+    return null;
+  }
+
   const numeric = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(numeric) ? numeric : null;
 }
@@ -20,7 +25,7 @@ function extractSampleValue(sample: any): number | null {
   return parseNumeric(sample.quantity);
 }
 
-function normalizeDay(dateLike: unknown): number | null {
+export function normalizeDay(dateLike: unknown): number | null {
   if (!dateLike) return null;
   const date = new Date(dateLike as Date | string | number);
   if (Number.isNaN(date.getTime())) return null;
@@ -41,7 +46,7 @@ function getHealthKitModule(): any {
   return jsModule;
 }
 
-function buildDateRange(days: number): { start: Date; end: Date } {
+export function buildDateRange(days: number): { start: Date; end: Date } {
   const end = new Date();
   end.setHours(23, 59, 59, 999);
   const start = new Date(end);
@@ -50,7 +55,7 @@ function buildDateRange(days: number): { start: Date; end: Date } {
   return { start, end };
 }
 
-function ensureContinuousHistory(points: HealthMetricPoint[], range: { start: Date; end: Date }): HealthMetricPoint[] {
+export function ensureContinuousHistory(points: HealthMetricPoint[], range: { start: Date; end: Date }): HealthMetricPoint[] {
   const byDay = new Map<number, number>();
   points.forEach((point) => {
     if (Number.isFinite(point.date)) {
