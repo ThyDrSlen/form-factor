@@ -30,6 +30,11 @@
     "logs:ios": "xcrun simctl spawn booted log stream --predicate 'processImagePath endswith \"formfactoreas\"' --level=debug",
     "check:dead-code": "knip --config ./config/knip.json --include files,exports,dependencies",
     "check:dead-code:all": "knip --config ./config/knip.json",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:report": "jest 2>&1 | tee test-results.txt",
+    "test:e2e": "playwright test",
     "prepare": "husky"
   },
   "resolutions": {
@@ -96,12 +101,15 @@
     "@babel/core": "^7.28.5",
     "@babel/plugin-transform-runtime": "^7.28.5",
     "@playwright/test": "^1.56.1",
+    "@testing-library/jest-native": "^5.4.3",
+    "@testing-library/react-native": "^13.3.3",
     "@types/react": "^19.2.4",
     "babel-plugin-module-resolver": "^5.0.2",
     "eslint": "^9.39.1",
     "eslint-config-expo": "~10.0.0",
     "expo-module-scripts": "^4.1.10",
     "husky": "^9.1.7",
+    "jest-expo": "^54.0.13",
     "knip": "^5.69.1"
   },
   "expo": {
