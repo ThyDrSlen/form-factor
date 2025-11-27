@@ -12,6 +12,13 @@ interface SpeechFeedbackOptions {
   volume?: number;
   minIntervalMs?: number;
   shouldAllowRecording?: boolean;
+  onEvent?: (event: {
+    cue: string;
+    action: 'queued' | 'spoken' | 'dropped';
+    reason?: string;
+    throttled?: boolean;
+    elapsedMs?: number;
+  }) => void;
 }
 
 interface SpeechFeedbackControls {
@@ -28,6 +35,7 @@ export function useSpeechFeedback({
   volume = 1,
   minIntervalMs = 2000,
   shouldAllowRecording = true,
+  onEvent,
 }: SpeechFeedbackOptions): SpeechFeedbackControls {
   const queueRef = useRef<string[]>([]);
   const isSpeakingRef = useRef(false);
@@ -93,6 +101,15 @@ export function useSpeechFeedback({
 
     if (elapsed < minIntervalMs) {
       clearPendingTimeout();
+      if (queueRef.current[0]) {
+        onEvent?.({
+          cue: queueRef.current[0],
+          action: 'dropped',
+          reason: 'throttled_interval',
+          throttled: true,
+          elapsedMs: elapsed,
+        });
+      }
       timeoutRef.current = setTimeout(() => {
         flushQueue().catch(() => {});
       }, minIntervalMs - elapsed);
@@ -109,6 +126,7 @@ export function useSpeechFeedback({
     isSpeakingRef.current = true;
     lastPhraseRef.current = next;
     lastTimestampRef.current = now;
+    onEvent?.({ cue: next, action: 'spoken' });
 
     Speech.speak(next, {
       voice: voiceId,
@@ -126,10 +144,11 @@ export function useSpeechFeedback({
       },
       onError: () => {
         isSpeakingRef.current = false;
+        onEvent?.({ cue: next, action: 'dropped', reason: 'speech_error' });
         flushQueue().catch(() => {});
       },
     });
-  }, [enabled, voiceId, language, rate, pitch, volume, minIntervalMs, clearPendingTimeout, ensureAudioMode, shouldAllowRecording]);
+  }, [enabled, voiceId, language, rate, pitch, volume, minIntervalMs, clearPendingTimeout, ensureAudioMode, shouldAllowRecording, onEvent]);
 
   const speak = useCallback(
     (phrase: string, options?: { immediate?: boolean }) => {
@@ -139,17 +158,26 @@ export function useSpeechFeedback({
       }
 
       if (!enabled) {
+        onEvent?.({ cue: text, action: 'dropped', reason: 'disabled' });
         return;
       }
 
       const now = Date.now();
       const lastPhrase = lastPhraseRef.current;
       if (lastPhrase === text && now - lastTimestampRef.current < minIntervalMs) {
+        onEvent?.({
+          cue: text,
+          action: 'dropped',
+          reason: 'throttled_same_cue',
+          throttled: true,
+          elapsedMs: now - lastTimestampRef.current,
+        });
         return;
       }
 
       const queue = queueRef.current;
       if (!options?.immediate && queue[queue.length - 1] === text) {
+        onEvent?.({ cue: text, action: 'dropped', reason: 'duplicate_in_queue' });
         return;
       }
 
@@ -158,10 +186,11 @@ export function useSpeechFeedback({
       } else {
         queue.push(text);
       }
+      onEvent?.({ cue: text, action: 'queued' });
 
       flushQueue().catch(() => {});
     },
-    [enabled, flushQueue, minIntervalMs]
+    [enabled, flushQueue, minIntervalMs, onEvent]
   );
 
   const stop = useCallback(() => {
