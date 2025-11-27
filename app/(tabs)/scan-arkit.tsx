@@ -1,24 +1,41 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Alert, Text, TouchableOpacity, View, Platform, Animated, ActivityIndicator, ToastAndroid, LayoutChangeEvent, Switch } from 'react-native';
+import { Alert, Text, TouchableOpacity, View, Platform, Animated, ToastAndroid, LayoutChangeEvent } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { Svg, Circle, Line } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
-import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { watchEvents, sendMessage, updateWatchContext } from '@/lib/watch-connectivity';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D } from '@/lib/arkit/ARKitBodyTracker';
 import { useSpeechFeedback } from '@/hooks/use-speech-feedback';
+import { generateSessionId, logCueEvent, upsertSessionMetrics } from '@/lib/services/cue-logger';
+import { logPoseSample, flushPoseBuffer, resetFrameCounter } from '@/lib/services/pose-logger';
+import {
+  initSessionContext,
+  incrementPoseLost,
+  markCuesDisabled,
+  getSessionQuality,
+} from '@/lib/services/telemetry-context';
+import { logRep } from '@/lib/services/rep-logger';
+import { calculateFqi, extractRepFeatures, type RepAngles } from '@/lib/services/fqi-calculator';
+import {
+  getWorkoutById,
+  type DetectionMode,
+  PULLUP_THRESHOLDS,
+  PUSHUP_THRESHOLDS,
+  type PullUpPhase,
+  type PullUpMetrics,
+  type PushUpPhase,
+  type PushUpMetrics,
+} from '@/lib/workouts';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
 import { styles } from './styles/_scan-arkit.styles';
 
-type PullUpPhase = 'idle' | 'hang' | 'pull' | 'top';
-type PushUpPhase = 'setup' | 'plank' | 'lowering' | 'bottom' | 'press';
-type DetectionMode = 'pullup' | 'pushup';
+// Phase and detection mode types are now imported from lib/workouts
 type UploadMetrics =
   | {
       mode: 'pullup';
@@ -34,37 +51,11 @@ type UploadMetrics =
       hipDropRatio: number | null;
     };
 
-const PULL_UP_THRESHOLDS = {
-  hang: 150,
-  engage: 135,
-  top: 85,
-  release: 145,
-} as const;
-
-const PUSH_UP_THRESHOLDS = {
-  readyElbow: 155,     // Arms nearly locked out
-  loweringStart: 140,  // Begin counting a descent
-  bottom: 90,          // Bottom position
-  press: 120,          // On the way up
-  finish: 155,         // Completed press
-  hipSagMax: 0.18,     // Meters of allowed hip drop vs shoulders
-} as const;
+// Thresholds are now imported from workout definitions (PULLUP_THRESHOLDS, PUSHUP_THRESHOLDS)
 
 const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 
-interface PullUpMetrics {
-  avgElbow: number;
-  avgShoulder: number;
-  headToHand: number | null;
-  armsTracked: boolean;
-}
-
-interface PushUpMetrics {
-  avgElbow: number;
-  hipDrop: number | null;
-  armsTracked: boolean;
-  wristsTracked: boolean;
-}
+// Metrics types are now imported from workout definitions (PullUpMetrics, PushUpMetrics)
 
 let Camera: any = View;
 let useCameraDevice: any = () => null;
@@ -140,10 +131,19 @@ export default function ScanARKitScreen() {
   const pose2DCacheRef = React.useRef<Record<string, { x: number; y: number }>>({});
   const lastSpokenCueRef = React.useRef<{ cue: string; timestamp: number } | null>(null);
   const overlayLayout = React.useRef<{ width: number; height: number } | null>(null);
-  const [uploadPanelCollapsed, setUploadPanelCollapsed] = useState(false);
-  const [uploadEnabled, setUploadEnabled] = useState(true);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const isScreenFocused = useIsFocused();
+  const sessionIdRef = React.useRef(generateSessionId());
+  const sessionStartRef = React.useRef(new Date().toISOString());
+  const cueCountersRef = React.useRef({ total: 0, spoken: 0, droppedRepeat: 0, droppedDisabled: 0 });
+  const fpsStatsRef = React.useRef<{ count: number; sum: number; min: number }>({ count: 0, sum: 0, min: Number.POSITIVE_INFINITY });
+
+  // Rep tracking refs for FQI calculation and logging
+  const repStartTsRef = React.useRef<number>(0);
+  const repStartAnglesRef = React.useRef<JointAngles | null>(null);
+  const repMinAnglesRef = React.useRef<JointAngles | null>(null);
+  const repMaxAnglesRef = React.useRef<JointAngles | null>(null);
+  const repCuesRef = React.useRef<{ type: string; ts: string }[]>([]);
 
   const { speak: speakCue, stop: stopSpeech } = useSpeechFeedback({
     enabled: audioFeedbackEnabled && isScreenFocused,
@@ -151,16 +151,47 @@ export default function ScanARKitScreen() {
     rate: 0.52,
     pitch: 1.0,
     volume: 1,
-    minIntervalMs: 2000,
+    minIntervalMs: 3500,
     shouldAllowRecording: isRecording,
+    onEvent: (evt) => {
+      const sessionId = sessionIdRef.current;
+      cueCountersRef.current.total += 1;
+      if (evt.action === 'spoken') {
+        cueCountersRef.current.spoken += 1;
+      }
+      if (evt.reason === 'throttled_same_cue' || evt.reason === 'duplicate_in_queue' || evt.reason === 'throttled_interval') {
+        cueCountersRef.current.droppedRepeat += 1;
+      }
+      if (evt.reason === 'disabled') {
+        cueCountersRef.current.droppedDisabled += 1;
+      }
+
+      const phase = detectionMode === 'pullup' ? pullUpPhase : pushUpPhase;
+      const reps = detectionMode === 'pullup' ? repCount : pushUpReps;
+
+      logCueEvent({
+        sessionId,
+        cue: evt.cue,
+        mode: detectionMode,
+        phase,
+        repCount: reps,
+        reason: evt.reason,
+        throttled: evt.throttled,
+        dropped: evt.action !== 'spoken',
+      });
+    },
   });
 
   useEffect(() => {
     if (!audioFeedbackEnabled) {
       lastSpokenCueRef.current = null;
       stopSpeech();
+      // Track when user disables cues mid-session
+      if (isTracking) {
+        markCuesDisabled();
+      }
     }
-  }, [audioFeedbackEnabled, stopSpeech]);
+  }, [audioFeedbackEnabled, stopSpeech, isTracking]);
 
   useEffect(() => {
     if (!isScreenFocused) {
@@ -168,6 +199,56 @@ export default function ScanARKitScreen() {
       stopSpeech();
     }
   }, [isScreenFocused, stopSpeech]);
+
+  // Initialize telemetry context on mount
+  useEffect(() => {
+    initSessionContext().catch((error) => {
+      if (__DEV__) {
+        console.warn('[ScanARKit] Failed to initialize session context', error);
+      }
+    });
+    resetFrameCounter();
+  }, []);
+
+  useEffect(() => {
+    const countersRef = cueCountersRef;
+    const fpsRef = fpsStatsRef;
+    const sessionId = sessionIdRef.current;
+    const sessionStart = sessionStartRef.current;
+
+    return () => {
+      const counters = { ...countersRef.current };
+      const fpsStats = { ...fpsRef.current };
+      const avgFps = fpsStats.count > 0 ? fpsStats.sum / fpsStats.count : null;
+      const minFps = fpsStats.count > 0 ? fpsStats.min : null;
+      const quality = getSessionQuality();
+
+      // Flush any remaining pose samples before session ends
+      flushPoseBuffer().catch((error) => {
+        if (__DEV__) {
+          console.warn('[ScanARKit] Failed to flush pose buffer on cleanup', error);
+        }
+      });
+
+      upsertSessionMetrics({
+        sessionId,
+        startAt: sessionStart,
+        endAt: new Date().toISOString(),
+        avgFps,
+        minFps,
+        cuesTotal: counters.total,
+        cuesSpoken: counters.spoken,
+        cuesDroppedRepeat: counters.droppedRepeat,
+        cuesDroppedDisabled: counters.droppedDisabled,
+        // Quality signals from telemetry context
+        poseLostCount: quality.poseLostCount,
+        lowConfidenceFrames: quality.lowConfidenceFrames,
+        trackingResetCount: quality.trackingResetCount,
+        userAbortedEarly: quality.userAbortedEarly,
+        cuesDisabledMidSession: quality.cuesDisabledMidSession,
+      });
+    };
+  }, []);
 
   useEffect(() => {
     if (detectionMode === 'pullup') {
@@ -196,6 +277,107 @@ export default function ScanARKitScreen() {
     []
   );
 
+  // Helper: Start tracking a new rep
+  const startRepTracking = useCallback((angles: JointAngles) => {
+    repStartTsRef.current = Date.now();
+    repStartAnglesRef.current = { ...angles };
+    repMinAnglesRef.current = { ...angles };
+    repMaxAnglesRef.current = { ...angles };
+    repCuesRef.current = [];
+  }, []);
+
+  // Helper: Update min/max angles during rep
+  const updateRepAngles = useCallback((angles: JointAngles) => {
+    if (repStartTsRef.current === 0) return; // Not tracking a rep
+
+    const min = repMinAnglesRef.current;
+    const max = repMaxAnglesRef.current;
+
+    if (min && max) {
+      repMinAnglesRef.current = {
+        leftKnee: Math.min(min.leftKnee, angles.leftKnee),
+        rightKnee: Math.min(min.rightKnee, angles.rightKnee),
+        leftElbow: Math.min(min.leftElbow, angles.leftElbow),
+        rightElbow: Math.min(min.rightElbow, angles.rightElbow),
+        leftHip: Math.min(min.leftHip, angles.leftHip),
+        rightHip: Math.min(min.rightHip, angles.rightHip),
+        leftShoulder: Math.min(min.leftShoulder, angles.leftShoulder),
+        rightShoulder: Math.min(min.rightShoulder, angles.rightShoulder),
+      };
+      repMaxAnglesRef.current = {
+        leftKnee: Math.max(max.leftKnee, angles.leftKnee),
+        rightKnee: Math.max(max.rightKnee, angles.rightKnee),
+        leftElbow: Math.max(max.leftElbow, angles.leftElbow),
+        rightElbow: Math.max(max.rightElbow, angles.rightElbow),
+        leftHip: Math.max(max.leftHip, angles.leftHip),
+        rightHip: Math.max(max.rightHip, angles.rightHip),
+        leftShoulder: Math.max(max.leftShoulder, angles.leftShoulder),
+        rightShoulder: Math.max(max.rightShoulder, angles.rightShoulder),
+      };
+    }
+  }, []);
+
+  // Helper: Complete and log a rep
+  const completeRepTracking = useCallback(async (
+    exercise: string,
+    repNumber: number,
+    endAngles: JointAngles
+  ) => {
+    if (repStartTsRef.current === 0 || !repStartAnglesRef.current || !repMinAnglesRef.current || !repMaxAnglesRef.current) {
+      return; // No rep was being tracked
+    }
+
+    const workoutDef = getWorkoutById(exercise);
+    if (!workoutDef) {
+      if (__DEV__) console.warn(`[ScanARKit] No workout definition for ${exercise}`);
+      return;
+    }
+
+    const endTs = Date.now();
+    const durationMs = endTs - repStartTsRef.current;
+
+    const repAngles: RepAngles = {
+      start: repStartAnglesRef.current,
+      end: endAngles,
+      min: repMinAnglesRef.current,
+      max: repMaxAnglesRef.current,
+    };
+
+    // Calculate FQI and extract features
+    const fqiResult = calculateFqi(repAngles, durationMs, repNumber, workoutDef);
+    const features = extractRepFeatures(repAngles, durationMs);
+
+    // Log the rep
+    try {
+      await logRep({
+        sessionId: sessionIdRef.current,
+        repIndex: repNumber,
+        exercise,
+        startTs: new Date(repStartTsRef.current).toISOString(),
+        endTs: new Date(endTs).toISOString(),
+        features,
+        fqi: fqiResult.score,
+        faultsDetected: fqiResult.detectedFaults,
+        cuesEmitted: repCuesRef.current,
+      });
+
+      if (__DEV__) {
+        console.log(`[ScanARKit] Rep ${repNumber} logged: FQI=${fqiResult.score}, faults=${fqiResult.detectedFaults.join(',')}`);
+      }
+    } catch (error) {
+      if (__DEV__) {
+        console.error('[ScanARKit] Failed to log rep', error);
+      }
+    }
+
+    // Reset tracking state
+    repStartTsRef.current = 0;
+    repStartAnglesRef.current = null;
+    repMinAnglesRef.current = null;
+    repMaxAnglesRef.current = null;
+    repCuesRef.current = [];
+  }, []);
+
   const updatePullUpCycle = useCallback(
     (angles: JointAngles, metrics: PullUpMetrics) => {
       if (!metrics.armsTracked) {
@@ -210,37 +392,47 @@ export default function ScanARKitScreen() {
       const state = repStateRef.current;
 
       if (state === 'idle') {
-        if (avgElbow >= PULL_UP_THRESHOLDS.hang) {
+        if (avgElbow >= PULLUP_THRESHOLDS.hang) {
           repStateRef.current = 'hang';
           transitionPhase('hang');
-        } else if (avgElbow <= PULL_UP_THRESHOLDS.engage) {
+        } else if (avgElbow <= PULLUP_THRESHOLDS.engage) {
           repStateRef.current = 'pull';
           transitionPhase('pull');
+          // Start tracking this rep
+          startRepTracking(angles);
         }
         return;
       }
 
       if (state === 'hang') {
-        if (avgElbow <= PULL_UP_THRESHOLDS.engage) {
+        if (avgElbow <= PULLUP_THRESHOLDS.engage) {
           repStateRef.current = 'pull';
           transitionPhase('pull');
+          // Start tracking this rep
+          startRepTracking(angles);
         }
         return;
       }
 
       if (state === 'pull') {
-        if (avgElbow <= PULL_UP_THRESHOLDS.top) {
+        // Update min/max angles while in pull phase
+        updateRepAngles(angles);
+
+        if (avgElbow <= PULLUP_THRESHOLDS.top) {
           const now = Date.now();
           if (now - lastRepTimestampRef.current > 400) {
             repStateRef.current = 'top';
             transitionPhase('top');
             lastRepTimestampRef.current = now;
-            setRepCount((prev) => prev + 1);
+            const newRepCount = repCount + 1;
+            setRepCount(newRepCount);
             if (Platform.OS === 'ios') {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
             }
+            // Complete and log the rep
+            completeRepTracking('pullup', newRepCount, angles);
           }
-        } else if (avgElbow >= PULL_UP_THRESHOLDS.hang) {
+        } else if (avgElbow >= PULLUP_THRESHOLDS.hang) {
           repStateRef.current = 'hang';
           transitionPhase('hang');
         }
@@ -248,16 +440,19 @@ export default function ScanARKitScreen() {
       }
 
       if (state === 'top') {
-        if (avgElbow >= PULL_UP_THRESHOLDS.release) {
+        // Update min/max angles while in top phase
+        updateRepAngles(angles);
+
+        if (avgElbow >= PULLUP_THRESHOLDS.release) {
           repStateRef.current = 'hang';
           transitionPhase('hang');
         }
       }
     },
-    [transitionPhase]
+    [transitionPhase, startRepTracking, updateRepAngles, completeRepTracking, repCount]
   );
 
-  const updatePushUpCycle = useCallback((metrics: PushUpMetrics) => {
+  const updatePushUpCycle = useCallback((angles: JointAngles, metrics: PushUpMetrics) => {
     if (!metrics.armsTracked || !metrics.wristsTracked) {
       pushUpStateRef.current = 'setup';
       setPushUpPhase('setup');
@@ -266,11 +461,11 @@ export default function ScanARKitScreen() {
 
     const now = Date.now();
     const state = pushUpStateRef.current;
-    const hipStable = metrics.hipDrop === null ? true : metrics.hipDrop <= PUSH_UP_THRESHOLDS.hipSagMax;
+    const hipStable = metrics.hipDrop === null ? true : metrics.hipDrop <= PUSHUP_THRESHOLDS.hipSagMax;
     const elbow = metrics.avgElbow;
 
     if (state === 'setup') {
-      if (elbow >= PUSH_UP_THRESHOLDS.readyElbow && hipStable) {
+      if (elbow >= PUSHUP_THRESHOLDS.readyElbow && hipStable) {
         pushUpStateRef.current = 'plank';
         setPushUpPhase('plank');
       }
@@ -278,15 +473,20 @@ export default function ScanARKitScreen() {
     }
 
     if (state === 'plank') {
-      if (elbow <= PUSH_UP_THRESHOLDS.loweringStart) {
+      if (elbow <= PUSHUP_THRESHOLDS.loweringStart) {
         pushUpStateRef.current = 'lowering';
         setPushUpPhase('lowering');
+        // Start tracking this rep
+        startRepTracking(angles);
       }
       return;
     }
 
     if (state === 'lowering') {
-      if (elbow <= PUSH_UP_THRESHOLDS.bottom) {
+      // Update min/max angles while lowering
+      updateRepAngles(angles);
+
+      if (elbow <= PUSHUP_THRESHOLDS.bottom) {
         pushUpStateRef.current = 'bottom';
         setPushUpPhase('bottom');
       }
@@ -294,7 +494,10 @@ export default function ScanARKitScreen() {
     }
 
     if (state === 'bottom') {
-      if (elbow >= PUSH_UP_THRESHOLDS.press) {
+      // Update min/max angles at bottom
+      updateRepAngles(angles);
+
+      if (elbow >= PUSHUP_THRESHOLDS.press) {
         pushUpStateRef.current = 'press';
         setPushUpPhase('press');
       }
@@ -302,19 +505,25 @@ export default function ScanARKitScreen() {
     }
 
     if (state === 'press') {
-      if (elbow >= PUSH_UP_THRESHOLDS.finish && hipStable) {
+      // Update min/max angles while pressing
+      updateRepAngles(angles);
+
+      if (elbow >= PUSHUP_THRESHOLDS.finish && hipStable) {
         if (now - lastPushUpRepRef.current > 400) {
           lastPushUpRepRef.current = now;
-          setPushUpReps((prev) => prev + 1);
+          const newRepCount = pushUpReps + 1;
+          setPushUpReps(newRepCount);
           if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
           }
+          // Complete and log the rep
+          completeRepTracking('pushup', newRepCount, angles);
         }
         pushUpStateRef.current = 'plank';
         setPushUpPhase('plank');
       }
     }
-  }, []);
+  }, [startRepTracking, updateRepAngles, completeRepTracking, pushUpReps]);
 
   useEffect(() => {
     if (DEV) {
@@ -375,6 +584,10 @@ export default function ScanARKitScreen() {
   useEffect(() => {
     if (!pose) {
       if (DEV) console.log('[ScanARKit] ℹ️ No pose data');
+      // Track pose lost if we were previously tracking
+      if (jointAnglesStateRef.current !== null && isTracking) {
+        incrementPoseLost();
+      }
       frameStatsRef.current = { lastTimestamp: 0, frameCount: 0 };
       setJointAngles(null);
       jointAnglesStateRef.current = null;
@@ -481,10 +694,30 @@ export default function ScanARKitScreen() {
           setJointAngles(next);
         }
 
+        // Log pose sample for ML modeling (only when tracking is active)
+        if (next && isTracking) {
+          const currentPhase = detectionMode === 'pullup' ? pullUpPhase : pushUpPhase;
+          const currentReps = detectionMode === 'pullup' ? repCount : pushUpReps;
+          
+          logPoseSample({
+            sessionId: sessionIdRef.current,
+            frameTimestamp: pose.timestamp,
+            exerciseMode: detectionMode,
+            phase: currentPhase,
+            repNumber: currentReps,
+            angles: next,
+            fpsAtCapture: fps,
+          }).catch((error) => {
+            if (__DEV__) {
+              console.warn('[ScanARKit] Failed to log pose sample', error);
+            }
+          });
+        }
+
         const avgElbow = (next.leftElbow + next.rightElbow) / 2;
         const avgShoulder = (next.leftShoulder + next.rightShoulder) / 2;
         const head = get('head') ?? neck;
-        let headToHand: number | null = null;
+        let headToHand: number | undefined;
         if (head?.isTracked && lw?.isTracked && rw?.isTracked) {
           headToHand = head.y - (lw.y + rw.y) / 2;
         }
@@ -527,7 +760,7 @@ export default function ScanARKitScreen() {
             wristsTracked: !!(lw?.isTracked && rw?.isTracked),
           };
           setPushUpMetrics(pushMetrics);
-          updatePushUpCycle(pushMetrics);
+          updatePushUpCycle(next, pushMetrics);
         }
       } else {
         setPullUpMetrics(null);
@@ -554,6 +787,9 @@ export default function ScanARKitScreen() {
         });
       }
       setFps(newFps);
+      fpsStatsRef.current.count += 1;
+      fpsStatsRef.current.sum += newFps;
+      fpsStatsRef.current.min = Math.min(fpsStatsRef.current.min, newFps);
       frameStatsRef.current = { lastTimestamp: pose.timestamp, frameCount: 0 };
     }
     // DEV is a stable constant; pullUpMetrics would cause infinite loop (read + set in same effect)
@@ -777,6 +1013,12 @@ export default function ScanARKitScreen() {
       return messages;
     }
 
+    //TODO 
+    //Expand up phase prompts to have them be dynamic and reactive to visuals
+    //Idle should be a little bit more in depth so it should be like arms shoulder width apart 
+    //Need better cues eg. imagine breaking a pencil behind back(lat pulldown ), keep back straight (squats), keep back arched + reverse J movement + squeeze at top (bench press), 
+    //
+
     const phasePrompts: Record<PullUpPhase, string> = {
       idle: 'Get set beneath the bar and brace your core.',
       hang: 'Engage your shoulders before you start the pull.',
@@ -793,11 +1035,11 @@ export default function ScanARKitScreen() {
 
     const { avgElbow, avgShoulder } = pullUpMetrics;
 
-    if (pullUpPhase === 'hang' && avgElbow < PULL_UP_THRESHOLDS.hang - 5) {
+    if (pullUpPhase === 'hang' && avgElbow < PULLUP_THRESHOLDS.hang - 5) {
       messages.push('Fully extend your arms before the next rep.');
     }
 
-    if (pullUpPhase === 'top' && avgElbow > PULL_UP_THRESHOLDS.top + 15) {
+    if (pullUpPhase === 'top' && avgElbow > PULLUP_THRESHOLDS.top + 15) {
       messages.push('Pull higher to bring your chin past the bar.');
     }
 
@@ -835,15 +1077,15 @@ export default function ScanARKitScreen() {
       return messages;
     }
 
-    if (pushUpMetrics.hipDrop !== null && pushUpMetrics.hipDrop > PUSH_UP_THRESHOLDS.hipSagMax) {
+    if (pushUpMetrics.hipDrop !== null && pushUpMetrics.hipDrop > PUSHUP_THRESHOLDS.hipSagMax) {
       messages.push('Squeeze glutes to stop hip sag.');
     }
 
-    if (pushUpPhase === 'plank' && pushUpMetrics.avgElbow < PUSH_UP_THRESHOLDS.readyElbow - 5) {
+    if (pushUpPhase === 'plank' && pushUpMetrics.avgElbow < PUSHUP_THRESHOLDS.readyElbow - 5) {
       messages.push('Start from a full lockout to count clean reps.');
     }
 
-    if (pushUpPhase === 'bottom' && pushUpMetrics.avgElbow > PUSH_UP_THRESHOLDS.bottom + 10) {
+    if (pushUpPhase === 'bottom' && pushUpMetrics.avgElbow > PUSHUP_THRESHOLDS.bottom + 10) {
       messages.push('Lower deeper until elbows hit ~90°.');
     }
 
@@ -886,6 +1128,14 @@ export default function ScanARKitScreen() {
       }
       lastSpokenCueRef.current = { cue: primaryCue, timestamp: now };
       speakCue(primaryCue);
+
+      // Track cue for rep logging (if rep is being tracked)
+      if (repStartTsRef.current > 0) {
+        repCuesRef.current.push({
+          type: primaryCue,
+          ts: new Date(now).toISOString(),
+        });
+      }
     }, [primaryCue, audioFeedbackEnabled, speakCue]);
 
     // Watch Connectivity: Listen for commands
@@ -911,61 +1161,6 @@ export default function ScanARKitScreen() {
       sendMessage({ isTracking: !!isTracking, reps: currentReps });
       updateWatchContext({ isTracking: !!isTracking, reps: currentReps });
     }, [isTracking, repCount, pushUpReps, detectionMode]);
-
-    const handleUploadWithMetrics = useCallback(async () => {
-      if (uploading) return;
-      try {
-        const picked = await DocumentPicker.getDocumentAsync({
-          type: 'video/*',
-          copyToCacheDirectory: true,
-          multiple: false,
-        });
-
-        if (picked.canceled || !picked.assets?.length) {
-          return;
-        }
-
-        const asset = picked.assets[0];
-        if (asset.mimeType && !asset.mimeType.toLowerCase().startsWith('video')) {
-          Alert.alert('Invalid file', 'Please select a video file.');
-          return;
-        }
-
-        const info = await FileSystem.getInfoAsync(asset.uri);
-        if (!info.exists) {
-          Alert.alert('Invalid file', 'Selected file is not accessible.');
-          return;
-        }
-        if (info.size && info.size > MAX_UPLOAD_BYTES) {
-          Alert.alert('File too large', 'Max file size is 250MB.');
-          return;
-        }
-
-        if (latestMetricsForUpload.reps === 0) {
-          Alert.alert('No reps detected', 'Track a set to attach metrics before uploading.');
-          return;
-        }
-
-        setUploading(true);
-
-        await uploadWorkoutVideo({
-          fileUri: asset.uri,
-          exercise: detectionMode === 'pullup' ? 'Pull-Up' : 'Push-Up',
-          metrics: latestMetricsForUpload,
-        });
-
-        if (Platform.OS === 'android') {
-          ToastAndroid.show('Uploaded with metrics', ToastAndroid.SHORT);
-        } else {
-          Alert.alert('Uploaded', 'Video saved with metrics attached.');
-        }
-      } catch (error) {
-        console.error('[ScanARKit] Upload failed', error);
-        Alert.alert('Upload failed', error instanceof Error ? error.message : 'Could not upload video.');
-      } finally {
-        setUploading(false);
-      }
-    }, [detectionMode, latestMetricsForUpload, uploading]);
 
     const uploadRecordedVideo = useCallback(async (uri: string) => {
       if (uploading) return;

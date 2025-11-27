@@ -1,4 +1,4 @@
-import { Platform, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { spacing, borderRadius } from './_theme-constants';
 import { tabColors } from './_tab-theme';
 
@@ -173,7 +173,7 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   actionCard: {
-    borderRadius: borderRadius.xxl,
+    borderRadius: borderRadius.xl,
     padding: 20,
     alignItems: 'center',
     borderWidth: 1,
@@ -211,7 +211,7 @@ export const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    borderRadius: borderRadius.xxl,
+    borderRadius: borderRadius.xl,
     padding: 20,
     alignItems: 'center',
     borderWidth: 1,

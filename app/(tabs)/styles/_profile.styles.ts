@@ -22,7 +22,7 @@ export const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   headerCard: {
-    borderRadius: borderRadius.xxl,
+    borderRadius: borderRadius.xl,
     padding: spacing.xl,
     alignItems: 'center',
     borderWidth: 1,
@@ -228,8 +228,8 @@ export const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: '#0F2339',
-    borderTopLeftRadius: borderRadius.xxl,
-    borderTopRightRadius: borderRadius.xxl,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
     padding: 20,
     borderWidth: 1,
     borderColor: tabColors.border,

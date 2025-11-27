@@ -16,6 +16,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -24,6 +25,7 @@ import { deleteVideo, listVideos, VideoWithUrls, uploadWorkoutVideo } from '@/li
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
 import { styles } from './styles/_index.styles';
+import { spacing } from './styles/_theme-constants';
 
 const motivationalMessages = [
   'Sweat now, shine later',
@@ -104,6 +106,7 @@ const coachQuickPrompts = [
 export default function HomeScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const tabBarHeight = useBottomTabBarHeight();
   const { show: showToast } = useToast();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'videos' | 'coach'>('dashboard');
   const [videos, setVideos] = useState<VideoWithUrls[]>([]);
@@ -534,8 +537,11 @@ export default function HomeScreen() {
     </View>
   );
 
+  // Add bottom padding when coach tab is active to keep composer above tab bar
+  const bottomPadding = activeTab === 'coach' ? tabBarHeight + spacing.md : 0;
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: bottomPadding }]}>
       <View style={styles.headerRow}>
         <View style={styles.headerTextContainer}>
           <Text style={styles.title}>Welcome back, {getDisplayName()}!</Text>
