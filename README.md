@@ -1,125 +1,50 @@
 # Form Factor
 
-Form Factor is an iOS-first fitness and health tracking app built with Expo and Supabase. It focuses on fast offline logging of workouts and foods, HealthKit integration, and an experimental ARKit body tracking module. Web is display-focused; Android is planned.
+Form Factor is an iOS-first fitness and health app built with Expo and Supabase. It gives real-time form cues from the phone camera—counting reps, flagging issues (e.g., swing on pull-ups, squat depth), and auto-logging sets—to improve outcomes and reduce injury. It also delivers fast offline workout/food logging, HealthKit-powered trends, video and form capture, and an experimental ARKit body-tracking flow. Web is mostly display-first; Android is planned.
 
-## Configuration Files
+## What it does
+- Auth: Google/Apple OAuth and email/password via Supabase Auth with password reset, session restore, and optional mock user for dev.
+- Tracking: Offline-first foods and workouts using SQLite with sync queue, realtime backfill, conflict handling, and soft delete to Supabase.
+- Health: HealthKit permissions, summaries (steps, HR, weight), trend analysis, and historical bulk sync to Supabase; watch connectivity helpers included.
+- Form & media: ARKit body-tracking tab (pull-up/push-up rep detection, speech cues, Vision Camera overlay), video capture/upload to Supabase Storage, and a feed with signed URLs plus comments.
+- Coach & notifications: AI coach backed by Supabase Edge Function `coach` (OpenAI), push token registration and preferences, and Edge Function `notify` for Expo push delivery.
+- UI/Navigation: Expo Router tabs, NativeWind/Tailwind styling, React Native Paper components; web target is read-only with Playwright smoke coverage.
 
-Tooling configurations such as Babel, Metro, Tailwind, ESLint, Playwright, and the custom `tslib` shim now live in `etc/` to keep the project root clean. The root-level stubs simply re-export the real configs, so existing scripts continue to work without changes.
+## Status and roadmap
+- Implemented: offline foods/workouts, HealthKit summaries/trends, video upload + feed, AI coach, push notification plumbing, Playwright auth flow, Jest unit scaffolding.
+- In progress: ARKit body-tracking polish and metrics upload, broader E2E coverage, telemetry/error-handling hardening.
+- Planned: Android support, richer social/feed interactions, ML recommendations, production push campaigns.
 
-## Project Overview
+## Repository layout
+- `app/`: Expo Router screens (`(auth)`, `(tabs)`, `(modals)`); ARKit scan and dashboard live here.
+- `components/`, `contexts/`, `hooks/`, `lib/`: shared UI, data, services (offline sync, healthkit, notifications, coach/video services).
+- `modules/arkit-body-tracker/`: custom native module for ARKit.
+- `supabase/`: migrations and Edge Functions (`coach`, `notify`), plus storage bucket policies.
+- `scripts/`: env/setup helpers, native build utilities, and repair scripts (UUID fixes, pose plugin, etc.).
+- Tooling configs (Babel, Metro, Tailwind, ESLint, Playwright, custom `tslib` shim) live in `etc/`; root stubs re-export them.
 
-Form Factor helps you:
+## Getting started (local)
+1) Install deps: `bun install`.  
+2) Copy env: `cp .env.example .env.local` (or `./scripts/setup-env.sh`) and fill `EXPO_PUBLIC_SUPABASE_URL/ANON_KEY`, `EXPO_PUBLIC_PUSH_PROJECT_ID`, `EXPO_TOKEN` for EAS builds, plus optional `EXPO_PUBLIC_COACH_FUNCTION` (defaults to `coach`).  
+3) Run Expo: `bun run start` (or `bun run start:devclient`). Platform targets: `bun run ios`, `bun run android`, `bun run web`.  
+4) Variants map to `APP_VARIANT` in `eas.json` (`development`, `preview`, `staging`, `production`).  
+5) Supabase CLI users: set `SUPABASE_*` values from `.env.example` before running migrations or Edge Functions locally.
 
-- Log workouts and foods quickly
-- View health trends from Apple Health (HealthKit)
-- Experiment with on-device form insights (Vision/ARKit)
-- Work reliably offline with automatic Supabase sync
+## Testing and QA
+- Lint/types: `bun run lint`, `bun run check:types`, `bun run check:dead-code`.
+- Unit: `bun run test` (Jest + Testing Library).
+- E2E (web target): `bunx playwright test` (uses Expo web via `etc/playwright.config.ts`).
 
-MVP focus: iOS. Web is display-only. Android planned for when they have paying users.
+## Backend notes
+- Schema: core tables for `foods`, `workouts`, `health_metrics` with RLS; `videos`, `video_comments`, `video_likes`, `video_views`; notification token/preference tables; migrations in `supabase/migrations`.
+- Storage: buckets `videos` (private) and `video-thumbnails` (public) with policies in migration `012_create_video_buckets.sql`.
+- Edge Functions: `coach` (OpenAI-backed, configure `OPENAI_API_KEY`, `COACH_MODEL`, `COACH_MAX_TOKENS`, `COACH_TEMPERATURE`) and `notify` (Expo push; secure with `NOTIFY_SECRET` and service-role key for lookups).
 
-## Current Status
+## Documentation
+- Repo standards and commands: `docs/AGENTS.md`.
+- ARKit: `docs/ARKIT_BODY_TRACKING_GUIDE.md`.
+- HealthKit sync/trends: `docs/HEALTHKIT_SYNC_AND_TRENDS_GUIDE.md` and `docs/HEALTHKIT_SYNC_QUICK_START.md`.
+- Platform-specific/native tips: `docs/PLATFORM_SPECIFIC_CODE_GUIDE.md`, `docs/WATCH_APP_GUIDE.md`.
+- CI/CD and releases: `docs/CI-CD.md`, `docs/TESTFLIGHT_WORKFLOW.md`, `docs/TESTFLIGHT_RELEASE.md`.
 
-- Implemented
-  - Auth: email/password via Supabase Auth.
-  - Offline-first data: SQLite queue/sync for foods and workouts with network detection, retry, and soft-delete.
-  - Health metrics: reads from Apple Health (HealthKit) with a trends dashboard.
-  - Navigation/UI: Expo Router, NativeWind/Tailwind.
-- In progress
-  - ARKit body tracking module and on-device pose insights (Vision/ARKit), iOS only.
-  - E2E testing via Playwright.
-  - Error handling and telemetry polish.
-- Planned
-  - Android support.
-  - Social/feed features and notifications.
-  - Advanced analytics and ML recommendations.
-
-## MVP Features
-
-User Authentication & Authorization
-
-Description: Secure sign-up, login, and password recovery via Supabase Auth. Supabase handles JWT issuance, email templates, and password resets out of the box.
-
-Tech: Expo, @supabase/supabase-js, Supabase Edge Functions (TypeScript), Supabase CLI for migrations
-
-User Registration & Login Screens (iOS-focused)
-
-Description: SwiftUI-inspired UI implemented in React Native (Expo) for registration, login, and forgot-password flows. Tested on local iOS Simulator and physical devices via Expo Go.
-
-Tech: React Navigation, React Native Paper/UI Kit, Expo DevTools
-
-Real-Time Form Feedback
-
-Description: Capture camera frames on-device, run MediaPipe (WASM) or OpenCV.js for pose estimation directly in the Expo JS thread via react-native-vision-camera or Expo Media Library. Overlay skeleton and highlight joint angles (green for correct, red for correction) calibrated for various camera positions.
-
-Tech: react-native-vision-camera, MediaPipe WASM, OpenCV.js modules, device orientation APIs
-
-Workout History & Metrics
-
-Description: Save rep counts, durations, form-score snapshots to Supabase DB with offline caching in Expo SQLite. Automatic sync when network resumes.
-
-Tech: Supabase Database with Row-Level Security, Expo SQLite, Supabase Webhooks for sync acknowledgement
-
-### Offline-First Architecture
-
-Description: Complete offline support with local SQLite database and automatic bidirectional sync with Supabase. Users can add/delete foods and workouts while offline, with changes automatically synced when network is available. Includes Supabase Realtime websockets for live updates across devices.
-
-Features:
-
-- Local SQLite database for instant data access
-- Network detection and automatic sync triggers
-- Supabase Realtime for live cross-device updates
-- Conflict resolution with retry logic
-- Soft-delete strategy for data integrity
-- Sync queue for failed operations
-
-Tech: `expo-sqlite`, `expo-network`, Supabase Realtime, PostgreSQL with RLS
-
-## Architecture Overview
-
-### Frontend (Expo React Native)
-
-Managed Workflow: Single codebase for iOS & web; Android added after MVP.
-
-Camera & ML: react-native-vision-camera + MediaPipe WASM or OpenCV.js on-device inference for low latency.
-
-UI & Navigation: React Navigation (native-stack), React Native Paper for consistent styling.
-
-Local Development: expo start --ios for Simulator; use Xcode workspace for device builds and native module development.
-
-Web: expo start --web renders read-only feeds and dashboards in browser.
-
-### Backend (Supabase)
-
-Auth & Database: Supabase Auth, PostgreSQL with Row-Level Security.
-
-Edge Functions: Supabase Edge Functions (TypeScript) for API routes (posts, form data ingest), notifications, and data validation logic.
-
-Realtime & Storage: Supabase Realtime for feed updates; Supabase Storage for media files.
-
-Migrations & CLI: Use Supabase CLI to manage database schema, seeds, and migrations in CI pipelines.
-
-### Analytics & ML Services (Stretch)
-
-Data Sync to BigQuery: Edge Functions or Supabase Webhooks push to Google Pub/Sub → Dataflow → BigQuery.
-
-Vertex AI Recommendations: Python FastAPI backend on GCP for training/inference; invoked via HTTP from app or Edge Functions.
-
-### Infrastructure & Monitoring
-
-Error Tracking: Sentry (Expo plugin) for runtime errors; LogRocket for session replay.
-
-Performance Monitoring: Expo Performance APIs; New Relic on Edge Functions.
-
-## Platform Focus & Roadmap
-
-Phase 1 (MVP): iOS-first app, offline food/workout logging, HealthKit trends, experimental ARKit body tracking. Web: read-only dashboard.
-
-Phase 2: Android support, expanded analytics, and early social features.
-
-Phase 3: Body composition estimator, deeper integrations (HealthKit, Google Fit), localization, accessibility.
-
-By aligning on Expo’s Managed Workflow for iOS and web and leveraging Supabase’s backend, Form Factor provides a pragmatic foundation for iterative development.
-
-## Contributor Guide
-
-See [`docs/AGENTS.md`](docs/AGENTS.md) for repository guidelines covering project layout, commands, coding standards, and pull request expectations.
+Form Factor stays iOS-first with web as read-only dashboards; Android and richer social features come after MVP stability.
