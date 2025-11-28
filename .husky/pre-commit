@@ -1,5 +1,14 @@
 #!/usr/bin/env sh
 . "$(dirname "$0")/_/husky.sh"
 
+# FAST: Check for merge conflict markers FIRST (instant fail)
+echo "🔍 Checking for merge conflict markers..."
+if git diff --cached --name-only | xargs grep -l '<<<<<<< \|>>>>>>> \|^=======$' 2>/dev/null; then
+    echo "❌ ERROR: Merge conflict markers found in staged files!"
+    echo "Fix conflicts before committing."
+    exit 1
+fi
+echo "✅ No conflict markers found"
+
 echo "🔍 Running lint + type-check before commit..."
 bun run ci:local
