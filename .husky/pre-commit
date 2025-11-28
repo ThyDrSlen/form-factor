@@ -3,10 +3,13 @@
 
 # FAST: Check for merge conflict markers FIRST (instant fail)
 echo "🔍 Checking for merge conflict markers..."
-if git diff --cached --name-only | xargs grep -l '<<<<<<< \|>>>>>>> \|^=======$' 2>/dev/null; then
-    echo "❌ ERROR: Merge conflict markers found in staged files!"
-    echo "Fix conflicts before committing."
-    exit 1
+STAGED_FILES=$(git diff --cached --name-only)
+if [ -n "$STAGED_FILES" ]; then
+    if echo "$STAGED_FILES" | xargs grep -lE '<<<<<<<|>>>>>>>|^=======$' 2>/dev/null; then
+        echo "❌ ERROR: Merge conflict markers found in staged files!"
+        echo "Fix conflicts before committing."
+        exit 1
+    fi
 fi
 echo "✅ No conflict markers found"
 

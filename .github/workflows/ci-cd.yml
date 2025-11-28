@@ -47,6 +47,9 @@ jobs:
       - name: ESLint
         run: bun run lint
 
+      - name: Run unit tests
+        run: bun run test -- --passWithNoTests
+
       - name: Check for unused dependencies
         run: |
           if command -v depcheck >/dev/null 2>&1; then
@@ -325,7 +328,7 @@ jobs:
 
       - name: Run audit-ci
         run: |
-          npx audit-ci --config audit-ci.json || true
+          npx audit-ci --config config/audit-ci.json || true
 
       - name: Check for secrets
         uses: trufflesecurity/trufflehog@main
