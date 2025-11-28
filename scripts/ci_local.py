@@ -175,7 +175,8 @@ def run_job_build_check() -> List[StepResult]:
         warn("EAS config check had issues (may still work in CI)")
     
     return results
-
+#TODO
+#add
 
 def run_job_prebuild() -> List[StepResult]:
     """Job 3: Expo Prebuild & Native Build"""
@@ -252,11 +253,14 @@ def run_job_security() -> List[StepResult]:
     log_job(5, "Security Scan")
     results = []
     
-    # Dependency audit
+    # Dependency audit (mirrors CI)
     log("Running dependency audit...")
-    ok, _ = run("bun pm audit 2>/dev/null || npm audit --audit-level moderate 2>/dev/null || true")
-    results.append(StepResult("Dep audit", Status.PASS if ok else Status.WARN, "Non-blocking"))
-    success("Dependency audit complete")
+    ok, _ = run("bun audit --audit-level moderate")
+    results.append(StepResult("Dep audit", Status.PASS if ok else Status.FAIL))
+    if ok:
+        success("No vulnerabilities found")
+    else:
+        error("Security vulnerabilities detected")
     
     # audit-ci config check
     audit_config = ROOT / "config" / "audit-ci.json"
