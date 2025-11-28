@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabsLayout() {
@@ -8,20 +8,20 @@ export default function TabsLayout() {
   const styles = createStyles(insets);
   
   return (
-    <View style={styles.container}>
-      <Tabs
-        screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: '#4C8CFF',
-          tabBarInactiveTintColor: '#6781A6',
-          tabBarStyle: styles.tabBar,
-          tabBarLabelStyle: styles.tabBarLabel,
-          tabBarItemStyle: styles.tabBarItem,
-          headerStyle: styles.header,
-          headerTitleStyle: styles.headerTitle,
-          headerTitleContainerStyle: styles.headerTitle,
-      }}
-    >
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: '#4C8CFF',
+        tabBarInactiveTintColor: '#6781A6',
+        tabBarStyle: styles.tabBar,
+        tabBarLabelStyle: styles.tabBarLabel,
+        tabBarItemStyle: styles.tabBarItem,
+        headerStyle: styles.header,
+        headerTitleStyle: styles.headerTitle,
+        headerTitleContainerStyle: styles.headerTitle,
+        sceneStyle: styles.container,
+    }}
+  >
         <Tabs.Screen
           name="index"
           options={{
@@ -88,8 +88,7 @@ export default function TabsLayout() {
             ),
           }}
         />
-      </Tabs>
-    </View>
+    </Tabs>
   );
 }
 
