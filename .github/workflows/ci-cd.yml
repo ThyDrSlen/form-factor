@@ -89,8 +89,8 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Verify EAS configuration
-        run: eas build --platform all --profile preview --non-interactive
+      - name: Verify EAS configuration (iOS only)
+        run: eas config --platform ios --profile preview
 
   # Job 3: Preview Build (PR only)
   build-preview:
@@ -127,8 +127,8 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build preview
-        run: eas build --platform all --profile preview --non-interactive
+      - name: Build iOS preview
+        run: eas build --platform ios --profile preview --non-interactive
 
       - name: Comment PR with build info
         uses: actions/github-script@v7
@@ -211,9 +211,8 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-      - name: Build and submit staging
-        run: |
-          eas build --platform all --profile staging --auto-submit --non-interactive
+      - name: Build and submit iOS staging
+        run: eas build --platform ios --profile staging --auto-submit --non-interactive
 
       - name: Deploy OTA update
         run: |
@@ -270,9 +269,8 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-      - name: Build and submit production
-        run: |
-          eas build --platform all --profile production --auto-submit --non-interactive
+      - name: Build and submit iOS production
+        run: eas build --platform ios --profile production --auto-submit --non-interactive
 
       - name: Deploy OTA update
         run: |
@@ -297,7 +295,6 @@ jobs:
             
             ### Build Artifacts
             - iOS: App Store build submitted
-            - Android: Play Store build submitted
             - OTA Update: Deployed to production branch
             
             ---
