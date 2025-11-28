@@ -16,6 +16,11 @@ Pod::Spec.new do |s|
   s.static_framework = true
   s.module_name    = 'arkit_body_tracker'
 
+  s.pod_target_xcconfig = {
+    'DEFINES_MODULE' => 'YES',
+    'SWIFT_COMPILATION_MODE' => 'wholemodule'
+  }
+
   s.dependency 'ExpoModulesCore'
 
   # iOS frameworks required for ARKit body tracking
