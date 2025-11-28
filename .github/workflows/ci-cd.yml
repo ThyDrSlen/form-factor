@@ -197,9 +197,9 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Setup Supabase CLI
-        run: |
-          curl -fsSL https://supabase.com/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
 
       - name: Deploy database changes
         run: |
@@ -214,16 +214,6 @@ jobs:
       - name: Deploy OTA update
         run: |
           eas update --branch staging --message "Staging deployment from ${{ github.sha }}"
-
-      - name: Notify deployment
-        uses: 8398a7/action-slack@v3
-        if: always()
-        with:
-          status: ${{ job.status }}
-          channel: '#deployments'
-          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
 
   # Job 5: Production Deployment
   deploy-production:
@@ -262,9 +252,9 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Setup Supabase CLI
-        run: |
-          curl -fsSL https://supabase.com/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
 
       - name: Deploy database changes
         run: |
@@ -307,16 +297,6 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Notify deployment
-        uses: 8398a7/action-slack@v3
-        if: always()
-        with:
-          status: ${{ job.status }}
-          channel: '#deployments'
-          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
-
   # Job 6: Security Scan
   security:
     name: Security Scan
@@ -337,12 +317,15 @@ jobs:
       - name: Run security audit
         run: |
           bun audit --audit-level moderate
+
+      - name: Run audit-ci
+        run: |
           npx audit-ci --config audit-ci.json || true
 
       - name: Check for secrets
         uses: trufflesecurity/trufflehog@main
         with:
-          path: ./
-          base: main
-          head: HEAD
+          scan: git
+          since_commit: ${{ github.event.before || github.sha }}
+          until_commit: ${{ github.sha }}
           extra_args: --debug --only-verified
