@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 . "$(dirname "$0")/_/husky.sh"
 
-echo "🚀 Running lint + type-check before push..."
-bun run ci:local
+echo "🚀 Running full CI checks before push..."
+python3 scripts/ci_local.py --quick
 
