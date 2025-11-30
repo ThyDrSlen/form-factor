@@ -131,39 +131,24 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Build iOS preview
-        id: eas-build
-        run: |
-          BUILD_OUTPUT=$(eas build --platform ios --profile preview --non-interactive --json 2>/dev/null || echo "[]")
-          echo "build_output=$BUILD_OUTPUT" >> $GITHUB_OUTPUT
-          # Extract build URL if available
-          BUILD_URL=$(echo "$BUILD_OUTPUT" | jq -r '.[0].buildDetailsPageUrl // empty' 2>/dev/null || echo "")
-          echo "build_url=$BUILD_URL" >> $GITHUB_OUTPUT
+        run: eas build --platform ios --profile preview --non-interactive
 
       - name: Comment PR with build info
         uses: actions/github-script@v7
-        if: github.event_name == 'pull_request'
+        if: success() && github.event_name == 'pull_request'
         with:
           script: |
-            const buildUrl = '${{ steps.eas-build.outputs.build_url }}';
-            
-            let comment = `## 📱 iOS Preview Build Started!
-            
-            **Platform:** iOS
-            **Profile:** preview
-            **Commit:** \`${{ github.sha }}\`
-            `;
-            
-            if (buildUrl) {
-              comment += `\n[View Build Details](${buildUrl})`;
-            } else {
-              comment += `\nCheck [EAS Dashboard](https://expo.dev) for build status.`;
-            }
-            
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: comment
+              body: `## 📱 iOS Preview Build Complete!
+            
+            **Platform:** iOS
+            **Profile:** preview
+            **Commit:** \`${{ github.sha }}\`
+            
+            Check [EAS Dashboard](https://expo.dev) for build download.`
             });
 
   # Job 4: Staging Deployment
