@@ -24,13 +24,13 @@ jobs:
       - name: Check build status
         run: |
           # Get latest builds
-          builds=$(eas build:list --limit=5 --json)
+          builds=$(eas build list --limit=5 --json --non-interactive)
           echo "Recent builds:"
           echo "$builds" | jq '.[] | {id: .id, status: .status, platform: .platform, createdAt: .createdAt}'
           
           # Check for failed builds
-          failed_builds=$(echo "$builds" | jq '.[] | select(.status == "FAILED")')
-          if [ "$failed_builds" != "" ]; then
+          failed_builds=$(echo "$builds" | jq '.[] | select(.status == "ERRORED" or .status == "CANCELED")')
+          if [ -n "$failed_builds" ]; then
             echo "❌ Found failed builds!"
             echo "$failed_builds"
             exit 1
