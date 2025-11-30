@@ -14,9 +14,12 @@ Pod::Spec.new do |s|
   s.swift_version  = '5.4'
   s.source         = { :path => '.' }
   s.module_name    = 'arkit_body_tracker'
+  s.static_framework = true
 
   s.pod_target_xcconfig = {
-    'DEFINES_MODULE' => 'YES'
+    'DEFINES_MODULE' => 'YES',
+    'SWIFT_COMPILATION_MODE' => 'wholemodule',
+    'BUILD_LIBRARY_FOR_DISTRIBUTION' => 'YES'
   }
 
   s.dependency 'ExpoModulesCore'
@@ -24,11 +27,10 @@ Pod::Spec.new do |s|
   # iOS frameworks required for ARKit body tracking
   s.frameworks = 'ARKit', 'RealityKit', 'AVFoundation', 'UIKit'
 
-  # Swift source files
-  s.source_files = "ios/**/*.{h,m,swift}"
-  s.exclude_files = [
-    "ios/**/*Tests.swift",
-    "ios/ARKitTest.swift"
+  # Swift source files - explicit paths for EAS build compatibility
+  s.source_files = [
+    "ios/ARKitBodyTrackerModule.swift",
+    "ios/ARKitBodyView.swift"
   ]
 
   # Preserve the podspec for autolinking
