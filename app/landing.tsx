@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.ink,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 999,
+    borderRadius: 990,
   },
   navCTAText: {
     color: '#ffffff',
@@ -377,7 +377,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#e5efff',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 999,
+    borderRadius: 990,
   },
   eyebrowText: {
     color: colors.brand,
@@ -401,7 +401,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   ctaButton: {
-    borderRadius: 999,
+    borderRadius: 990,
     paddingVertical: 12,
     paddingHorizontal: 18,
   },
@@ -447,7 +447,7 @@ const styles = StyleSheet.create({
   dividerDot: {
     height: 5,
     width: 5,
-    borderRadius: 999,
+    borderRadius: 990,
     backgroundColor: '#c4cfe5',
   },
   heroMock: {
@@ -650,7 +650,7 @@ const styles = StyleSheet.create({
   bulletDot: {
     height: 8,
     width: 8,
-    borderRadius: 999,
+    borderRadius: 990,
     backgroundColor: colors.brand,
     marginTop: 6,
   },
@@ -721,7 +721,7 @@ const styles = StyleSheet.create({
   },
   tagPill: {
     backgroundColor: '#12355f',
-    borderRadius: 999,
+    borderRadius: 990,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderWidth: 1,
@@ -768,7 +768,7 @@ const styles = StyleSheet.create({
   },
   badgeCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 999,
+    borderRadius: 990,
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderWidth: 1,
@@ -812,7 +812,7 @@ const styles = StyleSheet.create({
   },
   roadmapChip: {
     backgroundColor: '#0f2746',
-    borderRadius: 999,
+    borderRadius: 990,
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderWidth: 1,
