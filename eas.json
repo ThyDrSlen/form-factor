@@ -57,11 +57,11 @@
   "submit": {
     "staging": {
       "android": { "track": "internal", "releaseStatus": "draft" },
-      "ios": { "appleTeamId": "NCTLNFGC6G" }
+      "ios": { "appleTeamId": "NCTLNFGC6G", "ascAppId": "675470330" }
     },
     "production": {
       "android": { "track": "production", "releaseStatus": "draft" },
-      "ios": { "appleTeamId": "NCTLNFGC6G" }
+      "ios": { "appleTeamId": "NCTLNFGC6G", "ascAppId": "675470330" }
     }
   }
 }
