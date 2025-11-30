@@ -105,6 +105,56 @@ def check_tool(name: str, cmd: str) -> bool:
     return result.returncode == 0
 
 
+def run_job_conflict_markers() -> List[StepResult]:
+    """Job 0: Check for merge conflict markers - MUST run first."""
+    log_job(0, "Merge Conflict Marker Check")
+    results = []
+    
+    log("Scanning for merge conflict markers...")
+    
+    # Patterns that indicate unresolved merge conflicts
+    conflict_patterns = [
+        r'<<<<<<<',
+        r'>>>>>>>',
+        r'^=======$',  # Exact match for separator line
+    ]
+    
+    # File extensions to check (skip binary, node_modules, etc.)
+    extensions = [
+        '*.ts', '*.tsx', '*.js', '*.jsx', '*.json', '*.yml', '*.yaml',
+        '*.md', '*.css', '*.html', '*.swift', '*.m', '*.h', '*.sql'
+    ]
+    
+    # Build grep command
+    include_flags = ' '.join([f'--include="{ext}"' for ext in extensions])
+    exclude_flags = '--exclude-dir=node_modules --exclude-dir=.git --exclude-dir=ios --exclude-dir=android --exclude-dir=.expo'
+    
+    found_conflicts = []
+    
+    for pattern in conflict_patterns:
+        cmd = f'grep -rn "{pattern}" {include_flags} {exclude_flags} . 2>/dev/null || true'
+        ok, output = run(cmd, capture=True)
+        if output.strip():
+            found_conflicts.append(output.strip())
+    
+    if found_conflicts:
+        error("MERGE CONFLICT MARKERS FOUND!")
+        error("The following files contain unresolved merge conflicts:")
+        print()
+        for conflict in found_conflicts:
+            for line in conflict.split('\n'):
+                if line.strip():
+                    print(f"  {Colors.RED}{line}{Colors.NC}")
+        print()
+        error("Fix these conflicts before committing/pushing!")
+        results.append(StepResult("Conflict markers", Status.FAIL, "Unresolved conflicts found"))
+    else:
+        success("No merge conflict markers found")
+        results.append(StepResult("Conflict markers", Status.PASS))
+    
+    return results
+
+
 def run_job_quality() -> List[StepResult]:
     """Job 1: Code Quality & Testing (mirrors 'quality' job in CI)"""
     log_job(1, "Code Quality & Testing")
@@ -175,8 +225,7 @@ def run_job_build_check() -> List[StepResult]:
         warn("EAS config check had issues (may still work in CI)")
     
     return results
-#TODO
-#add
+
 
 def run_job_prebuild() -> List[StepResult]:
     """Job 3: Expo Prebuild & Native Build"""
@@ -357,6 +406,13 @@ Examples:
     print(f"{Colors.NC}")
     
     all_results: List[StepResult] = []
+    
+    # Job 0: Conflict marker check (MUST pass before anything else)
+    all_results.extend(run_job_conflict_markers())
+    if any(r.status == Status.FAIL for r in all_results):
+        error("Merge conflict markers detected - fix before continuing!")
+        print_summary(all_results)
+        sys.exit(1)
     
     # Job 1: Quality
     all_results.extend(run_job_quality())
