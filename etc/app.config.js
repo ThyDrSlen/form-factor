@@ -81,7 +81,7 @@ const baseConfig = {
     bundleIdentifier: 'com.slenthekid.formfactoreas',
     supportsTablet: true,
     icon: './assets/images/ff-logo.png',
-    buildNumber: '1',
+    buildNumber: '2',
     appleTeamId: 'NCTLNFGC6G',
     infoPlist: {
       NSHealthShareUsageDescription: 'This app reads your health data to show activity insights.',
