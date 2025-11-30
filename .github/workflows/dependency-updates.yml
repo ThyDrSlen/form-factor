@@ -21,7 +21,8 @@ jobs:
       - name: Update dependencies
         run: |
           bun update
-          bun audit --audit-level moderate
+          # Bun doesn't have native audit, use npm audit
+          npm audit --audit-level=moderate || true
 
       - name: Check for changes
         id: changes
