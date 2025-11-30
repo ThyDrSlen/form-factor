@@ -20,8 +20,8 @@ export default function TabsLayout() {
           headerStyle: styles.header,
           headerTitleStyle: styles.headerTitle,
           headerTitleContainerStyle: styles.headerTitle,
-      }}
-    >
+        }}
+      >
         <Tabs.Screen
           name="index"
           options={{

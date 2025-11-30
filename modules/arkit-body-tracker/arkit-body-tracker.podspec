@@ -10,18 +10,29 @@ Pod::Spec.new do |s|
   s.license        = package['license']
   s.author         = package['author']
   s.homepage       = package['homepage'] || 'https://github.com/slenthekid/form-factor'
-  s.platform       = :ios, '13.0'
+  s.platforms      = { :ios => '14.0' }
   s.swift_version  = '5.4'
-  s.source         = { git: '' }
-  s.static_framework = true
+  s.source         = { :path => '.' }
   s.module_name    = 'arkit_body_tracker'
+  s.static_framework = true
+
+  s.pod_target_xcconfig = {
+    'DEFINES_MODULE' => 'YES',
+    'SWIFT_COMPILATION_MODE' => 'wholemodule',
+    'BUILD_LIBRARY_FOR_DISTRIBUTION' => 'YES'
+  }
 
   s.dependency 'ExpoModulesCore'
 
-  # Swift source files
-  s.source_files = "ios/**/*.{h,m,swift}"
-  s.exclude_files = [
-    "ios/**/*Tests.swift",
-    "ios/ARKitTest.swift"
+  # iOS frameworks required for ARKit body tracking
+  s.frameworks = 'ARKit', 'RealityKit', 'AVFoundation', 'UIKit'
+
+  # Swift source files - explicit paths for EAS build compatibility
+  s.source_files = [
+    "ios/ARKitBodyTrackerModule.swift",
+    "ios/ARKitBodyView.swift"
   ]
+
+  # Preserve the podspec for autolinking
+  s.preserve_paths = ['*.podspec', 'expo-module.config.json']
 end
