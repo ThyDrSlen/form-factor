@@ -1,7 +1,7 @@
 import './global.css';
 import { Slot, usePathname, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
-import { ActivityIndicator, View, Text as RNText, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, Text as RNText, StyleSheet, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-url-polyfill/auto';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
@@ -65,6 +65,9 @@ function InitialLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const inModalsGroup = pathname.startsWith('/(modals)');
+  const publicRoutes = ['/landing'];
+  const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+  const isWebRootLanding = Platform.OS === 'web' && pathname === '/';
 
   useEffect(() => {
     if (loading) {
@@ -81,6 +84,12 @@ function InitialLayout() {
       inModalsGroup,
       currentPath: segments.join('/'),
     });
+
+    if (!user && isWebRootLanding) {
+      console.log('[Layout] Web root detected, redirecting to landing');
+      router.replace('/landing');
+      return;
+    }
 
     // If user is signed in but in auth group, redirect to tabs
     if (user && inAuthGroup) {
@@ -99,14 +108,14 @@ function InitialLayout() {
     // Do not force redirect for other signed-in routes (e.g., modals or standalone flows)
 
     // If user is not signed in but not in auth group, redirect to sign-in
-    if (!user && !inAuthGroup) {
+    if (!user && !inAuthGroup && !inModalsGroup && !isPublicRoute) {
       console.log('[Layout] User not signed in, redirecting to sign-in');
       router.replace('/sign-in');
       return;
     }
 
     console.log('[Layout] No redirect needed');
-  }, [user, loading, segments, inAuthGroup, inTabsGroup, inModalsGroup, pathname, router]);
+  }, [user, loading, segments, inAuthGroup, inTabsGroup, inModalsGroup, isPublicRoute, isWebRootLanding, pathname, router]);
 
   if (loading) {
     return (

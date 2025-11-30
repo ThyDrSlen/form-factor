@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function RootRedirect() {
@@ -9,6 +9,12 @@ export default function RootRedirect() {
 
   useEffect(() => {
     if (loading) return;
+
+    if (Platform.OS === 'web' && !user) {
+      console.log('[RootRedirect] Web visitor, redirecting to landing');
+      router.replace('/landing');
+      return;
+    }
 
     if (user) {
       // User is signed in, redirect to tabs

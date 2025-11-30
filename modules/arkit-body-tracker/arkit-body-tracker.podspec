@@ -13,12 +13,10 @@ Pod::Spec.new do |s|
   s.platforms      = { :ios => '14.0' }
   s.swift_version  = '5.4'
   s.source         = { :path => '.' }
-  s.static_framework = true
   s.module_name    = 'arkit_body_tracker'
 
   s.pod_target_xcconfig = {
-    'DEFINES_MODULE' => 'YES',
-    'SWIFT_COMPILATION_MODE' => 'wholemodule'
+    'DEFINES_MODULE' => 'YES'
   }
 
   s.dependency 'ExpoModulesCore'
