@@ -23,6 +23,7 @@ const baseConfig = {
   updates: {
     enabled: false,
     fallbackToCacheTimeout: 0,
+    url: 'https://u.expo.dev/7337bf10-81b2-41f2-b8e7-047610a7a7e5',
   },
   name: 'Form Factor',
   jsEngine: 'hermes',
