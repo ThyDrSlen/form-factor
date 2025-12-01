@@ -39,7 +39,7 @@ const baseConfig = {
     [
       'react-native-health',
       {
-        healthSharePermission: 'We read your step count and heart rate to display insights on your dashboard.',
+        healthSharePermission: 'We read steps, heart rate (including resting and variability), VO2 Max, sleep, respiratory rate, walking HR, cardio metrics, and sex/birth year to surface recovery and training insights.',
         healthUpdatePermission: 'We write selected health metrics only when you explicitly enable it.',
         isClinicalDataEnabled: true,
         healthClinicalDescription: 'We access clinical health records (e.g., labs and immunizations) to enhance your health insights.',
@@ -81,10 +81,10 @@ const baseConfig = {
     bundleIdentifier: 'com.slenthekid.formfactoreas',
     supportsTablet: true,
     icon: './assets/images/ff-logo.png',
-    buildNumber: '2',
+    // buildNumber is managed remotely via appVersionSource: "remote" in eas.json
     appleTeamId: 'NCTLNFGC6G',
     infoPlist: {
-      NSHealthShareUsageDescription: 'This app reads your health data to show activity insights.',
+      NSHealthShareUsageDescription: 'This app reads steps, heart rate (resting and variability), VO2 Max, sleep, respiratory rate, walking HR, cardio metrics, and sex/birth year to tailor recovery and training insights.',
       NSHealthUpdateUsageDescription: 'This app writes health data to record your activity.',
       NSCameraUsageDescription: 'We need camera access to scan your form and provide skeleton tracking.',
       NSMicrophoneUsageDescription: 'Optional: for recording workout videos',

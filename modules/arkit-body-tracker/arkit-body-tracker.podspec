@@ -18,8 +18,7 @@ Pod::Spec.new do |s|
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
-    'SWIFT_COMPILATION_MODE' => 'wholemodule',
-    'BUILD_LIBRARY_FOR_DISTRIBUTION' => 'YES'
+    'SWIFT_COMPILATION_MODE' => 'wholemodule'
   }
 
   s.dependency 'ExpoModulesCore'
