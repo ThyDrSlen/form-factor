@@ -25,6 +25,18 @@ function toApplePermissions(types: HealthDataType[]): AppleHealthPermission[] {
     bodyMass: Permissions.BodyMass,
     height: Permissions.Height,
     workouts: Permissions.Workout,
+    biologicalSex: Permissions.BiologicalSex,
+    dateOfBirth: Permissions.DateOfBirth,
+    respiratoryRate: Permissions.RespiratoryRate,
+    walkingHeartRateAverage: Permissions.WalkingHeartRateAverage,
+    distanceWalkingRunning: Permissions.DistanceWalkingRunning,
+    distanceCycling: Permissions.DistanceCycling,
+    distanceSwimming: Permissions.DistanceSwimming,
+    workoutRoute: Permissions.WorkoutRoute,
+    restingHeartRate: Permissions.RestingHeartRate,
+    heartRateVariability: Permissions.HeartRateVariability,
+    vo2Max: Permissions.Vo2Max,
+    sleepAnalysis: Permissions.SleepAnalysis,
   };
 
   const uniqueTypes = Array.from(new Set(types));

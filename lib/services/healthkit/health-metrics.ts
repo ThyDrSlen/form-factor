@@ -6,6 +6,8 @@ export interface HealthMetricPoint {
   value: number;
 }
 
+export type BiologicalSex = 'female' | 'male' | 'other' | 'unknown';
+
 export function parseNumeric(value: unknown): number | null {
   // Treat null/undefined as missing data instead of coercing to 0.
   if (value == null) {
@@ -84,6 +86,250 @@ export function ensureContinuousHistory(points: HealthMetricPoint[], range: { st
   }
 
   return days;
+}
+
+function buildRangeOptions(days: number) {
+  const range = buildDateRange(days);
+  return {
+    range,
+    startDate: range.start.toISOString(),
+    endDate: range.end.toISOString(),
+  };
+}
+
+function aggregateDaily(
+  results: any[],
+  aggregate: 'sum' | 'average',
+  defaultValue: number | null = null
+): HealthMetricPoint[] {
+  const byDay = new Map<number, number[]>();
+  results.forEach((item) => {
+    const date = normalizeDay(item?.startDate ?? item?.endDate);
+    const value = extractSampleValue(item);
+    if (date == null || value == null) return;
+    const arr = byDay.get(date) ?? [];
+    arr.push(value);
+    byDay.set(date, arr);
+  });
+
+  const points: HealthMetricPoint[] = [];
+  Array.from(byDay.entries()).forEach(([date, values]) => {
+    if (aggregate === 'sum') {
+      points.push({ date, value: values.reduce((sum, v) => sum + v, 0) });
+    } else if (values.length > 0) {
+      const avg = values.reduce((sum, v) => sum + v, 0) / values.length;
+      points.push({ date, value: Number(avg.toFixed(2)) });
+    }
+  });
+  return points.sort((a, b) => a.date - b.date);
+}
+
+export async function getBiologicalSexAsync(): Promise<BiologicalSex | null> {
+  return new Promise((resolve) => {
+    try {
+      const healthKit = getHealthKitModule();
+      if (typeof healthKit?.getBiologicalSex !== 'function') {
+        resolve(null);
+        return;
+      }
+
+      healthKit.getBiologicalSex({}, (_err: any, result: any) => {
+        const sex = typeof result?.value === 'string' ? result.value : null;
+        resolve(sex as BiologicalSex | null);
+      });
+    } catch (_e) {
+      resolve(null);
+    }
+  });
+}
+
+export async function getDateOfBirthAsync(): Promise<{ birthDate: string | null; age: number | null }> {
+  return new Promise((resolve) => {
+    try {
+      const healthKit = getHealthKitModule();
+      if (typeof healthKit?.getDateOfBirth !== 'function') {
+        resolve({ birthDate: null, age: null });
+        return;
+      }
+
+      healthKit.getDateOfBirth({}, (_err: any, result: any) => {
+        const birthDate = typeof result?.value === 'string' ? result.value : null;
+        const age = parseNumeric(result?.age);
+        resolve({ birthDate, age: age != null ? Math.floor(age) : null });
+      });
+    } catch (_e) {
+      resolve({ birthDate: null, age: null });
+    }
+  });
+}
+
+export async function getRespiratoryRateHistoryAsync(days = 14): Promise<HealthMetricPoint[]> {
+  return new Promise((resolve) => {
+    try {
+      const healthKit = getHealthKitModule();
+      if (typeof healthKit?.getRespiratoryRateSamples !== 'function') {
+        resolve([]);
+        return;
+      }
+      const { startDate, endDate } = buildRangeOptions(days);
+      const options = { startDate, endDate, unit: 'count/min', ascending: true } as const;
+      healthKit.getRespiratoryRateSamples(options as any, (_err: any, results: any) => {
+        if (!Array.isArray(results)) {
+          resolve([]);
+          return;
+        }
+        resolve(aggregateDaily(results, 'average'));
+      });
+    } catch (_e) {
+      resolve([]);
+    }
+  });
+}
+
+export async function getWalkingHeartRateAverageHistoryAsync(days = 14): Promise<HealthMetricPoint[]> {
+  return new Promise((resolve) => {
+    try {
+      const healthKit = getHealthKitModule();
+      if (typeof healthKit?.getWalkingHeartRateAverage !== 'function') {
+        resolve([]);
+        return;
+      }
+      const { startDate, endDate } = buildRangeOptions(days);
+      const options = { startDate, endDate, unit: 'bpm', ascending: true } as const;
+      healthKit.getWalkingHeartRateAverage(options as any, (_err: any, results: any) => {
+        if (!Array.isArray(results)) {
+          resolve([]);
+          return;
+        }
+        resolve(aggregateDaily(results, 'average'));
+      });
+    } catch (_e) {
+      resolve([]);
+    }
+  });
+}
+
+export async function getActiveEnergyHistoryAsync(days = 14): Promise<HealthMetricPoint[]> {
+  return new Promise((resolve) => {
+    try {
+      const healthKit = getHealthKitModule();
+      if (typeof healthKit?.getActiveEnergyBurned !== 'function') {
+        resolve([]);
+        return;
+      }
+      const { startDate, endDate } = buildRangeOptions(days);
+      const options = { startDate, endDate, includeManuallyAdded: false, ascending: true } as const;
+      healthKit.getActiveEnergyBurned(options as any, (_err: any, results: any) => {
+        if (!Array.isArray(results)) {
+          resolve([]);
+          return;
+        }
+        const aggregated = aggregateDaily(results, 'sum', 0).map((p) => ({ ...p, value: Math.max(0, Number(p.value.toFixed(1))) }));
+        resolve(aggregated);
+      });
+    } catch (_e) {
+      resolve([]);
+    }
+  });
+}
+
+export async function getBasalEnergyHistoryAsync(days = 14): Promise<HealthMetricPoint[]> {
+  return new Promise((resolve) => {
+    try {
+      const healthKit = getHealthKitModule();
+      if (typeof healthKit?.getBasalEnergyBurned !== 'function') {
+        resolve([]);
+        return;
+      }
+      const { startDate, endDate } = buildRangeOptions(days);
+      const options = { startDate, endDate, includeManuallyAdded: false, ascending: true } as const;
+      healthKit.getBasalEnergyBurned(options as any, (_err: any, results: any) => {
+        if (!Array.isArray(results)) {
+          resolve([]);
+          return;
+        }
+        const aggregated = aggregateDaily(results, 'sum', 0).map((p) => ({ ...p, value: Math.max(0, Number(p.value.toFixed(1))) }));
+        resolve(aggregated);
+      });
+    } catch (_e) {
+      resolve([]);
+    }
+  });
+}
+
+export async function getDistanceWalkingRunningHistoryAsync(days = 14): Promise<HealthMetricPoint[]> {
+  return new Promise((resolve) => {
+    try {
+      const healthKit = getHealthKitModule();
+      const method = healthKit?.getDailyDistanceWalkingRunningSamples ?? healthKit?.getDistanceWalkingRunning;
+      if (typeof method !== 'function') {
+        resolve([]);
+        return;
+      }
+      const { startDate, endDate } = buildRangeOptions(days);
+      const options = { startDate, endDate, unit: 'meter', includeManuallyAdded: false, ascending: true } as const;
+      method.call(healthKit, options as any, (_err: any, results: any) => {
+        if (!Array.isArray(results)) {
+          resolve([]);
+          return;
+        }
+        const aggregated = aggregateDaily(results, 'sum', 0).map((p) => ({ ...p, value: Math.max(0, Number(p.value.toFixed(1))) }));
+        resolve(aggregated);
+      });
+    } catch (_e) {
+      resolve([]);
+    }
+  });
+}
+
+export async function getDistanceCyclingHistoryAsync(days = 14): Promise<HealthMetricPoint[]> {
+  return new Promise((resolve) => {
+    try {
+      const healthKit = getHealthKitModule();
+      const method = healthKit?.getDailyDistanceCyclingSamples ?? healthKit?.getDistanceCycling;
+      if (typeof method !== 'function') {
+        resolve([]);
+        return;
+      }
+      const { startDate, endDate } = buildRangeOptions(days);
+      const options = { startDate, endDate, unit: 'meter', includeManuallyAdded: false, ascending: true } as const;
+      method.call(healthKit, options as any, (_err: any, results: any) => {
+        if (!Array.isArray(results)) {
+          resolve([]);
+          return;
+        }
+        const aggregated = aggregateDaily(results, 'sum', 0).map((p) => ({ ...p, value: Math.max(0, Number(p.value.toFixed(1))) }));
+        resolve(aggregated);
+      });
+    } catch (_e) {
+      resolve([]);
+    }
+  });
+}
+
+export async function getDistanceSwimmingHistoryAsync(days = 14): Promise<HealthMetricPoint[]> {
+  return new Promise((resolve) => {
+    try {
+      const healthKit = getHealthKitModule();
+      const method = healthKit?.getDailyDistanceSwimmingSamples ?? healthKit?.getDistanceSwimming;
+      if (typeof method !== 'function') {
+        resolve([]);
+        return;
+      }
+      const { startDate, endDate } = buildRangeOptions(days);
+      const options = { startDate, endDate, unit: 'meter', includeManuallyAdded: false, ascending: true } as const;
+      method.call(healthKit, options as any, (_err: any, results: any) => {
+        if (!Array.isArray(results)) {
+          resolve([]);
+          return;
+        }
+        const aggregated = aggregateDaily(results, 'sum', 0).map((p) => ({ ...p, value: Math.max(0, Number(p.value.toFixed(1))) }));
+        resolve(aggregated);
+      });
+    } catch (_e) {
+      resolve([]);
+    }
+  });
 }
 
 export async function getStepCountForTodayAsync(): Promise<number> {

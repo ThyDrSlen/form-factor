@@ -13,7 +13,19 @@ export type HealthDataType =
   | 'stepCount'
   | 'bodyMass'
   | 'height'
-  | 'workouts';
+  | 'workouts'
+  | 'biologicalSex'
+  | 'dateOfBirth'
+  | 'respiratoryRate'
+  | 'walkingHeartRateAverage'
+  | 'distanceWalkingRunning'
+  | 'distanceCycling'
+  | 'distanceSwimming'
+  | 'workoutRoute'
+  | 'restingHeartRate'
+  | 'heartRateVariability'
+  | 'vo2Max'
+  | 'sleepAnalysis';
 
 export interface HealthPermissionStatus {
   isAvailable: boolean;
