@@ -24,7 +24,7 @@ jobs:
       - name: Check build status
         run: |
           # Get latest builds
-          builds=$(eas build list --limit=5 --json --non-interactive)
+          builds=$(eas build:list --limit=5 --json --non-interactive)
           echo "Recent builds:"
           echo "$builds" | jq '.[] | {id: .id, status: .status, platform: .platform, createdAt: .createdAt}'
           
