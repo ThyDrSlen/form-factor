@@ -8,7 +8,17 @@ import {
   getLatestBodyMassKgAsync,
   getStepHistoryAsync,
   getWeightHistoryAsync,
+  getRespiratoryRateHistoryAsync,
+  getWalkingHeartRateAverageHistoryAsync,
+  getActiveEnergyHistoryAsync,
+  getBasalEnergyHistoryAsync,
+  getDistanceWalkingRunningHistoryAsync,
+  getDistanceCyclingHistoryAsync,
+  getDistanceSwimmingHistoryAsync,
+  getBiologicalSexAsync,
+  getDateOfBirthAsync,
   type HealthMetricPoint,
+  type BiologicalSex,
 } from '@/lib/services/healthkit/health-metrics';
 import { analyzeWeightTrends, type WeightAnalysis } from '@/lib/services/healthkit/weight-trends';
 import { 
@@ -37,9 +47,19 @@ interface HealthKitContextValue {
   weightHistory30Days: HealthMetricPoint[];
   weightHistory90Days: HealthMetricPoint[];
   weightHistory180Days: HealthMetricPoint[];
+  respiratoryRateHistory: HealthMetricPoint[];
+  walkingHeartRateAvgHistory: HealthMetricPoint[];
+  activeEnergyHistory: HealthMetricPoint[];
+  basalEnergyHistory: HealthMetricPoint[];
+  distanceWalkingRunningHistory: HealthMetricPoint[];
+  distanceCyclingHistory: HealthMetricPoint[];
+  distanceSwimmingHistory: HealthMetricPoint[];
   weightAnalysis: WeightAnalysis | null;
   dataSource: 'healthkit' | 'supabase' | 'none';
   lastUpdatedAt: number | null;
+  biologicalSex: BiologicalSex | null;
+  ageYears: number | null;
+  birthDate: string | null;
   enableHighFrequency: () => void;
   disableHighFrequency: () => void;
   refreshWeightAnalysis: () => Promise<void>;
@@ -54,7 +74,27 @@ interface HealthKitContextValue {
 const HealthKitContext = createContext<HealthKitContextValue | undefined>(undefined);
 
 const DEFAULT_PERMISSIONS: HealthKitPermissions = {
-  read: ['heartRate', 'activeEnergyBurned', 'basalEnergyBurned', 'stepCount', 'bodyMass', 'height', 'workouts'],
+  read: [
+    'heartRate',
+    'restingHeartRate',
+    'heartRateVariability',
+    'vo2Max',
+    'sleepAnalysis',
+    'biologicalSex',
+    'dateOfBirth',
+    'respiratoryRate',
+    'walkingHeartRateAverage',
+    'distanceWalkingRunning',
+    'distanceCycling',
+    'distanceSwimming',
+    'workoutRoute',
+    'activeEnergyBurned',
+    'basalEnergyBurned',
+    'stepCount',
+    'bodyMass',
+    'height',
+    'workouts',
+  ],
   write: ['workouts', 'activeEnergyBurned', 'heartRate'],
 };
 
@@ -74,9 +114,19 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const [weightHistory30Days, setWeightHistory30Days] = useState<HealthMetricPoint[]>([]);
   const [weightHistory90Days, setWeightHistory90Days] = useState<HealthMetricPoint[]>([]);
   const [weightHistory180Days, setWeightHistory180Days] = useState<HealthMetricPoint[]>([]);
+  const [respiratoryRateHistory, setRespiratoryRateHistory] = useState<HealthMetricPoint[]>([]);
+  const [walkingHeartRateAvgHistory, setWalkingHeartRateAvgHistory] = useState<HealthMetricPoint[]>([]);
+  const [activeEnergyHistory, setActiveEnergyHistory] = useState<HealthMetricPoint[]>([]);
+  const [basalEnergyHistory, setBasalEnergyHistory] = useState<HealthMetricPoint[]>([]);
+  const [distanceWalkingRunningHistory, setDistanceWalkingRunningHistory] = useState<HealthMetricPoint[]>([]);
+  const [distanceCyclingHistory, setDistanceCyclingHistory] = useState<HealthMetricPoint[]>([]);
+  const [distanceSwimmingHistory, setDistanceSwimmingHistory] = useState<HealthMetricPoint[]>([]);
   const [weightAnalysis, setWeightAnalysis] = useState<WeightAnalysis | null>(null);
   const [dataSource, setDataSource] = useState<'healthkit' | 'supabase' | 'none'>('none');
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [biologicalSex, setBiologicalSex] = useState<BiologicalSex | null>(null);
+  const [ageYears, setAgeYears] = useState<number | null>(null);
+  const [birthDate, setBirthDate] = useState<string | null>(null);
   const lastSyncedSignatureRef = useRef<string | null>(null);
   const highFrequencyRef = useRef<boolean>(false);
   const watchContextSignatureRef = useRef<string | null>(null);
@@ -134,7 +184,23 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         const useHealthKit = Platform.OS === 'ios' && status?.hasReadPermission;
 
         if (useHealthKit) {
-          const [steps, hr, weight, stepsSeries, weightSeries, weightSeries30, weightSeries90, weightSeries180] = await Promise.all([
+          const [
+            steps,
+            hr,
+            weight,
+            stepsSeries,
+            weightSeries,
+            weightSeries30,
+            weightSeries90,
+            weightSeries180,
+            respSeries,
+            walkingHrSeries,
+            activeEnergySeries,
+            basalEnergySeries,
+            distanceWalkRunSeries,
+            distanceCyclingSeries,
+            distanceSwimmingSeries,
+          ] = await Promise.all([
             getStepCountForTodayAsync(),
             getLatestHeartRateAsync(),
             getLatestBodyMassKgAsync(),
@@ -143,6 +209,13 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
             getWeightHistoryAsync(30),
             getWeightHistoryAsync(90),
             getWeightHistoryAsync(180),
+            getRespiratoryRateHistoryAsync(30),
+            getWalkingHeartRateAverageHistoryAsync(30),
+            getActiveEnergyHistoryAsync(30),
+            getBasalEnergyHistoryAsync(30),
+            getDistanceWalkingRunningHistoryAsync(30),
+            getDistanceCyclingHistoryAsync(30),
+            getDistanceSwimmingHistoryAsync(30),
           ]);
           console.log('[HealthKitContext] loadMetrics: results', { steps, hr, weight });
 
@@ -194,6 +267,13 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
                   .map((point) => ({ ...point, value: Number(Math.max(0, point.value).toFixed(1)) }))
               : []
           );
+          setRespiratoryRateHistory(Array.isArray(respSeries) ? respSeries : []);
+          setWalkingHeartRateAvgHistory(Array.isArray(walkingHrSeries) ? walkingHrSeries : []);
+          setActiveEnergyHistory(Array.isArray(activeEnergySeries) ? activeEnergySeries : []);
+          setBasalEnergyHistory(Array.isArray(basalEnergySeries) ? basalEnergySeries : []);
+          setDistanceWalkingRunningHistory(Array.isArray(distanceWalkRunSeries) ? distanceWalkRunSeries : []);
+          setDistanceCyclingHistory(Array.isArray(distanceCyclingSeries) ? distanceCyclingSeries : []);
+          setDistanceSwimmingHistory(Array.isArray(distanceSwimmingSeries) ? distanceSwimmingSeries : []);
           setDataSource('healthkit');
           setLastUpdatedAt(Date.now());
 
@@ -275,6 +355,13 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         setBodyMassKg({ kg: null, timestamp: null });
         setStepHistory([]);
         setWeightHistory([]);
+        setRespiratoryRateHistory([]);
+        setWalkingHeartRateAvgHistory([]);
+        setActiveEnergyHistory([]);
+        setBasalEnergyHistory([]);
+        setDistanceWalkingRunningHistory([]);
+        setDistanceCyclingHistory([]);
+        setDistanceSwimmingHistory([]);
         setDataSource('none');
         setLastUpdatedAt(null);
       } catch (e: any) {
@@ -436,6 +523,36 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
     }
   }, [stepsToday, latestHeartRate?.bpm]);
 
+  // Fetch static characteristics (biological sex, birth date/age) once permissions are granted
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCharacteristics() {
+      if (!(Platform.OS === 'ios' && status?.hasReadPermission)) {
+        setBiologicalSex(null);
+        setAgeYears(null);
+        setBirthDate(null);
+        return;
+      }
+
+      try {
+        const [sex, dob] = await Promise.all([getBiologicalSexAsync(), getDateOfBirthAsync()]);
+        if (cancelled) return;
+        setBiologicalSex(sex);
+        setAgeYears(dob.age);
+        setBirthDate(dob.birthDate);
+      } catch (err) {
+        if (cancelled) return;
+        console.warn('[HealthKitContext] Failed to load characteristics', err);
+      }
+    }
+
+    loadCharacteristics();
+    return () => {
+      cancelled = true;
+    };
+  }, [status?.hasReadPermission]);
+
   const value = useMemo<HealthKitContextValue>(
     () => ({
       isAvailable,
@@ -451,9 +568,19 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
       weightHistory30Days,
       weightHistory90Days,
       weightHistory180Days,
+      respiratoryRateHistory,
+      walkingHeartRateAvgHistory,
+      activeEnergyHistory,
+      basalEnergyHistory,
+      distanceWalkingRunningHistory,
+      distanceCyclingHistory,
+      distanceSwimmingHistory,
       weightAnalysis,
       dataSource,
       lastUpdatedAt,
+      biologicalSex,
+      ageYears,
+      birthDate,
       enableHighFrequency,
       disableHighFrequency,
       refreshWeightAnalysis,
@@ -477,9 +604,19 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
       weightHistory30Days,
       weightHistory90Days,
       weightHistory180Days,
+      respiratoryRateHistory,
+      walkingHeartRateAvgHistory,
+      activeEnergyHistory,
+      basalEnergyHistory,
+      distanceWalkingRunningHistory,
+      distanceCyclingHistory,
+      distanceSwimmingHistory,
       weightAnalysis,
       dataSource,
       lastUpdatedAt,
+      biologicalSex,
+      ageYears,
+      birthDate,
       enableHighFrequency,
       disableHighFrequency,
       refreshWeightAnalysis,
