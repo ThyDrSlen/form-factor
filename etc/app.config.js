@@ -46,6 +46,7 @@ const baseConfig = {
         healthClinicalDescription: 'We access clinical health records (e.g., labs and immunizations) to enhance your health insights.',
       },
     ],
+    './plugins/withARKitBodyTracker.js',
     'expo-font',
     './plugins/withDisableAssetThinning.js',
     [
