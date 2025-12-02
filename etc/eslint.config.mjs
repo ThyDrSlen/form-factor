@@ -20,6 +20,8 @@ export default [
       'import/resolver': {
         typescript: {
           project: path.join(rootDir, 'tsconfig.json'),
+          // Support React Native platform-specific extensions
+          extensions: ['.ios.ts', '.ios.tsx', '.android.ts', '.android.tsx', '.native.ts', '.native.tsx', '.web.ts', '.web.tsx', '.ts', '.tsx', '.js', '.jsx', '.json'],
         },
       },
     },

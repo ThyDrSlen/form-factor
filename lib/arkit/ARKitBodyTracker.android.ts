@@ -1,29 +1,16 @@
 /**
- * ARKit Body Tracking - Base fallback file
+ * ARKit Body Tracking - Default/Fallback implementation
  *
- * WARNING: If this file is being executed on iOS, something is wrong!
- * Metro should resolve to ARKitBodyTracker.ios.ts on iOS.
+ * This file serves as:
+ * 1. ESLint/TypeScript module resolution fallback
+ * 2. Android fallback (ARKit is iOS-only)
  *
- * This file exists for:
- * 1. TypeScript type resolution during development
- * 2. Fallback for unexpected platforms
- *
- * If you see "CRITICAL: Wrong ARKit file loaded" in logs on iOS,
- * there's a Metro bundler configuration issue.
+ * Metro automatically resolves to platform-specific implementations:
+ * - iOS: ARKitBodyTracker.ios.ts (full ARKit implementation)
+ * - Web: ARKitBodyTracker.web.ts (stub)
+ * - Android/Other: This file (stub)
  */
 import * as React from 'react';
-import { Platform } from 'react-native';
-
-// Log a critical warning if this file is loaded on iOS
-if (Platform.OS === 'ios') {
-  console.error('='.repeat(60));
-  console.error('CRITICAL: Wrong ARKit file loaded on iOS!');
-  console.error('Expected: ARKitBodyTracker.ios.ts');
-  console.error('Got: ARKitBodyTracker.ts (fallback)');
-  console.error('This is a Metro bundler resolution bug.');
-  console.error('Try: npx expo start --clear');
-  console.error('='.repeat(60));
-}
 
 export interface Joint3D {
   name: string;
@@ -66,12 +53,10 @@ export interface JointAngles {
 
 /**
  * ARKit Body Tracking API (Fallback Stub)
+ * Returns unsupported for non-iOS platforms
  */
 export class BodyTracker {
   static isSupported(): boolean {
-    if (Platform.OS === 'ios') {
-      console.error('[BodyTracker] WRONG FILE! This is the fallback, not .ios.ts');
-    }
     return false;
   }
 
@@ -132,12 +117,6 @@ export class BodyTracker {
 export function useBodyTracking(_fps: number = 30) {
   const [pose] = React.useState<BodyPose | null>(null);
   const [pose2D] = React.useState<BodyPose2D | null>(null);
-
-  React.useEffect(() => {
-    if (Platform.OS === 'ios') {
-      console.error('[useBodyTracking] WRONG FILE LOADED! Expected .ios.ts');
-    }
-  }, []);
 
   return {
     pose,
