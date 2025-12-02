@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { FoodEntry, useFood } from '../../contexts/FoodContext';
 import { useToast } from '../../contexts/ToastContext';
-import { styles } from './_styles/_food.styles';
+import { styles } from '../../styles/tabs/_food.styles';
 
 const buildFoodShareMessage = (food: FoodEntry): string => {
   const dateLabel = new Date(food.date).toLocaleDateString(undefined, {

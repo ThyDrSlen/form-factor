@@ -33,7 +33,7 @@ import {
   type PushUpMetrics,
 } from '@/lib/workouts';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
-import { styles } from './_styles/_scan-arkit.styles';
+import { styles } from '../../styles/tabs/_scan-arkit.styles';
 
 // Phase and detection mode types are now imported from lib/workouts
 type UploadMetrics =
