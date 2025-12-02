@@ -16,7 +16,6 @@ export default function TabsLayout() {
           tabBarInactiveTintColor: '#6781A6',
           tabBarStyle: styles.tabBar,
           tabBarLabelStyle: styles.tabBarLabel,
-          tabBarItemStyle: styles.tabBarItem,
           headerStyle: styles.header,
           headerTitleStyle: styles.headerTitle,
           headerTitleContainerStyle: styles.headerTitle,
@@ -103,32 +102,11 @@ const createStyles = (insets: ReturnType<typeof useSafeAreaInsets>) =>
     tabBar: {
       backgroundColor: '#0F2339',
       borderTopColor: '#1B2E4A',
-      height: 70 + (Platform.OS === 'ios' ? insets.bottom / 2 : 0),
-      paddingBottom: Platform.OS === 'ios' ? insets.bottom / 2 + 4 : 12,
+      borderTopWidth: 1,
+      height: 64 + insets.bottom,
+      paddingBottom: Math.max(insets.bottom, 12),
       paddingTop: 6,
       elevation: 0,
-      position: 'absolute',
-      paddingHorizontal: 16,
-      ...(Platform.OS === 'web'
-        ? {
-            width: '90%',
-            maxWidth: 600,
-            left: '50%',
-            transform: [{ translateX: '-50%' as any }],
-            borderRadius: 24,
-            bottom: 24,
-            borderTopWidth: 0,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 12,
-          }
-        : {
-            borderTopWidth: 1,
-            bottom: 0,
-            left: 0,
-            right: 0,
-          }),
     },
     tabBarLabel: {
       fontSize: 11,
@@ -139,9 +117,6 @@ const createStyles = (insets: ReturnType<typeof useSafeAreaInsets>) =>
         default: 'sans-serif-medium',
       }),
       marginTop: 4,
-    },
-    tabBarItem: {
-      paddingVertical: 6,
     },
     header: {
       backgroundColor: '#050E1F',
