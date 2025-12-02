@@ -1,5 +1,8 @@
 {
   "name": "arkit-body-tracker",
-  "platforms": []
+  "platforms": ["ios"],
+  "ios": {
+    "modules": ["ARKitBodyTrackerModule"]
+  }
 }
  

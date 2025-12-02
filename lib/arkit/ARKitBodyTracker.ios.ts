@@ -6,20 +6,20 @@
 import { requireNativeModule } from 'expo-modules-core';
 
 // Load native module safely (don't throw during import)
+// NOTE: Logging is enabled in ALL builds to diagnose Release issues
 let ARKitBodyTracker: any = null;
 try {
-  if (__DEV__) console.log('[ARKitBodyTracker] Attempting to load native module...');
+  console.log('[ARKitBodyTracker] Attempting to load native module...');
   ARKitBodyTracker = requireNativeModule('ARKitBodyTracker');
-  if (__DEV__) console.log('[ARKitBodyTracker] Native module loaded successfully:', !!ARKitBodyTracker);
-  if (__DEV__ && ARKitBodyTracker) {
-    console.log('[ARKitBodyTracker] Available methods:', Object.keys(ARKitBodyTracker));
+  console.log('[ARKitBodyTracker] Native module loaded:', !!ARKitBodyTracker);
+  if (ARKitBodyTracker) {
+    console.log('[ARKitBodyTracker] Module methods:', Object.keys(ARKitBodyTracker));
   }
 } catch (e) {
-  console.error('[ARKitBodyTracker] Failed to load native module:', e);
-  if (__DEV__) {
-    // eslint-disable-next-line no-console
-    console.warn('[ARKitBodyTracker] Native module not found. Run `bunx expo prebuild --clean --platform ios && cd ios && pod install`');
-  }
+  // Log in ALL builds so we can diagnose Release issues
+  console.error('[ARKitBodyTracker] FAILED to load native module:', e);
+  console.error('[ARKitBodyTracker] This will cause "Device not supported" error!');
+  console.error('[ARKitBodyTracker] Fix: Run `npx expo prebuild --clean --platform ios`');
 }
 
 /**
@@ -80,22 +80,20 @@ export class BodyTracker {
    * Requires iPhone XS or newer (A12 Bionic chip or later)
    */
   static isSupported(): boolean {
-    if (__DEV__) console.log('[BodyTracker] isSupported() called');
-    if (__DEV__) console.log('[BodyTracker] ARKitBodyTracker module exists:', !!ARKitBodyTracker);
+    // Log in ALL builds to diagnose Release issues
+    console.log('[BodyTracker] isSupported() called');
+    console.log('[BodyTracker] ARKitBodyTracker module exists:', !!ARKitBodyTracker);
     
     if (!ARKitBodyTracker) {
-      if (__DEV__) {
-        console.error('[BodyTracker] Native module not loaded - returning false');
-        console.error('[BodyTracker] This means the module failed to load at import time');
-        console.error('[BodyTracker] You MUST run: bunx expo prebuild --clean --platform ios');
-      }
+      console.error('[BodyTracker] Native module NOT loaded - returning false');
+      console.error('[BodyTracker] This causes "Device not supported" error!');
+      console.error('[BodyTracker] Fix: npx expo prebuild --clean --platform ios');
       return false;
     }
     
-    if (__DEV__) console.log('[BodyTracker] Calling native isSupported()...');
+    console.log('[BodyTracker] Calling native isSupported()...');
     const supported = ARKitBodyTracker.isSupported();
-    if (__DEV__) console.log('[BodyTracker] Native isSupported() returned:', supported);
-    if (__DEV__) console.log('[BodyTracker] Device: iPhone 15 Pro should return TRUE');
+    console.log('[BodyTracker] Native isSupported() returned:', supported);
     
     return supported;
   }
@@ -311,9 +309,31 @@ export function useBodyTracking(fps: number = 30) {
   const poseRef = React.useRef<BodyPose | null>(null);
 
   React.useEffect(() => {
-    // Check support on mount
-    const supported = BodyTracker.isSupported();
-    setIsSupported(supported);
+    // Check support with retry logic for module initialization
+    // Native module may not be immediately available on cold start
+    let retryCount = 0;
+    const maxRetries = 5;
+    const retryDelay = 200; // ms
+
+    const checkSupport = () => {
+      console.log(`[useBodyTracking] Checking support (attempt ${retryCount + 1}/${maxRetries})`);
+      const supported = BodyTracker.isSupported();
+      console.log(`[useBodyTracking] isSupported returned: ${supported}`);
+      
+      if (supported) {
+        setIsSupported(true);
+      } else if (retryCount < maxRetries - 1) {
+        retryCount++;
+        console.log(`[useBodyTracking] Will retry in ${retryDelay}ms...`);
+        setTimeout(checkSupport, retryDelay);
+      } else {
+        console.log('[useBodyTracking] All retries exhausted, device not supported');
+        setIsSupported(false);
+      }
+    };
+
+    // Small delay before first check to allow native modules to initialize
+    setTimeout(checkSupport, 100);
   }, []);
 
   const startTracking = React.useCallback(async () => {

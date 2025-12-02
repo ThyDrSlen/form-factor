@@ -48,7 +48,7 @@ const baseConfig = {
     ],
     './plugins/withARKitBodyTracker.js',
     'expo-font',
-    './plugins/withDisableAssetThinning.js',
+    './plugins/withBuildSettings.js',
     [
       'expo-video',
       {
