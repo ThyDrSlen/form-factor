@@ -16,7 +16,8 @@ jobs:
     steps:
       - name: Skip when EXPO_TOKEN is missing
         if: ${{ env.EXPO_TOKEN == '' }}
-        run: echo "Skipping build status check: EXPO_TOKEN is not set."
+        run: |
+          echo "Skipping build status check: EXPO_TOKEN is not set."
 
       - name: Checkout code
         uses: actions/checkout@v4
