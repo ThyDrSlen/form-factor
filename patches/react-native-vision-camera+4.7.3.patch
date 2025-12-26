@@ -14,6 +14,23 @@ index fbadd52d398e0d690cf887aa992705fcacc8e694..64330f419a3faf917045be354c33f675
  #import <jsi/jsi.h>
  
  using namespace facebook;
+diff --git a/node_modules/react-native-vision-camera/ios/FrameProcessors/VisionCameraInstaller.mm b/node_modules/react-native-vision-camera/ios/FrameProcessors/VisionCameraInstaller.mm
+index f27c043fc6ed75c1bfcaa475815362d9ef29f9bb..e3cab389d4d775ebe5507139d27b69d299ad4229 100644
+--- a/node_modules/react-native-vision-camera/ios/FrameProcessors/VisionCameraInstaller.mm
++++ b/node_modules/react-native-vision-camera/ios/FrameProcessors/VisionCameraInstaller.mm
+@@ -12,6 +12,12 @@
+ #import <React/RCTBridge+Private.h>
+ #import <React/RCTBridge.h>
+ #import <ReactCommon/RCTTurboModuleManager.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ @implementation VisionCameraInstaller
+ 
 diff --git a/node_modules/react-native-vision-camera/ios/FrameProcessors/JSINSObjectConversion.mm b/node_modules/react-native-vision-camera/ios/FrameProcessors/JSINSObjectConversion.mm
 index 5e47d2b2a3dc5f000c673fc6887b20b6d41951b6..24069c03084d9da139c347e11ce4a11b8e9779ab 100644
 --- a/node_modules/react-native-vision-camera/ios/FrameProcessors/JSINSObjectConversion.mm
@@ -46,6 +63,23 @@ index b1a6d321e9753e3d1e0db2709fd7e258b050b69c..dcf8e9ef2a475e528dc125958272186a
  #import <jsi/jsi.h>
  #import <memory>
  
+diff --git a/node_modules/react-native-vision-camera/ios/FrameProcessors/VisionCameraProxy.mm b/node_modules/react-native-vision-camera/ios/FrameProcessors/VisionCameraProxy.mm
+index 565702bafa32cd604615f1f3f0aa6e0f46611786..4590b73a2e45c464ba39f6bd5d3dac4f8765fbc5 100644
+--- a/node_modules/react-native-vision-camera/ios/FrameProcessors/VisionCameraProxy.mm
++++ b/node_modules/react-native-vision-camera/ios/FrameProcessors/VisionCameraProxy.mm
+@@ -16,6 +16,12 @@
+ #import "JSINSObjectConversion.h"
+ #import "VisionCameraProxyHolder.h"
+ #import "WKTJsiWorklet.h"
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ using namespace facebook;
+ 
 diff --git a/node_modules/react-native-vision-camera/ios/FrameProcessors/JSINSObjectConversion.h b/node_modules/react-native-vision-camera/ios/FrameProcessors/JSINSObjectConversion.h
 index da107d77a42363283b702f981eb74796bd9dd525..a1ca7631082c1dbe62859b1cff029364cb251915 100644
 --- a/node_modules/react-native-vision-camera/ios/FrameProcessors/JSINSObjectConversion.h
@@ -62,3 +96,37 @@ index da107d77a42363283b702f981eb74796bd9dd525..a1ca7631082c1dbe62859b1cff029364
  #import <jsi/jsi.h>
  
  namespace JSINSObjectConversion {
+diff --git a/node_modules/react-native-vision-camera/android/src/main/cpp/frameprocessors/java-bindings/JVisionCameraProxy.cpp b/node_modules/react-native-vision-camera/android/src/main/cpp/frameprocessors/java-bindings/JVisionCameraProxy.cpp
+index 94fba4e01cc35335e882d43bb8bbc2597857a952..d1a95e24b1c10c26467944aeda740b13b3e0df85 100644
+--- a/node_modules/react-native-vision-camera/android/src/main/cpp/frameprocessors/java-bindings/JVisionCameraProxy.cpp
++++ b/node_modules/react-native-vision-camera/android/src/main/cpp/frameprocessors/java-bindings/JVisionCameraProxy.cpp
+@@ -15,6 +15,12 @@
+ #if VISION_CAMERA_ENABLE_FRAME_PROCESSORS
+ #include <react-native-worklets-core/WKTJsiWorklet.h>
+ #include <react-native-worklets-core/WKTJsiWorkletContext.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ #endif
+ 
+ namespace vision {
+diff --git a/node_modules/react-native-vision-camera/android/src/main/cpp/frameprocessors/java-bindings/JVisionCameraProxy.h b/node_modules/react-native-vision-camera/android/src/main/cpp/frameprocessors/java-bindings/JVisionCameraProxy.h
+index d06eaa84df82d9e2a2b12ba25247fc3f20617d4b..b3b75fd4b2fd23eaab317e572a6bc17dbc14c73b 100644
+--- a/node_modules/react-native-vision-camera/android/src/main/cpp/frameprocessors/java-bindings/JVisionCameraProxy.h
++++ b/node_modules/react-native-vision-camera/android/src/main/cpp/frameprocessors/java-bindings/JVisionCameraProxy.h
+@@ -17,6 +17,12 @@
+ 
+ #if VISION_CAMERA_ENABLE_FRAME_PROCESSORS
+ #include <react-native-worklets-core/WKTJsiWorkletContext.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ #endif
+ 
+ namespace vision {
