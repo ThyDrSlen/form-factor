@@ -2,7 +2,7 @@ diff --git a/node_modules/react-native-reanimated/apple/reanimated/apple/native/
 index eb5f83107d4a9e754789e86836773533c814b1ec..d3680e7d7055361a8f9616ed7bc275f03c044aa0 100644
 --- a/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.h
 +++ b/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.h
-@@ -4,6 +4,7 @@
+@@ -4,5 +4,6 @@
  #import <reanimated/apple/REANodesManager.h>
  
  #import <worklets/apple/WorkletsModule.h>
