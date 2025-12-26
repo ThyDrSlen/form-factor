@@ -7,6 +7,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { Svg, Circle, Line } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as MediaLibrary from 'expo-media-library';
 import {
   watchEvents,
   sendMessage,
@@ -104,6 +105,18 @@ export default function ScanARKitScreen() {
     setZoom((z) => clampZoom(z + delta));
   }, [clampZoom]);
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
+  const ensureMediaLibraryPermission = useCallback(async () => {
+    if (Platform.OS === 'web') return false;
+    try {
+      const current = await MediaLibrary.getPermissionsAsync();
+      if (current.granted) return true;
+      const next = await MediaLibrary.requestPermissionsAsync();
+      return next.granted;
+    } catch (error) {
+      console.warn('[ScanARKit] Media library permission check failed', error);
+      return false;
+    }
+  }, []);
   
   const {
     pose,
@@ -1371,6 +1384,23 @@ export default function ScanARKitScreen() {
       }
     }, [detectionMode, latestMetricsForUpload, uploading]);
 
+    const saveRecordingToCameraRoll = useCallback(async (uri: string) => {
+      if (Platform.OS === 'web') return;
+      const hasAccess = await ensureMediaLibraryPermission();
+      if (!hasAccess) {
+        Alert.alert(
+          'Photos permission needed',
+          'Enable Photos access to save recordings to your camera roll.'
+        );
+        return;
+      }
+      try {
+        await MediaLibrary.saveToLibraryAsync(uri);
+      } catch (error) {
+        console.error('[ScanARKit] Failed to save recording to camera roll', error);
+      }
+    }, [ensureMediaLibraryPermission]);
+
     const startRecordingVideo = useCallback(async () => {
       if (isRecording) return;
       if (!isTracking) {
@@ -1400,6 +1430,7 @@ export default function ScanARKitScreen() {
         if (path) {
           const uri = path.startsWith('file://') ? path : `file://${path}`;
           recordedUriRef.current = uri;
+          await saveRecordingToCameraRoll(uri);
           await uploadRecordedVideo(uri);
         } else {
           Alert.alert('Recording', 'No video file was generated.');
@@ -1409,7 +1440,7 @@ export default function ScanARKitScreen() {
         setIsRecording(false);
         Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not stop recording.');
       }
-    }, [isRecording, uploadRecordedVideo]);
+    }, [isRecording, saveRecordingToCameraRoll, uploadRecordedVideo]);
 
   if (supportStatus === 'unknown') {
     return (

@@ -77,7 +77,13 @@ const baseConfig = {
       },
     ],
     edgeToEdgeEnabled: true,
-    permissions: ['android.permission.CAMERA'],
+    permissions: [
+      'android.permission.CAMERA',
+      'android.permission.READ_MEDIA_IMAGES',
+      'android.permission.READ_MEDIA_VIDEO',
+      'android.permission.READ_EXTERNAL_STORAGE',
+      'android.permission.WRITE_EXTERNAL_STORAGE',
+    ],
   },
   ios: {
     bundleIdentifier: 'com.slenthekid.formfactoreas',
@@ -90,6 +96,8 @@ const baseConfig = {
       NSHealthUpdateUsageDescription: 'This app writes health data to record your activity.',
       NSCameraUsageDescription: 'We need camera access to scan your form and provide skeleton tracking.',
       NSMicrophoneUsageDescription: 'Optional: for recording workout videos',
+      NSPhotoLibraryUsageDescription: 'Allow access to your photo library to save workout recordings.',
+      NSPhotoLibraryAddUsageDescription: 'Allow Form Factor to save workout recordings to your camera roll.',
       NSLocationWhenInUseUsageDescription: 'This app does not use your location, but it is required by Apple Health for workout routes.',
       WKCompanionAppBundleIdentifier: 'com.slenthekid.formfactoreas',
       ITSAppUsesNonExemptEncryption: false,
