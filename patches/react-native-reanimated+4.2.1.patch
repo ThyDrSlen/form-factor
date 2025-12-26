@@ -1,0 +1,11 @@
+diff --git a/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.h b/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.h
+index 0000000..1111111 100644
+--- a/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.h
++++ b/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.h
+@@ -4,6 +4,7 @@
+ #import <reanimated/apple/REANodesManager.h>
+ 
+ #import <worklets/apple/WorkletsModule.h>
++#import <ReactCommon/CallInvoker.h>
+ 
+ namespace reanimated {
