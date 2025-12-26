@@ -22,6 +22,7 @@
     "fix:ios": "./scripts/fix-ios-build.sh",
     "screenshot": "./scripts/capture-device-screen.sh",
     "watch:device": "./scripts/watch-device-screen.sh",
+    "watch:install": "./scripts/install-watch-sim.sh",
     "docs:arkit": "cat docs/ARKIT_BODY_TRACKING_GUIDE.md",
     "build:local:ios": "./scripts/build-local-ios.sh",
     "build:local:android:aab": "./scripts/build-local-android.sh aab",

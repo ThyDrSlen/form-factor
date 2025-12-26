@@ -217,6 +217,37 @@ export const styles = StyleSheet.create({
       },
     }),
   },
+  watchMirrorButton: {
+    position: 'absolute',
+    top: 100,
+    right: 128,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: scanPalette.overlay,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: scanPalette.border,
+    zIndex: 100,
+    ...Platform.select({
+      web: { boxShadow: '0 2px 6px rgba(0,0,0,0.3)' },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+        elevation: 10,
+      },
+    }),
+  },
+  watchMirrorButtonActive: {
+    backgroundColor: scanPalette.textPrimary,
+    borderColor: '#7AA9FF',
+  },
+  watchMirrorButtonDisabled: {
+    opacity: 0.45,
+  },
   audioToggleButton: {
     position: 'absolute',
     top: 100,
