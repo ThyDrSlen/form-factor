@@ -71,6 +71,28 @@ class SyncService {
 
     console.log('[SyncService] Initializing Realtime subscriptions for user:', userId);
 
+    const logChannelStatus = (label: string, status: string, err?: Error | null) => {
+      if (status === 'SUBSCRIBED') {
+        console.log(`[SyncService] ✅ ${label} channel subscribed`);
+        return;
+      }
+      if (status === 'CHANNEL_ERROR') {
+        if (err?.message) {
+          console.error(`[SyncService] ❌ ${label} channel error:`, err);
+        } else {
+          console.warn(
+            `[SyncService] ⚠️ ${label} channel error without details (check realtime publication/RLS)`
+          );
+        }
+        return;
+      }
+      if (status === 'TIMED_OUT') {
+        console.warn(`[SyncService] ⏱️ ${label} channel timeout, will retry`);
+        return;
+      }
+      console.log(`[SyncService] ${label} channel status:`, status);
+    };
+
     // Subscribe to foods table changes
     this.foodChannel = supabase
       .channel('foods_changes')
@@ -88,15 +110,7 @@ class SyncService {
         }
       )
       .subscribe((status, err) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('[SyncService] ✅ Foods channel subscribed');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('[SyncService] ❌ Foods channel error:', err);
-        } else if (status === 'TIMED_OUT') {
-          console.warn('[SyncService] ⏱️ Foods channel timeout, will retry');
-        } else {
-          console.log('[SyncService] Foods channel status:', status);
-        }
+        logChannelStatus('Foods', status, err ?? undefined);
       });
 
     // Subscribe to workouts table changes
@@ -116,15 +130,7 @@ class SyncService {
         }
       )
       .subscribe((status, err) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('[SyncService] ✅ Workouts channel subscribed');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('[SyncService] ❌ Workouts channel error:', err);
-        } else if (status === 'TIMED_OUT') {
-          console.warn('[SyncService] ⏱️ Workouts channel timeout, will retry');
-        } else {
-          console.log('[SyncService] Workouts channel status:', status);
-        }
+        logChannelStatus('Workouts', status, err ?? undefined);
       });
 
     // Subscribe to health_metrics table changes
@@ -144,15 +150,7 @@ class SyncService {
         }
       )
       .subscribe((status, err) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('[SyncService] ✅ Health metrics channel subscribed');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('[SyncService] ❌ Health metrics channel error:', err);
-        } else if (status === 'TIMED_OUT') {
-          console.warn('[SyncService] ⏱️ Health metrics channel timeout, will retry');
-        } else {
-          console.log('[SyncService] Health metrics channel status:', status);
-        }
+        logChannelStatus('Health metrics', status, err ?? undefined);
       });
   }
 
@@ -873,4 +871,3 @@ class SyncService {
 
 // Export singleton instance
 export const syncService = new SyncService();
-
