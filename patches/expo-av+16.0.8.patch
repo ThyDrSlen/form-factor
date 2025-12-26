@@ -1,3 +1,54 @@
+diff --git a/node_modules/expo-av/ios/EXAV/AudioSampleCallback/AudioSampleCallbackWrapper.h b/node_modules/expo-av/ios/EXAV/AudioSampleCallback/AudioSampleCallbackWrapper.h
+index b957a3e6d5ee9c2f031a852dc1d6ed7c96f6b5f7..ac90fbf68ec32698ad4cd8d5bd88037bb0c84c10 100644
+--- a/node_modules/expo-av/ios/EXAV/AudioSampleCallback/AudioSampleCallbackWrapper.h
++++ b/node_modules/expo-av/ios/EXAV/AudioSampleCallback/AudioSampleCallbackWrapper.h
+@@ -8,6 +8,12 @@
+ 
+ // TODO: Replace this with <ReactCommon/TurboModuleUtils.h> after we upgrade to RN 0.66
+ #import <EXAV/CallbackWrapper.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace jsi = facebook::jsi;
+ using CallInvoker = facebook::react::CallInvoker;
+diff --git a/node_modules/expo-av/ios/EXAV/AudioSampleCallback/EXAV+AudioSampleCallback.mm b/node_modules/expo-av/ios/EXAV/AudioSampleCallback/EXAV+AudioSampleCallback.mm
+index 3b8a6f298d5bab2339f8c36b951001605f96ae1e..155381b0010f702c0df1a1a1a56b6ded1a9f7b06 100644
+--- a/node_modules/expo-av/ios/EXAV/AudioSampleCallback/EXAV+AudioSampleCallback.mm
++++ b/node_modules/expo-av/ios/EXAV/AudioSampleCallback/EXAV+AudioSampleCallback.mm
+@@ -9,6 +9,12 @@
+ #import <EXAV/EXAVPlayerData.h>
+ #import <EXAV/EXAudioSampleCallback.h>
+ #import <EXAV/AudioSampleCallbackWrapper.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace jsi = facebook::jsi;
+ using CallInvoker = facebook::react::CallInvoker;
+diff --git a/node_modules/expo-av/ios/EXAV/AudioSampleCallback/AudioSampleCallbackWrapper.mm b/node_modules/expo-av/ios/EXAV/AudioSampleCallback/AudioSampleCallbackWrapper.mm
+index 1c74d5046347c989e5da326e00dfd23e81b20ba5..de8dcf56edf71f7771ce07228badeb2233da6cc9 100644
+--- a/node_modules/expo-av/ios/EXAV/AudioSampleCallback/AudioSampleCallbackWrapper.mm
++++ b/node_modules/expo-av/ios/EXAV/AudioSampleCallback/AudioSampleCallbackWrapper.mm
+@@ -1,6 +1,12 @@
+ // Copyright 2017-present 650 Industries. All rights reserved.
+ 
+ #import <EXAV/AudioSampleCallbackWrapper.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace expo {
+ namespace av {
 diff --git a/node_modules/expo-av/ios/EXAV/AudioSampleCallback/Utils/CallbackWrapper.h b/node_modules/expo-av/ios/EXAV/AudioSampleCallback/Utils/CallbackWrapper.h
 index 41148b961b09ca2555395efd2052372159ccc57e..7b32268c1daf593b32666968e1bfc0c7cf3270c8 100644
 --- a/node_modules/expo-av/ios/EXAV/AudioSampleCallback/Utils/CallbackWrapper.h
