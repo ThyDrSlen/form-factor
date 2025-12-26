@@ -36,7 +36,8 @@
     "test:coverage": "jest --coverage",
     "test:report": "jest 2>&1 | tee test-results.txt",
     "test:e2e": "playwright test",
-    "prepare": "husky"
+    "prepare": "husky",
+    "postinstall": "patch-package"
   },
   "resolutions": {
     "framer-motion": "^12.18.1",
@@ -115,6 +116,7 @@
     "husky": "^9.1.7",
     "jest-expo": "^54.0.16",
     "knip": "^5.77.1",
+    "patch-package": "^8.0.1",
     "react-test-renderer": "19.2.3"
   },
   "expo": {
