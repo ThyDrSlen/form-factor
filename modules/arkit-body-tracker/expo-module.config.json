@@ -1,8 +1,9 @@
 {
   "name": "arkit-body-tracker",
-  "platforms": ["ios"],
-  "ios": {
-    "modules": ["ARKitBodyTrackerModule"]
+  "platforms": ["apple"],
+  "apple": {
+    "modules": ["ARKitBodyTrackerModule"],
+    "podspecPath": "arkit-body-tracker.podspec"
   }
 }
  
