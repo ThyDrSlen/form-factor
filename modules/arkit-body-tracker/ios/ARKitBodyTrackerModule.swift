@@ -3,6 +3,8 @@ import ARKit
 import RealityKit
 import UIKit
 import AVFoundation
+import CoreImage
+import ImageIO
 
 // Represents a 3D joint with position and tracking state
 public struct Joint3D: Record {
@@ -79,13 +81,222 @@ public class ARKitBodyTrackerModule: Module {
   // If an ARKitBodyView is mounted, it will set this reference so we can drive its session
   public static var sharedARView: ARView?
   fileprivate let videoRecorder = ARVideoRecorder()
+  private let ciContext = CIContext(options: nil)
+
+  private func currentInterfaceOrientation(for view: UIView) -> UIInterfaceOrientation {
+    if let orientation = view.window?.windowScene?.interfaceOrientation {
+      return orientation
+    }
+    return .portrait
+  }
+
+  private func imageOrientation(for view: UIView?) -> CGImagePropertyOrientation {
+    guard let view = view else {
+      return .right
+    }
+    switch currentInterfaceOrientation(for: view) {
+    case .portrait:
+      return .right
+    case .portraitUpsideDown:
+      return .left
+    case .landscapeLeft:
+      return .up
+    case .landscapeRight:
+      return .down
+    default:
+      return .right
+    }
+  }
+
+  private func makeSnapshotPayload(maxWidth: CGFloat, quality: CGFloat) -> [String: Any]? {
+    let activeSession = self.arSession ?? ARKitBodyTrackerModule.sharedARView?.session
+    guard let frame = activeSession?.currentFrame else {
+      return nil
+    }
+
+    let ciImage = CIImage(cvPixelBuffer: frame.capturedImage)
+    let oriented = ciImage.oriented(imageOrientation(for: ARKitBodyTrackerModule.sharedARView))
+    if oriented.extent.width <= 0 || oriented.extent.height <= 0 {
+      return nil
+    }
+    let clampedMaxWidth = maxWidth > 0 ? maxWidth : oriented.extent.width
+    let scale = min(1.0, clampedMaxWidth / oriented.extent.width)
+    let scaledImage = oriented.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+
+    guard let cgImage = ciContext.createCGImage(scaledImage, from: scaledImage.extent) else {
+      return nil
+    }
+
+    let clampedQuality = max(0.05, min(1.0, quality))
+    let image = UIImage(cgImage: cgImage)
+    guard let data = image.jpegData(compressionQuality: clampedQuality) else {
+      return nil
+    }
+
+    return [
+      "frame": data.base64EncodedString(),
+      "width": Int(scaledImage.extent.width),
+      "height": Int(scaledImage.extent.height),
+      "orientation": "up",
+      "mirrored": false
+    ]
+  }
+
+  private func projectJointPoint(
+    _ worldPoint: SIMD3<Float>,
+    arView: ARView,
+    frame: ARFrame
+  ) -> CGPoint? {
+    let viewport = arView.bounds.size
+    if viewport.width <= 0 || viewport.height <= 0 {
+      return nil
+    }
+    let orientation = currentInterfaceOrientation(for: arView)
+    return frame.camera.projectPoint(worldPoint, orientation: orientation, viewportSize: viewport)
+  }
+
+  private func deviceModelIdentifier() -> String {
+    var systemInfo = utsname()
+    uname(&systemInfo)
+    let machineMirror = Mirror(reflecting: systemInfo.machine)
+    let identifier = machineMirror.children.reduce(into: "") { identifier, element in
+      guard let value = element.value as? Int8, value != 0 else { return }
+      identifier.append(String(UnicodeScalar(UInt8(value))))
+    }
+    return identifier
+  }
+
+  private func computeBodyTrackingSupport(prefix: String, forceDiagnostics: Bool) -> (Bool, [String: Any]) {
+    let device = UIDevice.current
+    let modelIdentifier = deviceModelIdentifier()
+    let systemVersion = device.systemVersion
+    let arKitSupported = ARWorldTrackingConfiguration.isSupported
+    let bodySupported = ARBodyTrackingConfiguration.isSupported
+
+    print("\(prefix) Device: \(device.model) (\(modelIdentifier))")
+    print("\(prefix) System: iOS \(systemVersion)")
+    print("\(prefix) ARWorldTrackingConfiguration.isSupported: \(arKitSupported)")
+    print("\(prefix) ARBodyTrackingConfiguration.isSupported: \(bodySupported)")
+
+    var diagnostics: [String: Any] = [
+      "deviceModel": device.model,
+      "modelIdentifier": modelIdentifier,
+      "systemVersion": systemVersion,
+      "arWorldTrackingSupported": arKitSupported,
+      "arBodyTrackingSupported": bodySupported,
+      "isMainThread": Thread.isMainThread
+    ]
+
+    var finalSupported = bodySupported
+    var workaroundApplied = false
+    let shouldComputeFormats = forceDiagnostics || !bodySupported
+
+    var formatsCount: Int? = nil
+    var bestFormatFps: Int? = nil
+    var bestFormatResolution: String? = nil
+    var autoImageScale: Bool? = nil
+    var autoSkeletonScale: Bool? = nil
+
+    // iOS 26 workaround: isSupported may incorrectly return false on some devices
+    // Check if we can actually create a configuration and read video formats
+    if shouldComputeFormats {
+      if !bodySupported {
+        print("\(prefix) isSupported returned false, checking fallback...")
+      } else {
+        print("\(prefix) Collecting video format diagnostics...")
+      }
+      // Attempt a fallback instantiation to surface any runtime issues
+      print("\(prefix) Attempting to instantiate ARBodyTrackingConfiguration for diagnostics...")
+      let configuration = ARBodyTrackingConfiguration()
+      let formats = ARBodyTrackingConfiguration.supportedVideoFormats
+      formatsCount = formats.count
+      print("\(prefix) supportedVideoFormats count: \(formats.count)")
+      if let bestFormat = formats.max(by: { $0.framesPerSecond < $1.framesPerSecond }) {
+        bestFormatFps = bestFormat.framesPerSecond
+        bestFormatResolution = "\(Int(bestFormat.imageResolution.width))x\(Int(bestFormat.imageResolution.height))"
+        print("\(prefix) bestFormat fps: \(bestFormat.framesPerSecond) resolution: \(bestFormat.imageResolution)")
+      }
+      autoImageScale = configuration.automaticImageScaleEstimationEnabled
+      print("\(prefix) automaticImageScaleEstimationEnabled: \(configuration.automaticImageScaleEstimationEnabled)")
+      if #available(iOS 14.0, *) {
+        autoSkeletonScale = configuration.automaticSkeletonScaleEstimationEnabled
+        print("\(prefix) automaticSkeletonScaleEstimationEnabled: \(configuration.automaticSkeletonScaleEstimationEnabled)")
+      }
+    }
+
+    if !bodySupported {
+      // WORKAROUND: If we can create a config and get video formats, assume it's supported
+      if (formatsCount ?? 0) > 0 && arKitSupported {
+        workaroundApplied = true
+        finalSupported = true
+        print("\(prefix) ⚠️ WORKAROUND: isSupported=false but formats available, assuming supported (iOS 26 workaround)")
+      } else {
+        finalSupported = false
+      }
+    }
+
+    diagnostics["formatsCountComputed"] = shouldComputeFormats
+    if let formatsCount = formatsCount {
+      diagnostics["supportedVideoFormatsCount"] = formatsCount
+    }
+    if let bestFormatFps = bestFormatFps {
+      diagnostics["bestFormatFps"] = bestFormatFps
+    }
+    if let bestFormatResolution = bestFormatResolution {
+      diagnostics["bestFormatResolution"] = bestFormatResolution
+    }
+    if let autoImageScale = autoImageScale {
+      diagnostics["automaticImageScaleEstimationEnabled"] = autoImageScale
+    }
+    if let autoSkeletonScale = autoSkeletonScale {
+      diagnostics["automaticSkeletonScaleEstimationEnabled"] = autoSkeletonScale
+    }
+    diagnostics["workaroundApplied"] = workaroundApplied
+    diagnostics["finalSupported"] = finalSupported
+
+    return (finalSupported, diagnostics)
+  }
   
   public func definition() -> ModuleDefinition {
     Name("ARKitBodyTracker")
     
     // Check if ARBodyTrackingConfiguration is supported on this device
     Function("isSupported") { () -> Bool in
-      return ARBodyTrackingConfiguration.isSupported
+      let prefix = "[ARKit][isSupported]"
+
+      if Thread.isMainThread {
+        let (supported, _) = self.computeBodyTrackingSupport(prefix: prefix, forceDiagnostics: false)
+        return supported
+      }
+
+      var result = false
+      let semaphore = DispatchSemaphore(value: 0)
+      DispatchQueue.main.async {
+        let (supported, _) = self.computeBodyTrackingSupport(prefix: prefix, forceDiagnostics: false)
+        result = supported
+        semaphore.signal()
+      }
+      semaphore.wait()
+      return result
+    }
+
+    Function("supportDiagnostics") { () -> [String: Any] in
+      let prefix = "[ARKit][supportDiagnostics]"
+
+      if Thread.isMainThread {
+        let (_, diagnostics) = self.computeBodyTrackingSupport(prefix: prefix, forceDiagnostics: true)
+        return diagnostics
+      }
+
+      var diagnostics: [String: Any] = [:]
+      let semaphore = DispatchSemaphore(value: 0)
+      DispatchQueue.main.async {
+        let (_, collected) = self.computeBodyTrackingSupport(prefix: prefix, forceDiagnostics: true)
+        diagnostics = collected
+        semaphore.signal()
+      }
+      semaphore.wait()
+      return diagnostics
     }
     
     // Start ARKit body tracking session
@@ -283,7 +494,7 @@ public class ARKitBodyTrackerModule: Module {
     }
 
     // 2D projection of current body pose into ARKit view space (normalized 0..1)
-    Function("getCurrentPose2D") { () -> BodyPose2D? in
+    let computePose2D: () -> BodyPose2D? = {
       guard let bodyAnchor = self.currentBodyAnchor else {
         print("[ARKit] getCurrentPose2D: No body anchor")
         return nil
@@ -305,6 +516,11 @@ public class ARKitBodyTrackerModule: Module {
       
       if viewW <= 0 || viewH <= 0 {
         print("[ARKit] getCurrentPose2D: ARView has invalid bounds: \(viewW)x\(viewH)")
+        return nil
+      }
+
+      guard let frame = (self.arSession ?? ARKitBodyTrackerModule.sharedARView?.session)?.currentFrame else {
+        print("[ARKit] getCurrentPose2D: No current ARFrame")
         return nil
       }
 
@@ -332,7 +548,7 @@ public class ARKitBodyTrackerModule: Module {
         let worldTransform = simd_mul(bodyAnchor.transform, jointModel)
         let p = worldTransform.columns.3
         let worldPoint = SIMD3<Float>(p.x, p.y, p.z)
-        if let projected = arView.project(worldPoint) {
+        if let projected = self.projectJointPoint(worldPoint, arView: arView, frame: frame) {
           let nx = max(0.0, min(1.0, Double(projected.x) / viewW))
           let ny = max(0.0, min(1.0, Double(projected.y) / viewH))
           let idx = skeleton.definition.index(for: jointName)
@@ -356,6 +572,43 @@ public class ARKitBodyTrackerModule: Module {
 
       print("[ARKit] getCurrentPose2D: Returning \(joints2D.count) joints")
       return BodyPose2D(joints: joints2D, timestamp: frameTs, isTracking: bodyAnchor.isTracked)
+    }
+
+    Function("getCurrentPose2D") { () -> BodyPose2D? in
+      if Thread.isMainThread {
+        return computePose2D()
+      }
+
+      var result: BodyPose2D?
+      let semaphore = DispatchSemaphore(value: 0)
+      DispatchQueue.main.async {
+        result = computePose2D()
+        semaphore.signal()
+      }
+      semaphore.wait()
+      return result
+    }
+
+    AsyncFunction("getCurrentFrameSnapshot") { (options: [String: Any]?) -> [String: Any]? in
+      let maxWidth = (options?["maxWidth"] as? Double) ?? 0
+      let quality = (options?["quality"] as? Double) ?? 0.25
+
+      let snapshotBlock = {
+        self.makeSnapshotPayload(maxWidth: CGFloat(maxWidth), quality: CGFloat(quality))
+      }
+
+      if Thread.isMainThread {
+        return snapshotBlock()
+      }
+
+      var result: [String: Any]?
+      let semaphore = DispatchSemaphore(value: 0)
+      DispatchQueue.main.async {
+        result = snapshotBlock()
+        semaphore.signal()
+      }
+      semaphore.wait()
+      return result
     }
     
     // Stop body tracking session
@@ -676,4 +929,3 @@ fileprivate final class ARKitSessionDelegate: NSObject, ARSessionDelegate {
     session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
   }
 }
-

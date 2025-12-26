@@ -53,6 +53,31 @@ export interface BodyPose2D {
   isTracking: boolean;
 }
 
+export interface FrameSnapshot {
+  frame: string;
+  width?: number;
+  height?: number;
+  orientation?: string;
+  mirrored?: boolean;
+}
+
+export interface NativeSupportDiagnostics {
+  deviceModel: string;
+  modelIdentifier: string;
+  systemVersion: string;
+  arWorldTrackingSupported: boolean;
+  arBodyTrackingSupported: boolean;
+  formatsCountComputed: boolean;
+  supportedVideoFormatsCount?: number;
+  bestFormatFps?: number;
+  bestFormatResolution?: string;
+  automaticImageScaleEstimationEnabled?: boolean;
+  automaticSkeletonScaleEstimationEnabled?: boolean;
+  workaroundApplied: boolean;
+  finalSupported: boolean;
+  isMainThread: boolean;
+}
+
 export interface JointAngles {
   leftKnee: number;
   rightKnee: number;
@@ -68,6 +93,14 @@ export interface JointAngles {
  * ARKit Body Tracking API (Fallback Stub)
  */
 export class BodyTracker {
+  static isNativeModuleLoaded(): boolean {
+    return false;
+  }
+
+  static getSupportDiagnostics(): NativeSupportDiagnostics | null {
+    return null;
+  }
+
   static isSupported(): boolean {
     if (Platform.OS === 'ios') {
       console.error('[BodyTracker] WRONG FILE! This is the fallback, not .ios.ts');
@@ -94,6 +127,10 @@ export class BodyTracker {
   }
 
   static async stopRecording(): Promise<string | null> {
+    return null;
+  }
+
+  static async getCurrentFrameSnapshot(_options?: { maxWidth?: number; quality?: number }): Promise<FrameSnapshot | null> {
     return null;
   }
 

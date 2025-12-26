@@ -26,6 +26,31 @@ export interface BodyPose {
   estimatedHeight?: number;
 }
 
+export interface FrameSnapshot {
+  frame: string;
+  width?: number;
+  height?: number;
+  orientation?: string;
+  mirrored?: boolean;
+}
+
+export interface NativeSupportDiagnostics {
+  deviceModel: string;
+  modelIdentifier: string;
+  systemVersion: string;
+  arWorldTrackingSupported: boolean;
+  arBodyTrackingSupported: boolean;
+  formatsCountComputed: boolean;
+  supportedVideoFormatsCount?: number;
+  bestFormatFps?: number;
+  bestFormatResolution?: string;
+  automaticImageScaleEstimationEnabled?: boolean;
+  automaticSkeletonScaleEstimationEnabled?: boolean;
+  workaroundApplied: boolean;
+  finalSupported: boolean;
+  isMainThread: boolean;
+}
+
 /**
  * Joint angles for common body movements
  */
@@ -45,6 +70,13 @@ export interface JointAngles {
  * ARKit requires iOS devices with A12 Bionic chip or later
  */
 export class BodyTracker {
+  static isNativeModuleLoaded(): boolean {
+    return false;
+  }
+
+  static getSupportDiagnostics(): NativeSupportDiagnostics | null {
+    return null;
+  }
   /**
    * Check if ARKit body tracking is supported on this device
    * Always returns false on web
@@ -78,6 +110,10 @@ export class BodyTracker {
    */
   static stopTracking(): void {
     // No-op
+  }
+
+  static async getCurrentFrameSnapshot(_options?: { maxWidth?: number; quality?: number }): Promise<FrameSnapshot | null> {
+    return null;
   }
 
   /**
@@ -163,4 +199,3 @@ export function useBodyTracking(fps: number = 30) {
     },
   };
 }
-

@@ -553,16 +553,17 @@ export default function ScanARKitScreen() {
         supportStatus,
         isTracking,
         hasPermission,
-        willStart: supportStatus === 'supported' && !isTracking && hasPermission
+        cameraPosition,
+        willStart: supportStatus === 'supported' && !isTracking && hasPermission && cameraPosition === 'back'
       });
     }
     
-    if (supportStatus === 'supported' && !isTracking && hasPermission) {
+    if (supportStatus === 'supported' && !isTracking && hasPermission && cameraPosition === 'back') {
       if (DEV) console.log('[ScanARKit] ✅ Auto-starting tracking...');
       startTracking();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supportStatus, isTracking, hasPermission]);
+  }, [supportStatus, isTracking, hasPermission, cameraPosition]);
 
   // Request camera permission on mount
   useEffect(() => {
@@ -868,6 +869,11 @@ export default function ScanARKitScreen() {
   // Start tracking
   const startTracking = useCallback(async () => {
     if (DEV) console.log('[ScanARKit] 🎬 Starting tracking...');
+    if (cameraPosition !== 'back') {
+      if (DEV) console.warn('[ScanARKit] Skipping tracking start: ARKit requires back camera');
+      Alert.alert('Back camera required', 'ARKit body tracking only works with the back camera.');
+      return;
+    }
     try {
       repStateRef.current = 'idle';
       phaseRef.current = 'idle';
@@ -900,7 +906,7 @@ export default function ScanARKitScreen() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startNativeTracking, transitionPhase]);
+  }, [startNativeTracking, transitionPhase, cameraPosition]);
 
   // Stop tracking
   const stopTracking = useCallback(() => {
@@ -1245,11 +1251,25 @@ export default function ScanARKitScreen() {
   }
 
   if (supportStatus === 'unsupported') {
+    // Debug info: Check what BodyTracker reports
+    const nativeDiagnostics = BodyTracker.getSupportDiagnostics();
+    const debugInfo = {
+      platform: Platform.OS,
+      platformVersion: Platform.Version,
+      nativeSupported,
+      nativeModuleLoaded: BodyTracker.isNativeModuleLoaded(),
+      nativeDiagnostics,
+      isSupportedResult: nativeDiagnostics?.finalSupported ?? nativeSupported,
+    };
+
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.errorContainer}>
           <Ionicons name="warning-outline" size={60} color="#FF6B6B" />
           <Text style={styles.errorText}>Device not supported</Text>
+          <Text style={{ color: '#666', fontSize: 10, marginTop: 20, textAlign: 'center' }}>
+            Debug: {JSON.stringify(debugInfo, null, 2)}
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -1440,7 +1460,7 @@ export default function ScanARKitScreen() {
           )}
 
           {/* Skeleton Overlay (2D projected) */}
-        {smoothedPose2DJoints && smoothedPose2DJoints.length > 0 && (
+        {isTracking && cameraPosition === 'back' && smoothedPose2DJoints && smoothedPose2DJoints.length > 0 && (
             <Svg
               style={styles.fullFill}
               viewBox="0 0 1 1"
