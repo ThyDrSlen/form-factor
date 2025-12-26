@@ -1,10 +1,16 @@
+diff --git a/node_modules/react-native-worklets-core/ios/Worklets.mm b/node_modules/react-native-worklets-core/ios/Worklets.mm
+index 1daaafa74f4e05ba71b73e1e9b25e2fa5e8dcb6b..527292dae13f5f2feb920c1a0e7af57364670f5d 100644
 --- a/node_modules/react-native-worklets-core/ios/Worklets.mm
 +++ b/node_modules/react-native-worklets-core/ios/Worklets.mm
-@@ -4,6 +4,7 @@
+@@ -4,7 +4,11 @@
  #import <React/RCTBridge.h>
  #import <React/RCTUtils.h>
  #import <ReactCommon/RCTTurboModule.h>
-+#import <ReactCommon/CallInvoker.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
  
  @implementation Worklets
  

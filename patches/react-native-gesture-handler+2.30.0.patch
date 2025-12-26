@@ -1,0 +1,16 @@
+diff --git a/node_modules/react-native-gesture-handler/apple/RNGestureHandlerModule.mm b/node_modules/react-native-gesture-handler/apple/RNGestureHandlerModule.mm
+index b5f89946a23e278d069f3752f3b16d46ffdc662b..1a7925180560e868ac144584677286b071ce27e3 100644
+--- a/node_modules/react-native-gesture-handler/apple/RNGestureHandlerModule.mm
++++ b/node_modules/react-native-gesture-handler/apple/RNGestureHandlerModule.mm
+@@ -11,7 +11,11 @@
+ #import <React/RCTBridge+Private.h>
+ #import <React/RCTBridge.h>
+ #import <React/RCTUtils.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
+ #import <ReactCommon/RCTTurboModule.h>
+ 
+ #import <react/renderer/components/text/ParagraphShadowNode.h>

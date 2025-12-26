@@ -1,11 +1,44 @@
 diff --git a/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.h b/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.h
-index eb5f83107d4a9e754789e86836773533c814b1ec..d3680e7d7055361a8f9616ed7bc275f03c044aa0 100644
+index d3680e7d7055361a8f9616ed7bc275f03c044aa0..30fd7483012aaa91be4eb7cf7100ff38c6b4cbd2 100644
 --- a/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.h
 +++ b/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.h
-@@ -4,5 +4,6 @@
+@@ -4,7 +4,11 @@
  #import <reanimated/apple/REANodesManager.h>
  
  #import <worklets/apple/WorkletsModule.h>
-+#import <ReactCommon/CallInvoker.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
  
  namespace reanimated {
+ 
+diff --git a/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxyCommon.cpp b/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxyCommon.cpp
+index 8eb9214f58abf1397a08cdeff2400129f80fce36..5b98c3183f04cf27a7e55a1e78894038ad40b8d1 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxyCommon.cpp
++++ b/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxyCommon.cpp
+@@ -1,4 +1,8 @@
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ #include <folly/dynamic.h>
+ #include <react/renderer/uimanager/UIManagerBinding.h>
+ #include <reanimated/Fabric/ShadowTreeCloner.h>
+diff --git a/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxySpec.h b/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxySpec.h
+index 6ca97e1198a62f6dcd77de07072e22b7dab2c74e..75d419a39dfdc5016d5c71a6ddf9db01689e3b44 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxySpec.h
++++ b/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxySpec.h
+@@ -1,6 +1,10 @@
+ #pragma once
+ 
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ #include <ReactCommon/TurboModule.h>
+ 
+ #include <memory>

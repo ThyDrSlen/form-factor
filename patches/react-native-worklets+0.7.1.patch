@@ -1,0 +1,31 @@
+diff --git a/node_modules/react-native-worklets/Common/cpp/worklets/Tools/JSScheduler.h b/node_modules/react-native-worklets/Common/cpp/worklets/Tools/JSScheduler.h
+index 6a7ac99278a4c39977fb5cc2d7d5c74828ddb353..62e4da6ca72ec446fcc6025f30dce7c940783654 100644
+--- a/node_modules/react-native-worklets/Common/cpp/worklets/Tools/JSScheduler.h
++++ b/node_modules/react-native-worklets/Common/cpp/worklets/Tools/JSScheduler.h
+@@ -1,6 +1,10 @@
+ #pragma once
+ 
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ #include <jsi/jsi.h>
+ 
+ #include <memory>
+diff --git a/node_modules/react-native-worklets/Common/cpp/worklets/Tools/UIScheduler.h b/node_modules/react-native-worklets/Common/cpp/worklets/Tools/UIScheduler.h
+index 8b9aca9f9158f586a6eec77b666d66a94dbb1ab8..1d58dfe4c9124c07b3299ac0e34d508bedff08f7 100644
+--- a/node_modules/react-native-worklets/Common/cpp/worklets/Tools/UIScheduler.h
++++ b/node_modules/react-native-worklets/Common/cpp/worklets/Tools/UIScheduler.h
+@@ -2,7 +2,11 @@
+ 
+ #include <worklets/Tools/ThreadSafeQueue.h>
+ 
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ #include <atomic>
+ 

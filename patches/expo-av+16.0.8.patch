@@ -1,0 +1,48 @@
+diff --git a/node_modules/expo-av/ios/EXAV/AudioSampleCallback/Utils/CallbackWrapper.h b/node_modules/expo-av/ios/EXAV/AudioSampleCallback/Utils/CallbackWrapper.h
+index 41148b961b09ca2555395efd2052372159ccc57e..7b32268c1daf593b32666968e1bfc0c7cf3270c8 100644
+--- a/node_modules/expo-av/ios/EXAV/AudioSampleCallback/Utils/CallbackWrapper.h
++++ b/node_modules/expo-av/ios/EXAV/AudioSampleCallback/Utils/CallbackWrapper.h
+@@ -15,7 +15,11 @@
+ #include <unordered_set>
+ 
+ #import <jsi/jsi.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ using namespace facebook;
+ using CallInvoker = facebook::react::CallInvoker;
+diff --git a/node_modules/expo-av/android/src/main/cpp/JAVManager.h b/node_modules/expo-av/android/src/main/cpp/JAVManager.h
+index 6107c0ab93652fbc3677f25ba6e7914edd25ced5..81c7b464d9bd2f6e4f16aaabea872389da1f2b24 100644
+--- a/node_modules/expo-av/android/src/main/cpp/JAVManager.h
++++ b/node_modules/expo-av/android/src/main/cpp/JAVManager.h
+@@ -9,7 +9,11 @@
+ #include <memory>
+ 
+ #include <ReactCommon/CallInvokerHolder.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ #include "JPlayerData.h"
+ 
+diff --git a/node_modules/expo-av/android/src/main/cpp/JAVManager.cpp b/node_modules/expo-av/android/src/main/cpp/JAVManager.cpp
+index def69a0b89774339d8fbb9355831764076cbbdae..736675be25d44d1f1ed74315ca66db2d2f5ef94f 100644
+--- a/node_modules/expo-av/android/src/main/cpp/JAVManager.cpp
++++ b/node_modules/expo-av/android/src/main/cpp/JAVManager.cpp
+@@ -11,7 +11,11 @@
+ #include <string>
+ 
+ #include <ReactCommon/CallInvokerHolder.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ #include <android/log.h>
+ 

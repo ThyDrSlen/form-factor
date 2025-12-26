@@ -1,0 +1,64 @@
+diff --git a/node_modules/react-native-vision-camera/ios/FrameProcessors/VisionCameraProxy.h b/node_modules/react-native-vision-camera/ios/FrameProcessors/VisionCameraProxy.h
+index fbadd52d398e0d690cf887aa992705fcacc8e694..64330f419a3faf917045be354c33f67554d8cec0 100644
+--- a/node_modules/react-native-vision-camera/ios/FrameProcessors/VisionCameraProxy.h
++++ b/node_modules/react-native-vision-camera/ios/FrameProcessors/VisionCameraProxy.h
+@@ -16,7 +16,11 @@
+ 
+ #import "VisionCameraProxyDelegate.h"
+ #import "WKTJsiWorkletContext.h"
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
+ #import <jsi/jsi.h>
+ 
+ using namespace facebook;
+diff --git a/node_modules/react-native-vision-camera/ios/FrameProcessors/JSINSObjectConversion.mm b/node_modules/react-native-vision-camera/ios/FrameProcessors/JSINSObjectConversion.mm
+index 5e47d2b2a3dc5f000c673fc6887b20b6d41951b6..24069c03084d9da139c347e11ce4a11b8e9779ab 100644
+--- a/node_modules/react-native-vision-camera/ios/FrameProcessors/JSINSObjectConversion.mm
++++ b/node_modules/react-native-vision-camera/ios/FrameProcessors/JSINSObjectConversion.mm
+@@ -20,7 +20,11 @@
+ #import "FrameHostObject.h"
+ #import "SharedArray.h"
+ #import <Foundation/Foundation.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
+ #import <jsi/jsi.h>
+ 
+ using namespace facebook;
+diff --git a/node_modules/react-native-vision-camera/ios/FrameProcessors/FrameProcessorPluginHostObject.h b/node_modules/react-native-vision-camera/ios/FrameProcessors/FrameProcessorPluginHostObject.h
+index b1a6d321e9753e3d1e0db2709fd7e258b050b69c..dcf8e9ef2a475e528dc125958272186aa74b1245 100644
+--- a/node_modules/react-native-vision-camera/ios/FrameProcessors/FrameProcessorPluginHostObject.h
++++ b/node_modules/react-native-vision-camera/ios/FrameProcessors/FrameProcessorPluginHostObject.h
+@@ -9,7 +9,11 @@
+ #pragma once
+ 
+ #import "FrameProcessorPlugin.h"
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
+ #import <jsi/jsi.h>
+ #import <memory>
+ 
+diff --git a/node_modules/react-native-vision-camera/ios/FrameProcessors/JSINSObjectConversion.h b/node_modules/react-native-vision-camera/ios/FrameProcessors/JSINSObjectConversion.h
+index da107d77a42363283b702f981eb74796bd9dd525..a1ca7631082c1dbe62859b1cff029364cb251915 100644
+--- a/node_modules/react-native-vision-camera/ios/FrameProcessors/JSINSObjectConversion.h
++++ b/node_modules/react-native-vision-camera/ios/FrameProcessors/JSINSObjectConversion.h
+@@ -9,7 +9,11 @@
+ #pragma once
+ 
+ #import "SharedArray.h"
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
+ #import <jsi/jsi.h>
+ 
+ namespace JSINSObjectConversion {

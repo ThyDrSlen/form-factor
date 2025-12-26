@@ -1,0 +1,144 @@
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
+index e07300ed222b8a12b88dda10839f811c5854f218..4a254e1a913f7f2070c6d73e233434b0eb49967b 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
+@@ -7,7 +7,11 @@
+ #import <jsi/jsi.h>
+ #import <React/RCTBridgeModule.h>
+ #import <ReactCommon/TurboModuleUtils.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
+ #import <ExpoModulesCore/ObjectDeallocator.h>
+ 
+ namespace jsi = facebook::jsi;
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h b/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h
+index 6d9bcaab10153a3f6b6d4243807ef56723baa6df..268927d238430ee07dec47ca8cbe8d20989353d9 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h
+@@ -7,7 +7,11 @@
+ #import <jsi/jsi.h>
+ 
+ #import <React/RCTBridgeModule.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ using namespace facebook;
+ using namespace react;
+diff --git a/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h b/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h
+index d7a5fdb4911bfc34d58c78a6003142ce0ddd3103..6f5f29289321fc1ad5836af174bb60df46fadba6 100644
+--- a/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h
++++ b/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h
+@@ -4,7 +4,11 @@
+ 
+ #ifdef __cplusplus
+ 
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ #include <ExpoModulesCore/MainThreadInvoker.h>
+ 
+ #include <jsi/jsi.h>
+diff --git a/node_modules/expo-modules-core/common/cpp/BridgelessJSCallInvoker.h b/node_modules/expo-modules-core/common/cpp/BridgelessJSCallInvoker.h
+index abacef3ac2fd740c8bac62756af723302252adab..fecfdfc837f14b476fc0636b818f5dd71d1a2c86 100644
+--- a/node_modules/expo-modules-core/common/cpp/BridgelessJSCallInvoker.h
++++ b/node_modules/expo-modules-core/common/cpp/BridgelessJSCallInvoker.h
+@@ -4,7 +4,11 @@
+ 
+ #ifdef __cplusplus
+ 
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ #include <ReactCommon/RuntimeExecutor.h>
+ 
+ namespace jsi = facebook::jsi;
+diff --git a/node_modules/expo-modules-core/common/cpp/TestingSyncJSCallInvoker.h b/node_modules/expo-modules-core/common/cpp/TestingSyncJSCallInvoker.h
+index 90d4035b95e64c9a71f7f198a704f65f2fd667a9..2edf7a84af7144caf22479603f6e5067c6794143 100644
+--- a/node_modules/expo-modules-core/common/cpp/TestingSyncJSCallInvoker.h
++++ b/node_modules/expo-modules-core/common/cpp/TestingSyncJSCallInvoker.h
+@@ -4,7 +4,11 @@
+ 
+ #ifdef __cplusplus
+ 
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ #include <jsi/jsi.h>
+ 
+diff --git a/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.h b/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.h
+index 08356763e782022558b09cb228d50e111c0722ea..71a159540e1063d8f985c5237089c94734f3fb7e 100644
+--- a/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.h
++++ b/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.h
+@@ -13,7 +13,11 @@
+ #include <react/jni/WritableNativeArray.h>
+ #include <react/jni/WritableNativeMap.h>
+ #include <fbjni/detail/CoreClasses.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ #include <react/bridging/LongLivedObject.h>
+ 
+ namespace jni = facebook::jni;
+diff --git a/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.h b/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.h
+index 20b65d740a16935589446e0464c20f3328e8f360..f29cb7d2074d76cabcee5b18a4e0d6f353773608 100644
+--- a/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.h
++++ b/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.h
+@@ -14,7 +14,11 @@
+ #include <fbjni/fbjni.h>
+ #include <jsi/jsi.h>
+ #include <ReactCommon/CallInvokerHolder.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ #if IS_NEW_ARCHITECTURE_ENABLED
+ 
+diff --git a/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.h b/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.h
+index eb6f6d40395d3acd09a38ab362ba6c5d1268f59b..02c7b74eb4fcc5ebd8b599d91bed3c825bb705b4 100644
+--- a/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.h
++++ b/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.h
+@@ -6,7 +6,11 @@
+ 
+ #include <jsi/jsi.h>
+ #include <fbjni/fbjni.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ namespace jsi = facebook::jsi;
+ namespace jni = facebook::jni;
+diff --git a/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.h b/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.h
+index c2d02a06208f0f91e6178065d20346a9a1f0ec9f..6912721ff147667816d15822abcf00feffed54ae 100644
+--- a/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.h
++++ b/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.h
+@@ -6,7 +6,11 @@
+ #include <jsi/jsi.h>
+ 
+ #include <ReactCommon/CallInvokerHolder.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ namespace jni = facebook::jni;
+ namespace jsi = facebook::jsi;
