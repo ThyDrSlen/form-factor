@@ -32,9 +32,26 @@ jobs:
 
       - name: Check build status
         if: ${{ env.EXPO_TOKEN != '' }}
+        env:
+          EAS_DEBUG: 1
         run: |
-          # Get latest builds
-          builds=$(eas build:list --limit=5 --json --non-interactive)
+          set -euo pipefail
+          # Get latest builds (retry to avoid transient API failures)
+          builds=""
+          for attempt in 1 2 3; do
+            if builds=$(eas build:list --limit=5 --json --non-interactive 2>eas_build_list.err); then
+              break
+            fi
+            echo "eas build:list failed (attempt ${attempt})"
+            cat eas_build_list.err
+            if [ "${attempt}" -lt 3 ]; then
+              sleep $((attempt * 5))
+            fi
+          done
+          if [ -z "$builds" ]; then
+            echo "❌ Unable to fetch builds after retries."
+            exit 1
+          fi
           echo "Recent builds:"
           echo "$builds" | jq '.[] | {id: .id, status: .status, platform: .platform, createdAt: .createdAt}'
           
