@@ -1,0 +1,150 @@
+diff --git a/node_modules/react-native-worklets/apple/worklets/apple/WorkletsModule.h b/node_modules/react-native-worklets/apple/worklets/apple/WorkletsModule.h
+index bc7398e9a6289a675c9166cc8e641e2d61330408..653f7dda9d7538e94eda9fafc5f86055c44dcdb3 100644
+--- a/node_modules/react-native-worklets/apple/worklets/apple/WorkletsModule.h
++++ b/node_modules/react-native-worklets/apple/worklets/apple/WorkletsModule.h
+@@ -10,6 +10,12 @@
+ // Bundle mode
+ #import <React/NSBigStringBuffer.h>
+ #import <React/RCTBundleConsumer.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
++
+ #endif // __has_include(<React/RCTBundleConsumer.h>)
+ 
+ @interface WorkletsModule : RCTEventEmitter <
+diff --git a/node_modules/react-native-worklets/apple/worklets/apple/WorkletsModule.mm b/node_modules/react-native-worklets/apple/worklets/apple/WorkletsModule.mm
+index 66fa2454e73297322efc939644d9a20bb4a7cbef..75c3d956c7d6a4328eb9d36d42ea3feac4b23c9b 100644
+--- a/node_modules/react-native-worklets/apple/worklets/apple/WorkletsModule.mm
++++ b/node_modules/react-native-worklets/apple/worklets/apple/WorkletsModule.mm
+@@ -16,6 +16,12 @@
+ #if __has_include(<React/RCTBundleProvider.h>)
+ // Bundle mode
+ #import <React/RCTBundleProvider.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
++
+ #endif // __has_include(<React/RCTBundleProvider.h>)
+ 
+ using namespace worklets;
+diff --git a/node_modules/react-native-worklets/Common/cpp/worklets/Tools/JSScheduler.h b/node_modules/react-native-worklets/Common/cpp/worklets/Tools/JSScheduler.h
+index 6a7ac99278a4c39977fb5cc2d7d5c74828ddb353..62e4da6ca72ec446fcc6025f30dce7c940783654 100644
+--- a/node_modules/react-native-worklets/Common/cpp/worklets/Tools/JSScheduler.h
++++ b/node_modules/react-native-worklets/Common/cpp/worklets/Tools/JSScheduler.h
+@@ -1,6 +1,10 @@
+ #pragma once
+ 
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ #include <jsi/jsi.h>
+ 
+ #include <memory>
+diff --git a/node_modules/react-native-worklets/Common/cpp/worklets/Tools/JSScheduler.cpp b/node_modules/react-native-worklets/Common/cpp/worklets/Tools/JSScheduler.cpp
+index 43c80519b9f173ff1a0945e064dc6be026af9dbd..2fe17d3dce2f9ac453e122d3052a5c08f7f46b91 100644
+--- a/node_modules/react-native-worklets/Common/cpp/worklets/Tools/JSScheduler.cpp
++++ b/node_modules/react-native-worklets/Common/cpp/worklets/Tools/JSScheduler.cpp
+@@ -2,6 +2,12 @@
+ #include <worklets/Tools/JSScheduler.h>
+ 
+ #include <utility>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace worklets {
+ 
+diff --git a/node_modules/react-native-worklets/Common/cpp/worklets/Tools/UIScheduler.h b/node_modules/react-native-worklets/Common/cpp/worklets/Tools/UIScheduler.h
+index 8b9aca9f9158f586a6eec77b666d66a94dbb1ab8..1d58dfe4c9124c07b3299ac0e34d508bedff08f7 100644
+--- a/node_modules/react-native-worklets/Common/cpp/worklets/Tools/UIScheduler.h
++++ b/node_modules/react-native-worklets/Common/cpp/worklets/Tools/UIScheduler.h
+@@ -2,7 +2,11 @@
+ 
+ #include <worklets/Tools/ThreadSafeQueue.h>
+ 
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ #include <atomic>
+ 
+diff --git a/node_modules/react-native-worklets/Common/cpp/worklets/NativeModules/WorkletsModuleProxy.h b/node_modules/react-native-worklets/Common/cpp/worklets/NativeModules/WorkletsModuleProxy.h
+index 0e54e9d39a460bf66416b12f328ecdfbd22b6914..55f34595859201704ba9ccdc80364f0cdf5171ed 100644
+--- a/node_modules/react-native-worklets/Common/cpp/worklets/NativeModules/WorkletsModuleProxy.h
++++ b/node_modules/react-native-worklets/Common/cpp/worklets/NativeModules/WorkletsModuleProxy.h
+@@ -16,6 +16,12 @@
+ 
+ #include <memory>
+ #include <string>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace worklets {
+ 
+diff --git a/node_modules/react-native-worklets/Common/cpp/worklets/NativeModules/WorkletsModuleProxy.cpp b/node_modules/react-native-worklets/Common/cpp/worklets/NativeModules/WorkletsModuleProxy.cpp
+index 50342854b84decbb9606bc390354873e9f112789..eaa540fbbad44fee1de1a185e0c09612e9675cb0 100644
+--- a/node_modules/react-native-worklets/Common/cpp/worklets/NativeModules/WorkletsModuleProxy.cpp
++++ b/node_modules/react-native-worklets/Common/cpp/worklets/NativeModules/WorkletsModuleProxy.cpp
+@@ -15,6 +15,12 @@
+ #include <memory>
+ #include <string>
+ #include <utility>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ using namespace facebook;
+ 
+diff --git a/node_modules/react-native-worklets/android/src/main/cpp/worklets/android/WorkletsModule.h b/node_modules/react-native-worklets/android/src/main/cpp/worklets/android/WorkletsModule.h
+index 292b4845cd4bfa2d0072e99d73804023a3f3a758..61f4de44d6cfcec0e9b4d7eddcf6f9ded12ce499 100644
+--- a/node_modules/react-native-worklets/android/src/main/cpp/worklets/android/WorkletsModule.h
++++ b/node_modules/react-native-worklets/android/src/main/cpp/worklets/android/WorkletsModule.h
+@@ -15,6 +15,12 @@
+ 
+ #include <memory>
+ #include <string>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace worklets {
+ 
+diff --git a/node_modules/react-native-worklets/android/src/main/cpp/worklets/android/WorkletsModule.cpp b/node_modules/react-native-worklets/android/src/main/cpp/worklets/android/WorkletsModule.cpp
+index 2237cce4b36fd9c4c9b90d65d1991574cf95d651..18896ee514ffb58190394f7f52faae68d3941ad4 100644
+--- a/node_modules/react-native-worklets/android/src/main/cpp/worklets/android/WorkletsModule.cpp
++++ b/node_modules/react-native-worklets/android/src/main/cpp/worklets/android/WorkletsModule.cpp
+@@ -7,6 +7,12 @@
+ #include <memory>
+ #include <string>
+ #include <utility>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace worklets {
+ 

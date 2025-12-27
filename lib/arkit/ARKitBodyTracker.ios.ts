@@ -1,25 +1,26 @@
 /**
  * iOS implementation of ARKit Body Tracking
- * 
+ *
  * For web stub, see ARKitBodyTracker.web.ts
  */
+import { Platform } from 'react-native';
 import { requireNativeModule } from 'expo-modules-core';
 
 // Load native module safely (don't throw during import)
+// NOTE: Logging is enabled in ALL builds to diagnose Release issues
 let ARKitBodyTracker: any = null;
 try {
-  if (__DEV__) console.log('[ARKitBodyTracker] Attempting to load native module...');
+  console.log('[ARKitBodyTracker] Attempting to load native module...');
   ARKitBodyTracker = requireNativeModule('ARKitBodyTracker');
-  if (__DEV__) console.log('[ARKitBodyTracker] Native module loaded successfully:', !!ARKitBodyTracker);
-  if (__DEV__ && ARKitBodyTracker) {
-    console.log('[ARKitBodyTracker] Available methods:', Object.keys(ARKitBodyTracker));
+  console.log('[ARKitBodyTracker] Native module loaded:', !!ARKitBodyTracker);
+  if (ARKitBodyTracker) {
+    console.log('[ARKitBodyTracker] Module methods:', Object.keys(ARKitBodyTracker));
   }
 } catch (e) {
-  console.error('[ARKitBodyTracker] Failed to load native module:', e);
-  if (__DEV__) {
-    // eslint-disable-next-line no-console
-    console.warn('[ARKitBodyTracker] Native module not found. Run `bunx expo prebuild --clean --platform ios && cd ios && pod install`');
-  }
+  // Log in ALL builds so we can diagnose Release issues
+  console.error('[ARKitBodyTracker] FAILED to load native module:', e);
+  console.error('[ARKitBodyTracker] This will cause "Device not supported" error!');
+  console.error('[ARKitBodyTracker] Fix: Run `npx expo prebuild --clean --platform ios`');
 }
 
 /**
@@ -56,6 +57,31 @@ export interface BodyPose2D {
   isTracking: boolean;
 }
 
+export interface FrameSnapshot {
+  frame: string;
+  width?: number;
+  height?: number;
+  orientation?: string;
+  mirrored?: boolean;
+}
+
+export interface NativeSupportDiagnostics {
+  deviceModel: string;
+  modelIdentifier: string;
+  systemVersion: string;
+  arWorldTrackingSupported: boolean;
+  arBodyTrackingSupported: boolean;
+  formatsCountComputed: boolean;
+  supportedVideoFormatsCount?: number;
+  bestFormatFps?: number;
+  bestFormatResolution?: string;
+  automaticImageScaleEstimationEnabled?: boolean;
+  automaticSkeletonScaleEstimationEnabled?: boolean;
+  workaroundApplied: boolean;
+  finalSupported: boolean;
+  isMainThread: boolean;
+}
+
 /**
  * Joint angles for common body movements
  */
@@ -75,29 +101,51 @@ export interface JointAngles {
  * Uses ARBodyTrackingConfiguration for real-world 3D pose tracking
  */
 export class BodyTracker {
+  static isNativeModuleLoaded(): boolean {
+    return !!ARKitBodyTracker;
+  }
+
   /**
    * Check if ARKit body tracking is supported on this device
    * Requires iPhone XS or newer (A12 Bionic chip or later)
    */
   static isSupported(): boolean {
-    if (__DEV__) console.log('[BodyTracker] isSupported() called');
-    if (__DEV__) console.log('[BodyTracker] ARKitBodyTracker module exists:', !!ARKitBodyTracker);
-    
+    // Log in ALL builds to diagnose Release issues
+    const deviceInfo = `[${Platform.OS}] version: ${Platform.Version}`;
+    console.log('[BodyTracker] isSupported() called', deviceInfo);
+    console.log('[BodyTracker] ARKitBodyTracker module exists:', !!ARKitBodyTracker);
+
     if (!ARKitBodyTracker) {
-      if (__DEV__) {
-        console.error('[BodyTracker] Native module not loaded - returning false');
-        console.error('[BodyTracker] This means the module failed to load at import time');
-        console.error('[BodyTracker] You MUST run: bunx expo prebuild --clean --platform ios');
-      }
+      console.error('[BodyTracker] Native module NOT loaded - returning false');
+      console.error('[BodyTracker] This causes "Device not supported" error!');
+      console.error('[BodyTracker] Fix: npx expo prebuild --clean --platform ios');
       return false;
     }
-    
-    if (__DEV__) console.log('[BodyTracker] Calling native isSupported()...');
-    const supported = ARKitBodyTracker.isSupported();
-    if (__DEV__) console.log('[BodyTracker] Native isSupported() returned:', supported);
-    if (__DEV__) console.log('[BodyTracker] Device: iPhone 15 Pro should return TRUE');
-    
-    return supported;
+
+    try {
+      console.log('[BodyTracker] Calling native isSupported()...');
+      const supported = ARKitBodyTracker.isSupported();
+      console.log('[BodyTracker] Native isSupported() returned:', supported);
+      if (!supported) {
+        console.error('[BodyTracker] Native check reported NOT supported. See native logs for device details.');
+      }
+      return supported;
+    } catch (err) {
+      console.error('[BodyTracker] Native isSupported() threw error:', err);
+      return false;
+    }
+  }
+
+  static getSupportDiagnostics(): NativeSupportDiagnostics | null {
+    if (!ARKitBodyTracker || typeof ARKitBodyTracker.supportDiagnostics !== 'function') {
+      return null;
+    }
+    try {
+      return ARKitBodyTracker.supportDiagnostics();
+    } catch (err) {
+      console.error('[BodyTracker] supportDiagnostics() threw error:', err);
+      return null;
+    }
   }
 
   /**
@@ -165,6 +213,18 @@ export class BodyTracker {
     }
     const path: string | null | undefined = await ARKitBodyTracker.stopRecording();
     return path ?? null;
+  }
+
+  static async getCurrentFrameSnapshot(options?: { maxWidth?: number; quality?: number }): Promise<FrameSnapshot | null> {
+    if (!ARKitBodyTracker || typeof ARKitBodyTracker.getCurrentFrameSnapshot !== 'function') {
+      return null;
+    }
+    try {
+      return await ARKitBodyTracker.getCurrentFrameSnapshot(options ?? {});
+    } catch (err) {
+      console.warn('[BodyTracker] getCurrentFrameSnapshot() failed', err);
+      return null;
+    }
   }
 
   /**
@@ -301,7 +361,7 @@ export class BodyTracker {
 /**
  * React hook for ARKit body tracking
  */
-export function useBodyTracking(fps: number = 30) {
+export function useBodyTracking(fps: number = 60) {
   const [pose, setPose] = React.useState<BodyPose | null>(null);
   const [pose2D, setPose2D] = React.useState<BodyPose2D | null>(null);
   const [isSupported, setIsSupported] = React.useState(false);
@@ -311,9 +371,33 @@ export function useBodyTracking(fps: number = 30) {
   const poseRef = React.useRef<BodyPose | null>(null);
 
   React.useEffect(() => {
-    // Check support on mount
-    const supported = BodyTracker.isSupported();
-    setIsSupported(supported);
+    // Check support with retry logic for module initialization
+    // Native module may not be immediately available on cold start
+    let retryCount = 0;
+    const maxRetries = 8;
+    const retryDelay = 300; // ms
+
+    const checkSupport = () => {
+      console.log(
+        `[useBodyTracking] Checking support (attempt ${retryCount + 1}/${maxRetries}) Platform: ${Platform.OS} ${Platform.Version}`
+      );
+      const supported = BodyTracker.isSupported();
+      console.log(`[useBodyTracking] isSupported returned: ${supported}`);
+
+      if (supported) {
+        setIsSupported(true);
+      } else if (retryCount < maxRetries - 1) {
+        retryCount++;
+        console.log(`[useBodyTracking] Will retry in ${retryDelay}ms...`);
+        setTimeout(checkSupport, retryDelay);
+      } else {
+        console.log('[useBodyTracking] All retries exhausted, device not supported');
+        setIsSupported(false);
+      }
+    };
+
+    // Small delay before first check to allow native modules to initialize
+    setTimeout(checkSupport, 150);
   }, []);
 
   const startTracking = React.useCallback(async () => {

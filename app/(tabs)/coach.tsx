@@ -6,8 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
-import { styles } from './styles/_index.styles';
-import { spacing } from './styles/_theme-constants';
+import { styles } from '../../styles/tabs/_index.styles';
+import { spacing } from '../../styles/tabs/_theme-constants';
 
 const coachIntroMessage: CoachMessage = {
   id: 'intro',

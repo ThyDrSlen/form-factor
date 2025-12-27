@@ -130,6 +130,8 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const lastSyncedSignatureRef = useRef<string | null>(null);
   const highFrequencyRef = useRef<boolean>(false);
   const watchContextSignatureRef = useRef<string | null>(null);
+  const lastPermissionLogRef = useRef<boolean | null>(null);
+  const autoRequestedRef = useRef<boolean>(false);
   
   // Bulk sync state
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -180,8 +182,12 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
 
     async function loadMetrics() {
       try {
-        console.log('[HealthKitContext] loadMetrics: start, hasReadPermission =', status?.hasReadPermission);
-        const useHealthKit = Platform.OS === 'ios' && status?.hasReadPermission;
+        const hasReadPermission = Boolean(status?.hasReadPermission);
+        if (lastPermissionLogRef.current !== hasReadPermission) {
+          console.log('[HealthKitContext] loadMetrics: hasReadPermission =', hasReadPermission);
+          lastPermissionLogRef.current = hasReadPermission;
+        }
+        const useHealthKit = Platform.OS === 'ios' && hasReadPermission;
 
         if (useHealthKit) {
           const [
@@ -374,7 +380,9 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
       if (cancelled) return;
       await loadMetrics();
       if (cancelled) return;
-      const intervalMs = (highFrequencyRef.current || isWorkoutInProgress) ? 3_000 : 60_000;
+      const intervalMs = status?.hasReadPermission
+        ? (highFrequencyRef.current || isWorkoutInProgress ? 3_000 : 60_000)
+        : 15_000;
       timeout = setTimeout(tick, intervalMs);
     };
 
@@ -423,6 +431,23 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
     // take effect immediately
     try { rescheduleRef.current?.(); } catch {}
   }, []);
+
+  // Auto-request Health permissions on iOS once, so users aren't stuck until they tap a button.
+  useEffect(() => {
+    if (
+      Platform.OS !== 'ios' ||
+      autoRequestedRef.current ||
+      !status?.isAvailable ||
+      status?.hasReadPermission ||
+      status?.hasSharePermission
+    ) {
+      return;
+    }
+    autoRequestedRef.current = true;
+    requestPermissions().catch((err) => {
+      console.warn('[HealthKitContext] Auto permission request failed', err);
+    });
+  }, [status?.isAvailable, status?.hasReadPermission, status?.hasSharePermission, requestPermissions]);
 
   // Check if user has synced data before
   const checkDataRange = useCallback(async () => {

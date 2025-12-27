@@ -1,0 +1,79 @@
+diff --git a/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h b/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h
+index 6d9bcaa..268927d 100644
+--- a/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h
++++ b/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h
+@@ -7,7 +7,11 @@
+ #import <jsi/jsi.h>
+ 
+ #import <React/RCTBridgeModule.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ using namespace facebook;
+ using namespace react;
+diff --git a/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.mm b/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.mm
+index e924da4..26117b7 100644
+--- a/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.mm
++++ b/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.mm
+@@ -1,6 +1,10 @@
+ // Copyright 2018-present 650 Industries. All rights reserved.
+ 
++#if __has_include(<react/bridging/CallbackWrapper.h>)
+ #import <react/bridging/CallbackWrapper.h>
++#elif __has_include(<ReactCommon/CallbackWrapper.h>)
++#import <ReactCommon/CallbackWrapper.h>
++#endif
+ #import <ExpoModulesCore/EXJavaScriptValue.h>
+ #import <ExpoModulesCore/EXJavaScriptObject.h>
+ #import <ExpoModulesCore/EXJavaScriptWeakObject.h>
+diff --git a/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h b/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
+index 407f57f..86b41d0 100644
+--- a/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
++++ b/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
+@@ -8,6 +8,11 @@
+ #import <React/RCTBridgeModule.h>
+ #import <ReactCommon/TurboModuleUtils.h>
+ #import <ExpoModulesCore/ObjectDeallocator.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ namespace jsi = facebook::jsi;
+ namespace react = facebook::react;
+diff --git a/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm b/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm
+index a566e53..c597537 100644
+--- a/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm
++++ b/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm
+@@ -1,6 +1,11 @@
+ // Copyright 2022-present 650 Industries. All rights reserved.
+ 
+ #import <sstream>
++#if __has_include(<react/bridging/CallbackWrapper.h>)
++#import <react/bridging/CallbackWrapper.h>
++#elif __has_include(<ReactCommon/CallbackWrapper.h>)
++#import <ReactCommon/CallbackWrapper.h>
++#endif
+ 
+ #import <ExpoModulesCore/EXJSIConversions.h>
+ #import <ExpoModulesCore/EXJSIUtils.h>
+diff --git a/node_modules/expo/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h b/node_modules/expo/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h
+index d7a5fdb..6f5f292 100644
+--- a/node_modules/expo/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h
++++ b/node_modules/expo/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h
+@@ -4,7 +4,11 @@
+ 
+ #ifdef __cplusplus
+ 
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ #include <ExpoModulesCore/MainThreadInvoker.h>
+ 
+ #include <jsi/jsi.h>

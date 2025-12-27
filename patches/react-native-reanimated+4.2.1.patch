@@ -1,0 +1,232 @@
+diff --git a/node_modules/react-native-reanimated/apple/reanimated/apple/ReanimatedModule.mm b/node_modules/react-native-reanimated/apple/reanimated/apple/ReanimatedModule.mm
+index b8e166d1aef7e06f7ed5da68d78b701aef7061e8..12e841d272bbbcdbc8396febbc707228078dd365 100644
+--- a/node_modules/react-native-reanimated/apple/reanimated/apple/ReanimatedModule.mm
++++ b/node_modules/react-native-reanimated/apple/reanimated/apple/ReanimatedModule.mm
+@@ -12,6 +12,12 @@
+ 
+ #import <worklets/Tools/SingleInstanceChecker.h>
+ #import <worklets/apple/WorkletsModule.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ using namespace facebook::react;
+ using namespace reanimated;
+diff --git a/node_modules/react-native-reanimated/apple/reanimated/apple/ReanimatedModule.h b/node_modules/react-native-reanimated/apple/reanimated/apple/ReanimatedModule.h
+index b34fec9b3b1cb8b7de5316d941ced7d5c0316763..fb04b9a88fa6e6b3b8535c69c1062f6719e24b5a 100644
+--- a/node_modules/react-native-reanimated/apple/reanimated/apple/ReanimatedModule.h
++++ b/node_modules/react-native-reanimated/apple/reanimated/apple/ReanimatedModule.h
+@@ -6,6 +6,12 @@
+ #import <rnreanimated/rnreanimated.h>
+ 
+ #import <reanimated/apple/REANodesManager.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ @interface ReanimatedModule
+     : RCTEventEmitter <NativeReanimatedModuleSpec, RCTCallInvokerModule, RCTEventDispatcherObserver, RCTInvalidating>
+diff --git a/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.h b/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.h
+index eb5f83107d4a9e754789e86836773533c814b1ec..bd867cb4a1ae7c82c8e1418832a011799e456ec1 100644
+--- a/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.h
++++ b/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.h
+@@ -4,6 +4,12 @@
+ #import <reanimated/apple/REANodesManager.h>
+ 
+ #import <worklets/apple/WorkletsModule.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace reanimated {
+ 
+diff --git a/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.mm b/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.mm
+index 19a4e2d6aa9ef9fbe7b6a1a73e2b12db21858d89..803d34579ca31e9e9e93705d37ccaa9038d2348e 100644
+--- a/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.mm
++++ b/node_modules/react-native-reanimated/apple/reanimated/apple/native/NativeProxy.mm
+@@ -4,6 +4,12 @@
+ #import <reanimated/apple/native/NativeProxy.h>
+ #import <reanimated/apple/native/PlatformDepMethodsHolderImpl.h>
+ #import <reanimated/apple/native/REAJSIUtils.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ @interface RCTBridge (JSIRuntime)
+ - (void *)runtime;
+diff --git a/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxy_Legacy.h b/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxy_Legacy.h
+index ec942d638d09c30b6e7c6b2e45223a2239ca25b7..3ecfce05b8b17d8fea238a69a83c268e83eca98e 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxy_Legacy.h
++++ b/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxy_Legacy.h
+@@ -17,6 +17,12 @@
+ #include <unordered_set>
+ #include <utility>
+ #include <vector>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace reanimated {
+ 
+diff --git a/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxyCommon.cpp b/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxyCommon.cpp
+index 8eb9214f58abf1397a08cdeff2400129f80fce36..5b98c3183f04cf27a7e55a1e78894038ad40b8d1 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxyCommon.cpp
++++ b/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxyCommon.cpp
+@@ -1,4 +1,8 @@
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ #include <folly/dynamic.h>
+ #include <react/renderer/uimanager/UIManagerBinding.h>
+ #include <reanimated/Fabric/ShadowTreeCloner.h>
+diff --git a/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxyCommon.h b/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxyCommon.h
+index 70f07c376f65dcf232ac9f801806acebaecd2d60..1f4bf8f08289a6f3661ea09f6db540f5c52b36f3 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxyCommon.h
++++ b/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxyCommon.h
+@@ -12,6 +12,12 @@
+ #include <optional>
+ #include <unordered_map>
+ #include <vector>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace reanimated {
+ 
+diff --git a/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxy_Experimental.h b/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxy_Experimental.h
+index 7ad2cb8274b8734b8ca29f151dcfd07c3d1c1f20..89bbd8ab71a4d4cf6cb48de7f36d10359d9751ef 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxy_Experimental.h
++++ b/node_modules/react-native-reanimated/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxy_Experimental.h
+@@ -20,6 +20,12 @@
+ #include <unordered_set>
+ #include <utility>
+ #include <vector>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace reanimated {
+ 
+diff --git a/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxySpec.h b/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxySpec.h
+index 6ca97e1198a62f6dcd77de07072e22b7dab2c74e..75d419a39dfdc5016d5c71a6ddf9db01689e3b44 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxySpec.h
++++ b/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxySpec.h
+@@ -1,6 +1,10 @@
+ #pragma once
+ 
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ #include <ReactCommon/TurboModule.h>
+ 
+ #include <memory>
+diff --git a/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.cpp b/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.cpp
+index 0062693b74a349ccec1e062d08f7bdc2f617f18d..3ed4b053226cf4fe87c91fcf2b7821a9bde69ecf 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.cpp
++++ b/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.cpp
+@@ -27,6 +27,12 @@
+ #include <unordered_set>
+ #include <utility>
+ #include <vector>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace reanimated {
+ 
+diff --git a/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.h b/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.h
+index 2500bc7f56c6f209405ce5517f69c96a8577dcd7..72d6cc344e9fd894925b2c1a0925ab3b02ba4168 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.h
++++ b/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxy.h
+@@ -37,6 +37,12 @@
+ #include <unordered_set>
+ #include <utility>
+ #include <vector>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace reanimated {
+ 
+diff --git a/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxySpec.cpp b/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxySpec.cpp
+index 6b4e936ad828a1d519eb0f05f175d4f87a8ebd4f..e8ff434c0d3b07081cfb28ace8d8a881d63f786c 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxySpec.cpp
++++ b/node_modules/react-native-reanimated/Common/cpp/reanimated/NativeModules/ReanimatedModuleProxySpec.cpp
+@@ -2,6 +2,12 @@
+ 
+ #include <memory>
+ #include <utility>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ #define REANIMATED_SPEC_PREFIX(FN_NAME) __hostFunction_ReanimatedModuleProxySpec_##FN_NAME
+ 
+diff --git a/node_modules/react-native-reanimated/android/src/main/cpp/reanimated/android/NativeProxy.h b/node_modules/react-native-reanimated/android/src/main/cpp/reanimated/android/NativeProxy.h
+index 25e3e2168591bcadf8c4eb1d04cfbd17b1fbcd82..712f540a9aeab53c2ed5fa7e507ff18ffd5cf023 100644
+--- a/node_modules/react-native-reanimated/android/src/main/cpp/reanimated/android/NativeProxy.h
++++ b/node_modules/react-native-reanimated/android/src/main/cpp/reanimated/android/NativeProxy.h
+@@ -15,6 +15,12 @@
+ #include <string>
+ #include <utility>
+ #include <vector>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace reanimated {
+ 
+diff --git a/node_modules/react-native-reanimated/android/src/main/cpp/reanimated/android/NativeProxy.cpp b/node_modules/react-native-reanimated/android/src/main/cpp/reanimated/android/NativeProxy.cpp
+index dca6300b97cc04312bd8f2dc83ae865261769723..aba576c08de4e05430d94588c95b7f8384b9a963 100644
+--- a/node_modules/react-native-reanimated/android/src/main/cpp/reanimated/android/NativeProxy.cpp
++++ b/node_modules/react-native-reanimated/android/src/main/cpp/reanimated/android/NativeProxy.cpp
+@@ -13,6 +13,12 @@
+ #include <string>
+ #include <utility>
+ #include <vector>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
++
+ 
+ namespace reanimated {
+ 

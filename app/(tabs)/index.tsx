@@ -24,8 +24,8 @@ import { DashboardHealth, DeleteAction } from '@/components';
 import { deleteVideo, listVideos, VideoWithUrls, uploadWorkoutVideo } from '@/lib/services/video-service';
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
-import { styles } from './styles/_index.styles';
-import { spacing } from './styles/_theme-constants';
+import { styles } from '../../styles/tabs/_index.styles';
+import { spacing } from '../../styles/tabs/_theme-constants';
 
 const motivationalMessages = [
   'Sweat now, shine later',
