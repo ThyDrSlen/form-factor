@@ -9,19 +9,29 @@ jobs:
   check-build-status:
     name: Check Build Status
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Skip when the triggering workflow was from a fork (no secrets available).
+    if: ${{ github.event.workflow_run.conclusion == 'success' && !github.event.workflow_run.head_repository.fork }}
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
     steps:
+      - name: Skip when EXPO_TOKEN is missing
+        if: ${{ env.EXPO_TOKEN == '' }}
+        run: |
+          echo "Skipping build status check: EXPO_TOKEN is not set."
+
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Expo
         uses: expo/expo-github-action@v8
+        if: ${{ env.EXPO_TOKEN != '' }}
         with:
           expo-version: latest
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Check build status
+        if: ${{ env.EXPO_TOKEN != '' }}
         run: |
           # Get latest builds
           builds=$(eas build:list --limit=5 --json --non-interactive)

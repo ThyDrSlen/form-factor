@@ -10,7 +10,7 @@ import { syncService } from '@/lib/services/database/sync-service';
 import { localDB } from '@/lib/services/database/local-db';
 import { fixInvalidUUIDs } from '@/scripts/fix-invalid-uuids';
 import { useDebugInfo } from '@/hooks/use-debug-info';
-import { styles } from './styles/_profile.styles';
+import { styles } from '../../styles/tabs/_profile.styles';
 
 export default function ProfileScreen() {
   const { user, signOut, updateProfile } = useAuth();

@@ -7,7 +7,15 @@ import { useIsFocused } from '@react-navigation/native';
 import { Svg, Circle, Line } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
-import { watchEvents, sendMessage, updateWatchContext } from '@/lib/watch-connectivity';
+import * as MediaLibrary from 'expo-media-library';
+import {
+  watchEvents,
+  sendMessage,
+  updateWatchContext,
+  getIsPaired,
+  getIsWatchAppInstalled,
+  getReachability,
+} from '@/lib/watch-connectivity';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D } from '@/lib/arkit/ARKitBodyTracker';
@@ -33,7 +41,7 @@ import {
   type PushUpMetrics,
 } from '@/lib/workouts';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
-import { styles } from './styles/_scan-arkit.styles';
+import { styles } from '../../styles/tabs/_scan-arkit.styles';
 
 // Phase and detection mode types are now imported from lib/workouts
 type UploadMetrics =
@@ -54,6 +62,10 @@ type UploadMetrics =
 // Thresholds are now imported from workout definitions (PULLUP_THRESHOLDS, PUSHUP_THRESHOLDS)
 
 const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
+const WATCH_MIRROR_INTERVAL_MS = 750;
+const WATCH_MIRROR_JPEG_QUALITY = 25;
+const WATCH_MIRROR_AR_QUALITY = 0.25;
+const WATCH_MIRROR_MAX_WIDTH = 320;
 
 // Metrics types are now imported from workout definitions (PullUpMetrics, PushUpMetrics)
 
@@ -93,6 +105,18 @@ export default function ScanARKitScreen() {
     setZoom((z) => clampZoom(z + delta));
   }, [clampZoom]);
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
+  const ensureMediaLibraryPermission = useCallback(async () => {
+    if (Platform.OS === 'web') return false;
+    try {
+      const current = await MediaLibrary.getPermissionsAsync();
+      if (current.granted) return true;
+      const next = await MediaLibrary.requestPermissionsAsync();
+      return next.granted;
+    } catch (error) {
+      console.warn('[ScanARKit] Media library permission check failed', error);
+      return false;
+    }
+  }, []);
   
   const {
     pose,
@@ -137,6 +161,12 @@ export default function ScanARKitScreen() {
   const sessionStartRef = React.useRef(new Date().toISOString());
   const cueCountersRef = React.useRef({ total: 0, spoken: 0, droppedRepeat: 0, droppedDisabled: 0 });
   const fpsStatsRef = React.useRef<{ count: number; sum: number; min: number }>({ count: 0, sum: 0, min: Number.POSITIVE_INFINITY });
+  const [watchMirrorEnabled, setWatchMirrorEnabled] = useState(Platform.OS === 'ios');
+  const [watchPaired, setWatchPaired] = useState(false);
+  const [watchInstalled, setWatchInstalled] = useState(false);
+  const [watchReachable, setWatchReachable] = useState(false);
+  const watchMirrorTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const watchMirrorInFlightRef = React.useRef(false);
 
   // Rep tracking refs for FQI calculation and logging
   const repStartTsRef = React.useRef<number>(0);
@@ -553,16 +583,17 @@ export default function ScanARKitScreen() {
         supportStatus,
         isTracking,
         hasPermission,
-        willStart: supportStatus === 'supported' && !isTracking && hasPermission
+        cameraPosition,
+        willStart: supportStatus === 'supported' && !isTracking && hasPermission && cameraPosition === 'back'
       });
     }
     
-    if (supportStatus === 'supported' && !isTracking && hasPermission) {
+    if (supportStatus === 'supported' && !isTracking && hasPermission && cameraPosition === 'back') {
       if (DEV) console.log('[ScanARKit] ✅ Auto-starting tracking...');
       startTracking();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supportStatus, isTracking, hasPermission]);
+  }, [supportStatus, isTracking, hasPermission, cameraPosition]);
 
   // Request camera permission on mount
   useEffect(() => {
@@ -868,6 +899,11 @@ export default function ScanARKitScreen() {
   // Start tracking
   const startTracking = useCallback(async () => {
     if (DEV) console.log('[ScanARKit] 🎬 Starting tracking...');
+    if (cameraPosition !== 'back') {
+      if (DEV) console.warn('[ScanARKit] Skipping tracking start: ARKit requires back camera');
+      Alert.alert('Back camera required', 'ARKit body tracking only works with the back camera.');
+      return;
+    }
     try {
       repStateRef.current = 'idle';
       phaseRef.current = 'idle';
@@ -900,7 +936,7 @@ export default function ScanARKitScreen() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startNativeTracking, transitionPhase]);
+  }, [startNativeTracking, transitionPhase, cameraPosition]);
 
   // Stop tracking
   const stopTracking = useCallback(() => {
@@ -1138,6 +1174,161 @@ export default function ScanARKitScreen() {
       }
     }, [primaryCue, audioFeedbackEnabled, speakCue]);
 
+    const canMirrorFromArkit =
+      Platform.OS === 'ios' &&
+      watchMirrorEnabled &&
+      isScreenFocused &&
+      isTracking &&
+      cameraPosition === 'back';
+    const canMirrorFromCamera =
+      Platform.OS === 'ios' &&
+      watchMirrorEnabled &&
+      isScreenFocused &&
+      hasPermission &&
+      !!device &&
+      (!isTracking || cameraPosition === 'front');
+    const watchMirrorActive =
+      (canMirrorFromArkit || canMirrorFromCamera) &&
+      watchPaired &&
+      watchInstalled &&
+      watchReachable;
+    const watchReady = watchPaired && watchInstalled;
+
+    const captureAndSendWatchMirror = useCallback(async () => {
+      if (watchMirrorInFlightRef.current) {
+        return;
+      }
+
+      watchMirrorInFlightRef.current = true;
+      let snapshot:
+        | { path?: string; width?: number; height?: number; orientation?: string; isMirrored?: boolean }
+        | null = null;
+
+      try {
+        let base64: string | null = null;
+        let width: number | undefined;
+        let height: number | undefined;
+        let orientation: string | undefined;
+        let mirrored: boolean | undefined;
+
+        if (canMirrorFromArkit) {
+          const arkitSnapshot = await BodyTracker.getCurrentFrameSnapshot({
+            maxWidth: WATCH_MIRROR_MAX_WIDTH,
+            quality: WATCH_MIRROR_AR_QUALITY,
+          });
+          if (!arkitSnapshot?.frame) {
+            return;
+          }
+          base64 = arkitSnapshot.frame;
+          width = arkitSnapshot.width;
+          height = arkitSnapshot.height;
+          orientation = arkitSnapshot.orientation;
+          mirrored = arkitSnapshot.mirrored;
+        } else {
+          if (!cameraRef.current) {
+            return;
+          }
+          snapshot = await cameraRef.current.takeSnapshot({ quality: WATCH_MIRROR_JPEG_QUALITY });
+          if (!snapshot?.path) {
+            return;
+          }
+
+          base64 = await FileSystem.readAsStringAsync(snapshot.path, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          width = snapshot.width;
+          height = snapshot.height;
+          orientation = snapshot.orientation;
+          mirrored = snapshot.isMirrored ?? cameraPosition === 'front';
+        }
+
+        if (!base64) {
+          return;
+        }
+
+        sendMessage({
+          type: 'mirror',
+          frame: base64,
+          width,
+          height,
+          orientation,
+          mirrored,
+          cameraPosition,
+          ts: Date.now(),
+        });
+      } catch (error) {
+        if (DEV) console.warn('[ScanARKit] Watch mirror snapshot failed', error);
+      } finally {
+        if (snapshot?.path) {
+          FileSystem.deleteAsync(snapshot.path, { idempotent: true }).catch(() => {});
+        }
+        watchMirrorInFlightRef.current = false;
+      }
+    }, [cameraPosition, canMirrorFromArkit, DEV]);
+
+    useEffect(() => {
+      if (Platform.OS !== 'ios') {
+        return;
+      }
+
+      let isMounted = true;
+
+      const refreshWatchStatus = async () => {
+        try {
+          const [paired, installed, reachable] = await Promise.all([
+            getIsPaired(),
+            getIsWatchAppInstalled(),
+            getReachability(),
+          ]);
+          if (!isMounted) return;
+          setWatchPaired(!!paired);
+          setWatchInstalled(!!installed);
+          setWatchReachable(!!reachable);
+        } catch (error) {
+          if (DEV) console.warn('[ScanARKit] Watch status check failed', error);
+        }
+      };
+
+      refreshWatchStatus();
+
+      const unsubscribeReach = watchEvents.addListener('reachability', (reachable: boolean) => {
+        setWatchReachable(!!reachable);
+      });
+      const unsubscribePaired = watchEvents.addListener('paired', (paired: boolean) => {
+        setWatchPaired(!!paired);
+      });
+      const unsubscribeInstalled = watchEvents.addListener('installed', (installed: boolean) => {
+        setWatchInstalled(!!installed);
+      });
+
+      return () => {
+        isMounted = false;
+        unsubscribeReach();
+        unsubscribePaired();
+        unsubscribeInstalled();
+      };
+    }, [DEV]);
+
+    useEffect(() => {
+      if (!watchMirrorActive) {
+        if (watchMirrorTimerRef.current) {
+          clearInterval(watchMirrorTimerRef.current);
+          watchMirrorTimerRef.current = null;
+        }
+        return;
+      }
+
+      captureAndSendWatchMirror();
+      watchMirrorTimerRef.current = setInterval(captureAndSendWatchMirror, WATCH_MIRROR_INTERVAL_MS);
+
+      return () => {
+        if (watchMirrorTimerRef.current) {
+          clearInterval(watchMirrorTimerRef.current);
+          watchMirrorTimerRef.current = null;
+        }
+      };
+    }, [watchMirrorActive, captureAndSendWatchMirror]);
+
     // Watch Connectivity: Listen for commands
     useEffect(() => {
       const unsubscribe = watchEvents.addListener('message', (message: { command?: string }) => {
@@ -1193,6 +1384,23 @@ export default function ScanARKitScreen() {
       }
     }, [detectionMode, latestMetricsForUpload, uploading]);
 
+    const saveRecordingToCameraRoll = useCallback(async (uri: string) => {
+      if (Platform.OS === 'web') return;
+      const hasAccess = await ensureMediaLibraryPermission();
+      if (!hasAccess) {
+        Alert.alert(
+          'Photos permission needed',
+          'Enable Photos access to save recordings to your camera roll.'
+        );
+        return;
+      }
+      try {
+        await MediaLibrary.saveToLibraryAsync(uri);
+      } catch (error) {
+        console.error('[ScanARKit] Failed to save recording to camera roll', error);
+      }
+    }, [ensureMediaLibraryPermission]);
+
     const startRecordingVideo = useCallback(async () => {
       if (isRecording) return;
       if (!isTracking) {
@@ -1222,6 +1430,7 @@ export default function ScanARKitScreen() {
         if (path) {
           const uri = path.startsWith('file://') ? path : `file://${path}`;
           recordedUriRef.current = uri;
+          await saveRecordingToCameraRoll(uri);
           await uploadRecordedVideo(uri);
         } else {
           Alert.alert('Recording', 'No video file was generated.');
@@ -1231,7 +1440,7 @@ export default function ScanARKitScreen() {
         setIsRecording(false);
         Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not stop recording.');
       }
-    }, [isRecording, uploadRecordedVideo]);
+    }, [isRecording, saveRecordingToCameraRoll, uploadRecordedVideo]);
 
   if (supportStatus === 'unknown') {
     return (
@@ -1245,11 +1454,25 @@ export default function ScanARKitScreen() {
   }
 
   if (supportStatus === 'unsupported') {
+    // Debug info: Check what BodyTracker reports
+    const nativeDiagnostics = BodyTracker.getSupportDiagnostics();
+    const debugInfo = {
+      platform: Platform.OS,
+      platformVersion: Platform.Version,
+      nativeSupported,
+      nativeModuleLoaded: BodyTracker.isNativeModuleLoaded(),
+      nativeDiagnostics,
+      isSupportedResult: nativeDiagnostics?.finalSupported ?? nativeSupported,
+    };
+
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.errorContainer}>
           <Ionicons name="warning-outline" size={60} color="#FF6B6B" />
           <Text style={styles.errorText}>Device not supported</Text>
+          <Text style={{ color: '#666', fontSize: 10, marginTop: 20, textAlign: 'center' }}>
+            Debug: {JSON.stringify(debugInfo, null, 2)}
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -1334,6 +1557,7 @@ export default function ScanARKitScreen() {
             device={device}
             isActive={true}
             zoom={zoom}
+            video={true}
           />
         )}
         {/* ARKitView - always mount when back camera is selected (hidden when not tracking) so it's ready */}
@@ -1440,7 +1664,7 @@ export default function ScanARKitScreen() {
           )}
 
           {/* Skeleton Overlay (2D projected) */}
-        {smoothedPose2DJoints && smoothedPose2DJoints.length > 0 && (
+        {isTracking && cameraPosition === 'back' && smoothedPose2DJoints && smoothedPose2DJoints.length > 0 && (
             <Svg
               style={styles.fullFill}
               viewBox="0 0 1 1"
@@ -1597,6 +1821,32 @@ export default function ScanARKitScreen() {
             name="camera-reverse"
             size={24}
             color="#FFFFFF"
+          />
+        </TouchableOpacity>
+      )}
+
+      {Platform.OS === 'ios' && (
+        <TouchableOpacity
+          style={[
+            styles.watchMirrorButton,
+            { top: insets.top + 96 },
+            watchMirrorEnabled && styles.watchMirrorButtonActive,
+            !watchReady && styles.watchMirrorButtonDisabled,
+          ]}
+          onPress={() => {
+            if (!watchReady) {
+              Alert.alert('Watch not ready', 'Pair your Apple Watch and install the watch app first.');
+              return;
+            }
+            setWatchMirrorEnabled((value) => !value);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={watchMirrorEnabled ? 'Disable watch mirror' : 'Enable watch mirror'}
+        >
+          <Ionicons
+            name={watchMirrorEnabled ? 'watch' : 'watch-outline'}
+            size={20}
+            color={watchMirrorEnabled ? '#0B1F3A' : '#F5F7FF'}
           />
         </TouchableOpacity>
       )}

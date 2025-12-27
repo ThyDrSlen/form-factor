@@ -18,7 +18,7 @@ import {
 import { Swipeable } from 'react-native-gesture-handler';
 import { useWorkouts, type Workout } from '../../contexts/WorkoutsContext';
 import { useToast } from '../../contexts/ToastContext';
-import { CARD_HEIGHT, styles } from './styles/_workouts.styles';
+import { CARD_HEIGHT, styles } from '../../styles/tabs/_workouts.styles';
 
 const buildWorkoutShareMessage = (workout: Workout): string => {
   const workoutDate = workout.date ? new Date(workout.date) : null;

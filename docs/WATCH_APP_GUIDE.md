@@ -29,16 +29,13 @@ To control the Form Factor recording and tracking from your Apple Watch, you nee
 
 ## Step 2: Replace Source Code
 
-1.  In Xcode's Project Navigator (left sidebar), find the `FormFactorWatch Watch App` folder.
-2.  Delete the default files: `FormFactorWatchApp.swift` and `ContentView.swift`.
-3.  Drag and drop the files from `native/watch-app/` into this folder in Xcode.
-    *   `native/watch-app/FormFactorWatchApp.swift`
-    *   `native/watch-app/ContentView.swift`
-    *   `native/watch-app/WatchSessionManager.swift`
-4.  When prompted:
-    *   Check **"Copy items if needed"**.
-    *   Ensure **"FormFactorWatch Watch App"** target is checked.
-    *   Click **Finish**.
+1.  In Xcode's Project Navigator (left sidebar), find the `Form Factor Watch Watch App` folder.
+2.  Delete the default files if they exist.
+3.  The watch app sources now live in the repo under:
+    *   `ios/Form Factor Watch Watch App/FormFactorWatchApp.swift`
+    *   `ios/Form Factor Watch Watch App/ContentView.swift`
+    *   `ios/Form Factor Watch Watch App/WatchSessionManager.swift`
+4.  If Xcode doesn't pick them up automatically, drag those files into the watch app group and ensure the **"Form Factor Watch Watch App"** target is checked.
 
 ## Step 3: Configure Info.plist and Capabilities
 
@@ -56,6 +53,33 @@ To control the Form Factor recording and tracking from your Apple Watch, you nee
 1.  Select the `FormFactorWatch Watch App` scheme in the top toolbar.
 2.  Select a Simulator pair (e.g., iPhone 15 Pro + Apple Watch Series 9).
 3.  Click Run (Play button).
+
+### Optional: Install on a Watch Simulator via Script
+
+```bash
+bun run watch:install "Apple Watch Series 9 (45mm)"
+```
+
+Set `WATCH_BUNDLE_ID` if you want the script to auto-launch the app:
+
+```bash
+WATCH_BUNDLE_ID=com.slenthekid.formfactoreas.watchkitapp bun run watch:install
+```
+
+For physical devices, installing the iOS app on the paired iPhone will also install the watch app.
+
+## Step 5: Camera Mirror Preview (Low FPS)
+
+The watch app now supports a lightweight camera mirror by streaming JPEG snapshots from the iPhone.
+
+1.  Open the **Scan** tab on the iPhone.
+2.  Tap the **watch** icon (top-right controls) to enable Watch Mirror.
+3.  Keep the iPhone app in the foreground and the watch reachable.
+
+**Notes / limitations**
+
+*   This is a low-FPS, compressed preview intended for quick framing.
+*   Mirroring works during VisionCamera preview (front camera or before tracking) and during ARKit back-camera tracking.
 
 ## Troubleshooting
 
