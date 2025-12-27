@@ -42,6 +42,7 @@
       "android": { "buildType": "app-bundle" }
     },
     "production": {
+      "autoIncrement": true,
       "distribution": "store",
       "ios": {
         "buildConfiguration": "Release"
