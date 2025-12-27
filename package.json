@@ -37,7 +37,6 @@
     "test:report": "jest 2>&1 | tee test-results.txt",
     "test:e2e": "playwright test",
     "prepare": "husky",
-    "preinstall": "node ./scripts/preinstall-clean.js",
     "postinstall": "patch-package"
   },
   "resolutions": {
