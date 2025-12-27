@@ -42,6 +42,12 @@
 
 ---
 
+## Release Engineering
+
+- [ ] If disabling New Arch fixes the TestFlight crash, set `EXPO_USE_NEW_ARCH=0` in `eas.json` preview/production and CI envs (GitHub runners)
+
+---
+
 ## Checks for Understanding
 
 - [ ] Will skeleton overlay adjust to size of the user?
