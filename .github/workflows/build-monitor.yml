@@ -22,6 +22,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: 1.2.22
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-cache-v3-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-cache-v3-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --backend=copyfile
+
       - name: Setup Expo
         uses: expo/expo-github-action@v8
         if: ${{ env.EXPO_TOKEN != '' }}
@@ -39,9 +56,11 @@ jobs:
           # Get latest builds (retry to avoid transient API failures)
           builds=""
           for attempt in 1 2 3; do
-            if builds=$(eas build:list --limit=5 --json --non-interactive 2>eas_build_list.err); then
+            if output=$(eas build:list --limit=5 --json --non-interactive 2>eas_build_list.err); then
+              builds="$output"
               break
             fi
+            builds=""
             echo "eas build:list failed (attempt ${attempt})"
             cat eas_build_list.err
             if [ "${attempt}" -lt 3 ]; then
