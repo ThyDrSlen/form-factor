@@ -248,6 +248,19 @@ jobs:
       - name: Build and submit iOS staging
         run: eas build --platform ios --profile staging --auto-submit --non-interactive
 
+      - name: Ensure hermesc is available
+        run: |
+          HERMESC_SRC="node_modules/hermes-compiler/hermesc/linux64-bin/hermesc"
+          HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/linux64-bin"
+          if [ ! -f "$HERMESC_SRC" ]; then
+            echo "hermesc not found at $HERMESC_SRC"
+            ls -la node_modules/hermes-compiler/hermesc || true
+            exit 1
+          fi
+          mkdir -p "$HERMESC_DEST_DIR"
+          ln -sf "$PWD/$HERMESC_SRC" "$HERMESC_DEST_DIR/hermesc"
+          chmod +x "$HERMESC_DEST_DIR/hermesc"
+
       - name: Deploy OTA update
         run: |
           eas update --branch staging --message "Staging deployment from ${{ github.sha }}"
@@ -311,6 +324,19 @@ jobs:
 
       - name: Build and submit iOS production
         run: eas build --platform ios --profile production --auto-submit --non-interactive
+
+      - name: Ensure hermesc is available
+        run: |
+          HERMESC_SRC="node_modules/hermes-compiler/hermesc/linux64-bin/hermesc"
+          HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/linux64-bin"
+          if [ ! -f "$HERMESC_SRC" ]; then
+            echo "hermesc not found at $HERMESC_SRC"
+            ls -la node_modules/hermes-compiler/hermesc || true
+            exit 1
+          fi
+          mkdir -p "$HERMESC_DEST_DIR"
+          ln -sf "$PWD/$HERMESC_SRC" "$HERMESC_DEST_DIR/hermesc"
+          chmod +x "$HERMESC_DEST_DIR/hermesc"
 
       - name: Deploy OTA update
         run: |
