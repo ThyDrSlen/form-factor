@@ -26,7 +26,8 @@
       },
       "android": { "buildType": "apk" },
       "env": {
-        "APP_VARIANT": "preview"
+        "APP_VARIANT": "preview",
+        "EXPO_USE_NEW_ARCH": "0"
       }
     },
     "staging": {
@@ -49,6 +50,7 @@
       },
       "env": {
         "APP_VARIANT": "production",
+        "EXPO_USE_NEW_ARCH": "0",
         "EXPO_PUBLIC_SUPABASE_URL": "$SUPABASE_PRODUCTION_URL",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "$SUPABASE_PRODUCTION_ANON_KEY"
       },
