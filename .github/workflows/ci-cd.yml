@@ -310,7 +310,7 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
       - name: Bump iOS build number (remote)
-        run: eas build:version:set --platform ios --profile production --non-interactive --auto
+        run: eas build:version:set --platform ios --profile production
 
       - name: Build and submit iOS production
         run: eas build --platform ios --profile production --auto-submit --non-interactive
