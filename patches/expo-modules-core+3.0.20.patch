@@ -1,152 +1,69 @@
-diff --git a/node_modules/expo-modules-core/ios/ExpoModulesCore.h b/node_modules/expo-modules-core/ios/ExpoModulesCore.h
-index 05655371db6bbc7423625436183f8c5d902363aa..d01defa8b48b539d9194aae10ce4e8a79ee54115 100644
---- a/node_modules/expo-modules-core/ios/ExpoModulesCore.h
-+++ b/node_modules/expo-modules-core/ios/ExpoModulesCore.h
-@@ -92,3 +92,8 @@
- #import <ExpoModulesCore/SharedRef.h>
- #import <ExpoModulesCore/TestingSyncJSCallInvoker.h>
- #import <ExpoModulesCore/TypedArray.h>
-+#if __has_include(<ReactCommon/CallInvoker.h>)
-+#import <ReactCommon/CallInvoker.h>
-+#else
-+#import <React_callinvoker/CallInvoker.h>
-+#endif
-diff --git a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.mm b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.mm
-index 403606288c105c152672a2daf75d04ca1cc9c0dc..8662f13d7bbc8e742740904759a0b8eccf4d524c 100644
---- a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.mm
-+++ b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.mm
-@@ -10,6 +10,12 @@
- #import <ExpoModulesCore/SharedObject.h>
- #import <ExpoModulesCore/Swift.h>
- #import <ExpoModulesCore/TestingJSCallInvoker.h>
-+#if __has_include(<ReactCommon/CallInvoker.h>)
-+#import <ReactCommon/CallInvoker.h>
-+#else
-+#import <React_callinvoker/CallInvoker.h>
-+#endif
-+
- 
- @implementation EXJavaScriptRuntime {
-   std::shared_ptr<jsi::Runtime> _runtime;
-diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
-index 407f57ff19eb3ac1030db9d1f27493da9e44ca0e..200bd9aa6b2ab7387b3d6e7a7f378d3aa29604ac 100644
---- a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
-+++ b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
-@@ -53,6 +53,12 @@
- 
- #import <ExpoModulesCore/EXJavaScriptObject.h>
- #import <ExpoModulesCore/EXJavaScriptRuntime.h>
-+#if __has_include(<ReactCommon/CallInvoker.h>)
-+#import <ReactCommon/CallInvoker.h>
-+#else
-+#import <React_callinvoker/CallInvoker.h>
-+#endif
-+
- 
- NS_SWIFT_NAME(JSIUtils)
- @interface EXJSIUtils : NSObject
-diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm
-index a566e5337dbe7642a5a6bd0959d58132a88ca5c1..30f36130f9ddffe13c948cfd43ceb12c9a81a4a5 100644
---- a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm
-+++ b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm
-@@ -7,6 +7,12 @@
- #import <ExpoModulesCore/JSIUtils.h>
- #import <ExpoModulesCore/NativeModule.h>
- #import <ExpoModulesCore/EventEmitter.h>
-+#if __has_include(<ReactCommon/CallInvoker.h>)
-+#import <ReactCommon/CallInvoker.h>
-+#else
-+#import <React_callinvoker/CallInvoker.h>
-+#endif
-+
- 
- namespace expo {
- 
-diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h b/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h
-index 6d9bcaab10153a3f6b6d4243807ef56723baa6df..268927d238430ee07dec47ca8cbe8d20989353d9 100644
---- a/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h
-+++ b/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h
-@@ -7,7 +7,11 @@
- #import <jsi/jsi.h>
- 
- #import <React/RCTBridgeModule.h>
-+#if __has_include(<ReactCommon/CallInvoker.h>)
- #import <ReactCommon/CallInvoker.h>
-+#else
-+#import <React_callinvoker/CallInvoker.h>
-+#endif
- 
- using namespace facebook;
- using namespace react;
-diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIInstaller.mm b/node_modules/expo-modules-core/ios/JSI/EXJSIInstaller.mm
-index 9323e28456ff80d233bbd70830cdcc7aec951b91..e17986e4efbe1d5d0f41f0299a1323da10d2c24f 100644
---- a/node_modules/expo-modules-core/ios/JSI/EXJSIInstaller.mm
-+++ b/node_modules/expo-modules-core/ios/JSI/EXJSIInstaller.mm
-@@ -10,6 +10,12 @@
- #import <ExpoModulesCore/EventEmitter.h>
- #import <ExpoModulesCore/NativeModule.h>
- #import <ExpoModulesCore/Swift.h>
-+#if __has_include(<ReactCommon/CallInvoker.h>)
-+#import <ReactCommon/CallInvoker.h>
-+#else
-+#import <React_callinvoker/CallInvoker.h>
-+#endif
-+
- 
- namespace jsi = facebook::jsi;
- 
-diff --git a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.h b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.h
-index a38de45805cdd9cb5c989ad219c94af9d919725b..bb73e7a637da3341540e467a936d43bddb393c97 100644
---- a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.h
-+++ b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.h
-@@ -6,6 +6,12 @@
- #import <Foundation/Foundation.h>
- #import <ExpoModulesCore/EXJavaScriptValue.h>
- #import <ExpoModulesCore/EXJavaScriptObject.h>
-+#if __has_include(<ReactCommon/CallInvoker.h>)
-+#import <ReactCommon/CallInvoker.h>
-+#else
-+#import <React_callinvoker/CallInvoker.h>
-+#endif
-+
- 
- #ifdef __cplusplus
- 
-diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.mm b/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.mm
-index e924da4d36f13b6e94231a2fcaea905db2e360ff..0312ce85805e05c596d37c6590e0049cc4b64824 100644
---- a/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.mm
-+++ b/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.mm
-@@ -10,6 +10,12 @@
- #import <ExpoModulesCore/EXJavaScriptSharedObjectBinding.h>
- #import <ExpoModulesCore/EXStringUtils.h>
- #import <Foundation/NSURL.h>
-+#if __has_include(<ReactCommon/CallInvoker.h>)
-+#import <ReactCommon/CallInvoker.h>
-+#else
-+#import <React_callinvoker/CallInvoker.h>
-+#endif
-+
- 
- namespace expo {
- 
-diff --git a/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h b/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h
-index d7a5fdb4911bfc34d58c78a6003142ce0ddd3103..6f5f29289321fc1ad5836af174bb60df46fadba6 100644
---- a/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h
-+++ b/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h
-@@ -4,7 +4,11 @@
- 
- #ifdef __cplusplus
- 
+diff --git a/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.h b/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.h
+index 20b65d7..f29cb7d 100644
+--- a/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.h
++++ b/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.h
+@@ -14,7 +14,11 @@
+ #include <fbjni/fbjni.h>
+ #include <jsi/jsi.h>
+ #include <ReactCommon/CallInvokerHolder.h>
 +#if __has_include(<ReactCommon/CallInvoker.h>)
  #include <ReactCommon/CallInvoker.h>
 +#else
 +#include <React_callinvoker/CallInvoker.h>
 +#endif
- #include <ExpoModulesCore/MainThreadInvoker.h>
+ 
+ #if IS_NEW_ARCHITECTURE_ENABLED
+ 
+diff --git a/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.h b/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.h
+index 0835676..71a1595 100644
+--- a/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.h
++++ b/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.h
+@@ -13,7 +13,11 @@
+ #include <react/jni/WritableNativeArray.h>
+ #include <react/jni/WritableNativeMap.h>
+ #include <fbjni/detail/CoreClasses.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ #include <react/bridging/LongLivedObject.h>
+ 
+ namespace jni = facebook::jni;
+diff --git a/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.h b/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.h
+index eb6f6d4..02c7b74 100644
+--- a/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.h
++++ b/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.h
+@@ -6,7 +6,11 @@
  
  #include <jsi/jsi.h>
+ #include <fbjni/fbjni.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ namespace jsi = facebook::jsi;
+ namespace jni = facebook::jni;
+diff --git a/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.h b/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.h
+index c2d02a0..6912721 100644
+--- a/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.h
++++ b/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.h
+@@ -6,7 +6,11 @@
+ #include <jsi/jsi.h>
+ 
+ #include <ReactCommon/CallInvokerHolder.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
+ #include <ReactCommon/CallInvoker.h>
++#else
++#include <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ namespace jni = facebook::jni;
+ namespace jsi = facebook::jsi;
 diff --git a/node_modules/expo-modules-core/common/cpp/BridgelessJSCallInvoker.h b/node_modules/expo-modules-core/common/cpp/BridgelessJSCallInvoker.h
-index abacef3ac2fd740c8bac62756af723302252adab..fecfdfc837f14b476fc0636b818f5dd71d1a2c86 100644
+index abacef3..fecfdfc 100644
 --- a/node_modules/expo-modules-core/common/cpp/BridgelessJSCallInvoker.h
 +++ b/node_modules/expo-modules-core/common/cpp/BridgelessJSCallInvoker.h
 @@ -4,7 +4,11 @@
@@ -162,7 +79,7 @@ index abacef3ac2fd740c8bac62756af723302252adab..fecfdfc837f14b476fc0636b818f5dd7
  
  namespace jsi = facebook::jsi;
 diff --git a/node_modules/expo-modules-core/common/cpp/TestingSyncJSCallInvoker.h b/node_modules/expo-modules-core/common/cpp/TestingSyncJSCallInvoker.h
-index 90d4035b95e64c9a71f7f198a704f65f2fd667a9..2edf7a84af7144caf22479603f6e5067c6794143 100644
+index 90d4035..2edf7a8 100644
 --- a/node_modules/expo-modules-core/common/cpp/TestingSyncJSCallInvoker.h
 +++ b/node_modules/expo-modules-core/common/cpp/TestingSyncJSCallInvoker.h
 @@ -4,7 +4,11 @@
@@ -177,152 +94,107 @@ index 90d4035b95e64c9a71f7f198a704f65f2fd667a9..2edf7a84af7144caf22479603f6e5067
  
  #include <jsi/jsi.h>
  
-diff --git a/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.h b/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.h
-index 08356763e782022558b09cb228d50e111c0722ea..71a159540e1063d8f985c5237089c94734f3fb7e 100644
---- a/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.h
-+++ b/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.h
-@@ -13,7 +13,11 @@
- #include <react/jni/WritableNativeArray.h>
- #include <react/jni/WritableNativeMap.h>
- #include <fbjni/detail/CoreClasses.h>
-+#if __has_include(<ReactCommon/CallInvoker.h>)
- #include <ReactCommon/CallInvoker.h>
-+#else
-+#include <React_callinvoker/CallInvoker.h>
-+#endif
- #include <react/bridging/LongLivedObject.h>
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h b/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h
+index 6d9bcaa..268927d 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.h
+@@ -7,7 +7,11 @@
+ #import <jsi/jsi.h>
  
- namespace jni = facebook::jni;
-diff --git a/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.h b/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.h
-index 20b65d740a16935589446e0464c20f3328e8f360..f29cb7d2074d76cabcee5b18a4e0d6f353773608 100644
---- a/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.h
-+++ b/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.h
-@@ -14,7 +14,11 @@
- #include <fbjni/fbjni.h>
- #include <jsi/jsi.h>
- #include <ReactCommon/CallInvokerHolder.h>
+ #import <React/RCTBridgeModule.h>
 +#if __has_include(<ReactCommon/CallInvoker.h>)
- #include <ReactCommon/CallInvoker.h>
+ #import <ReactCommon/CallInvoker.h>
 +#else
-+#include <React_callinvoker/CallInvoker.h>
++#import <React_callinvoker/CallInvoker.h>
 +#endif
  
- #if IS_NEW_ARCHITECTURE_ENABLED
- 
-diff --git a/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.cpp b/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.cpp
-index 4f2be98aaefb93ff21d5e76bd6157ff86a6963b6..0ea4088b2405baefd18641a0abde9f155cb6fe12 100644
---- a/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.cpp
-+++ b/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.cpp
-@@ -15,6 +15,12 @@
- #else
- 
- #include <jsc/JSCRuntime.h>
+ using namespace facebook;
+ using namespace react;
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.mm b/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.mm
+index e924da4..db20a64 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.mm
++++ b/node_modules/expo-modules-core/ios/JSI/EXJSIConversions.mm
+@@ -10,6 +10,11 @@
+ #import <ExpoModulesCore/EXJavaScriptSharedObjectBinding.h>
+ #import <ExpoModulesCore/EXStringUtils.h>
+ #import <Foundation/NSURL.h>
 +#if __has_include(<ReactCommon/CallInvoker.h>)
-+#include <ReactCommon/CallInvoker.h>
++#import <ReactCommon/CallInvoker.h>
 +#else
-+#include <React_callinvoker/CallInvoker.h>
++#import <React_callinvoker/CallInvoker.h>
 +#endif
-+
- 
- #endif
- 
-diff --git a/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.h b/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.h
-index eb6f6d40395d3acd09a38ab362ba6c5d1268f59b..02c7b74eb4fcc5ebd8b599d91bed3c825bb705b4 100644
---- a/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.h
-+++ b/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.h
-@@ -6,7 +6,11 @@
- 
- #include <jsi/jsi.h>
- #include <fbjni/fbjni.h>
-+#if __has_include(<ReactCommon/CallInvoker.h>)
- #include <ReactCommon/CallInvoker.h>
-+#else
-+#include <React_callinvoker/CallInvoker.h>
-+#endif
- 
- namespace jsi = facebook::jsi;
- namespace jni = facebook::jni;
-diff --git a/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.cpp b/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.cpp
-index f12afe34d7f6bb0f6f5c80ea2817a8e6770c8f53..cd60b1d60e686a5bd28064eed416c30939962078 100644
---- a/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.cpp
-+++ b/node_modules/expo-modules-core/android/src/main/cpp/JavaCallback.cpp
-@@ -14,6 +14,12 @@
- #include <jsi/JSIDynamic.h>
- 
- #include <functional>
-+#if __has_include(<ReactCommon/CallInvoker.h>)
-+#include <ReactCommon/CallInvoker.h>
-+#else
-+#include <React_callinvoker/CallInvoker.h>
-+#endif
-+
  
  namespace expo {
  
-diff --git a/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.cpp b/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.cpp
-index f404dca0bb7507220e8c33272592744774ea60e0..863c2de28d7145abb50b410163f79515510ce7d8 100644
---- a/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.cpp
-+++ b/node_modules/expo-modules-core/android/src/main/cpp/JavaScriptRuntime.cpp
-@@ -6,6 +6,12 @@
- #include "Exceptions.h"
- #include "JSIContext.h"
- #include "JSIUtils.h"
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
+index 407f57f..e8a5cf7 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
+@@ -8,6 +8,15 @@
+ #import <React/RCTBridgeModule.h>
+ #import <ReactCommon/TurboModuleUtils.h>
+ #import <ExpoModulesCore/ObjectDeallocator.h>
 +#if __has_include(<ReactCommon/CallInvoker.h>)
-+#include <ReactCommon/CallInvoker.h>
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#import <ReactCommon/CallInvoker.h>
 +#else
-+#include <React_callinvoker/CallInvoker.h>
++#import <React_callinvoker/CallInvoker.h>
 +#endif
-+
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
  
  namespace jsi = facebook::jsi;
- 
-diff --git a/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.cpp b/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.cpp
-index 335fe2806b1be0a4b1ff7f3e91aa16ec5b657ba8..867fad1cf309c70a621df537cee53b1075042d23 100644
---- a/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.cpp
-+++ b/node_modules/expo-modules-core/android/src/main/cpp/JSIContext.cpp
-@@ -28,6 +28,12 @@
- #if IS_NEW_ARCHITECTURE_ENABLED
- 
- #include "BridgelessJSCallInvoker.h"
+ namespace react = facebook::react;
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm
+index a566e53..40fa841 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm
++++ b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm
+@@ -7,6 +7,11 @@
+ #import <ExpoModulesCore/JSIUtils.h>
+ #import <ExpoModulesCore/NativeModule.h>
+ #import <ExpoModulesCore/EventEmitter.h>
 +#if __has_include(<ReactCommon/CallInvoker.h>)
-+#include <ReactCommon/CallInvoker.h>
++#import <ReactCommon/CallInvoker.h>
 +#else
-+#include <React_callinvoker/CallInvoker.h>
++#import <React_callinvoker/CallInvoker.h>
 +#endif
-+
  
- #endif
+ namespace expo {
  
-diff --git a/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.h b/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.h
-index c2d02a06208f0f91e6178065d20346a9a1f0ec9f..6912721ff147667816d15822abcf00feffed54ae 100644
---- a/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.h
-+++ b/node_modules/expo-modules-core/android/src/main/cpp/RuntimeHolder.h
-@@ -6,7 +6,11 @@
- #include <jsi/jsi.h>
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.h b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.h
+index a38de45..e1255a5 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.h
+@@ -8,6 +8,15 @@
+ #import <ExpoModulesCore/EXJavaScriptObject.h>
  
- #include <ReactCommon/CallInvokerHolder.h>
+ #ifdef __cplusplus
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#if __has_include(<ReactCommon/CallInvoker.h>)
++#import <ReactCommon/CallInvoker.h>
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
++#else
++#import <React_callinvoker/CallInvoker.h>
++#endif
+ 
+ namespace jsi = facebook::jsi;
+ namespace react = facebook::react;
+diff --git a/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h b/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h
+index d7a5fdb..6f5f292 100644
+--- a/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h
++++ b/node_modules/expo-modules-core/ios/TestUtils/TestingJSCallInvoker.h
+@@ -4,7 +4,11 @@
+ 
+ #ifdef __cplusplus
+ 
 +#if __has_include(<ReactCommon/CallInvoker.h>)
  #include <ReactCommon/CallInvoker.h>
 +#else
 +#include <React_callinvoker/CallInvoker.h>
 +#endif
+ #include <ExpoModulesCore/MainThreadInvoker.h>
  
- namespace jni = facebook::jni;
- namespace jsi = facebook::jsi;
-diff --git a/node_modules/expo-modules-core/android/src/main/cpp/MethodMetadata.cpp b/node_modules/expo-modules-core/android/src/main/cpp/MethodMetadata.cpp
-index 6125ae91abc70362526caaa7b52af5d541f6f3fe..dc992d70f21dead4257454a3bc021d552241ad7d 100644
---- a/node_modules/expo-modules-core/android/src/main/cpp/MethodMetadata.cpp
-+++ b/node_modules/expo-modules-core/android/src/main/cpp/MethodMetadata.cpp
-@@ -15,6 +15,12 @@
- #include <optional>
- 
- #include <react/bridging/LongLivedObject.h>
-+#if __has_include(<ReactCommon/CallInvoker.h>)
-+#include <ReactCommon/CallInvoker.h>
-+#else
-+#include <React_callinvoker/CallInvoker.h>
-+#endif
-+
- 
- namespace jni = facebook::jni;
- namespace jsi = facebook::jsi;
+ #include <jsi/jsi.h>

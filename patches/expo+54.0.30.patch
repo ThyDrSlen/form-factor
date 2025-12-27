@@ -1,17 +1,16 @@
 diff --git a/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h b/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
-index 5d1d20c0c409f1d0a9d1f4f2b6d1fa2a1c432bb7..5b8f9d0d31f54a2ecf3dc7542ff1a9c8c16e6d2e 100644
+index 407f57f..86b41d0 100644
 --- a/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
 +++ b/node_modules/expo/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
-@@ -53,6 +53,12 @@
- 
- #import <ExpoModulesCore/EXJavaScriptObject.h>
- #import <ExpoModulesCore/EXJavaScriptRuntime.h>
+@@ -8,6 +8,11 @@
+ #import <React/RCTBridgeModule.h>
+ #import <ReactCommon/TurboModuleUtils.h>
+ #import <ExpoModulesCore/ObjectDeallocator.h>
 +#if __has_include(<ReactCommon/CallInvoker.h>)
 +#import <ReactCommon/CallInvoker.h>
 +#else
 +#import <React_callinvoker/CallInvoker.h>
 +#endif
-+
  
- NS_SWIFT_NAME(JSIUtils)
- @interface EXJSIUtils : NSObject
+ namespace jsi = facebook::jsi;
+ namespace react = facebook::react;
