@@ -16,10 +16,10 @@ playwright-report/
 test-results/
 
 # iOS/Android local build outputs (cloud build will handle these)
-ios/
-android/
-ios/build/
-android/app/build/
+/ios/
+/android/
+/ios/build/
+/android/app/build/
 
 # iOS Simulator and Apple caches accidentally added to project
 Library/
