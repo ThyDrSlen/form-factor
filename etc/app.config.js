@@ -1,6 +1,14 @@
 // Expo config lives here; root app.config.ts simply re-exports this.
 const IS_DEV = process.env.APP_VARIANT === 'development';
 const IS_PREVIEW = process.env.APP_VARIANT === 'preview';
+const readEnvFlag = (value, defaultValue) => {
+  if (value === undefined) return defaultValue;
+  const normalized = String(value).trim().toLowerCase();
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  return defaultValue;
+};
+const USE_NEW_ARCH = readEnvFlag(process.env.EXPO_USE_NEW_ARCH, true);
 
 const getUniqueIdentifier = () => {
   if (IS_DEV) return 'com.slenthekid.formfactoreas.dev';
@@ -32,7 +40,7 @@ const baseConfig = {
   orientation: 'portrait',
   scheme: 'formfactoreas',
   userInterfaceStyle: 'dark',
-  newArchEnabled: true,
+  newArchEnabled: USE_NEW_ARCH,
   plugins: [
     'expo-router',
     'expo-web-browser',
