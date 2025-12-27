@@ -41,6 +41,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-cache-v2-
 
+      - name: Clean patched packages (prevent patch-package conflicts)
+        run: |
+          node scripts/preinstall-clean.js || true
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -85,6 +89,10 @@ jobs:
           key: ${{ runner.os }}-bun-cache-v2-${{ hashFiles('**/bun.lock') }}
           restore-keys: |
             ${{ runner.os }}-bun-cache-v2-
+
+      - name: Clean patched packages (prevent patch-package conflicts)
+        run: |
+          node scripts/preinstall-clean.js || true
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -134,6 +142,10 @@ jobs:
           key: ${{ runner.os }}-bun-cache-v2-${{ hashFiles('**/bun.lock') }}
           restore-keys: |
             ${{ runner.os }}-bun-cache-v2-
+
+      - name: Clean patched packages (prevent patch-package conflicts)
+        run: |
+          node scripts/preinstall-clean.js || true
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -191,6 +203,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-cache-v2-
 
+      - name: Clean patched packages (prevent patch-package conflicts)
+        run: |
+          node scripts/preinstall-clean.js || true
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -247,6 +263,10 @@ jobs:
           key: ${{ runner.os }}-bun-cache-v2-${{ hashFiles('**/bun.lock') }}
           restore-keys: |
             ${{ runner.os }}-bun-cache-v2-
+
+      - name: Clean patched packages (prevent patch-package conflicts)
+        run: |
+          node scripts/preinstall-clean.js || true
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -321,6 +341,10 @@ jobs:
         uses: oven-sh/setup-bun@v1
         with:
           bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Clean patched packages (prevent patch-package conflicts)
+        run: |
+          node scripts/preinstall-clean.js || true
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
