@@ -4,6 +4,7 @@ import HealthKit
 public class FFHealthKitModule: Module {
   private let healthStore = HKHealthStore()
 
+  // TODO: Add HealthKit write APIs (e.g., workouts) when supported.
   private static let isoFormatter: ISO8601DateFormatter = {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime]

@@ -95,7 +95,8 @@ const DEFAULT_PERMISSIONS: HealthKitPermissions = {
     'height',
     'workouts',
   ],
-  write: ['workouts', 'activeEnergyBurned', 'heartRate'],
+  // Keep workouts as a placeholder until write APIs are implemented.
+  write: ['workouts'],
 };
 
 export function HealthKitProvider({ children }: { children: React.ReactNode }) {
