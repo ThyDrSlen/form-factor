@@ -160,6 +160,9 @@ export const styles = StyleSheet.create({
     backgroundColor: scanPalette.errorDark,
     borderColor: scanPalette.errorDark,
   },
+  recordButtonDisabled: {
+    opacity: 0.7,
+  },
   controlButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -310,6 +313,111 @@ export const styles = StyleSheet.create({
     color: scanPalette.textPrimary,
     fontSize: 20,
     fontWeight: '700',
+  },
+  previewOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
+  previewSheet: {
+    backgroundColor: scanPalette.overlay,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: scanPalette.border,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+  },
+  previewHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: scanPalette.border,
+    marginBottom: spacing.md,
+  },
+  previewTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: scanPalette.textPrimary,
+    marginBottom: spacing.md,
+  },
+  previewVideoWrap: {
+    width: '100%',
+    height: 220,
+    backgroundColor: '#000',
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    marginBottom: spacing.md,
+  },
+  previewVideo: {
+    width: '100%',
+    height: '100%',
+  },
+  previewVideoPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewMetaRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  previewMetaItem: {
+    flex: 1,
+    minWidth: 80,
+  },
+  previewMetaLabel: {
+    fontSize: 10,
+    color: scanPalette.textSecondary,
+    marginBottom: 2,
+  },
+  previewMetaValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: scanPalette.textPrimary,
+  },
+  previewErrorText: {
+    fontSize: 12,
+    color: scanPalette.error,
+    marginTop: spacing.xs,
+  },
+  previewActions: {
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  previewButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  previewButtonPrimary: {
+    backgroundColor: scanPalette.accent,
+    borderColor: scanPalette.accent,
+  },
+  previewButtonSecondary: {
+    backgroundColor: scanPalette.textPrimary,
+    borderColor: scanPalette.textPrimary,
+  },
+  previewButtonGhost: {
+    backgroundColor: 'transparent',
+    borderColor: scanPalette.border,
+  },
+  previewButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  previewButtonTextPrimary: {
+    color: scanPalette.textPrimary,
+  },
+  previewButtonTextSecondary: {
+    color: '#0B1F3A',
+  },
+  previewButtonTextGhost: {
+    color: scanPalette.textSecondary,
   },
   statusBadge: {
     position: 'absolute',
