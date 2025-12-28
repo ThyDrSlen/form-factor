@@ -1,10 +1,22 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Alert, Text, TouchableOpacity, View, Platform, Animated, ToastAndroid, LayoutChangeEvent } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Text,
+  TouchableOpacity,
+  View,
+  Platform,
+  Animated,
+  ToastAndroid,
+  LayoutChangeEvent,
+} from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { Svg, Circle, Line } from 'react-native-svg';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
@@ -59,6 +71,14 @@ type UploadMetrics =
       hipDropRatio: number | null;
     };
 
+type RecordedPreview = {
+  uri: string;
+  exercise: string;
+  metrics: UploadMetrics;
+  sizeBytes: number | null;
+  savedToLibrary: boolean;
+};
+
 // Thresholds are now imported from workout definitions (PULLUP_THRESHOLDS, PUSHUP_THRESHOLDS)
 
 const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
@@ -87,10 +107,40 @@ if (Platform.OS === 'ios') {
   ARKitView = require('@/lib/arkit/ARKitBodyView').default;
 }
 
+const formatBytes = (bytes?: number | null) => {
+  if (bytes === null || bytes === undefined) return '--';
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${Math.round(kb)} KB`;
+  const mb = kb / 1024;
+  if (mb < 10) return `${mb.toFixed(1)} MB`;
+  return `${Math.round(mb)} MB`;
+};
+
+const PreviewPlayer = ({ uri }: { uri: string }) => {
+  const player = useVideoPlayer(uri, (instance) => {
+    instance.loop = false;
+  });
+
+  return (
+    <VideoView
+      player={player}
+      style={styles.previewVideo}
+      contentFit="contain"
+      nativeControls
+      allowsFullscreen
+      allowsPictureInPicture
+    />
+  );
+};
+
 export default function ScanARKitScreen() {
   const DEV = __DEV__;
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const logWithTs = useCallback((...args: unknown[]) => {
+    console.log(new Date().toISOString(), ...args);
+  }, []);
   const [cameraPosition, setCameraPosition] = useState<'back' | 'front'>('back');
   const device = useCameraDevice(cameraPosition);
   const { hasPermission, requestPermission } = useCameraPermission();
@@ -149,7 +199,12 @@ export default function ScanARKitScreen() {
   const lastPushUpRepRef = React.useRef(0);
   const [uploading, setUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const recordedUriRef = React.useRef<string | null>(null);
+  const [isFinalizingRecording, setIsFinalizingRecording] = useState(false);
+  const [recordPreview, setRecordPreview] = useState<RecordedPreview | null>(null);
+  const [isPreviewVisible, setIsPreviewVisible] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [savingRecording, setSavingRecording] = useState(false);
+  const recordingStopInFlightRef = React.useRef(false);
   const [smoothedPose2DJoints, setSmoothedPose2DJoints] = useState<Joint2D[] | null>(null);
   const smoothedPose2DRef = React.useRef<Joint2D[] | null>(null);
   const pose2DCacheRef = React.useRef<Record<string, { x: number; y: number }>>({});
@@ -898,7 +953,7 @@ export default function ScanARKitScreen() {
 
   // Start tracking
   const startTracking = useCallback(async () => {
-    if (DEV) console.log('[ScanARKit] 🎬 Starting tracking...');
+    if (DEV) logWithTs('[ScanARKit] Starting tracking...');
     if (cameraPosition !== 'back') {
       if (DEV) console.warn('[ScanARKit] Skipping tracking start: ARKit requires back camera');
       Alert.alert('Back camera required', 'ARKit body tracking only works with the back camera.');
@@ -921,7 +976,7 @@ export default function ScanARKitScreen() {
       await startNativeTracking();
       const elapsed = Date.now() - startTime;
       
-      if (DEV) console.log('[ScanARKit] ✅ Tracking started successfully in', elapsed, 'ms');
+      if (DEV) logWithTs('[ScanARKit] Tracking started successfully in', elapsed, 'ms');
 
       if (Platform.OS === 'ios') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -936,18 +991,45 @@ export default function ScanARKitScreen() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startNativeTracking, transitionPhase, cameraPosition]);
+  }, [startNativeTracking, transitionPhase, cameraPosition, logWithTs]);
+
+  const stopRecordingCore = useCallback(async () => {
+    if (!isRecording || recordingStopInFlightRef.current) {
+      return null;
+    }
+    recordingStopInFlightRef.current = true;
+    setIsFinalizingRecording(true);
+    try {
+      const path = await BodyTracker.stopRecording();
+      setIsRecording(false);
+      if (!path) {
+        return null;
+      }
+      return path.startsWith('file://') ? path : `file://${path}`;
+    } catch (error) {
+      console.error('[ScanARKit] Failed to stop ARKit recording', error);
+      setIsRecording(false);
+      throw error;
+    } finally {
+      setIsFinalizingRecording(false);
+      recordingStopInFlightRef.current = false;
+    }
+  }, [isRecording]);
 
   // Stop tracking
-  const stopTracking = useCallback(() => {
-    if (DEV) console.log('[ScanARKit] ⏸️ Stopping tracking...');
+  const stopTracking = useCallback(async () => {
+    if (DEV) logWithTs('[ScanARKit] Stopping tracking...');
     
     try {
       if (isRecording) {
-        BodyTracker.stopRecording().catch((error: unknown) => {
+        try {
+          const uri = await stopRecordingCore();
+          if (uri) {
+            FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+          }
+        } catch (error) {
           console.error('[ScanARKit] ❌ Error stopping recording when stopping tracking:', error);
-        });
-        setIsRecording(false);
+        }
       }
 
       stopNativeTracking();
@@ -965,7 +1047,7 @@ export default function ScanARKitScreen() {
       lastPushUpRepRef.current = 0;
       setFps(0);
       
-      if (DEV) console.log('[ScanARKit] ✅ Tracking stopped');
+      if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
       if (Platform.OS === 'ios') {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -974,7 +1056,7 @@ export default function ScanARKitScreen() {
       console.error('[ScanARKit] ❌ Error stopping tracking:', error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stopNativeTracking, transitionPhase, isRecording]);
+  }, [stopNativeTracking, transitionPhase, isRecording, stopRecordingCore, logWithTs]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -996,7 +1078,7 @@ export default function ScanARKitScreen() {
     
     // If currently tracking, stop it first
     if (wasTracking) {
-      stopTracking();
+      await stopTracking();
       // Wait for cleanup
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
@@ -1353,56 +1435,79 @@ export default function ScanARKitScreen() {
       updateWatchContext({ isTracking: !!isTracking, reps: currentReps });
     }, [isTracking, repCount, pushUpReps, detectionMode]);
 
-    const uploadRecordedVideo = useCallback(async (uri: string) => {
-      if (uploading) return;
+    const uploadRecordedVideo = useCallback(async (payload: { uri: string; exercise: string; metrics: UploadMetrics }) => {
+      if (uploading) return false;
       try {
-        const info = await FileSystem.getInfoAsync(uri);
+        setPreviewError(null);
+        const info = await FileSystem.getInfoAsync(payload.uri);
         if (!info.exists) {
-          Alert.alert('Recording missing', 'Recorded file is not accessible.');
-          return;
+          const message = 'Recorded file is not accessible.';
+          setPreviewError(message);
+          Alert.alert('Recording missing', message);
+          return false;
         }
         if (info.size && info.size > MAX_UPLOAD_BYTES) {
-          Alert.alert('File too large', 'Max file size is 250MB.');
-          return;
+          const message = 'Max file size is 250MB.';
+          setPreviewError(message);
+          Alert.alert('File too large', message);
+          return false;
         }
         setUploading(true);
         await uploadWorkoutVideo({
-          fileUri: uri,
-          exercise: detectionMode === 'pullup' ? 'Pull-Up' : 'Push-Up',
-          metrics: latestMetricsForUpload,
+          fileUri: payload.uri,
+          exercise: payload.exercise,
+          metrics: payload.metrics,
         });
         if (Platform.OS === 'android') {
           ToastAndroid.show('Recorded set uploaded', ToastAndroid.SHORT);
         } else {
           Alert.alert('Uploaded', 'Recorded set saved with metrics.');
         }
+        return true;
       } catch (error) {
         console.error('[ScanARKit] Upload recorded video failed', error);
-        Alert.alert('Upload failed', error instanceof Error ? error.message : 'Could not upload recording.');
+        const message = error instanceof Error ? error.message : 'Could not upload recording.';
+        setPreviewError(message);
+        Alert.alert('Upload failed', message);
+        return false;
       } finally {
         setUploading(false);
       }
-    }, [detectionMode, latestMetricsForUpload, uploading]);
+    }, [uploading]);
 
     const saveRecordingToCameraRoll = useCallback(async (uri: string) => {
-      if (Platform.OS === 'web') return;
+      if (Platform.OS === 'web') return false;
       const hasAccess = await ensureMediaLibraryPermission();
       if (!hasAccess) {
         Alert.alert(
           'Photos permission needed',
           'Enable Photos access to save recordings to your camera roll.'
         );
-        return;
+        return false;
       }
       try {
         await MediaLibrary.saveToLibraryAsync(uri);
+        return true;
       } catch (error) {
         console.error('[ScanARKit] Failed to save recording to camera roll', error);
+        return false;
       }
     }, [ensureMediaLibraryPermission]);
 
+    const cleanupLocalRecording = useCallback(async (uri: string) => {
+      try {
+        await FileSystem.deleteAsync(uri, { idempotent: true });
+      } catch (error) {
+        console.warn('[ScanARKit] Failed to delete local recording', error);
+      }
+    }, []);
+
     const startRecordingVideo = useCallback(async () => {
-      if (isRecording) return;
+      if (isRecording || isFinalizingRecording || recordingStopInFlightRef.current) return;
+      if (recordPreview) {
+        Alert.alert('Finish review', 'Save or discard the previous recording before starting a new one.');
+        return;
+      }
       if (!isTracking) {
         Alert.alert('Start tracking first', 'Begin tracking before recording your set.');
         return;
@@ -1412,26 +1517,35 @@ export default function ScanARKitScreen() {
         return;
       }
       try {
+        if (DEV) logWithTs('[ScanARKit] Starting recording...');
+        setPreviewError(null);
         setIsRecording(true);
-        recordedUriRef.current = null;
         await BodyTracker.startRecording();
       } catch (error) {
         console.error('[ScanARKit] Failed to start ARKit recording', error);
         setIsRecording(false);
         Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not start recording.');
       }
-    }, [isRecording, isTracking]);
+    }, [DEV, isRecording, isFinalizingRecording, isTracking, recordPreview, logWithTs]);
 
     const stopRecordingVideo = useCallback(async () => {
-      if (!isRecording) return;
+      if (!isRecording || recordingStopInFlightRef.current) return;
       try {
-        const path = await BodyTracker.stopRecording();
-        setIsRecording(false);
-        if (path) {
-          const uri = path.startsWith('file://') ? path : `file://${path}`;
-          recordedUriRef.current = uri;
-          await saveRecordingToCameraRoll(uri);
-          await uploadRecordedVideo(uri);
+        if (DEV) logWithTs('[ScanARKit] Stopping recording...');
+        const uri = await stopRecordingCore();
+        if (uri) {
+          const info = await FileSystem.getInfoAsync(uri);
+          const sizeBytes = info.exists ? info.size ?? null : null;
+          const metricsSnapshot: UploadMetrics = { ...latestMetricsForUpload } as UploadMetrics;
+          setRecordPreview({
+            uri,
+            exercise: detectionMode === 'pullup' ? 'Pull-Up' : 'Push-Up',
+            metrics: metricsSnapshot,
+            sizeBytes,
+            savedToLibrary: false,
+          });
+          setPreviewError(null);
+          setIsPreviewVisible(true);
         } else {
           Alert.alert('Recording', 'No video file was generated.');
         }
@@ -1440,7 +1554,60 @@ export default function ScanARKitScreen() {
         setIsRecording(false);
         Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not stop recording.');
       }
-    }, [isRecording, saveRecordingToCameraRoll, uploadRecordedVideo]);
+    }, [DEV, isRecording, stopRecordingCore, latestMetricsForUpload, detectionMode, logWithTs]);
+
+    const handleDiscardRecording = useCallback(async () => {
+      if (uploading || savingRecording) return;
+      if (!recordPreview) {
+        setIsPreviewVisible(false);
+        return;
+      }
+      await cleanupLocalRecording(recordPreview.uri);
+      setRecordPreview(null);
+      setPreviewError(null);
+      setIsPreviewVisible(false);
+    }, [recordPreview, cleanupLocalRecording, uploading, savingRecording]);
+
+    const handleSaveRecording = useCallback(async () => {
+      if (!recordPreview || savingRecording) return;
+      setSavingRecording(true);
+      setPreviewError(null);
+      const saved = await saveRecordingToCameraRoll(recordPreview.uri);
+      setSavingRecording(false);
+      if (saved) {
+        setRecordPreview((prev) => (prev ? { ...prev, savedToLibrary: true } : prev));
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Saved to Photos', ToastAndroid.SHORT);
+        } else {
+          Alert.alert('Saved', 'Recording saved to your camera roll.');
+        }
+      }
+    }, [recordPreview, saveRecordingToCameraRoll, savingRecording]);
+
+    const handleUploadRecording = useCallback(async () => {
+      if (!recordPreview || uploading || savingRecording) return;
+      setPreviewError(null);
+      let saved = recordPreview.savedToLibrary;
+      if (!saved) {
+        setSavingRecording(true);
+        saved = await saveRecordingToCameraRoll(recordPreview.uri);
+        setSavingRecording(false);
+        if (saved) {
+          setRecordPreview((prev) => (prev ? { ...prev, savedToLibrary: true } : prev));
+        }
+      }
+      const uploaded = await uploadRecordedVideo({
+        uri: recordPreview.uri,
+        exercise: recordPreview.exercise,
+        metrics: recordPreview.metrics,
+      });
+      if (uploaded) {
+        await cleanupLocalRecording(recordPreview.uri);
+        setRecordPreview(null);
+        setPreviewError(null);
+        setIsPreviewVisible(false);
+      }
+    }, [recordPreview, uploading, savingRecording, saveRecordingToCameraRoll, uploadRecordedVideo, cleanupLocalRecording]);
 
   if (supportStatus === 'unknown') {
     return (
@@ -1530,6 +1697,27 @@ export default function ScanARKitScreen() {
       : pushUpMetrics?.hipDrop !== null && pushUpMetrics?.hipDrop !== undefined
       ? `${Math.round(pushUpMetrics.hipDrop * 100)}%`
       : '--';
+  const previewMetrics = recordPreview?.metrics;
+  const previewReps = previewMetrics?.reps ?? 0;
+  const previewPrimaryValue = previewMetrics?.avgElbowDeg;
+  const previewPrimaryDisplay =
+    previewPrimaryValue === null || previewPrimaryValue === undefined
+      ? '--'
+      : `${previewPrimaryValue.toFixed(1)}°`;
+  const previewSecondaryLabel = previewMetrics?.mode === 'pullup' ? 'Avg Shoulder' : 'Hip Drop';
+  const previewSecondaryValue =
+    previewMetrics?.mode === 'pullup'
+      ? previewMetrics?.avgShoulderDeg
+      : previewMetrics?.hipDropRatio;
+  const previewSecondaryDisplay = previewMetrics
+    ? previewMetrics.mode === 'pullup'
+      ? previewSecondaryValue === null || previewSecondaryValue === undefined
+        ? '--'
+        : `${previewSecondaryValue.toFixed(1)}°`
+      : previewSecondaryValue === null || previewSecondaryValue === undefined
+      ? '--'
+      : `${Math.round(previewSecondaryValue * 100)}%`
+    : '--';
 
   return (
     <View style={styles.container}>
@@ -1876,17 +2064,30 @@ export default function ScanARKitScreen() {
             style={[
               styles.controlButton,
               styles.recordButton,
-              isRecording && styles.recordButtonActive
+              isRecording && styles.recordButtonActive,
+              isFinalizingRecording && styles.recordButtonDisabled
             ]}
-            onPress={isRecording ? stopRecordingVideo : startRecordingVideo}
+            onPress={() => {
+              if (isFinalizingRecording) return;
+              if (isRecording) {
+                stopRecordingVideo();
+              } else {
+                startRecordingVideo();
+              }
+            }}
+            disabled={isFinalizingRecording}
           >
-            <Ionicons
-              name={isRecording ? 'stop-circle' : 'radio-button-on'}
-              size={isRecording ? 22 : 20}
-              color="#FFFFFF"
-            />
+            {isFinalizingRecording ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Ionicons
+                name={isRecording ? 'stop-circle' : 'radio-button-on'}
+                size={isRecording ? 22 : 20}
+                color="#FFFFFF"
+              />
+            )}
             <Text style={styles.controlButtonText}>
-              {isRecording ? 'Stop Recording' : 'Record Set'}
+              {isFinalizingRecording ? 'Finalizing...' : isRecording ? 'Stop Recording' : 'Record Set'}
             </Text>
           </TouchableOpacity>
         )}
@@ -1942,6 +2143,97 @@ export default function ScanARKitScreen() {
           </Text>
         </View>
       </View>
+
+      <Modal
+        visible={isPreviewVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={handleDiscardRecording}
+      >
+        <View style={styles.previewOverlay}>
+          <View style={[styles.previewSheet, { paddingBottom: insets.bottom + 24 }]}>
+            <View style={styles.previewHandle} />
+            <Text style={styles.previewTitle}>Review recording</Text>
+            <View style={styles.previewVideoWrap}>
+              {recordPreview?.uri ? (
+                <PreviewPlayer uri={recordPreview.uri} />
+              ) : (
+                <View style={styles.previewVideoPlaceholder}>
+                  <ActivityIndicator color="#FFFFFF" />
+                </View>
+              )}
+            </View>
+            <View style={styles.previewMetaRow}>
+              <View style={styles.previewMetaItem}>
+                <Text style={styles.previewMetaLabel}>Exercise</Text>
+                <Text style={styles.previewMetaValue}>{recordPreview?.exercise ?? '--'}</Text>
+              </View>
+              <View style={styles.previewMetaItem}>
+                <Text style={styles.previewMetaLabel}>Reps</Text>
+                <Text style={styles.previewMetaValue}>{previewReps}</Text>
+              </View>
+              <View style={styles.previewMetaItem}>
+                <Text style={styles.previewMetaLabel}>Size</Text>
+                <Text style={styles.previewMetaValue}>{formatBytes(recordPreview?.sizeBytes)}</Text>
+              </View>
+            </View>
+            <View style={styles.previewMetaRow}>
+              <View style={styles.previewMetaItem}>
+                <Text style={styles.previewMetaLabel}>Avg Elbow</Text>
+                <Text style={styles.previewMetaValue}>{previewPrimaryDisplay}</Text>
+              </View>
+              <View style={styles.previewMetaItem}>
+                <Text style={styles.previewMetaLabel}>{previewSecondaryLabel}</Text>
+                <Text style={styles.previewMetaValue}>{previewSecondaryDisplay}</Text>
+              </View>
+              <View style={styles.previewMetaItem}>
+                <Text style={styles.previewMetaLabel}>Library</Text>
+                <Text style={styles.previewMetaValue}>
+                  {recordPreview?.savedToLibrary ? 'Saved' : 'Not saved'}
+                </Text>
+              </View>
+            </View>
+            {previewError ? (
+              <Text style={styles.previewErrorText}>{previewError}</Text>
+            ) : null}
+            <View style={styles.previewActions}>
+              <TouchableOpacity
+                style={[styles.previewButton, styles.previewButtonGhost]}
+                onPress={handleDiscardRecording}
+                disabled={uploading || savingRecording}
+              >
+                <Text style={[styles.previewButtonText, styles.previewButtonTextGhost]}>
+                  {recordPreview?.savedToLibrary ? 'Close' : 'Discard'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.previewButton, styles.previewButtonSecondary]}
+                onPress={handleSaveRecording}
+                disabled={uploading || savingRecording || recordPreview?.savedToLibrary}
+              >
+                {savingRecording ? (
+                  <ActivityIndicator color="#0B1F3A" />
+                ) : (
+                  <Text style={[styles.previewButtonText, styles.previewButtonTextSecondary]}>
+                    {recordPreview?.savedToLibrary ? 'Saved' : 'Save Only'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.previewButton, styles.previewButtonPrimary]}
+                onPress={handleUploadRecording}
+                disabled={uploading || savingRecording}
+              >
+                {uploading ? (
+                  <ActivityIndicator color="#F5F7FF" />
+                ) : (
+                  <Text style={[styles.previewButtonText, styles.previewButtonTextPrimary]}>Save &amp; Upload</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 </View>
   );
 }
