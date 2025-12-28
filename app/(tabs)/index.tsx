@@ -143,7 +143,7 @@ export default function HomeScreen() {
       setLoadingVideos(true);
     }
     try {
-      const fetched = await listVideos(15);
+      const fetched = await listVideos(15, { onlyMine: true });
       setVideos(fetched);
       setHasFetchedOnce(true);
     } catch (error) {

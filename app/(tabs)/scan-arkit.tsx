@@ -1458,11 +1458,6 @@ export default function ScanARKitScreen() {
           exercise: payload.exercise,
           metrics: payload.metrics,
         });
-        if (Platform.OS === 'android') {
-          ToastAndroid.show('Recorded set uploaded', ToastAndroid.SHORT);
-        } else {
-          Alert.alert('Uploaded', 'Recorded set saved with metrics.');
-        }
         return true;
       } catch (error) {
         console.error('[ScanARKit] Upload recorded video failed', error);
@@ -1569,22 +1564,6 @@ export default function ScanARKitScreen() {
     }, [recordPreview, cleanupLocalRecording, uploading, savingRecording]);
 
     const handleSaveRecording = useCallback(async () => {
-      if (!recordPreview || savingRecording) return;
-      setSavingRecording(true);
-      setPreviewError(null);
-      const saved = await saveRecordingToCameraRoll(recordPreview.uri);
-      setSavingRecording(false);
-      if (saved) {
-        setRecordPreview((prev) => (prev ? { ...prev, savedToLibrary: true } : prev));
-        if (Platform.OS === 'android') {
-          ToastAndroid.show('Saved to Photos', ToastAndroid.SHORT);
-        } else {
-          Alert.alert('Saved', 'Recording saved to your camera roll.');
-        }
-      }
-    }, [recordPreview, saveRecordingToCameraRoll, savingRecording]);
-
-    const handleUploadRecording = useCallback(async () => {
       if (!recordPreview || uploading || savingRecording) return;
       setPreviewError(null);
       let saved = recordPreview.savedToLibrary;
@@ -1596,12 +1575,21 @@ export default function ScanARKitScreen() {
           setRecordPreview((prev) => (prev ? { ...prev, savedToLibrary: true } : prev));
         }
       }
+
       const uploaded = await uploadRecordedVideo({
         uri: recordPreview.uri,
         exercise: recordPreview.exercise,
         metrics: recordPreview.metrics,
       });
       if (uploaded) {
+        const message = saved
+          ? 'Saved to Photos and uploaded to your feed.'
+          : 'Uploaded to your feed. Enable Photos access to save locally.';
+        if (Platform.OS === 'android') {
+          ToastAndroid.show(message, ToastAndroid.SHORT);
+        } else {
+          Alert.alert('Saved', message);
+        }
         await cleanupLocalRecording(recordPreview.uri);
         setRecordPreview(null);
         setPreviewError(null);
@@ -2209,25 +2197,14 @@ export default function ScanARKitScreen() {
               <TouchableOpacity
                 style={[styles.previewButton, styles.previewButtonSecondary]}
                 onPress={handleSaveRecording}
-                disabled={uploading || savingRecording || recordPreview?.savedToLibrary}
+                disabled={uploading || savingRecording}
               >
-                {savingRecording ? (
+                {savingRecording || uploading ? (
                   <ActivityIndicator color="#0B1F3A" />
                 ) : (
                   <Text style={[styles.previewButtonText, styles.previewButtonTextSecondary]}>
-                    {recordPreview?.savedToLibrary ? 'Saved' : 'Save Only'}
+                    {recordPreview?.savedToLibrary ? 'Saved' : 'Save'}
                   </Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.previewButton, styles.previewButtonPrimary]}
-                onPress={handleUploadRecording}
-                disabled={uploading || savingRecording}
-              >
-                {uploading ? (
-                  <ActivityIndicator color="#F5F7FF" />
-                ) : (
-                  <Text style={[styles.previewButtonText, styles.previewButtonTextPrimary]}>Save &amp; Upload</Text>
                 )}
               </TouchableOpacity>
             </View>
