@@ -31,6 +31,11 @@ Visual feedback during sync operations:
 - Phase indicators (fetching, uploading, complete)
 - Success/error notifications
 
+## Permissions
+
+- **Read**: Steps, heart rate (incl. resting/variability), VO2 max, sleep, respiratory rate, walking HR avg, distances, energy, body mass, height, workouts, and characteristics (sex/birth date).
+- **Write**: Workouts only (placeholder for future write APIs).
+
 ## Features
 
 ### Bulk Sync Service (`health-bulk-sync.ts`)
@@ -492,4 +497,3 @@ This implementation provides a complete solution for syncing and analyzing Healt
 - **Type-safe** - Full TypeScript support
 
 The system is production-ready and can scale to thousands of users with millions of data points.
-
