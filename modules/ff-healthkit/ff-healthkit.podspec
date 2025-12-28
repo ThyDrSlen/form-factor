@@ -8,11 +8,12 @@ Pod::Spec.new do |s|
   s.summary        = package['description'] || 'HealthKit bridge for Form Factor'
   s.description    = package['description'] || 'Expo module for HealthKit access'
   s.license        = package['license']
-  s.author         = package['author']
+  s.author         = package['author'] || 'Form Factor'
+  s.authors        = package['authors'] || { 'Form Factor' => 'dev@formfactor.app' }
   s.homepage       = package['homepage'] || 'https://github.com/ThyDrSlen/form-factor'
   s.platforms      = { :ios => '14.0' }
   s.swift_version  = '5.4'
-  s.source         = { :path => '.' }
+  s.source         = { :git => 'https://github.com/ThyDrSlen/form-factor.git', :tag => s.version.to_s }
   s.module_name    = 'ff_healthkit'
   s.static_framework = true
 

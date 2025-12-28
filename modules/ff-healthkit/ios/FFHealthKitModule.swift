@@ -34,7 +34,7 @@ public class FFHealthKitModule: Module {
 
       self.healthStore.requestAuthorization(toShare: writeSet, read: readSet) { _, error in
         if let error = error {
-          promise.reject("E_HEALTHKIT_AUTH", error.localizedDescription, error)
+          promise.reject("E_HEALTHKIT_AUTH", error.localizedDescription)
           return
         }
         promise.resolve(self.authorizationSummary(readTypes: readTypes, writeTypes: writeTypes))
@@ -57,9 +57,11 @@ public class FFHealthKitModule: Module {
         let date = calendar.date(from: components)
         let birthDate = date.map { self.isoString(from: $0) }
         let age = date.flatMap { calendar.dateComponents([.year], from: $0, to: Date()).year }
+        let birthValue: Any = birthDate == nil ? NSNull() : birthDate!
+        let ageValue: Any = age == nil ? NSNull() : age!
         promise.resolve([
-          "birthDate": birthDate ?? NSNull(),
-          "age": age ?? NSNull()
+          "birthDate": birthValue,
+          "age": ageValue
         ])
       } catch {
         promise.resolve([
@@ -87,7 +89,7 @@ public class FFHealthKitModule: Module {
 
       let query = HKSampleQuery(sampleType: quantityType, predicate: predicate, limit: queryLimit, sortDescriptors: [sortDescriptor]) { _, samples, error in
         if let error = error {
-          promise.reject("E_HEALTHKIT_QUERY", error.localizedDescription, error)
+          promise.reject("E_HEALTHKIT_QUERY", error.localizedDescription)
           return
         }
         let mapped = (samples as? [HKQuantitySample] ?? []).map { sample in
@@ -112,7 +114,7 @@ public class FFHealthKitModule: Module {
       let hkUnit = self.hkUnit(from: unit)
       let query = HKSampleQuery(sampleType: quantityType, predicate: nil, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, error in
         if let error = error {
-          promise.reject("E_HEALTHKIT_QUERY", error.localizedDescription, error)
+          promise.reject("E_HEALTHKIT_QUERY", error.localizedDescription)
           return
         }
         guard let sample = (samples as? [HKQuantitySample])?.first else {
@@ -153,7 +155,7 @@ public class FFHealthKitModule: Module {
 
       query.initialResultsHandler = { _, results, error in
         if let error = error {
-          promise.reject("E_HEALTHKIT_QUERY", error.localizedDescription, error)
+          promise.reject("E_HEALTHKIT_QUERY", error.localizedDescription)
           return
         }
         var output: [[String: Any]] = []
