@@ -2,13 +2,13 @@ import * as Crypto from 'expo-crypto';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import Constants from 'expo-constants';
-import { Buffer } from 'buffer';
 import { supabase } from '@/lib/supabase';
 
 const VIDEO_BUCKET = 'videos';
 const THUMBNAIL_BUCKET = 'video-thumbnails';
 const DEFAULT_SIGNED_URL_SECONDS = 60 * 60 * 24; // 24 hours
 const DEFAULT_MAX_UPLOAD_BYTES = 250 * 1024 * 1024; // 250MB
+const DEFAULT_MAX_THUMBNAIL_BYTES = 80 * 1024 * 1024; // 80MB
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || Constants.expoConfig?.extra?.supabaseUrl;
 const SUPABASE_ANON_KEY =
@@ -23,6 +23,8 @@ export type VideoRecord = {
   exercise: string | null;
   metrics?: Record<string, any> | null;
   created_at: string;
+  like_count?: number | null;
+  comment_count?: number | null;
 };
 
 export type CommentRecord = {
@@ -43,10 +45,6 @@ async function ensureUser() {
   if (error) throw error;
   if (!data.user) throw new Error('Not signed in');
   return data.user;
-}
-
-function base64ToUint8Array(base64: string) {
-  return Buffer.from(base64, 'base64');
 }
 
 function getSupabaseUrl() {
@@ -107,6 +105,35 @@ async function uploadFileToStorage(opts: {
   }
 }
 
+async function getVideoCount(table: 'video_likes' | 'video_comments', videoId: string) {
+  try {
+    const { count, error } = await supabase
+      .from(table)
+      .select('id', { count: 'exact', head: true })
+      .eq('video_id', videoId);
+    if (error) {
+      if (__DEV__) {
+        console.warn(`[video-service] Failed to fetch ${table} count`, error);
+      }
+      return null;
+    }
+    return typeof count === 'number' ? count : null;
+  } catch (error) {
+    if (__DEV__) {
+      console.warn(`[video-service] Failed to fetch ${table} count`, error);
+    }
+    return null;
+  }
+}
+
+async function getVideoCounts(videoId: string) {
+  const [likeCount, commentCount] = await Promise.all([
+    getVideoCount('video_likes', videoId),
+    getVideoCount('video_comments', videoId),
+  ]);
+  return { likeCount, commentCount };
+}
+
 export async function getSignedVideoUrl(path: string, expiresInSeconds = DEFAULT_SIGNED_URL_SECONDS) {
   const { data, error } = await supabase
     .storage
@@ -132,6 +159,7 @@ export async function uploadWorkoutVideo(opts: {
   durationSeconds?: number;
   exercise?: string;
   maxUploadBytes?: number;
+  maxThumbnailBytes?: number;
   thumbnailTimeMs?: number;
   usePrivateThumbnail?: boolean;
   metrics?: Record<string, any>;
@@ -141,6 +169,7 @@ export async function uploadWorkoutVideo(opts: {
     durationSeconds,
     exercise,
     maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES,
+    maxThumbnailBytes = DEFAULT_MAX_THUMBNAIL_BYTES,
     thumbnailTimeMs = 500,
     usePrivateThumbnail = false,
     metrics,
@@ -171,24 +200,25 @@ export async function uploadWorkoutVideo(opts: {
     contentType: videoContentType,
   });
 
-  // Thumbnail (best-effort)
+  // Thumbnail (best-effort). Skip for very large files to reduce memory pressure.
   let thumbnailPath: string | null = null;
-  try {
-    const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(fileUri, { time: thumbnailTimeMs });
-    const thumbBase64 = await FileSystem.readAsStringAsync(thumbUri, { encoding: 'base64' });
-    const thumbBytes = base64ToUint8Array(thumbBase64);
-    thumbnailPath = `${user.id}/${videoId}.jpg`;
-    const targetBucket = usePrivateThumbnail ? VIDEO_BUCKET : THUMBNAIL_BUCKET;
-    const { error: thumbError } = await supabase.storage
-      .from(targetBucket)
-      .upload(thumbnailPath, thumbBytes, { contentType: 'image/jpeg', upsert: false });
-    if (thumbError) {
-      console.warn('[video-service] Failed to upload thumbnail', thumbError);
+  if (!fileInfo.size || fileInfo.size <= maxThumbnailBytes) {
+    try {
+      const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(fileUri, { time: thumbnailTimeMs });
+      thumbnailPath = `${user.id}/${videoId}.jpg`;
+      const targetBucket = usePrivateThumbnail ? VIDEO_BUCKET : THUMBNAIL_BUCKET;
+      await uploadFileToStorage({
+        bucket: targetBucket,
+        path: thumbnailPath,
+        fileUri: thumbUri,
+        contentType: 'image/jpeg',
+      });
+    } catch (error) {
+      console.warn('[video-service] Thumbnail generation failed', error);
       thumbnailPath = null;
     }
-  } catch (error) {
-    console.warn('[video-service] Thumbnail generation failed', error);
-    thumbnailPath = null;
+  } else {
+    console.warn('[video-service] Skipping thumbnail for large video');
   }
 
   // Persist video record; reuse generated id for join paths
@@ -232,15 +262,47 @@ export async function listVideos(limit = 20, opts?: { onlyMine?: boolean }) {
 
   const withUrls: VideoWithUrls[] = await Promise.all(
     (data || []).map(async (video) => {
-      const signedUrl = await getSignedVideoUrl(video.path);
-      const thumbnailUrl = video.thumbnail_path
-        ? await getSignedThumbnailUrl(video.thumbnail_path)
-        : null;
-      return { ...(video as VideoRecord), signedUrl, thumbnailUrl };
+      const [signedUrl, thumbnailUrl, counts] = await Promise.all([
+        getSignedVideoUrl(video.path),
+        video.thumbnail_path ? getSignedThumbnailUrl(video.thumbnail_path) : Promise.resolve(null),
+        getVideoCounts(video.id),
+      ]);
+      return {
+        ...(video as VideoRecord),
+        signedUrl,
+        thumbnailUrl,
+        like_count: counts.likeCount,
+        comment_count: counts.commentCount,
+      };
     })
   );
 
   return withUrls;
+}
+
+export async function getVideoById(videoId: string) {
+  const { data, error } = await supabase
+    .from('videos')
+    .select('id, user_id, path, thumbnail_path, duration_seconds, exercise, metrics, created_at')
+    .eq('id', videoId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new Error('Video not found');
+
+  const [signedUrl, thumbnailUrl, counts] = await Promise.all([
+    getSignedVideoUrl(data.path),
+    data.thumbnail_path ? getSignedThumbnailUrl(data.thumbnail_path) : Promise.resolve(null),
+    getVideoCounts(data.id),
+  ]);
+
+  return {
+    ...(data as VideoRecord),
+    signedUrl,
+    thumbnailUrl,
+    like_count: counts.likeCount,
+    comment_count: counts.commentCount,
+  } as VideoWithUrls;
 }
 
 export async function fetchVideoComments(videoId: string) {

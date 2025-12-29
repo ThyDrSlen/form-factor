@@ -20,10 +20,27 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import { DashboardHealth, DeleteAction } from '@/components';
-import { deleteVideo, listVideos, VideoWithUrls, uploadWorkoutVideo } from '@/lib/services/video-service';
+import { DashboardHealth } from '@/components';
+import {
+  deleteVideo,
+  getVideoById,
+  listVideos,
+  toggleVideoLike,
+  VideoWithUrls,
+  uploadWorkoutVideo,
+} from '@/lib/services/video-service';
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
+import {
+  buildOverlaySummary,
+  buildPostText,
+  formatRelativeTime,
+  formatVideoTimestamp,
+  getFormScore,
+  getPrimaryCue,
+  type VideoFeedMetrics,
+} from '@/lib/video-feed';
+import { subscribeToCommentEvents } from '@/lib/video-comments-events';
 import { styles } from '../../styles/tabs/_index.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
 
@@ -58,33 +75,171 @@ const motivationalMessages = [
 type FeedVideoPlayerProps = {
   uri: string;
   thumbnailUrl?: string | null;
+  overlaySummary: string;
+  overlayTime: string;
 };
 
-const FeedVideoPlayer = ({ uri, thumbnailUrl }: FeedVideoPlayerProps) => {
+const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: FeedVideoPlayerProps) => {
   const [posterVisible, setPosterVisible] = useState(Boolean(thumbnailUrl));
-  
-  // Initialize player with uri directly. Hook handles updates.
-  const player = useVideoPlayer(uri, (instance) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
+  const [progressWidth, setProgressWidth] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const videoViewRef = useRef<VideoView | null>(null);
+
+  const initialSourceRef = useRef<{ uri: string }>({ uri });
+  const currentUriRef = useRef(uri);
+  const player = useVideoPlayer(initialSourceRef.current, (instance) => {
     instance.loop = false;
   });
+
+  const formatTime = useCallback((seconds: number) => {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+    const rounded = Math.floor(seconds);
+    const mins = Math.floor(rounded / 60);
+    const secs = Math.floor(rounded % 60);
+    return `${mins}:${String(secs).padStart(2, '0')}`;
+  }, []);
+
+  useEffect(() => {
+    if (!uri || currentUriRef.current === uri) return;
+    currentUriRef.current = uri;
+    player.replaceAsync({ uri }).catch((error) => {
+      if (__DEV__) {
+        console.warn('[FeedVideoPlayer] replaceAsync failed', error);
+      }
+    });
+  }, [player, uri]);
+
+  useEffect(() => {
+    const subscription = player.addListener('playingChange', ({ isPlaying: nextPlaying }) => {
+      setIsPlaying(nextPlaying);
+    });
+    const timeSubscription = player.addListener('timeUpdate', ({ currentTime: nextTime }) => {
+      setCurrentTime(nextTime);
+      if (player.duration) {
+        setDuration(player.duration);
+      }
+    });
+    const sourceSubscription = player.addListener('sourceLoad', () => {
+      if (player.duration) {
+        setDuration(player.duration);
+      }
+    });
+    return () => {
+      subscription.remove();
+      timeSubscription.remove();
+      sourceSubscription.remove();
+    };
+  }, [player]);
 
   useEffect(() => {
     setPosterVisible(Boolean(thumbnailUrl));
   }, [thumbnailUrl]);
 
+  useEffect(() => {
+    player.timeUpdateEventInterval = 0.25;
+  }, [player]);
+
+  const togglePlayback = useCallback(() => {
+    if (player.playing) {
+      player.pause();
+      return;
+    }
+    player.play();
+  }, [player]);
+
+  const toggleMuted = useCallback(() => {
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    player.muted = nextMuted;
+  }, [isMuted, player]);
+
+  const enterFullscreen = useCallback(() => {
+    if (!videoViewRef.current?.enterFullscreen) return;
+    videoViewRef.current.enterFullscreen().catch((error) => {
+      if (__DEV__) {
+        console.warn('[FeedVideoPlayer] enterFullscreen failed', error);
+      }
+    });
+  }, []);
+
+  const handleSeek = useCallback(
+    (event: { nativeEvent: { locationX: number } }) => {
+      if (!duration || !progressWidth) return;
+      const ratio = Math.min(1, Math.max(0, event.nativeEvent.locationX / progressWidth));
+      const nextTime = ratio * duration;
+      player.currentTime = nextTime;
+      setCurrentTime(nextTime);
+    },
+    [duration, progressWidth, player]
+  );
+
+  const progress = duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
+  const timecode = `${formatTime(currentTime)} / ${formatTime(duration)}`;
+
   return (
     <View style={styles.video}>
       <VideoView
+        ref={videoViewRef}
         player={player}
         style={styles.videoSurface}
         contentFit="cover"
-        nativeControls
-        allowsFullscreen
+        nativeControls={isFullscreen}
+        fullscreenOptions={{ enable: true }}
         allowsPictureInPicture
         onFirstFrameRender={() => setPosterVisible(false)}
+        onFullscreenEnter={() => setIsFullscreen(true)}
+        onFullscreenExit={() => setIsFullscreen(false)}
       />
       {thumbnailUrl && posterVisible ? (
-        <Image source={{ uri: thumbnailUrl }} style={styles.videoPoster} resizeMode="cover" />
+        <Image
+          source={{ uri: thumbnailUrl }}
+          style={styles.videoPoster}
+          resizeMode="cover"
+        />
+      ) : null}
+      {!isFullscreen ? (
+        <TouchableOpacity style={styles.videoTapSurface} onPress={togglePlayback} activeOpacity={1} />
+      ) : null}
+      {!isFullscreen && !isPlaying ? (
+        <TouchableOpacity
+          style={styles.playButton}
+          onPress={togglePlayback}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="play" size={26} color="#0B1324" />
+        </TouchableOpacity>
+      ) : null}
+      {!isFullscreen ? (
+        <LinearGradient
+          colors={['rgba(10, 15, 28, 0)', 'rgba(10, 15, 28, 0.78)']}
+          style={styles.videoOverlay}
+        >
+          <View style={styles.videoOverlayMetaRow}>
+            <Text style={styles.videoOverlaySummary}>{overlaySummary}</Text>
+            {overlayTime ? <Text style={styles.videoOverlayTime}>{overlayTime}</Text> : null}
+          </View>
+          <View style={styles.videoControlsRow}>
+            <TouchableOpacity
+              style={styles.videoProgressTrack}
+              onLayout={(event) => setProgressWidth(event.nativeEvent.layout.width)}
+              onPress={handleSeek}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.videoProgressFill, { width: `${progress * 100}%` }]} />
+            </TouchableOpacity>
+            <Text style={styles.videoTimecode}>{timecode}</Text>
+            <TouchableOpacity style={styles.muteButton} onPress={toggleMuted}>
+              <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={14} color="#DDE6FF" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.fullscreenButton} onPress={enterFullscreen}>
+              <Ionicons name="scan-outline" size={14} color="#DDE6FF" />
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
       ) : null}
     </View>
   );
@@ -114,11 +269,13 @@ export default function HomeScreen() {
   const [refreshingVideos, setRefreshingVideos] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [hasFetchedOnce, setHasFetchedOnce] = useState(false);
+  const [likedVideos, setLikedVideos] = useState<Record<string, boolean>>({});
   const [coachMessages, setCoachMessages] = useState<CoachMessage[]>([coachIntroMessage]);
   const [coachInput, setCoachInput] = useState('');
   const [coachError, setCoachError] = useState<string | null>(null);
   const [coachSending, setCoachSending] = useState(false);
   const coachListRef = useRef<FlatList<CoachMessage>>(null);
+  const [feedFilter, setFeedFilter] = useState<'following' | 'trending'>('trending');
   const subtitle = useMemo(() => {
     const index = Math.floor(Math.random() * motivationalMessages.length);
     return motivationalMessages[index];
@@ -134,6 +291,7 @@ export default function HomeScreen() {
     }
     return user?.email?.split('@')[0] || 'User';
   };
+  const displayInitial = getDisplayName().charAt(0).toUpperCase();
 
   const loadVideos = useCallback(async (isRefresh = false) => {
     setFeedError(null);
@@ -143,7 +301,7 @@ export default function HomeScreen() {
       setLoadingVideos(true);
     }
     try {
-      const fetched = await listVideos(15, { onlyMine: true });
+      const fetched = await listVideos(15, { onlyMine: false });
       setVideos(fetched);
       setHasFetchedOnce(true);
     } catch (error) {
@@ -162,6 +320,46 @@ export default function HomeScreen() {
       loadVideos();
     }
   }, [activeTab, hasFetchedOnce, loadVideos, loadingVideos]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToCommentEvents((event) => {
+      if (event.type === 'commentAdded') {
+        setVideos((prev) =>
+          prev.map((video) => {
+            if (video.id !== event.videoId) return video;
+            const current = typeof video.comment_count === 'number' ? video.comment_count : 0;
+            return { ...video, comment_count: current + 1 };
+          })
+        );
+      }
+
+      if (event.type === 'commentModalClosed') {
+        getVideoById(event.videoId)
+          .then((latest) => {
+            setVideos((prev) =>
+              prev.map((video) =>
+                video.id === event.videoId
+                  ? {
+                      ...video,
+                      comment_count: latest.comment_count,
+                      like_count: latest.like_count,
+                    }
+                  : video
+              )
+            );
+          })
+          .catch((error) => {
+            if (__DEV__) {
+              console.warn('[Home] Failed to refresh comment counts', error);
+            }
+          });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const coachContext = useMemo(
     () => ({
@@ -271,81 +469,145 @@ export default function HomeScreen() {
     [showToast]
   );
 
+  const handleToggleLike = useCallback(
+    async (videoId: string) => {
+      try {
+        const result = await toggleVideoLike(videoId);
+        setLikedVideos((prev) => ({ ...prev, [videoId]: result.liked }));
+        setVideos((prev) =>
+          prev.map((video) => {
+            if (video.id !== videoId) return video;
+            const currentCount = typeof video.like_count === 'number' ? video.like_count : 0;
+            const nextCount = Math.max(0, currentCount + (result.liked ? 1 : -1));
+            return { ...video, like_count: nextCount };
+          })
+        );
+      } catch (error) {
+        if (__DEV__) {
+          console.warn('[Home] Failed to toggle like', error);
+        }
+        showToast('Unable to update like right now.', { type: 'error' });
+      }
+    },
+    [showToast]
+  );
+
+  const handlePostActions = useCallback(
+    (video: VideoWithUrls, canDelete: boolean) => {
+      const buttons = [
+        { text: 'Share', onPress: () => handleShare(video) },
+        canDelete
+          ? {
+              text: 'Delete',
+              style: 'destructive' as const,
+              onPress: () => {
+                Alert.alert(
+                  'Delete video?',
+                  'This removes the clip and metrics permanently.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: () => handleDeleteVideo(video.id) },
+                  ]
+                );
+              },
+            }
+          : null,
+        { text: 'Cancel', style: 'cancel' as const },
+      ].filter(Boolean) as { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[];
+      Alert.alert('Post actions', undefined, buttons);
+    },
+    [handleDeleteVideo, handleShare]
+  );
+
   const renderVideoCard = ({ item }: { item: VideoWithUrls }) => {
-    const uploadedDate = new Date(item.created_at).toLocaleDateString();
-    const metrics = item.metrics || {};
-    const metricBadges: string[] = [];
-    if (metrics.reps) metricBadges.push(`${metrics.reps} reps`);
-    if (metrics.tempo) metricBadges.push(`Tempo ${metrics.tempo}`);
-    if (metrics.depth) metricBadges.push(`Depth ${metrics.depth}`);
-    if (metrics.range) metricBadges.push(`ROM ${metrics.range}`);
-    if (metricBadges.length === 0 && item.duration_seconds) {
-      metricBadges.push(`${Math.round(item.duration_seconds)}s`);
-    }
+    const metrics = (item.metrics || {}) as VideoFeedMetrics;
+    const formScore = getFormScore(metrics, item.exercise);
+    const primaryCue = getPrimaryCue(metrics, item.exercise);
+    const postTimestamp = formatVideoTimestamp(item.created_at);
+    const summary = buildOverlaySummary(metrics, item.duration_seconds, formScore);
+    const metaLine = formatRelativeTime(item.created_at);
+    const postText = buildPostText(metrics, item.exercise);
+    const likeCount = typeof item.like_count === 'number' ? item.like_count : 0;
+    const commentCount = typeof item.comment_count === 'number' ? item.comment_count : 0;
+    const isLiked = likedVideos[item.id] === true;
 
     const canDelete = user?.id === item.user_id;
+    const displayName = canDelete ? getDisplayName() : 'FF Athlete';
     return (
       <View style={styles.feedCard}>
-        <View style={styles.feedHeader}>
-          <View style={styles.feedAvatar}>
-            <Text style={styles.feedAvatarInitial}>{(item.exercise?.[0] || 'F').toUpperCase()}</Text>
+        <View style={styles.postHeader}>
+          <View style={styles.postHeaderLeft}>
+            <View style={styles.postAvatarWrap}>
+              <View style={styles.postAvatar}>
+                <Text style={styles.postAvatarText}>{displayName.charAt(0).toUpperCase()}</Text>
+              </View>
+              <View style={styles.postAvatarStatus} />
+            </View>
+            <View style={styles.postHeaderText}>
+              <Text style={styles.postName} numberOfLines={1}>{displayName}</Text>
+              {metaLine ? (
+                <Text style={styles.postMeta} numberOfLines={1}>
+                  {metaLine} • Workout share
+                </Text>
+              ) : null}
+            </View>
           </View>
-          <View style={styles.feedHeaderContent}>
-            <Text style={styles.feedTitle}>{item.exercise || 'Workout share'}</Text>
-            <Text style={styles.feedMeta}>Uploaded • {uploadedDate}</Text>
-          </View>
-          <View style={styles.feedHeaderActions}>
-            <TouchableOpacity onPress={() => handleShare(item)} style={styles.iconButton}>
-              <Ionicons name="share-outline" size={20} color="#9AACD1" />
-            </TouchableOpacity>
-            {canDelete ? (
-              <DeleteAction
-                id={item.id}
-                onDelete={handleDeleteVideo}
-                variant="icon"
-                confirmTitle="Delete video?"
-                confirmMessage="This removes the clip and metrics permanently."
-                style={styles.iconButton}
-              />
-            ) : null}
-          </View>
+          <TouchableOpacity
+            style={styles.postMoreButton}
+            onPress={() => handlePostActions(item, canDelete)}
+          >
+            <Ionicons name="ellipsis-horizontal" size={20} color="#9AACD1" />
+          </TouchableOpacity>
         </View>
+
+        <Text style={styles.postText}>{postText}</Text>
 
         <View style={styles.videoWrapper}>
           {item.signedUrl ? (
-            <FeedVideoPlayer uri={item.signedUrl} thumbnailUrl={item.thumbnailUrl} />
+            <FeedVideoPlayer
+              uri={item.signedUrl}
+              thumbnailUrl={item.thumbnailUrl}
+              overlaySummary={summary}
+              overlayTime={postTimestamp}
+            />
           ) : (
             <View style={styles.videoPlaceholder}>
               <Ionicons name="videocam-outline" size={24} color="#4C8CFF" />
               <Text style={styles.videoPlaceholderText}>Signed link unavailable</Text>
             </View>
           )}
+          {formScore !== null ? (
+            <View style={styles.formScoreBadge} pointerEvents="none">
+              <Text style={styles.formScoreText}>{formScore}</Text>
+            </View>
+          ) : null}
         </View>
 
-        <View style={styles.feedActions}>
-          <View style={styles.feedActionGroup}>
+        <View style={styles.engagementRow}>
+          <TouchableOpacity
+            style={styles.engagementGroup}
+            onPress={() => handleToggleLike(item.id)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={18} color={isLiked ? '#FF6B6B' : '#9AACD1'} />
+            <Text style={[styles.engagementText, isLiked && styles.engagementTextActive]}>{likeCount}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.engagementGroup}
+            onPress={() => router.push(`/(modals)/video-comments?videoId=${item.id}`)}
+            activeOpacity={0.8}
+          >
             <Ionicons name="chatbubble-ellipses-outline" size={18} color="#9AACD1" />
-            <Text style={styles.feedActionLabel}>Comments</Text>
-          </View>
-          <View style={styles.feedActionGroup}>
-            <Ionicons name="time-outline" size={18} color="#9AACD1" />
-            <Text style={styles.feedActionLabel}>{item.duration_seconds ? `${Math.round(item.duration_seconds)}s` : '—'}</Text>
-          </View>
-          <View style={styles.feedActionGroup}>
-            <Ionicons name="link-outline" size={18} color="#9AACD1" />
-            <Text style={styles.feedActionLabel}>Share</Text>
-          </View>
+            <Text style={styles.engagementText}>{commentCount}</Text>
+          </TouchableOpacity>
         </View>
 
-        {metricBadges.length > 0 && (
-          <View style={styles.metricChips}>
-            {metricBadges.map((badge) => (
-              <View key={badge} style={styles.metricChip}>
-                <Text style={styles.metricChipText}>{badge}</Text>
-              </View>
-            ))}
+        {primaryCue ? (
+          <View style={styles.statRow}>
+            <Ionicons name="checkmark-circle" size={16} color="#7BD389" />
+            <Text style={styles.statText}>{primaryCue}</Text>
           </View>
-        )}
+        ) : null}
       </View>
     );
   };
@@ -429,6 +691,24 @@ export default function HomeScreen() {
 
   const renderVideoFeed = () => (
     <View style={styles.feedContainer}>
+      <View style={styles.feedFilterRow}>
+        <TouchableOpacity
+          style={[styles.feedFilterButton, feedFilter === 'following' && styles.feedFilterButtonActive]}
+          onPress={() => setFeedFilter('following')}
+        >
+          <Text style={[styles.feedFilterText, feedFilter === 'following' && styles.feedFilterTextActive]}>
+            Following
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.feedFilterButton, feedFilter === 'trending' && styles.feedFilterButtonActive]}
+          onPress={() => setFeedFilter('trending')}
+        >
+          <Text style={[styles.feedFilterText, feedFilter === 'trending' && styles.feedFilterTextActive]}>
+            Trending
+          </Text>
+        </TouchableOpacity>
+      </View>
       {loadingVideos && !hasFetchedOnce ? (
         <View style={styles.feedLoading}>
           <ActivityIndicator color="#4C8CFF" />
@@ -542,17 +822,40 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.container, { paddingBottom: bottomPadding }]}>
-      <View style={styles.headerRow}>
-        <View style={styles.headerTextContainer}>
-          <Text style={styles.title}>Welcome back, {getDisplayName()}!</Text>
-          <Text style={styles.subtitle}>{subtitle}</Text>
+      {activeTab === 'videos' ? (
+        <View style={styles.feedTopBar}>
+          <View style={styles.feedTopLeft}>
+            <View style={styles.feedTopAvatarWrap}>
+              <View style={styles.feedTopAvatar}>
+                <Text style={styles.feedTopAvatarText}>{displayInitial}</Text>
+              </View>
+              <View style={styles.feedTopStatus} />
+            </View>
+            <Text style={styles.feedTopTitle}>Feed</Text>
+          </View>
+          <View style={styles.feedTopActions}>
+            <TouchableOpacity style={styles.coachEmojiButton} onPress={() => setActiveTab('coach')}>
+              <Text style={styles.coachEmojiText}>🧑‍🏫</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.newPostButton} onPress={handleUploadVideo}>
+              <Ionicons name="add" size={18} color="#DDE6FF" />
+              <Text style={styles.newPostText}>New Post</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => setActiveTab('coach')}>
-            <Ionicons name="sparkles-outline" size={22} color={activeTab === 'coach' ? '#4C8CFF' : '#9AACD1'} />
-          </TouchableOpacity>
+      ) : (
+        <View style={styles.headerRow}>
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.title}>Welcome back, {getDisplayName()}!</Text>
+            <Text style={styles.subtitle}>{subtitle}</Text>
+          </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.coachEmojiButton} onPress={() => setActiveTab('coach')}>
+              <Text style={styles.coachEmojiText}>🧑‍🏫</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      )}
 
       <View style={styles.tabSwitcher}>
         <TouchableOpacity
@@ -569,14 +872,6 @@ export default function HomeScreen() {
         >
           <Text style={[styles.tabText, activeTab === 'videos' && styles.tabTextActive]}>
             Videos
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'coach' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('coach')}
-        >
-          <Text style={[styles.tabText, activeTab === 'coach' && styles.tabTextActive]}>
-            Coach
           </Text>
         </TouchableOpacity>
       </View>
