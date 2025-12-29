@@ -194,14 +194,14 @@ export class BodyTracker {
    * Start recording the ARKit camera feed while body tracking is running.
    * The recording is handled natively inside the AR session.
    */
-  static async startRecording(): Promise<void> {
+  static async startRecording(options?: { quality?: 'low' | 'medium' | 'high' }): Promise<void> {
     if (!ARKitBodyTracker) {
       throw new Error('ARKitBodyTracker native module missing. Run `npx expo prebuild --platform ios` and rebuild.');
     }
     if (typeof ARKitBodyTracker.startRecording !== 'function') {
       throw new Error('ARKit recording is not available on this build. Make sure the native module is up to date.');
     }
-    await ARKitBodyTracker.startRecording();
+    await ARKitBodyTracker.startRecording(options ?? null);
   }
 
   /**

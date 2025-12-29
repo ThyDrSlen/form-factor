@@ -20,6 +20,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   watchEvents,
   sendMessage,
@@ -79,6 +80,8 @@ type RecordedPreview = {
   savedToLibrary: boolean;
 };
 
+type RecordingQuality = 'low' | 'medium' | 'high';
+
 // Thresholds are now imported from workout definitions (PULLUP_THRESHOLDS, PUSHUP_THRESHOLDS)
 
 const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
@@ -86,6 +89,12 @@ const WATCH_MIRROR_INTERVAL_MS = 750;
 const WATCH_MIRROR_JPEG_QUALITY = 25;
 const WATCH_MIRROR_AR_QUALITY = 0.25;
 const WATCH_MIRROR_MAX_WIDTH = 320;
+const QUALITY_STORAGE_KEY = 'ff.recordingQuality';
+const QUALITY_LABELS: Record<RecordingQuality, string> = {
+  low: 'Low',
+  medium: 'Med',
+  high: 'High',
+};
 
 // Metrics types are now imported from workout definitions (PullUpMetrics, PushUpMetrics)
 
@@ -128,7 +137,7 @@ const PreviewPlayer = ({ uri }: { uri: string }) => {
       style={styles.previewVideo}
       contentFit="contain"
       nativeControls
-      allowsFullscreen
+      fullscreenOptions={{ enable: true }}
       allowsPictureInPicture
     />
   );
@@ -201,6 +210,7 @@ export default function ScanARKitScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [isFinalizingRecording, setIsFinalizingRecording] = useState(false);
   const [recordPreview, setRecordPreview] = useState<RecordedPreview | null>(null);
+  const [recordingQuality, setRecordingQuality] = useState<RecordingQuality>('medium');
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [savingRecording, setSavingRecording] = useState(false);
@@ -222,6 +232,28 @@ export default function ScanARKitScreen() {
   const [watchReachable, setWatchReachable] = useState(false);
   const watchMirrorTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const watchMirrorInFlightRef = React.useRef(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    AsyncStorage.getItem(QUALITY_STORAGE_KEY)
+      .then((value) => {
+        if (!isMounted || !value) return;
+        if (value === 'low' || value === 'medium' || value === 'high') {
+          setRecordingQuality(value);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const updateRecordingQuality = useCallback(async (value: RecordingQuality) => {
+    setRecordingQuality(value);
+    try {
+      await AsyncStorage.setItem(QUALITY_STORAGE_KEY, value);
+    } catch {}
+  }, []);
 
   // Rep tracking refs for FQI calculation and logging
   const repStartTsRef = React.useRef<number>(0);
@@ -1515,13 +1547,13 @@ export default function ScanARKitScreen() {
         if (DEV) logWithTs('[ScanARKit] Starting recording...');
         setPreviewError(null);
         setIsRecording(true);
-        await BodyTracker.startRecording();
+        await BodyTracker.startRecording({ quality: recordingQuality });
       } catch (error) {
         console.error('[ScanARKit] Failed to start ARKit recording', error);
         setIsRecording(false);
         Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not start recording.');
       }
-    }, [DEV, isRecording, isFinalizingRecording, isTracking, recordPreview, logWithTs]);
+    }, [DEV, isRecording, isFinalizingRecording, isTracking, recordPreview, recordingQuality, logWithTs]);
 
     const stopRecordingVideo = useCallback(async () => {
       if (!isRecording || recordingStopInFlightRef.current) return;
@@ -1563,7 +1595,7 @@ export default function ScanARKitScreen() {
       setIsPreviewVisible(false);
     }, [recordPreview, cleanupLocalRecording, uploading, savingRecording]);
 
-    const handleSaveRecording = useCallback(async () => {
+    const handleSaveOnlyRecording = useCallback(async () => {
       if (!recordPreview || uploading || savingRecording) return;
       setPreviewError(null);
       let saved = recordPreview.savedToLibrary;
@@ -1575,6 +1607,32 @@ export default function ScanARKitScreen() {
           setRecordPreview((prev) => (prev ? { ...prev, savedToLibrary: true } : prev));
         }
       }
+      if (!saved) return;
+      const message = 'Saved to Photos.';
+      if (Platform.OS === 'android') {
+        ToastAndroid.show(message, ToastAndroid.SHORT);
+      } else {
+        Alert.alert('Saved', message);
+      }
+      await cleanupLocalRecording(recordPreview.uri);
+      setRecordPreview(null);
+      setPreviewError(null);
+      setIsPreviewVisible(false);
+    }, [recordPreview, uploading, savingRecording, saveRecordingToCameraRoll, cleanupLocalRecording]);
+
+    const handlePublishRecording = useCallback(async () => {
+      if (!recordPreview || uploading || savingRecording) return;
+      setPreviewError(null);
+      let saved = recordPreview.savedToLibrary;
+      if (!saved) {
+        setSavingRecording(true);
+        saved = await saveRecordingToCameraRoll(recordPreview.uri);
+        setSavingRecording(false);
+        if (saved) {
+          setRecordPreview((prev) => (prev ? { ...prev, savedToLibrary: true } : prev));
+        }
+      }
+      if (!saved) return;
 
       const uploaded = await uploadRecordedVideo({
         uri: recordPreview.uri,
@@ -1582,13 +1640,11 @@ export default function ScanARKitScreen() {
         metrics: recordPreview.metrics,
       });
       if (uploaded) {
-        const message = saved
-          ? 'Saved to Photos and uploaded to your feed.'
-          : 'Uploaded to your feed. Enable Photos access to save locally.';
+        const message = 'Published to your feed and saved to Photos.';
         if (Platform.OS === 'android') {
           ToastAndroid.show(message, ToastAndroid.SHORT);
         } else {
-          Alert.alert('Saved', message);
+          Alert.alert('Published', message);
         }
         await cleanupLocalRecording(recordPreview.uri);
         setRecordPreview(null);
@@ -1600,9 +1656,17 @@ export default function ScanARKitScreen() {
   if (supportStatus === 'unknown') {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Ionicons name="time-outline" size={48} color="#9AACD1" />
-          <Text style={styles.errorText}>Checking device capabilities...</Text>
+        <View style={styles.loaderContainer}>
+          <View style={styles.loaderCard}>
+            <View style={styles.loaderLineShort} />
+            <View style={styles.loaderLine} />
+            <View style={styles.loaderLine} />
+          </View>
+          <View style={styles.loaderCard}>
+            <View style={styles.loaderLineShort} />
+            <View style={styles.loaderLine} />
+            <View style={styles.loaderLine} />
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -1625,9 +1689,11 @@ export default function ScanARKitScreen() {
         <View style={styles.errorContainer}>
           <Ionicons name="warning-outline" size={60} color="#FF6B6B" />
           <Text style={styles.errorText}>Device not supported</Text>
-          <Text style={{ color: '#666', fontSize: 10, marginTop: 20, textAlign: 'center' }}>
-            Debug: {JSON.stringify(debugInfo, null, 2)}
-          </Text>
+          {__DEV__ ? (
+            <Text style={{ color: '#666', fontSize: 10, marginTop: 20, textAlign: 'center' }}>
+              Debug: {JSON.stringify(debugInfo, null, 2)}
+            </Text>
+          ) : null}
         </View>
       </SafeAreaView>
     );
@@ -2047,6 +2113,30 @@ export default function ScanARKitScreen() {
 
       {/* Controls */}
       <View style={[styles.controls, { bottom: insets.bottom + 30 }]}>
+        <View style={styles.qualitySelector}>
+          <Text style={styles.qualityLabel}>Quality</Text>
+          <View style={styles.qualityButtons}>
+            {(Object.keys(QUALITY_LABELS) as RecordingQuality[]).map((quality) => {
+              const isActive = recordingQuality === quality;
+              return (
+                <TouchableOpacity
+                  key={quality}
+                  style={[
+                    styles.qualityButton,
+                    isActive && styles.qualityButtonActive,
+                    (isRecording || isFinalizingRecording) && styles.qualityButtonDisabled,
+                  ]}
+                  onPress={() => updateRecordingQuality(quality)}
+                  disabled={isRecording || isFinalizingRecording}
+                >
+                  <Text style={[styles.qualityButtonText, isActive && styles.qualityButtonTextActive]}>
+                    {QUALITY_LABELS[quality]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
         {isTracking && (
           <TouchableOpacity
             style={[
@@ -2191,19 +2281,32 @@ export default function ScanARKitScreen() {
                 disabled={uploading || savingRecording}
               >
                 <Text style={[styles.previewButtonText, styles.previewButtonTextGhost]}>
-                  {recordPreview?.savedToLibrary ? 'Close' : 'Discard'}
+                  Discard
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.previewButton, styles.previewButtonSecondary]}
-                onPress={handleSaveRecording}
+                onPress={handleSaveOnlyRecording}
                 disabled={uploading || savingRecording}
               >
-                {savingRecording || uploading ? (
+                {savingRecording && !uploading ? (
                   <ActivityIndicator color="#0B1F3A" />
                 ) : (
                   <Text style={[styles.previewButtonText, styles.previewButtonTextSecondary]}>
-                    {recordPreview?.savedToLibrary ? 'Saved' : 'Save'}
+                    Save only
+                  </Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.previewButton, styles.previewButtonPrimary]}
+                onPress={handlePublishRecording}
+                disabled={uploading || savingRecording}
+              >
+                {uploading || savingRecording ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={[styles.previewButtonText, styles.previewButtonTextPrimary]}>
+                    Publish + Save
                   </Text>
                 )}
               </TouchableOpacity>
