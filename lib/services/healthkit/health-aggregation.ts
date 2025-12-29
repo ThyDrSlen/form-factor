@@ -31,24 +31,40 @@ export interface DailyHealthMetric {
 }
 
 /**
- * Get start of week (Monday) for a given date
+ * Parse summary date (YYYY-MM-DD) as UTC date
+ */
+function parseSummaryDate(dateString: string): Date | null {
+  const [year, month, day] = dateString.split('-').map((value) => Number.parseInt(value, 10));
+  if (!year || !month || !day) return null;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function formatDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Get start of week (Monday) for a given UTC date
  */
 function getWeekStart(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
+  const d = new Date(date.getTime());
+  const day = d.getUTCDay();
+  const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+  d.setUTCDate(diff);
+  d.setUTCHours(0, 0, 0, 0);
   return d;
 }
 
 /**
- * Get start of month for a given date
+ * Get start of month for a given UTC date
  */
 function getMonthStart(date: Date): Date {
-  const d = new Date(date);
-  d.setDate(1);
-  d.setHours(0, 0, 0, 0);
+  const d = new Date(date.getTime());
+  d.setUTCDate(1);
+  d.setUTCHours(0, 0, 0, 0);
   return d;
 }
 
@@ -62,18 +78,32 @@ export async function fetchDailyHealthMetrics(
 ): Promise<DailyHealthMetric[]> {
   if (!userId) return [];
 
-  const startStr = startDate.toISOString().slice(0, 10);
-  const endStr = endDate.toISOString().slice(0, 10);
+  const startStr = formatDateKey(startDate);
+  const endStr = formatDateKey(endDate);
 
   try {
     const metrics = await localDB.getHealthMetricsForRange(userId, startStr, endStr);
     
-    return metrics.map((row) => ({
-      date: row.summary_date,
-      steps: row.steps,
-      weightKg: row.weight_kg,
-      heartRateBpm: row.heart_rate_bpm,
-    }));
+    const byDate = new Map(metrics.map((row) => [row.summary_date, row]));
+    const filled: DailyHealthMetric[] = [];
+    const cursor = new Date(startDate);
+    cursor.setHours(0, 0, 0, 0);
+    const endCursor = new Date(endDate);
+    endCursor.setHours(0, 0, 0, 0);
+
+    while (cursor <= endCursor) {
+      const key = formatDateKey(cursor);
+      const row = byDate.get(key);
+      filled.push({
+        date: key,
+        steps: row?.steps ?? 0,
+        weightKg: row?.weight_kg ?? null,
+        heartRateBpm: row?.heart_rate_bpm ?? null,
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return filled;
   } catch (error) {
     console.warn('[HealthAggregation] Failed to fetch daily metrics from local DB', error);
     return [];
@@ -88,7 +118,8 @@ export function aggregateWeekly(dailyMetrics: DailyHealthMetric[]): AggregatedHe
 
   // Group by week
   dailyMetrics.forEach((metric) => {
-    const date = new Date(metric.date);
+    const date = parseSummaryDate(metric.date);
+    if (!date) return;
     const weekStart = getWeekStart(date);
     const weekKey = weekStart.toISOString().slice(0, 10);
 
@@ -136,7 +167,8 @@ export function aggregateMonthly(dailyMetrics: DailyHealthMetric[]): AggregatedH
 
   // Group by month
   dailyMetrics.forEach((metric) => {
-    const date = new Date(metric.date);
+    const date = parseSummaryDate(metric.date);
+    if (!date) return;
     const monthStart = getMonthStart(date);
     const monthKey = monthStart.toISOString().slice(0, 10);
 
@@ -185,7 +217,7 @@ export async function fetchHealthTrendData(
 ): Promise<HealthTrendData> {
   const endDate = new Date();
   const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
+  startDate.setDate(startDate.getDate() - (days - 1));
 
   const dailyMetrics = await fetchDailyHealthMetrics(userId, startDate, endDate);
 
@@ -242,4 +274,3 @@ export function getComparisonMetrics(
     heartRateChange: calculatePercentageChange(current.avgHeartRate, previous?.avgHeartRate ?? null),
   };
 }
-
