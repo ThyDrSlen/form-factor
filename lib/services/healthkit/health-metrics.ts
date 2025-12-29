@@ -47,7 +47,13 @@ export function buildDateRange(days: number): { start: Date; end: Date } {
   return { start, end };
 }
 
-export function ensureContinuousHistory(points: HealthMetricPoint[], range: { start: Date; end: Date }): HealthMetricPoint[] {
+export type MissingDayFillStrategy = 'carry-forward' | 'zero';
+
+export function ensureContinuousHistory(
+  points: HealthMetricPoint[],
+  range: { start: Date; end: Date },
+  fillStrategy: MissingDayFillStrategy = 'carry-forward'
+): HealthMetricPoint[] {
   const byDay = new Map<number, number>();
   points.forEach((point) => {
     if (Number.isFinite(point.date)) {
@@ -67,9 +73,9 @@ export function ensureContinuousHistory(points: HealthMetricPoint[], range: { st
       lastValue = valueForDay;
     }
 
-    // Carry forward last known weight to avoid dropping to zero on missing days.
-    if (lastValue != null) {
-      days.push({ date: key, value: lastValue });
+    const value = fillStrategy === 'zero' ? (valueForDay ?? 0) : lastValue;
+    if (value != null) {
+      days.push({ date: key, value });
     }
 
     cursor.setDate(cursor.getDate() + 1);
@@ -303,7 +309,7 @@ export async function getStepHistoryAsync(days = 7): Promise<HealthMetricPoint[]
       'count'
     );
     if (!Array.isArray(results)) {
-      return ensureContinuousHistory([], range);
+      return ensureContinuousHistory([], range, 'zero');
     }
 
     const mapped = results
@@ -314,7 +320,7 @@ export async function getStepHistoryAsync(days = 7): Promise<HealthMetricPoint[]
       })
       .filter((item): item is HealthMetricPoint => Boolean(item));
 
-    return ensureContinuousHistory(mapped, range);
+    return ensureContinuousHistory(mapped, range, 'zero');
   } catch (_e) {
     return [];
   }
@@ -383,7 +389,7 @@ export async function getWeightHistoryAsync(days = 7): Promise<HealthMetricPoint
       false
     );
     if (!Array.isArray(results) || results.length === 0) {
-      return ensureContinuousHistory([], range);
+      return ensureContinuousHistory([], range, 'carry-forward');
     }
 
     const latestPerDay = new Map<number, number>();
@@ -402,7 +408,7 @@ export async function getWeightHistoryAsync(days = 7): Promise<HealthMetricPoint
       value,
     }));
 
-    return ensureContinuousHistory(mapped, range);
+    return ensureContinuousHistory(mapped, range, 'carry-forward');
   } catch (_e) {
     return [];
   }
