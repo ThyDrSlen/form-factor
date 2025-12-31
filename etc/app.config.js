@@ -45,15 +45,6 @@ const baseConfig = {
     'expo-router',
     'expo-web-browser',
     'react-native-vision-camera',
-    [
-      'react-native-health',
-      {
-        healthSharePermission: 'We read steps, heart rate (including resting and variability), VO2 Max, sleep, respiratory rate, walking HR, cardio metrics, and sex/birth year to surface recovery and training insights.',
-        healthUpdatePermission: 'We write selected health metrics only when you explicitly enable it.',
-        isClinicalDataEnabled: true,
-        healthClinicalDescription: 'We access clinical health records (e.g., labs and immunizations) to enhance your health insights.',
-      },
-    ],
     './plugins/withARKitBodyTracker.js',
     'expo-font',
     './plugins/withBuildSettings.js',
@@ -101,7 +92,7 @@ const baseConfig = {
     appleTeamId: 'NCTLNFGC6G',
     infoPlist: {
       NSHealthShareUsageDescription: 'This app reads steps, heart rate (resting and variability), VO2 Max, sleep, respiratory rate, walking HR, cardio metrics, and sex/birth year to tailor recovery and training insights.',
-      NSHealthUpdateUsageDescription: 'This app writes health data to record your activity.',
+      NSHealthUpdateUsageDescription: 'This app writes workout data to record your activity.',
       NSCameraUsageDescription: 'We need camera access to scan your form and provide skeleton tracking.',
       NSMicrophoneUsageDescription: 'Optional: for recording workout videos',
       NSPhotoLibraryUsageDescription: 'Allow access to your photo library to save workout recordings.',

@@ -1,0 +1,8 @@
+{
+  "name": "ff-healthkit",
+  "platforms": ["apple"],
+  "apple": {
+    "modules": ["FFHealthKitModule"],
+    "podspecPath": "ff-healthkit.podspec"
+  }
+}

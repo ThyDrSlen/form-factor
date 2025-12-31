@@ -17,7 +17,7 @@ const colors = {
 const valueProps = [
   { title: 'Real-time cues', body: 'ARKit + Vision Camera detects reps and flags swing, depth, ROM, and tempo as you move.' },
   { title: 'Auto logging', body: 'Sets, reps, and weight captured automatically; no fiddling with inputs between sets.' },
-  { title: 'Health-aware coach', body: 'AI adapts to sleep, HR, and recent load from HealthKit to nudge form or intensity.' },
+  { title: 'Health-aware coach', body: 'AI adapts to sleep, HR, and recent load pulled from HealthKit to nudge form or intensity.' },
   { title: 'Built for lifters', body: 'Offline-first, fast logging, iOS-first experience with feed and video capture baked in.' },
 ];
 
@@ -37,7 +37,7 @@ const featureDeepDive = [
   },
   {
     title: 'Health and recovery context',
-    body: 'HealthKit import for activity, HR, weight, and sleep feeds the coach so cues stay realistic.',
+    body: 'HealthKit read/import for activity, HR, weight, and sleep feeds the coach so cues stay realistic.',
     bullets: ['Trends and bulk sync to Supabase', 'Watch connectivity helpers', 'Coach context tags: sleep dip, high HR'],
     tint: ['#0c2340', '#0f2d51'] as const,
   },

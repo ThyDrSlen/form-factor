@@ -27,6 +27,13 @@ interface MetricCardProps {
   onPress?: () => void;
 }
 
+function formatDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function MetricCard({ title, value, change, icon, color, onPress }: MetricCardProps) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={styles.metricCard}>
@@ -221,7 +228,7 @@ export function HealthTrendsView() {
     let aggregated: AggregatedHealthMetrics | null = null;
 
     if (selectedRange === 'daily') {
-      const today = now.toISOString().slice(0, 10);
+      const today = formatDateKey(now);
       const todayData = trendData.daily.find(d => d.date === today);
       return {
         steps: todayData?.steps || stepsToday || 0,

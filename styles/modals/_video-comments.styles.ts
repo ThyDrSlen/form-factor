@@ -1,0 +1,290 @@
+import { StyleSheet } from 'react-native';
+import { spacing, borderRadius } from '../tabs/_theme-constants';
+import { tabColors } from '../tabs/_tab-theme';
+
+export const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: tabColors.background,
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  topTitle: {
+    color: tabColors.textPrimary,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  topAction: {
+    color: tabColors.textSecondary,
+    fontSize: 15,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  filterButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  filterButtonActive: {
+    backgroundColor: 'rgba(76, 140, 255, 0.25)',
+    borderColor: 'rgba(76, 140, 255, 0.35)',
+  },
+  filterText: {
+    color: tabColors.textSecondary,
+    fontWeight: '600',
+  },
+  filterTextActive: {
+    color: tabColors.textPrimary,
+  },
+  listContent: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+    gap: spacing.md,
+  },
+  summaryCard: {
+    backgroundColor: tabColors.overlay,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    padding: spacing.md,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  avatarWrap: {
+    position: 'relative',
+    marginRight: spacing.sm,
+  },
+  avatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(76, 140, 255, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: tabColors.textPrimary,
+    fontWeight: '700',
+  },
+  avatarStatus: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#3CD77D',
+    borderWidth: 2,
+    borderColor: tabColors.background,
+    right: -1,
+    bottom: -1,
+  },
+  summaryName: {
+    color: tabColors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  summaryMeta: {
+    color: tabColors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  summaryLine: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  summaryToken: {
+    color: tabColors.textPrimary,
+    fontSize: 14,
+    marginRight: spacing.xs,
+  },
+  scorePill: {
+    backgroundColor: '#F2D675',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginRight: spacing.xs,
+  },
+  scoreText: {
+    color: '#0A0F1C',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  summaryChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  summaryChip: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  summaryChipText: {
+    color: tabColors.textSecondary,
+    fontSize: 12,
+  },
+  takeawayRow: {
+    marginTop: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  takeawayText: {
+    color: tabColors.textPrimary,
+    fontSize: 13,
+    flexShrink: 1,
+  },
+  commentRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  commentAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(76, 140, 255, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commentAvatarText: {
+    color: tabColors.textPrimary,
+    fontWeight: '700',
+  },
+  commentBody: {
+    flex: 1,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  commentName: {
+    color: tabColors.textPrimary,
+    fontWeight: '600',
+  },
+  commentTime: {
+    color: tabColors.textSecondary,
+    fontSize: 12,
+  },
+  commentMore: {
+    marginLeft: 'auto',
+  },
+  commentText: {
+    color: tabColors.textPrimary,
+    marginTop: spacing.xs,
+    lineHeight: 20,
+  },
+  commentMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.lg,
+    marginTop: spacing.xs,
+  },
+  commentMetaGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  commentMetaText: {
+    color: tabColors.textSecondary,
+    fontSize: 12,
+  },
+  composerWrap: {
+    borderTopWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+    backgroundColor: tabColors.background,
+  },
+  composerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 18,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  composerInput: {
+    flex: 1,
+    color: tabColors.textPrimary,
+    fontSize: 14,
+  },
+  sendButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(76, 140, 255, 0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(76, 140, 255, 0.35)',
+  },
+  sendButtonText: {
+    color: '#DDE6FF',
+    fontWeight: '600',
+  },
+  quickChipRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  quickChip: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  quickChipText: {
+    color: tabColors.textSecondary,
+    fontSize: 13,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+  },
+  emptyText: {
+    color: tabColors.textSecondary,
+  },
+});
+
+export default styles;

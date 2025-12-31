@@ -1,30 +1,449 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert, Share, Modal, TextInput, ActivityIndicator } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Alert, Share, Modal, TextInput, ActivityIndicator, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import { HealthTrendsView } from '@/components/dashboard-health/HealthTrendsView';
+import { deleteVideo, getVideoById, listVideos, toggleVideoLike, VideoWithUrls } from '@/lib/services/video-service';
 import { router } from 'expo-router';
 import Constants from 'expo-constants';
 import { syncService } from '@/lib/services/database/sync-service';
 import { localDB } from '@/lib/services/database/local-db';
 import { fixInvalidUUIDs } from '@/scripts/fix-invalid-uuids';
 import { useDebugInfo } from '@/hooks/use-debug-info';
+import {
+  buildOverlaySummary,
+  buildPostText,
+  formatRelativeTime,
+  formatVideoTimestamp,
+  getFormScore,
+  getPrimaryCue,
+  type VideoFeedMetrics,
+} from '@/lib/video-feed';
 import { styles } from '../../styles/tabs/_profile.styles';
+import { styles as feedStyles } from '../../styles/tabs/_index.styles';
+import { subscribeToCommentEvents } from '@/lib/video-comments-events';
+
+type FeedVideoPlayerProps = {
+  uri: string;
+  thumbnailUrl?: string | null;
+  overlaySummary: string;
+  overlayTime: string;
+};
+
+const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: FeedVideoPlayerProps) => {
+  const [posterVisible, setPosterVisible] = useState(Boolean(thumbnailUrl));
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
+  const [progressWidth, setProgressWidth] = useState(0);
+  const videoViewRef = useRef<VideoView | null>(null);
+
+  const initialSourceRef = useRef<{ uri: string }>({ uri });
+  const currentUriRef = useRef(uri);
+  const player = useVideoPlayer(initialSourceRef.current, (instance) => {
+    instance.loop = false;
+  });
+
+  const formatTime = useCallback((seconds: number) => {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+    const rounded = Math.floor(seconds);
+    const mins = Math.floor(rounded / 60);
+    const secs = Math.floor(rounded % 60);
+    return `${mins}:${String(secs).padStart(2, '0')}`;
+  }, []);
+
+  useEffect(() => {
+    if (!uri || currentUriRef.current === uri) return;
+    currentUriRef.current = uri;
+    player.replaceAsync({ uri }).catch((error) => {
+      if (__DEV__) {
+        console.warn('[ProfileVideoPlayer] replaceAsync failed', error);
+      }
+    });
+  }, [player, uri]);
+
+  useEffect(() => {
+    const subscription = player.addListener('playingChange', ({ isPlaying: nextPlaying }) => {
+      setIsPlaying(nextPlaying);
+    });
+    const timeSubscription = player.addListener('timeUpdate', ({ currentTime: nextTime }) => {
+      setCurrentTime(nextTime);
+      if (player.duration) {
+        setDuration(player.duration);
+      }
+    });
+    const sourceSubscription = player.addListener('sourceLoad', () => {
+      if (player.duration) {
+        setDuration(player.duration);
+      }
+    });
+    return () => {
+      subscription.remove();
+      timeSubscription.remove();
+      sourceSubscription.remove();
+    };
+  }, [player]);
+
+  useEffect(() => {
+    setPosterVisible(Boolean(thumbnailUrl));
+  }, [thumbnailUrl]);
+
+  useEffect(() => {
+    player.timeUpdateEventInterval = 0.25;
+  }, [player]);
+
+  const togglePlayback = useCallback(() => {
+    if (player.playing) {
+      player.pause();
+      return;
+    }
+    player.play();
+  }, [player]);
+
+  const toggleMuted = useCallback(() => {
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    player.muted = nextMuted;
+  }, [isMuted, player]);
+
+  const enterFullscreen = useCallback(() => {
+    if (!videoViewRef.current?.enterFullscreen) return;
+    videoViewRef.current.enterFullscreen().catch((error) => {
+      if (__DEV__) {
+        console.warn('[ProfileVideoPlayer] enterFullscreen failed', error);
+      }
+    });
+  }, []);
+
+  const handleSeek = useCallback(
+    (event: { nativeEvent: { locationX: number } }) => {
+      if (!duration || !progressWidth) return;
+      const ratio = Math.min(1, Math.max(0, event.nativeEvent.locationX / progressWidth));
+      const nextTime = ratio * duration;
+      player.currentTime = nextTime;
+      setCurrentTime(nextTime);
+    },
+    [duration, progressWidth, player]
+  );
+
+  const progress = duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
+  const timecode = `${formatTime(currentTime)} / ${formatTime(duration)}`;
+
+  return (
+    <View style={feedStyles.video}>
+      <VideoView
+        ref={videoViewRef}
+        player={player}
+        style={feedStyles.videoSurface}
+        contentFit="cover"
+        nativeControls={false}
+        fullscreenOptions={{ enable: true }}
+        allowsPictureInPicture
+        onFirstFrameRender={() => setPosterVisible(false)}
+      />
+      {thumbnailUrl && posterVisible ? (
+        <Image
+          source={{ uri: thumbnailUrl }}
+          style={feedStyles.videoPoster}
+          resizeMode="cover"
+        />
+      ) : null}
+      <TouchableOpacity style={feedStyles.videoTapSurface} onPress={togglePlayback} activeOpacity={1} />
+      {!isPlaying ? (
+        <TouchableOpacity
+          style={feedStyles.playButton}
+          onPress={togglePlayback}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="play" size={26} color="#0B1324" />
+        </TouchableOpacity>
+      ) : null}
+      <LinearGradient
+        colors={['rgba(10, 15, 28, 0)', 'rgba(10, 15, 28, 0.78)']}
+        style={feedStyles.videoOverlay}
+      >
+        <View style={feedStyles.videoOverlayMetaRow}>
+          <Text style={feedStyles.videoOverlaySummary}>{overlaySummary}</Text>
+          {overlayTime ? <Text style={feedStyles.videoOverlayTime}>{overlayTime}</Text> : null}
+        </View>
+        <View style={feedStyles.videoControlsRow}>
+          <TouchableOpacity
+            style={feedStyles.videoProgressTrack}
+            onLayout={(event) => setProgressWidth(event.nativeEvent.layout.width)}
+            onPress={handleSeek}
+            activeOpacity={0.85}
+          >
+            <View style={[feedStyles.videoProgressFill, { width: `${progress * 100}%` }]} />
+          </TouchableOpacity>
+          <Text style={feedStyles.videoTimecode}>{timecode}</Text>
+          <TouchableOpacity style={feedStyles.muteButton} onPress={toggleMuted}>
+            <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={14} color="#DDE6FF" />
+          </TouchableOpacity>
+          <TouchableOpacity style={feedStyles.fullscreenButton} onPress={enterFullscreen}>
+            <Ionicons name="scan-outline" size={14} color="#DDE6FF" />
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
+    </View>
+  );
+};
 
 export default function ProfileScreen() {
   const { user, signOut, updateProfile } = useAuth();
+  const { show: showToast } = useToast();
   const [isFixing, setIsFixing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isEditProfileVisible, setIsEditProfileVisible] = useState(false);
   const [fullName, setFullName] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
+  const [videos, setVideos] = useState<VideoWithUrls[]>([]);
+  const [loadingVideos, setLoadingVideos] = useState(false);
+  const [feedError, setFeedError] = useState<string | null>(null);
+  const [hasFetchedOnce, setHasFetchedOnce] = useState(false);
+  const [likedVideos, setLikedVideos] = useState<Record<string, boolean>>({});
   const { debugInfo, loading: debugLoading, refresh: refreshDebugInfo } = useDebugInfo();
   const currentName = user?.user_metadata?.full_name || user?.user_metadata?.name || '';
   const memberSinceYear = user?.created_at ? new Date(user.created_at).getFullYear() : new Date().getFullYear();
   const displayName = currentName || user?.email?.split('@')[0] || 'User';
   const displayInitial = (displayName || 'U').charAt(0).toUpperCase();
+
+  const loadVideos = useCallback(async () => {
+    setFeedError(null);
+    setLoadingVideos(true);
+    try {
+      const fetched = await listVideos(12, { onlyMine: true });
+      setVideos(fetched);
+      setHasFetchedOnce(true);
+    } catch (error) {
+      if (__DEV__) {
+        console.warn('Failed to load profile videos', error);
+      }
+      setFeedError('Unable to load your videos right now.');
+    } finally {
+      setLoadingVideos(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasFetchedOnce && !loadingVideos) {
+      loadVideos();
+    }
+  }, [hasFetchedOnce, loadVideos, loadingVideos]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToCommentEvents((event) => {
+      if (event.type === 'commentAdded') {
+        setVideos((prev) =>
+          prev.map((video) => {
+            if (video.id !== event.videoId) return video;
+            const current = typeof video.comment_count === 'number' ? video.comment_count : 0;
+            return { ...video, comment_count: current + 1 };
+          })
+        );
+      }
+
+      if (event.type === 'commentModalClosed') {
+        getVideoById(event.videoId)
+          .then((latest) => {
+            setVideos((prev) =>
+              prev.map((video) =>
+                video.id === event.videoId
+                  ? {
+                      ...video,
+                      comment_count: latest.comment_count,
+                      like_count: latest.like_count,
+                    }
+                  : video
+              )
+            );
+          })
+          .catch((error) => {
+            if (__DEV__) {
+              console.warn('[Profile] Failed to refresh comment counts', error);
+            }
+          });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  const handleShare = useCallback(async (video: VideoWithUrls) => {
+    if (!video.signedUrl) {
+      Alert.alert('No link available', 'Try refreshing your videos to regenerate the link.');
+      return;
+    }
+    try {
+      await Share.share({
+        message: video.signedUrl,
+      });
+    } catch (error) {
+      console.warn('Share failed', error);
+    }
+  }, []);
+
+  const handleDeleteVideo = useCallback(
+    async (videoId: string) => {
+      try {
+        await deleteVideo(videoId);
+        setVideos((prev) => prev.filter((video) => video.id !== videoId));
+        showToast('Video deleted', { type: 'info' });
+      } catch (error) {
+        console.error('[Profile] Failed to delete video', error);
+        showToast('Unable to delete video right now.', { type: 'error' });
+      }
+    },
+    [showToast]
+  );
+
+  const handlePostActions = useCallback(
+    (video: VideoWithUrls, canDelete: boolean) => {
+      const buttons = [
+        { text: 'Share', onPress: () => handleShare(video) },
+        canDelete
+          ? {
+              text: 'Delete',
+              style: 'destructive' as const,
+              onPress: () => {
+                Alert.alert(
+                  'Delete video?',
+                  'This removes the clip and metrics permanently.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: () => handleDeleteVideo(video.id) },
+                  ]
+                );
+              },
+            }
+          : null,
+        { text: 'Cancel', style: 'cancel' as const },
+      ].filter(Boolean) as { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[];
+      Alert.alert('Post actions', undefined, buttons);
+    },
+    [handleDeleteVideo, handleShare]
+  );
+
+  const handleToggleLike = useCallback(
+    async (videoId: string) => {
+      try {
+        const result = await toggleVideoLike(videoId);
+        setLikedVideos((prev) => ({ ...prev, [videoId]: result.liked }));
+        setVideos((prev) =>
+          prev.map((video) => {
+            if (video.id !== videoId) return video;
+            const currentCount = typeof video.like_count === 'number' ? video.like_count : 0;
+            const nextCount = Math.max(0, currentCount + (result.liked ? 1 : -1));
+            return { ...video, like_count: nextCount };
+          })
+        );
+      } catch (error) {
+        if (__DEV__) {
+          console.warn('[Profile] Failed to toggle like', error);
+        }
+        showToast('Unable to update like right now.', { type: 'error' });
+      }
+    },
+    [showToast]
+  );
+
+  const renderVideoCard = (item: VideoWithUrls) => {
+    const metrics = (item.metrics || {}) as VideoFeedMetrics;
+    const formScore = getFormScore(metrics, item.exercise);
+    const primaryCue = getPrimaryCue(metrics, item.exercise);
+    const postTimestamp = formatVideoTimestamp(item.created_at);
+    const summary = buildOverlaySummary(metrics, item.duration_seconds, formScore);
+    const metaLine = formatRelativeTime(item.created_at);
+    const postText = buildPostText(metrics, item.exercise);
+    const likeCount = typeof item.like_count === 'number' ? item.like_count : 0;
+    const commentCount = typeof item.comment_count === 'number' ? item.comment_count : 0;
+    const isLiked = likedVideos[item.id] === true;
+
+    const canDelete = user?.id === item.user_id;
+    return (
+      <View key={item.id} style={feedStyles.feedCard}>
+        <View style={feedStyles.postHeader}>
+          <View style={feedStyles.postHeaderLeft}>
+            <View style={feedStyles.postAvatarWrap}>
+              <View style={feedStyles.postAvatar}>
+                <Text style={feedStyles.postAvatarText}>{displayInitial}</Text>
+              </View>
+              <View style={feedStyles.postAvatarStatus} />
+            </View>
+            <View style={feedStyles.postHeaderText}>
+              <Text style={feedStyles.postName} numberOfLines={1}>{displayName}</Text>
+              {metaLine ? (
+                <Text style={feedStyles.postMeta} numberOfLines={1}>
+                  {metaLine} • Workout share
+                </Text>
+              ) : null}
+            </View>
+          </View>
+          <TouchableOpacity
+            style={feedStyles.postMoreButton}
+            onPress={() => handlePostActions(item, canDelete)}
+          >
+            <Ionicons name="ellipsis-horizontal" size={20} color="#9AACD1" />
+          </TouchableOpacity>
+        </View>
+
+        <Text style={feedStyles.postText}>{postText}</Text>
+
+        <View style={feedStyles.videoWrapper}>
+          {item.signedUrl ? (
+            <FeedVideoPlayer
+              uri={item.signedUrl}
+              thumbnailUrl={item.thumbnailUrl}
+              overlaySummary={summary}
+              overlayTime={postTimestamp}
+            />
+          ) : (
+            <View style={feedStyles.videoPlaceholder}>
+              <Ionicons name="videocam-outline" size={24} color="#4C8CFF" />
+              <Text style={feedStyles.videoPlaceholderText}>Signed link unavailable</Text>
+            </View>
+          )}
+          {formScore !== null ? (
+            <View style={feedStyles.formScoreBadge} pointerEvents="none">
+              <Text style={feedStyles.formScoreText}>{formScore}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={feedStyles.engagementRow}>
+          <TouchableOpacity
+            style={feedStyles.engagementGroup}
+            onPress={() => handleToggleLike(item.id)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={18} color={isLiked ? '#FF6B6B' : '#9AACD1'} />
+            <Text style={[feedStyles.engagementText, isLiked && feedStyles.engagementTextActive]}>{likeCount}</Text>
+        </TouchableOpacity>
+          <TouchableOpacity
+            style={feedStyles.engagementGroup}
+            onPress={() => router.push(`/(modals)/video-comments?videoId=${item.id}`)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={18} color="#9AACD1" />
+            <Text style={feedStyles.engagementText}>{commentCount}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {primaryCue ? (
+          <View style={feedStyles.statRow}>
+            <Ionicons name="checkmark-circle" size={16} color="#7BD389" />
+            <Text style={feedStyles.statText}>{primaryCue}</Text>
+          </View>
+        ) : null}
+      </View>
+    );
+  };
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -255,6 +674,39 @@ Generated: ${new Date().toISOString()}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Health Overview</Text>
         <HealthTrendsView />
+      </View>
+
+      <View style={styles.section}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={styles.sectionTitle}>My Videos</Text>
+          <TouchableOpacity style={styles.refreshButton} onPress={loadVideos} disabled={loadingVideos}>
+            <Ionicons name="refresh-outline" size={16} color="#4C8CFF" />
+            <Text style={styles.refreshText}>{loadingVideos ? 'Loading...' : 'Refresh'}</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={feedStyles.feedContainer}>
+          {loadingVideos && !hasFetchedOnce ? (
+            <View style={feedStyles.feedLoading}>
+              <ActivityIndicator color="#4C8CFF" />
+              <Text style={feedStyles.feedMeta}>Loading videos…</Text>
+            </View>
+          ) : null}
+
+          {feedError ? <Text style={feedStyles.errorText}>{feedError}</Text> : null}
+
+          {!loadingVideos && hasFetchedOnce && videos.length === 0 ? (
+            <View style={feedStyles.feedEmpty}>
+              <Ionicons name="videocam-off-outline" size={22} color="#9AACD1" />
+              <Text style={feedStyles.feedMeta}>No videos yet. Record a set to see it here.</Text>
+            </View>
+          ) : null}
+
+          {videos.length > 0 ? (
+            <View style={feedStyles.feedListContent}>
+              {videos.map(renderVideoCard)}
+            </View>
+          ) : null}
+        </View>
       </View>
 
       {/* Debug Section - Remove before production */}

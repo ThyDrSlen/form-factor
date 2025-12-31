@@ -38,7 +38,8 @@ export function getHealthKitGuidance({ status, isLoading }: GuidanceInput): Heal
     return {
       shouldRenderCard: true,
       headline: 'Connect to Apple Health',
-      description: 'Enable Health permissions to sync steps, heart rate (resting and variability), VO2 Max, sleep, respiratory rate, walking HR, and your sex/age for recovery-aware insights.',
+      description:
+        'Enable Health permissions to read steps, heart rate (resting/variability), VO2 Max, sleep, respiratory rate, walking HR, and your sex/age for recovery-aware insights. We only write workouts (optional).',
       primaryCtaLabel: 'Enable Health Access',
       primaryDisabled: isLoading,
       showSettingsShortcut: false,
@@ -66,8 +67,8 @@ export function getHealthKitGuidance({ status, isLoading }: GuidanceInput): Heal
 
   const hasPromptedBefore = Boolean(status.lastCheckedAt);
   const description = hasPromptedBefore
-    ? 'Health permissions are currently disabled. Re-enable access so we can display your latest metrics.'
-    : 'Enable Health permissions to start syncing steps, workouts, heart, sleep, respiratory rate, and recovery signals (including sex and age) from Apple Health.';
+    ? 'Health permissions are currently disabled. Re-enable access so we can display your latest metrics. We only write workouts (optional).'
+    : 'Enable Health permissions to read steps, workouts, heart, sleep, respiratory rate, and recovery signals (including sex and age) from Apple Health. We only write workouts (optional).';
 
   const footnote = hasPromptedBefore
     ? 'After enabling in Settings, return to the app and your metrics will refresh automatically.'
