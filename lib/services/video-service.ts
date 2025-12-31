@@ -1,13 +1,18 @@
 import * as Crypto from 'expo-crypto';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as VideoThumbnails from 'expo-video-thumbnails';
-import { Buffer } from 'buffer';
+import Constants from 'expo-constants';
 import { supabase } from '@/lib/supabase';
 
 const VIDEO_BUCKET = 'videos';
 const THUMBNAIL_BUCKET = 'video-thumbnails';
 const DEFAULT_SIGNED_URL_SECONDS = 60 * 60 * 24; // 24 hours
 const DEFAULT_MAX_UPLOAD_BYTES = 250 * 1024 * 1024; // 250MB
+const DEFAULT_MAX_THUMBNAIL_BYTES = 80 * 1024 * 1024; // 80MB
+
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || Constants.expoConfig?.extra?.supabaseUrl;
+const SUPABASE_ANON_KEY =
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || Constants.expoConfig?.extra?.supabaseAnonKey;
 
 export type VideoRecord = {
   id: string;
@@ -18,6 +23,8 @@ export type VideoRecord = {
   exercise: string | null;
   metrics?: Record<string, any> | null;
   created_at: string;
+  like_count?: number | null;
+  comment_count?: number | null;
 };
 
 export type CommentRecord = {
@@ -40,8 +47,91 @@ async function ensureUser() {
   return data.user;
 }
 
-function base64ToUint8Array(base64: string) {
-  return Buffer.from(base64, 'base64');
+function getSupabaseUrl() {
+  if (!SUPABASE_URL) {
+    throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL. Check your environment config.');
+  }
+  return SUPABASE_URL;
+}
+
+function getSupabaseAnonKey() {
+  if (!SUPABASE_ANON_KEY) {
+    throw new Error('Missing EXPO_PUBLIC_SUPABASE_ANON_KEY. Check your environment config.');
+  }
+  return SUPABASE_ANON_KEY;
+}
+
+function getFileExtension(uri: string) {
+  const cleanUri = uri.split('?')[0];
+  const match = cleanUri.match(/\.([a-zA-Z0-9]+)$/);
+  return match ? match[1].toLowerCase() : null;
+}
+
+function encodeStoragePath(path: string) {
+  return encodeURIComponent(path).replace(/%2F/g, '/');
+}
+
+async function uploadFileToStorage(opts: {
+  bucket: string;
+  path: string;
+  fileUri: string;
+  contentType: string;
+}) {
+  const supabaseUrl = getSupabaseUrl();
+  const supabaseAnonKey = getSupabaseAnonKey();
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  const accessToken = data.session?.access_token;
+  if (!accessToken) throw new Error('Not signed in');
+
+  const encodedPath = encodeStoragePath(opts.path);
+  const baseUrl = supabaseUrl.replace(/\/$/, '');
+  const url = `${baseUrl}/storage/v1/object/${opts.bucket}/${encodedPath}`;
+
+  const result = await FileSystem.uploadAsync(url, opts.fileUri, {
+    httpMethod: 'POST',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      apikey: supabaseAnonKey,
+      'Content-Type': opts.contentType,
+      'x-upsert': 'false',
+    },
+  });
+
+  if (result.status < 200 || result.status >= 300) {
+    const bodySnippet = result.body ? `: ${result.body.slice(0, 200)}` : '';
+    throw new Error(`Upload failed (${result.status})${bodySnippet}`);
+  }
+}
+
+async function getVideoCount(table: 'video_likes' | 'video_comments', videoId: string) {
+  try {
+    const { count, error } = await supabase
+      .from(table)
+      .select('id', { count: 'exact', head: true })
+      .eq('video_id', videoId);
+    if (error) {
+      if (__DEV__) {
+        console.warn(`[video-service] Failed to fetch ${table} count`, error);
+      }
+      return null;
+    }
+    return typeof count === 'number' ? count : null;
+  } catch (error) {
+    if (__DEV__) {
+      console.warn(`[video-service] Failed to fetch ${table} count`, error);
+    }
+    return null;
+  }
+}
+
+async function getVideoCounts(videoId: string) {
+  const [likeCount, commentCount] = await Promise.all([
+    getVideoCount('video_likes', videoId),
+    getVideoCount('video_comments', videoId),
+  ]);
+  return { likeCount, commentCount };
 }
 
 export async function getSignedVideoUrl(path: string, expiresInSeconds = DEFAULT_SIGNED_URL_SECONDS) {
@@ -69,6 +159,7 @@ export async function uploadWorkoutVideo(opts: {
   durationSeconds?: number;
   exercise?: string;
   maxUploadBytes?: number;
+  maxThumbnailBytes?: number;
   thumbnailTimeMs?: number;
   usePrivateThumbnail?: boolean;
   metrics?: Record<string, any>;
@@ -78,6 +169,7 @@ export async function uploadWorkoutVideo(opts: {
     durationSeconds,
     exercise,
     maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES,
+    maxThumbnailBytes = DEFAULT_MAX_THUMBNAIL_BYTES,
     thumbnailTimeMs = 500,
     usePrivateThumbnail = false,
     metrics,
@@ -93,36 +185,40 @@ export async function uploadWorkoutVideo(opts: {
   }
 
   const videoId = Crypto.randomUUID();
-  const videoPath = `${user.id}/${videoId}.mp4`;
+  const extension = getFileExtension(fileUri);
+  const isMov = extension === 'mov';
+  const isMp4 = extension === 'mp4' || extension === 'm4v';
+  const videoExtension = isMov ? 'mov' : isMp4 ? 'mp4' : 'mp4';
+  const videoContentType = isMov ? 'video/quicktime' : 'video/mp4';
+  const videoPath = `${user.id}/${videoId}.${videoExtension}`;
 
   // Upload video
-  const videoBase64 = await FileSystem.readAsStringAsync(fileUri, { encoding: 'base64' });
-  const videoBytes = base64ToUint8Array(videoBase64);
-  const { error: uploadError } = await supabase.storage
-    .from(VIDEO_BUCKET)
-    .upload(videoPath, videoBytes, { contentType: 'video/mp4', upsert: false });
-  if (uploadError) {
-    throw uploadError;
-  }
+  await uploadFileToStorage({
+    bucket: VIDEO_BUCKET,
+    path: videoPath,
+    fileUri,
+    contentType: videoContentType,
+  });
 
-  // Thumbnail (best-effort)
+  // Thumbnail (best-effort). Skip for very large files to reduce memory pressure.
   let thumbnailPath: string | null = null;
-  try {
-    const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(fileUri, { time: thumbnailTimeMs });
-    const thumbBase64 = await FileSystem.readAsStringAsync(thumbUri, { encoding: 'base64' });
-    const thumbBytes = base64ToUint8Array(thumbBase64);
-    thumbnailPath = `${user.id}/${videoId}.jpg`;
-    const targetBucket = usePrivateThumbnail ? VIDEO_BUCKET : THUMBNAIL_BUCKET;
-    const { error: thumbError } = await supabase.storage
-      .from(targetBucket)
-      .upload(thumbnailPath, thumbBytes, { contentType: 'image/jpeg', upsert: false });
-    if (thumbError) {
-      console.warn('[video-service] Failed to upload thumbnail', thumbError);
+  if (!fileInfo.size || fileInfo.size <= maxThumbnailBytes) {
+    try {
+      const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(fileUri, { time: thumbnailTimeMs });
+      thumbnailPath = `${user.id}/${videoId}.jpg`;
+      const targetBucket = usePrivateThumbnail ? VIDEO_BUCKET : THUMBNAIL_BUCKET;
+      await uploadFileToStorage({
+        bucket: targetBucket,
+        path: thumbnailPath,
+        fileUri: thumbUri,
+        contentType: 'image/jpeg',
+      });
+    } catch (error) {
+      console.warn('[video-service] Thumbnail generation failed', error);
       thumbnailPath = null;
     }
-  } catch (error) {
-    console.warn('[video-service] Thumbnail generation failed', error);
-    thumbnailPath = null;
+  } else {
+    console.warn('[video-service] Skipping thumbnail for large video');
   }
 
   // Persist video record; reuse generated id for join paths
@@ -147,26 +243,66 @@ export async function uploadWorkoutVideo(opts: {
   return data as VideoRecord;
 }
 
-export async function listVideos(limit = 20) {
-  const { data, error } = await supabase
+export async function listVideos(limit = 20, opts?: { onlyMine?: boolean }) {
+  const onlyMine = opts?.onlyMine ?? true;
+  const userId = onlyMine ? (await ensureUser()).id : null;
+  let query = supabase
     .from('videos')
     .select('id, user_id, path, thumbnail_path, duration_seconds, exercise, metrics, created_at')
     .order('created_at', { ascending: false })
     .limit(limit);
 
+  if (userId) {
+    query = query.eq('user_id', userId);
+  }
+
+  const { data, error } = await query;
+
   if (error) throw error;
 
   const withUrls: VideoWithUrls[] = await Promise.all(
     (data || []).map(async (video) => {
-      const signedUrl = await getSignedVideoUrl(video.path);
-      const thumbnailUrl = video.thumbnail_path
-        ? await getSignedThumbnailUrl(video.thumbnail_path)
-        : null;
-      return { ...(video as VideoRecord), signedUrl, thumbnailUrl };
+      const [signedUrl, thumbnailUrl, counts] = await Promise.all([
+        getSignedVideoUrl(video.path),
+        video.thumbnail_path ? getSignedThumbnailUrl(video.thumbnail_path) : Promise.resolve(null),
+        getVideoCounts(video.id),
+      ]);
+      return {
+        ...(video as VideoRecord),
+        signedUrl,
+        thumbnailUrl,
+        like_count: counts.likeCount,
+        comment_count: counts.commentCount,
+      };
     })
   );
 
   return withUrls;
+}
+
+export async function getVideoById(videoId: string) {
+  const { data, error } = await supabase
+    .from('videos')
+    .select('id, user_id, path, thumbnail_path, duration_seconds, exercise, metrics, created_at')
+    .eq('id', videoId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new Error('Video not found');
+
+  const [signedUrl, thumbnailUrl, counts] = await Promise.all([
+    getSignedVideoUrl(data.path),
+    data.thumbnail_path ? getSignedThumbnailUrl(data.thumbnail_path) : Promise.resolve(null),
+    getVideoCounts(data.id),
+  ]);
+
+  return {
+    ...(data as VideoRecord),
+    signedUrl,
+    thumbnailUrl,
+    like_count: counts.likeCount,
+    comment_count: counts.commentCount,
+  } as VideoWithUrls;
 }
 
 export async function fetchVideoComments(videoId: string) {

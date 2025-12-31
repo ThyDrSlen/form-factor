@@ -101,6 +101,8 @@ PODS:
   - ExpoWebBrowser (15.0.8):
     - ExpoModulesCore
   - FBLazyVector (0.83.1)
+  - ff-healthkit (0.1.0):
+    - ExpoModulesCore
   - hermes-engine (0.14.0):
     - hermes-engine/Pre-built (= 0.14.0)
   - hermes-engine/Pre-built (0.14.0)
@@ -1994,8 +1996,6 @@ PODS:
     - React-utils (= 0.83.1)
     - ReactNativeDependencies
   - ReactNativeDependencies (0.83.1)
-  - RNAppleHealthKit (1.7.0):
-    - React
   - RNCAsyncStorage (2.2.0):
     - hermes-engine
     - RCTRequired
@@ -2344,6 +2344,7 @@ DEPENDENCIES:
   - ExpoVideoThumbnails (from `../node_modules/expo-video-thumbnails/ios`)
   - ExpoWebBrowser (from `../node_modules/expo-web-browser/ios`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
+  - ff-healthkit (from `../modules/ff-healthkit`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
   - RCTDeprecation (from `../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
   - RCTRequired (from `../node_modules/react-native/Libraries/Required`)
@@ -2419,7 +2420,6 @@ DEPENDENCIES:
   - ReactCodegen (from `build/generated/ios/ReactCodegen`)
   - ReactCommon/turbomodule/core (from `../node_modules/react-native/ReactCommon`)
   - ReactNativeDependencies (from `../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)
-  - RNAppleHealthKit (from `../node_modules/react-native-health`)
   - "RNCAsyncStorage (from `../node_modules/@react-native-async-storage/async-storage`)"
   - "RNDateTimePicker (from `../node_modules/@react-native-community/datetimepicker`)"
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
@@ -2488,6 +2488,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-web-browser/ios"
   FBLazyVector:
     :path: "../node_modules/react-native/Libraries/FBLazyVector"
+  ff-healthkit:
+    :path: "../modules/ff-healthkit"
   hermes-engine:
     :podspec: "../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec"
     :tag: hermes-v0.14.0
@@ -2637,8 +2639,6 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon"
   ReactNativeDependencies:
     :podspec: "../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec"
-  RNAppleHealthKit:
-    :path: "../node_modules/react-native-health"
   RNCAsyncStorage:
     :path: "../node_modules/@react-native-async-storage/async-storage"
   RNDateTimePicker:
@@ -2689,6 +2689,7 @@ SPEC CHECKSUMS:
   ExpoVideoThumbnails: 503a79271416c8723f04b55ea4737282513ebe4f
   ExpoWebBrowser: d04a0d6247a0bea4519fbc2ea816610019ad83e0
   FBLazyVector: 3a7ea85f6009224ad89f7daeda516f189e6b5759
+  ff-healthkit: 01ff427f0d4a93119f837dae9d57be701a97b786
   hermes-engine: fe4f424b067e1d13fb76064d763f3b70297a8eb1
   RCTDeprecation: a93fe21ed2fd99e13bf3b011390d1e9769c83d23
   RCTRequired: 176145d35686c966863f268c0f938f58ae23dc78
@@ -2763,7 +2764,6 @@ SPEC CHECKSUMS:
   ReactCodegen: fc927f8651c51b06a38dff2328ffe27e75f4e211
   ReactCommon: c24a308601d0bce5c9edf2f36afb0dbf7afaf6ef
   ReactNativeDependencies: a3103b78e78a99beadcdfb835ec778a41f2f2c29
-  RNAppleHealthKit: 86ef7ab70f762b802f5c5289372de360cca701f9
   RNCAsyncStorage: 3a4f5e2777dae1688b781a487923a08569e27fe4
   RNDateTimePicker: 19ffa303c4524ec0a2dfdee2658198451c16b7f1
   RNGestureHandler: 5494787ce29288a8941fa825663f2b1fa0a5aaf1

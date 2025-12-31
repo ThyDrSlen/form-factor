@@ -61,6 +61,10 @@
     <string>This app does not use your location, but it is required by Apple Health for workout routes.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Optional: for recording workout videos</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>Allow Form Factor to save workout recordings to your camera roll.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Allow access to your photo library to save workout recordings.</string>
     <key>NSUserActivityTypes</key>
     <array>
       <string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>

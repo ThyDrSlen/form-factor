@@ -142,6 +142,50 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     color: scanPalette.textPrimary,
   },
+  qualitySelector: {
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  qualityLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: scanPalette.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  qualityButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
+    borderRadius: 16,
+    backgroundColor: scanPalette.overlayMuted,
+    borderWidth: 1,
+    borderColor: scanPalette.border,
+  },
+  qualityButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: scanPalette.overlay,
+    borderWidth: 1,
+    borderColor: scanPalette.border,
+  },
+  qualityButtonActive: {
+    backgroundColor: scanPalette.accent,
+    borderColor: scanPalette.accent,
+  },
+  qualityButtonDisabled: {
+    opacity: 0.6,
+  },
+  qualityButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: scanPalette.textSecondary,
+  },
+  qualityButtonTextActive: {
+    color: scanPalette.textPrimary,
+  },
   controls: {
     position: 'absolute',
     bottom: 60,
@@ -159,6 +203,9 @@ export const styles = StyleSheet.create({
   recordButtonActive: {
     backgroundColor: scanPalette.errorDark,
     borderColor: scanPalette.errorDark,
+  },
+  recordButtonDisabled: {
+    opacity: 0.7,
   },
   controlButton: {
     flexDirection: 'row',
@@ -311,6 +358,111 @@ export const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
   },
+  previewOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
+  previewSheet: {
+    backgroundColor: scanPalette.overlay,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: scanPalette.border,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+  },
+  previewHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: scanPalette.border,
+    marginBottom: spacing.md,
+  },
+  previewTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: scanPalette.textPrimary,
+    marginBottom: spacing.md,
+  },
+  previewVideoWrap: {
+    width: '100%',
+    height: 220,
+    backgroundColor: '#000',
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    marginBottom: spacing.md,
+  },
+  previewVideo: {
+    width: '100%',
+    height: '100%',
+  },
+  previewVideoPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewMetaRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  previewMetaItem: {
+    flex: 1,
+    minWidth: 80,
+  },
+  previewMetaLabel: {
+    fontSize: 10,
+    color: scanPalette.textSecondary,
+    marginBottom: 2,
+  },
+  previewMetaValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: scanPalette.textPrimary,
+  },
+  previewErrorText: {
+    fontSize: 12,
+    color: scanPalette.error,
+    marginTop: spacing.xs,
+  },
+  previewActions: {
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  previewButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  previewButtonPrimary: {
+    backgroundColor: scanPalette.accent,
+    borderColor: scanPalette.accent,
+  },
+  previewButtonSecondary: {
+    backgroundColor: scanPalette.textPrimary,
+    borderColor: scanPalette.textPrimary,
+  },
+  previewButtonGhost: {
+    backgroundColor: 'transparent',
+    borderColor: scanPalette.border,
+  },
+  previewButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  previewButtonTextPrimary: {
+    color: scanPalette.textPrimary,
+  },
+  previewButtonTextSecondary: {
+    color: '#0B1F3A',
+  },
+  previewButtonTextGhost: {
+    color: scanPalette.textSecondary,
+  },
   statusBadge: {
     position: 'absolute',
     top: 60,
@@ -356,6 +508,33 @@ export const styles = StyleSheet.create({
     color: scanPalette.accentAlt,
     marginTop: spacing.md,
     textAlign: 'center',
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+  },
+  loaderCard: {
+    backgroundColor: scanPalette.overlay,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: scanPalette.border,
+  },
+  loaderLineShort: {
+    width: '55%',
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    marginBottom: spacing.sm,
+  },
+  loaderLine: {
+    width: '100%',
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginBottom: spacing.xs,
   },
   anglesDisplay: {
     position: 'absolute',

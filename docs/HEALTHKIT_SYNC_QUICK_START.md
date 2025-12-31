@@ -8,6 +8,11 @@ You now have a complete HealthKit sync and trends system that:
 - **Stores data in Supabase** for cross-device access
 - **Displays real-time sync progress**
 
+## Permissions
+
+- **Read**: Steps, heart rate (incl. resting/variability), VO2 max, sleep, respiratory rate, walking HR avg, distances, energy, body mass, height, workouts, and characteristics (sex/birth date).
+- **Write**: Workouts only (placeholder for future write APIs).
+
 ## How to Use
 
 ### First Time Setup
@@ -244,4 +249,3 @@ Trends Screen ← Aggregation Service ← health_metrics table
 Your health data is now synced and you can view comprehensive trends. The data will persist in Supabase and sync across devices when you sign in.
 
 For more details, see `docs/HEALTHKIT_SYNC_AND_TRENDS_GUIDE.md`.
-

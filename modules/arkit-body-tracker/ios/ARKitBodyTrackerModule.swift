@@ -73,6 +73,43 @@ public struct BodyPose: Record {
   }
 }
 
+fileprivate struct RecordingPreset {
+  let maxDimension: CGFloat
+  let maxFps: Int
+  let minBitrate: Int
+  let maxBitrate: Int
+  let bitsPerPixel: CGFloat
+}
+
+fileprivate func recordingPreset(for quality: String?) -> RecordingPreset {
+  switch quality?.lowercased() {
+  case "low":
+    return RecordingPreset(
+      maxDimension: 1080,
+      maxFps: 30,
+      minBitrate: 1_500_000,
+      maxBitrate: 3_500_000,
+      bitsPerPixel: 0.07
+    )
+  case "high":
+    return RecordingPreset(
+      maxDimension: 1920,
+      maxFps: 30,
+      minBitrate: 4_000_000,
+      maxBitrate: 8_000_000,
+      bitsPerPixel: 0.09
+    )
+  default:
+    return RecordingPreset(
+      maxDimension: 1440,
+      maxFps: 30,
+      minBitrate: 2_500_000,
+      maxBitrate: 5_500_000,
+      bitsPerPixel: 0.08
+    )
+  }
+}
+
 public class ARKitBodyTrackerModule: Module {
   private var arSession: ARSession?
   fileprivate(set) var currentBodyAnchor: ARBodyAnchor?
@@ -82,8 +119,66 @@ public class ARKitBodyTrackerModule: Module {
   public static var sharedARView: ARView?
   fileprivate let videoRecorder = ARVideoRecorder()
   private let ciContext = CIContext(options: nil)
+  fileprivate let sessionMaxDimension: CGFloat = 1920
+  fileprivate let sessionMaxFps: Int = 30
 
-  private func currentInterfaceOrientation(for view: UIView) -> UIInterfaceOrientation {
+  fileprivate func computePose2DJoints(
+    frame: ARFrame,
+    bodyAnchor: ARBodyAnchor,
+    arView: ARView
+  ) -> [Joint2D]? {
+    guard bodyAnchor.isTracked else {
+      return nil
+    }
+
+    let viewW = Double(arView.bounds.width)
+    let viewH = Double(arView.bounds.height)
+    if viewW <= 0 || viewH <= 0 {
+      return nil
+    }
+
+    let skeleton = bodyAnchor.skeleton
+    var joints2D: [Joint2D] = []
+
+    let preferredJointNamesRaw: [String] = [
+      "root",
+      "hips_joint",
+      "spine_1_joint","spine_2_joint","spine_3_joint","spine_4_joint","spine_5_joint","spine_6_joint","spine_7_joint",
+      "neck_1_joint","neck_2_joint","neck_3_joint","neck_4_joint","head_joint",
+      "left_shoulder_1_joint","left_arm_joint","left_forearm_joint","left_hand_joint",
+      "right_shoulder_1_joint","right_arm_joint","right_forearm_joint","right_hand_joint",
+      "left_upLeg_joint","left_leg_joint","left_foot_joint",
+      "right_upLeg_joint","right_leg_joint","right_foot_joint"
+    ]
+
+    let availableRaw = Set(skeleton.definition.jointNames)
+    let jointNames: [ARSkeleton.JointName] = preferredJointNamesRaw
+      .filter { availableRaw.contains($0) }
+      .map { ARSkeleton.JointName(rawValue: $0) }
+
+    for jointName in jointNames {
+      guard let jointModel = skeleton.modelTransform(for: jointName) else { continue }
+      let worldTransform = simd_mul(bodyAnchor.transform, jointModel)
+      let p = worldTransform.columns.3
+      let worldPoint = SIMD3<Float>(p.x, p.y, p.z)
+      if let projected = self.projectJointPoint(worldPoint, arView: arView, frame: frame) {
+        let nx = max(0.0, min(1.0, Double(projected.x) / viewW))
+        let ny = max(0.0, min(1.0, Double(projected.y) / viewH))
+        let idx = skeleton.definition.index(for: jointName)
+        let tracked = skeleton.isJointTracked(idx)
+        joints2D.append(Joint2D(
+          name: jointName.rawValue,
+          x: nx,
+          y: ny,
+          isTracked: tracked
+        ))
+      }
+    }
+
+    return joints2D
+  }
+
+  fileprivate func currentInterfaceOrientation(for view: UIView) -> UIInterfaceOrientation {
     if let orientation = view.window?.windowScene?.interfaceOrientation {
       return orientation
     }
@@ -164,6 +259,50 @@ public class ARKitBodyTrackerModule: Module {
       identifier.append(String(UnicodeScalar(UInt8(value))))
     }
     return identifier
+  }
+
+  fileprivate func pickVideoFormat(maxDimension: CGFloat, maxFps: Int) -> ARConfiguration.VideoFormat? {
+    let formats = ARBodyTrackingConfiguration.supportedVideoFormats
+    guard !formats.isEmpty else {
+      return nil
+    }
+
+    let fpsFiltered = formats.filter { $0.framesPerSecond <= maxFps }
+    let fpsCandidates = fpsFiltered.isEmpty ? formats : fpsFiltered
+    let dimFiltered = fpsCandidates.filter {
+      max($0.imageResolution.width, $0.imageResolution.height) <= maxDimension
+    }
+    let candidates = dimFiltered.isEmpty ? fpsCandidates : dimFiltered
+
+    return candidates.max(by: { lhs, rhs in
+      let lhsArea = lhs.imageResolution.width * lhs.imageResolution.height
+      let rhsArea = rhs.imageResolution.width * rhs.imageResolution.height
+      if lhsArea == rhsArea {
+        return lhs.framesPerSecond < rhs.framesPerSecond
+      }
+      return lhsArea < rhsArea
+    })
+  }
+
+  private func evenDimension(_ value: CGFloat) -> Int {
+    let intValue = Int(value.rounded(.down))
+    let evenValue = intValue - (intValue % 2)
+    return max(2, evenValue)
+  }
+
+  private func scaleRecordingResolution(_ resolution: CGSize, maxDimension: CGFloat) -> CGSize {
+    let maxSource = max(resolution.width, resolution.height)
+    guard maxSource > 0 else {
+      return resolution
+    }
+    if maxSource <= maxDimension {
+      return CGSize(width: CGFloat(evenDimension(resolution.width)), height: CGFloat(evenDimension(resolution.height)))
+    }
+
+    let scale = maxDimension / maxSource
+    let scaledWidth = resolution.width * scale
+    let scaledHeight = resolution.height * scale
+    return CGSize(width: CGFloat(evenDimension(scaledWidth)), height: CGFloat(evenDimension(scaledHeight)))
   }
 
   private func computeBodyTrackingSupport(prefix: String, forceDiagnostics: Bool) -> (Bool, [String: Any]) {
@@ -345,7 +484,7 @@ public class ARKitBodyTrackerModule: Module {
             if #available(iOS 11.3, *) {
               configuration.isAutoFocusEnabled = true
             }
-            if let bestFormat = ARBodyTrackingConfiguration.supportedVideoFormats.max(by: { $0.framesPerSecond < $1.framesPerSecond }) {
+            if let bestFormat = self.pickVideoFormat(maxDimension: self.sessionMaxDimension, maxFps: self.sessionMaxFps) {
               configuration.videoFormat = bestFormat
             }
             
@@ -373,7 +512,7 @@ public class ARKitBodyTrackerModule: Module {
           if #available(iOS 11.3, *) {
             configuration.isAutoFocusEnabled = true
           }
-          if let bestFormat = ARBodyTrackingConfiguration.supportedVideoFormats.max(by: { $0.framesPerSecond < $1.framesPerSecond }) {
+          if let bestFormat = self.pickVideoFormat(maxDimension: self.sessionMaxDimension, maxFps: self.sessionMaxFps) {
             configuration.videoFormat = bestFormat
           }
           
@@ -625,7 +764,7 @@ public class ARKitBodyTrackerModule: Module {
       }
     }
 
-    AsyncFunction("startRecording") { (promise: Promise) in
+    AsyncFunction("startRecording") { (options: [String: Any]?, promise: Promise) in
       DispatchQueue.main.async { [weak self] in
         guard let self = self else {
           promise.reject("ERROR", "Module deallocated before recording could start")
@@ -644,9 +783,13 @@ public class ARKitBodyTrackerModule: Module {
           return
         }
 
+        let quality = (options?["quality"] as? String)?.lowercased()
+        let preset = recordingPreset(for: quality)
         let resolution = configuration.videoFormat.imageResolution
-        let width = Int(resolution.width)
-        let height = Int(resolution.height)
+        let scaledResolution = self.scaleRecordingResolution(resolution, maxDimension: preset.maxDimension)
+        let width = Int(scaledResolution.width)
+        let height = Int(scaledResolution.height)
+        let fps = min(configuration.videoFormat.framesPerSecond, preset.maxFps)
 
         if width <= 0 || height <= 0 {
           promise.reject("INVALID_RESOLUTION", "Invalid video resolution for recording")
@@ -659,7 +802,8 @@ public class ARKitBodyTrackerModule: Module {
         }
 
         do {
-          try self.videoRecorder.startRecording(width: width, height: height)
+          let orientation = ARKitBodyTrackerModule.sharedARView.map { self.currentInterfaceOrientation(for: $0) } ?? .portrait
+          try self.videoRecorder.startRecording(width: width, height: height, fps: fps, preset: preset, orientation: orientation)
           promise.resolve(true)
         } catch {
           promise.reject("REC_START_FAILED", "Failed to start recording: \(error.localizedDescription)")
@@ -719,32 +863,54 @@ fileprivate final class ARVideoRecorder {
   private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
   private var outputURL: URL?
   private let queue = DispatchQueue(label: "com.formfactor.arkit.videorecorder")
+  private let ciContext = CIContext(options: nil)
   private(set) var isRecording = false
   private var lastPresentationTime = CMTime.zero
   private let timeScale: CMTimeScale = 600
   private var hasWrittenFrame = false
 
-  func startRecording(width: Int, height: Int) throws {
+  func startRecording(
+    width: Int,
+    height: Int,
+    fps: Int,
+    preset: RecordingPreset,
+    orientation: UIInterfaceOrientation
+  ) throws {
     if isRecording {
       return
     }
 
-    let tempDir = FileManager.default.temporaryDirectory
-    let url = tempDir.appendingPathComponent("arkit-set-\(UUID().uuidString).mov")
+    let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+    let baseDir = cachesDir ?? FileManager.default.temporaryDirectory
+    let url = baseDir.appendingPathComponent("arkit-set-\(UUID().uuidString).mov")
 
     let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+
+    let targetFps = max(24, min(60, fps))
+    let pixelCount = max(1, width * height)
+    let averageBitRate = Int(CGFloat(pixelCount) * CGFloat(targetFps) * preset.bitsPerPixel)
+    let clampedBitRate = max(preset.minBitrate, min(averageBitRate, preset.maxBitrate))
+    let compressionProperties: [String: Any] = [
+      AVVideoAverageBitRateKey: clampedBitRate,
+      AVVideoMaxKeyFrameIntervalKey: targetFps,
+      AVVideoExpectedSourceFrameRateKey: targetFps,
+      AVVideoProfileLevelKey: AVVideoProfileLevelH264MainAutoLevel,
+      AVVideoAllowFrameReorderingKey: false
+    ]
 
     let videoSettings: [String: Any] = [
       AVVideoCodecKey: AVVideoCodecType.h264,
       AVVideoWidthKey: NSNumber(value: width),
-      AVVideoHeightKey: NSNumber(value: height)
+      AVVideoHeightKey: NSNumber(value: height),
+      AVVideoCompressionPropertiesKey: compressionProperties
     ]
 
     let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
     input.expectsMediaDataInRealTime = true
+    input.transform = videoTransform(for: orientation, width: width, height: height)
 
     let attrs: [String: Any] = [
-      kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
+      kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_32BGRA),
       kCVPixelBufferWidthKey as String: NSNumber(value: width),
       kCVPixelBufferHeightKey as String: NSNumber(value: height)
     ]
@@ -769,7 +935,30 @@ fileprivate final class ARVideoRecorder {
     hasWrittenFrame = false
   }
 
-  func appendFrame(_ frame: ARFrame) {
+  private func videoTransform(for orientation: UIInterfaceOrientation, width: Int, height: Int) -> CGAffineTransform {
+    let w = CGFloat(width)
+    let h = CGFloat(height)
+
+    switch orientation {
+    case .portrait:
+      return CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: h, ty: 0)
+    case .portraitUpsideDown:
+      return CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: w)
+    case .landscapeLeft:
+      return CGAffineTransform(a: -1, b: 0, c: 0, d: -1, tx: w, ty: h)
+    case .landscapeRight:
+      return .identity
+    default:
+      return CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: h, ty: 0)
+    }
+  }
+
+  func appendFrame(
+    _ frame: ARFrame,
+    pose2D: [Joint2D]?,
+    orientation: UIInterfaceOrientation,
+    viewportSize: CGSize?
+  ) {
     guard isRecording,
           let writer = assetWriter,
           let input = videoInput,
@@ -783,8 +972,6 @@ fileprivate final class ARVideoRecorder {
       timestamp = lastPresentationTime + increment
     }
     lastPresentationTime = timestamp
-    let pixelBuffer = frame.capturedImage
-
     queue.async {
       if writer.status == .unknown {
         writer.startWriting()
@@ -792,12 +979,277 @@ fileprivate final class ARVideoRecorder {
       }
 
       if writer.status == .writing && input.isReadyForMoreMediaData {
+        let pixelBuffer: CVPixelBuffer
+        if let pool = adaptor.pixelBufferPool {
+          var outputBuffer: CVPixelBuffer?
+          let result = CVPixelBufferPoolCreatePixelBuffer(nil, pool, &outputBuffer)
+          if result == kCVReturnSuccess, let outputBuffer {
+            let baseImage = CIImage(cvPixelBuffer: frame.capturedImage)
+            self.ciContext.render(baseImage, to: outputBuffer)
+            if let pose2D, !pose2D.isEmpty {
+              self.drawOverlay(on: outputBuffer, joints: pose2D, orientation: orientation, viewportSize: viewportSize)
+            }
+            pixelBuffer = outputBuffer
+          } else {
+            pixelBuffer = frame.capturedImage
+          }
+        } else {
+          pixelBuffer = frame.capturedImage
+        }
+
         if adaptor.append(pixelBuffer, withPresentationTime: timestamp) {
           self.hasWrittenFrame = true
         } else if let error = writer.error {
           print("[ARVideoRecorder] Failed to append frame: \(error.localizedDescription)")
         }
       }
+    }
+  }
+
+  private func adjustNormalizedPoint(
+    x: Double,
+    y: Double,
+    orientation: UIInterfaceOrientation,
+    bufferWidth: CGFloat,
+    bufferHeight: CGFloat,
+    viewportSize: CGSize?
+  ) -> CGPoint {
+    guard let viewportSize, viewportSize.width > 0, viewportSize.height > 0 else {
+      return CGPoint(x: x, y: y)
+    }
+
+    let clampedX = CGFloat(max(0.0, min(1.0, x)))
+    let clampedY = CGFloat(max(0.0, min(1.0, y)))
+    let viewW = viewportSize.width
+    let viewH = viewportSize.height
+
+    let cameraW: CGFloat
+    let cameraH: CGFloat
+    switch orientation {
+    case .portrait, .portraitUpsideDown:
+      cameraW = bufferHeight
+      cameraH = bufferWidth
+    case .landscapeLeft, .landscapeRight:
+      cameraW = bufferWidth
+      cameraH = bufferHeight
+    default:
+      cameraW = bufferHeight
+      cameraH = bufferWidth
+    }
+
+    if cameraW <= 0 || cameraH <= 0 {
+      return CGPoint(x: clampedX, y: clampedY)
+    }
+
+    let viewAspect = viewW / viewH
+    let cameraAspect = cameraW / cameraH
+    if abs(viewAspect - cameraAspect) < 0.0001 {
+      return CGPoint(x: clampedX, y: clampedY)
+    }
+
+    var nx = clampedX
+    var ny = clampedY
+    if cameraAspect > viewAspect {
+      // Camera is wider than the view; view crops left/right.
+      let scale = viewH / cameraH
+      let displayW = cameraW * scale
+      if displayW > 0 {
+        let offsetX = (displayW - viewW) / 2.0
+        let xInDisplay = clampedX * viewW + offsetX
+        nx = xInDisplay / displayW
+      }
+    } else {
+      // Camera is taller than the view; view crops top/bottom.
+      let scale = viewW / cameraW
+      let displayH = cameraH * scale
+      if displayH > 0 {
+        let offsetY = (displayH - viewH) / 2.0
+        let yInDisplay = clampedY * viewH + offsetY
+        ny = yInDisplay / displayH
+      }
+    }
+
+    return CGPoint(x: min(max(nx, 0), 1), y: min(max(ny, 0), 1))
+  }
+
+  private func mapPointToBuffer(
+    x: Double,
+    y: Double,
+    orientation: UIInterfaceOrientation,
+    width: CGFloat,
+    height: CGFloat,
+    viewportSize: CGSize?
+  ) -> CGPoint {
+    let adjusted = adjustNormalizedPoint(
+      x: x,
+      y: y,
+      orientation: orientation,
+      bufferWidth: width,
+      bufferHeight: height,
+      viewportSize: viewportSize
+    )
+    let nx = Double(adjusted.x)
+    let ny = Double(adjusted.y)
+    switch orientation {
+    case .portrait:
+      return CGPoint(x: ny * Double(width), y: (1.0 - nx) * Double(height))
+    case .portraitUpsideDown:
+      return CGPoint(x: (1.0 - ny) * Double(width), y: nx * Double(height))
+    case .landscapeLeft:
+      return CGPoint(x: (1.0 - nx) * Double(width), y: (1.0 - ny) * Double(height))
+    case .landscapeRight:
+      return CGPoint(x: nx * Double(width), y: ny * Double(height))
+    default:
+      return CGPoint(x: ny * Double(width), y: (1.0 - nx) * Double(height))
+    }
+  }
+
+  private func drawOverlay(
+    on buffer: CVPixelBuffer,
+    joints: [Joint2D],
+    orientation: UIInterfaceOrientation,
+    viewportSize: CGSize?
+  ) {
+    CVPixelBufferLockBaseAddress(buffer, [])
+    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+
+    guard let baseAddress = CVPixelBufferGetBaseAddress(buffer) else {
+      return
+    }
+
+    let width = CVPixelBufferGetWidth(buffer)
+    let height = CVPixelBufferGetHeight(buffer)
+    let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
+
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bitmapInfo = CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
+
+    guard let context = CGContext(
+      data: baseAddress,
+      width: width,
+      height: height,
+      bitsPerComponent: 8,
+      bytesPerRow: bytesPerRow,
+      space: colorSpace,
+      bitmapInfo: bitmapInfo
+    ) else {
+      return
+    }
+
+    context.translateBy(x: 0, y: CGFloat(height))
+    context.scaleBy(x: 1, y: -1)
+    context.setLineCap(.round)
+
+    let minDim = CGFloat(min(width, height))
+    let lineWidth = max(1.0, minDim * 0.008)
+    let jointRadius = max(2.0, minDim * 0.012)
+
+    var jointsByName: [String: Joint2D] = [:]
+    for joint in joints {
+      jointsByName[joint.name.lowercased()] = joint
+    }
+
+    func findJoint(_ name: String) -> Joint2D? {
+      let lower = name.lowercased()
+      if let joint = jointsByName[lower], joint.isTracked {
+        return joint
+      }
+      for joint in joints {
+        if !joint.isTracked { continue }
+        let key = joint.name.lowercased()
+        if key.contains(lower) || lower.contains(key.replacingOccurrences(of: "_joint", with: "")) {
+          return joint
+        }
+      }
+      return nil
+    }
+
+    func strokeColor(_ hex: UInt32) {
+      let r = CGFloat((hex >> 16) & 0xFF) / 255.0
+      let g = CGFloat((hex >> 8) & 0xFF) / 255.0
+      let b = CGFloat(hex & 0xFF) / 255.0
+      context.setStrokeColor(red: r, green: g, blue: b, alpha: 0.9)
+    }
+
+    func fillColor(_ hex: UInt32) {
+      let r = CGFloat((hex >> 16) & 0xFF) / 255.0
+      let g = CGFloat((hex >> 8) & 0xFF) / 255.0
+      let b = CGFloat(hex & 0xFF) / 255.0
+      context.setFillColor(red: r, green: g, blue: b, alpha: 0.9)
+    }
+
+    func drawLine(_ from: String, _ to: String, color: UInt32) {
+      guard let j1 = findJoint(from), let j2 = findJoint(to), j1.isTracked, j2.isTracked else {
+        return
+      }
+      let p1 = mapPointToBuffer(
+        x: j1.x,
+        y: j1.y,
+        orientation: orientation,
+        width: CGFloat(width),
+        height: CGFloat(height),
+        viewportSize: viewportSize
+      )
+      let p2 = mapPointToBuffer(
+        x: j2.x,
+        y: j2.y,
+        orientation: orientation,
+        width: CGFloat(width),
+        height: CGFloat(height),
+        viewportSize: viewportSize
+      )
+      strokeColor(color)
+      context.setLineWidth(lineWidth)
+      context.move(to: p1)
+      context.addLine(to: p2)
+      context.strokePath()
+    }
+
+    // Spine
+    drawLine("hips_joint", "spine_4_joint", color: 0x4C8CFF)
+    drawLine("spine_4_joint", "neck_1_joint", color: 0x4C8CFF)
+    drawLine("neck_1_joint", "head_joint", color: 0x4C8CFF)
+
+    // Left arm
+    drawLine("neck_1_joint", "left_shoulder_1_joint", color: 0x3CC8A9)
+    drawLine("left_shoulder_1_joint", "left_arm_joint", color: 0x3CC8A9)
+    drawLine("left_arm_joint", "left_forearm_joint", color: 0x3CC8A9)
+    drawLine("left_forearm_joint", "left_hand_joint", color: 0x3CC8A9)
+
+    // Right arm
+    drawLine("neck_1_joint", "right_shoulder_1_joint", color: 0x3CC8A9)
+    drawLine("right_shoulder_1_joint", "right_arm_joint", color: 0x3CC8A9)
+    drawLine("right_arm_joint", "right_forearm_joint", color: 0x3CC8A9)
+    drawLine("right_forearm_joint", "right_hand_joint", color: 0x3CC8A9)
+
+    // Left leg
+    drawLine("hips_joint", "left_upLeg_joint", color: 0x9B7EDE)
+    drawLine("left_upLeg_joint", "left_leg_joint", color: 0x9B7EDE)
+    drawLine("left_leg_joint", "left_foot_joint", color: 0x9B7EDE)
+
+    // Right leg
+    drawLine("hips_joint", "right_upLeg_joint", color: 0x9B7EDE)
+    drawLine("right_upLeg_joint", "right_leg_joint", color: 0x9B7EDE)
+    drawLine("right_leg_joint", "right_foot_joint", color: 0x9B7EDE)
+
+    // Joints
+    fillColor(0xFFFFFF)
+    for joint in joints where joint.isTracked {
+      let point = mapPointToBuffer(
+        x: joint.x,
+        y: joint.y,
+        orientation: orientation,
+        width: CGFloat(width),
+        height: CGFloat(height),
+        viewportSize: viewportSize
+      )
+      let rect = CGRect(
+        x: point.x - jointRadius,
+        y: point.y - jointRadius,
+        width: jointRadius * 2,
+        height: jointRadius * 2
+      )
+      context.fillEllipse(in: rect)
     }
   }
 
@@ -883,7 +1335,16 @@ fileprivate final class ARKitSessionDelegate: NSObject, ARSessionDelegate {
     guard let owner else { return }
 
     if owner.videoRecorder.isRecording {
-      owner.videoRecorder.appendFrame(frame)
+      let arView = ARKitBodyTrackerModule.sharedARView
+      let orientation = arView.map { owner.currentInterfaceOrientation(for: $0) } ?? .portrait
+      let viewportSize = arView?.bounds.size
+      let pose2D: [Joint2D] = (owner.currentBodyAnchor.flatMap { anchor in
+        if let view = arView {
+          return owner.computePose2DJoints(frame: frame, bodyAnchor: anchor, arView: view)
+        }
+        return nil
+      }) ?? []
+      owner.videoRecorder.appendFrame(frame, pose2D: pose2D, orientation: orientation, viewportSize: viewportSize)
     }
   }
 
@@ -922,7 +1383,7 @@ fileprivate final class ARKitSessionDelegate: NSObject, ARSessionDelegate {
       configuration.isAutoFocusEnabled = true
     }
 
-    if let bestFormat = ARBodyTrackingConfiguration.supportedVideoFormats.max(by: { $0.framesPerSecond < $1.framesPerSecond }) {
+    if let bestFormat = owner.pickVideoFormat(maxDimension: owner.sessionMaxDimension, maxFps: owner.sessionMaxFps) {
       configuration.videoFormat = bestFormat
     }
 
