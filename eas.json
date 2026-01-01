@@ -36,6 +36,7 @@
       },
       "env": {
         "APP_VARIANT": "staging",
+        "EXPO_USE_NEW_ARCH": "1",
         "EXPO_PUBLIC_SUPABASE_URL": "$SUPABASE_STAGING_URL",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "$SUPABASE_STAGING_ANON_KEY"
       },
@@ -49,6 +50,7 @@
       },
       "env": {
         "APP_VARIANT": "production",
+        "EXPO_USE_NEW_ARCH": "1",
         "EXPO_PUBLIC_SUPABASE_URL": "$SUPABASE_PRODUCTION_URL",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "$SUPABASE_PRODUCTION_ANON_KEY"
       },
