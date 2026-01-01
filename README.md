@@ -48,3 +48,5 @@ Form Factor is an iOS-first fitness and health app built with Expo and Supabase.
 - CI/CD and releases: `docs/CI-CD.md`, `docs/TESTFLIGHT_WORKFLOW.md`, `docs/TESTFLIGHT_RELEASE.md`.
 
 Form Factor stays iOS-first with web as read-only dashboards; Android and richer social features come after MVP stability.
+
+_CI trigger: documentation touch to re-run pipeline._
