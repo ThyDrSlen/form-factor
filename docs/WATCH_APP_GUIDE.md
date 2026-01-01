@@ -4,7 +4,7 @@ To control the Form Factor recording and tracking from your Apple Watch, you nee
 
 ## Prerequisites
 
-1.  Ensure you have run `bun install` to install `react-native-watch-connectivity`.
+1.  Ensure you have run `bun install`.
 2.  Ensure you have run `bun run ios` at least once to generate the `ios/` folder.
 
 ## Step 1: Add Watch App Target in Xcode
@@ -70,7 +70,7 @@ For physical devices, installing the iOS app on the paired iPhone will also inst
 
 ## Step 5: Camera Mirror Preview (Low FPS)
 
-The watch app now supports a lightweight camera mirror by streaming JPEG snapshots from the iPhone.
+The watch app supports a lightweight camera mirror by streaming snapshots from the iPhone, but the React Native → Watch bridge is currently disabled for stability (see `lib/watch-connectivity.ts`).
 
 1.  Open the **Scan** tab on the iPhone.
 2.  Tap the **watch** icon (top-right controls) to enable Watch Mirror.
@@ -79,7 +79,7 @@ The watch app now supports a lightweight camera mirror by streaming JPEG snapsho
 **Notes / limitations**
 
 *   This is a low-FPS, compressed preview intended for quick framing.
-*   Mirroring works during VisionCamera preview (front camera or before tracking) and during ARKit back-camera tracking.
+*   Mirroring uses ARKit back-camera tracking frames (no VisionCamera preview fallback).
 
 ## Troubleshooting
 
