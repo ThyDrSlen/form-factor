@@ -86,7 +86,6 @@ type RecordingQuality = 'low' | 'medium' | 'high';
 
 const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 const WATCH_MIRROR_INTERVAL_MS = 750;
-const WATCH_MIRROR_JPEG_QUALITY = 25;
 const WATCH_MIRROR_AR_QUALITY = 0.25;
 const WATCH_MIRROR_MAX_WIDTH = 320;
 const QUALITY_STORAGE_KEY = 'ff.recordingQuality';
@@ -97,18 +96,6 @@ const QUALITY_LABELS: Record<RecordingQuality, string> = {
 };
 
 // Metrics types are now imported from workout definitions (PullUpMetrics, PushUpMetrics)
-
-let Camera: any = View;
-let useCameraDevice: any = () => null;
-let useCameraPermission: any = () => ({ hasPermission: false, requestPermission: async () => {} });
-
-if (Platform.OS !== 'web') {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const VisionCamera = require('react-native-vision-camera');
-  Camera = VisionCamera.Camera;
-  useCameraDevice = VisionCamera.useCameraDevice;
-  useCameraPermission = VisionCamera.useCameraPermission;
-}
 
 let ARKitView: any = View;
 if (Platform.OS === 'ios') {
@@ -150,20 +137,8 @@ export default function ScanARKitScreen() {
   const logWithTs = useCallback((...args: unknown[]) => {
     console.log(new Date().toISOString(), ...args);
   }, []);
-  const [cameraPosition, setCameraPosition] = useState<'back' | 'front'>('back');
-  const device = useCameraDevice(cameraPosition);
-  const { hasPermission, requestPermission } = useCameraPermission();
-  const cameraRef = React.useRef<any>(null);
-  const [zoom, setZoom] = useState(1);
-  const clampZoom = useCallback((z: number) => {
-    const min = (device as any)?.minZoom ?? 1;
-    const max = (device as any)?.maxZoom ?? 8;
-    return Math.max(min, Math.min(max, z));
-  }, [device]);
-  const stepZoom = useCallback((delta: number) => {
-    setZoom((z) => clampZoom(z + delta));
-  }, [clampZoom]);
-  const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
+  // ARKit body tracking supports back camera only; remove VisionCamera preview dependency.
+  const cameraPosition = 'back' as const;
   const ensureMediaLibraryPermission = useCallback(async () => {
     if (Platform.OS === 'web') return false;
     try {
@@ -669,34 +644,17 @@ export default function ScanARKitScreen() {
       console.log('[ScanARKit] Auto-start check:', {
         supportStatus,
         isTracking,
-        hasPermission,
         cameraPosition,
-        willStart: supportStatus === 'supported' && !isTracking && hasPermission && cameraPosition === 'back'
+        willStart: supportStatus === 'supported' && !isTracking && cameraPosition === 'back'
       });
     }
     
-    if (supportStatus === 'supported' && !isTracking && hasPermission && cameraPosition === 'back') {
+    if (supportStatus === 'supported' && !isTracking && cameraPosition === 'back') {
       if (DEV) console.log('[ScanARKit] ✅ Auto-starting tracking...');
       startTracking();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supportStatus, isTracking, hasPermission, cameraPosition]);
-
-  // Request camera permission on mount
-  useEffect(() => {
-    if (DEV) {
-      console.log('[ScanARKit] Camera permission check:', {
-        hasPermission,
-        device: !!device
-      });
-    }
-    
-    if (!hasPermission) {
-      if (DEV) console.log('[ScanARKit] Requesting camera permission...');
-      requestPermission();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasPermission]);
+  }, [supportStatus, isTracking, cameraPosition]);
 
   // Debug pose updates (throttled logging)
   useEffect(() => {
@@ -1097,43 +1055,6 @@ export default function ScanARKitScreen() {
     };
   }, [stopTracking]);
 
-  const toggleCamera = useCallback(() => {
-    setCameraPosition((p) => (p === 'back' ? 'front' : 'back'));
-  }, []);
-
-  // Flip camera during tracking
-  const flipCameraDuringTracking = useCallback(async () => {
-    if (DEV) console.log('[ScanARKit] 🎥 Flipping camera...');
-    
-    const wasTracking = isTracking;
-    const newPosition = cameraPosition === 'back' ? 'front' : 'back';
-    
-    // If currently tracking, stop it first
-    if (wasTracking) {
-      await stopTracking();
-      // Wait for cleanup
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-    
-    // Flip camera position
-    setCameraPosition(newPosition);
-    
-    // Wait for device to update
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    
-    // Only restart tracking if we're going back to back camera (ARKit only supports back camera)
-    if (wasTracking && newPosition === 'back') {
-      await startTracking();
-    }
-    
-    if (Platform.OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    
-    if (DEV) console.log('[ScanARKit] ✅ Camera flipped to', newPosition, wasTracking ? (newPosition === 'back' ? 'and tracking restarted' : 'and tracking stopped') : '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTracking, stopTracking, startTracking, cameraPosition]);
-
   const handleOverlayLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     overlayLayout.current = { width, height };
@@ -1294,15 +1215,8 @@ export default function ScanARKitScreen() {
       isScreenFocused &&
       isTracking &&
       cameraPosition === 'back';
-    const canMirrorFromCamera =
-      Platform.OS === 'ios' &&
-      watchMirrorEnabled &&
-      isScreenFocused &&
-      hasPermission &&
-      !!device &&
-      (!isTracking || cameraPosition === 'front');
     const watchMirrorActive =
-      (canMirrorFromArkit || canMirrorFromCamera) &&
+      canMirrorFromArkit &&
       watchPaired &&
       watchInstalled &&
       watchReachable;
@@ -1314,9 +1228,6 @@ export default function ScanARKitScreen() {
       }
 
       watchMirrorInFlightRef.current = true;
-      let snapshot:
-        | { path?: string; width?: number; height?: number; orientation?: string; isMirrored?: boolean }
-        | null = null;
 
       try {
         let base64: string | null = null;
@@ -1325,36 +1236,22 @@ export default function ScanARKitScreen() {
         let orientation: string | undefined;
         let mirrored: boolean | undefined;
 
-        if (canMirrorFromArkit) {
-          const arkitSnapshot = await BodyTracker.getCurrentFrameSnapshot({
-            maxWidth: WATCH_MIRROR_MAX_WIDTH,
-            quality: WATCH_MIRROR_AR_QUALITY,
-          });
-          if (!arkitSnapshot?.frame) {
-            return;
-          }
-          base64 = arkitSnapshot.frame;
-          width = arkitSnapshot.width;
-          height = arkitSnapshot.height;
-          orientation = arkitSnapshot.orientation;
-          mirrored = arkitSnapshot.mirrored;
-        } else {
-          if (!cameraRef.current) {
-            return;
-          }
-          snapshot = await cameraRef.current.takeSnapshot({ quality: WATCH_MIRROR_JPEG_QUALITY });
-          if (!snapshot?.path) {
-            return;
-          }
-
-          base64 = await FileSystem.readAsStringAsync(snapshot.path, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          width = snapshot.width;
-          height = snapshot.height;
-          orientation = snapshot.orientation;
-          mirrored = snapshot.isMirrored ?? cameraPosition === 'front';
+        if (!canMirrorFromArkit) {
+          return;
         }
+
+        const arkitSnapshot = await BodyTracker.getCurrentFrameSnapshot({
+          maxWidth: WATCH_MIRROR_MAX_WIDTH,
+          quality: WATCH_MIRROR_AR_QUALITY,
+        });
+        if (!arkitSnapshot?.frame) {
+          return;
+        }
+        base64 = arkitSnapshot.frame;
+        width = arkitSnapshot.width;
+        height = arkitSnapshot.height;
+        orientation = arkitSnapshot.orientation;
+        mirrored = arkitSnapshot.mirrored;
 
         if (!base64) {
           return;
@@ -1373,9 +1270,6 @@ export default function ScanARKitScreen() {
       } catch (error) {
         if (DEV) console.warn('[ScanARKit] Watch mirror snapshot failed', error);
       } finally {
-        if (snapshot?.path) {
-          FileSystem.deleteAsync(snapshot.path, { idempotent: true }).catch(() => {});
-        }
         watchMirrorInFlightRef.current = false;
       }
     }, [cameraPosition, canMirrorFromArkit, DEV]);
@@ -1699,20 +1593,6 @@ export default function ScanARKitScreen() {
     );
   }
 
-  if (supportStatus === 'supported' && !hasPermission) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Ionicons name="camera" size={60} color="#4C8CFF" />
-          <Text style={styles.errorText}>Camera permission is required</Text>
-          <TouchableOpacity style={styles.controlButton} onPress={requestPermission}>
-            <Text style={styles.controlButtonText}>Grant Camera Access</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   const showTelemetry = detectionMode === 'pullup' ? (isTracking || repCount > 0) : (isTracking || pushUpReps > 0);
   const telemetryTitle = detectionMode === 'pullup' ? 'Pull-Up Tracker' : 'Push-Up Tracker';
   const telemetryReps = detectionMode === 'pullup' ? repCount : pushUpReps;
@@ -1791,17 +1671,6 @@ export default function ScanARKitScreen() {
 
       {/* Tracking view */}
       <View style={styles.trackingContainer}>
-        {/* VisionCamera preview - show when not tracking OR when front camera is selected (ARKit only supports back) */}
-        {device && hasPermission && (!isTracking || cameraPosition === 'front') && (
-          <Camera
-            style={styles.fullFill}
-            ref={cameraRef}
-            device={device}
-            isActive={true}
-            zoom={zoom}
-            video={true}
-          />
-        )}
         {/* ARKitView - always mount when back camera is selected (hidden when not tracking) so it's ready */}
         {cameraPosition === 'back' && (
           <ARKitView
@@ -1861,27 +1730,6 @@ export default function ScanARKitScreen() {
           pointerEvents={isTracking ? 'none' : 'auto'}
           onStartShouldSetResponder={() => !isTracking}
           onLayout={handleOverlayLayout}
-          onResponderRelease={async (e) => {
-            if (isTracking) return;
-            try {
-              const { locationX, locationY } = e.nativeEvent;
-              const size = overlayLayout.current;
-              const width = size?.width && size.width > 0 ? size.width : 1;
-              const height = size?.height && size.height > 0 ? size.height : 1;
-              const nx = Math.max(0, Math.min(1, locationX / width));
-              const ny = Math.max(0, Math.min(1, locationY / height));
-              setFocusPoint({ x: locationX, y: locationY });
-              setTimeout(() => setFocusPoint(null), 800);
-              if (cameraRef.current && typeof cameraRef.current.focus === 'function') {
-                await cameraRef.current.focus({ x: nx, y: ny });
-              }
-              if (cameraRef.current && typeof cameraRef.current.expose === 'function') {
-                await cameraRef.current.expose({ x: nx, y: ny });
-              }
-            } catch (err) {
-              if (DEV) console.warn('[ScanARKit] focus/expose not supported:', err);
-            }
-          }}
         >
 
           {!showTelemetry && (
@@ -1898,11 +1746,6 @@ export default function ScanARKitScreen() {
                 </View>
               )}
             </Animated.View>
-          )}
-
-          {/* Focus ring */}
-          {!isTracking && focusPoint && (
-            <View style={[styles.focusRing, { left: focusPoint.x - 20, top: focusPoint.y - 20 }]} />
           )}
 
           {/* Skeleton Overlay (2D projected) */}
@@ -2051,22 +1894,6 @@ export default function ScanARKitScreen() {
         )}
       </View>
 
-      {/* Camera flip button - show always when tracking or when front camera is selected */}
-      {(isTracking || cameraPosition === 'front') && (
-        <TouchableOpacity
-          style={[styles.cameraFlipButton, { top: insets.top + 96 }]}
-          onPress={flipCameraDuringTracking}
-          accessibilityRole="button"
-          accessibilityLabel="Flip camera"
-        >
-          <Ionicons
-            name="camera-reverse"
-            size={24}
-            color="#FFFFFF"
-          />
-        </TouchableOpacity>
-      )}
-
       {Platform.OS === 'ios' && (
         <TouchableOpacity
           style={[
@@ -2173,39 +2000,11 @@ export default function ScanARKitScreen() {
         {!isTracking && (
            <TouchableOpacity
              style={styles.controlButton}
-             onPress={supportStatus === 'supported' && hasPermission ? startTracking : requestPermission}
+             onPress={startTracking}
            >
              <Ionicons name="play" size={24} color="#FFFFFF" />
              <Text style={styles.controlButtonText}>Start Tracking</Text>
            </TouchableOpacity>
-        )}
-
-        {!isTracking && (
-          <TouchableOpacity
-            style={[styles.controlButton, styles.secondaryButton]}
-            onPress={toggleCamera}
-          >
-            <Ionicons
-              name="swap-horizontal"
-              size={28}
-              color="#FFFFFF"
-            />
-            <Text style={styles.controlButtonText}>
-              {cameraPosition === 'back' ? 'Front Camera' : 'Back Camera'}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Zoom Controls (only when camera preview shown) */}
-        {!isTracking && (
-          <View style={styles.zoomControls}>
-            <TouchableOpacity style={[styles.zoomButton, styles.zoomButtonLeft]} onPress={() => stepZoom(-0.2)}>
-              <Text style={styles.zoomButtonText}>-</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.zoomButton, styles.zoomButtonRight]} onPress={() => stepZoom(+0.2)}>
-              <Text style={styles.zoomButtonText}>+</Text>
-            </TouchableOpacity>
-          </View>
         )}
       </View>
 
