@@ -191,7 +191,7 @@ Form Factor provides:
 
 **Tech Stack:**
 - Custom ARKit native module (`arkit-body-tracker`)
-- `react-native-vision-camera` for camera access
+- ARKit/RealityKit (`ARView`) camera feed (no VisionCamera dependency)
 - Swift ARKit APIs (`ARBodyTrackingConfiguration`, `ARBodyAnchor`)
 
 **Future Enhancements:**
@@ -876,13 +876,14 @@ libraries, efficient development
 
 ### 12.2 Key Dependencies
 
-- `expo`: 54.0.12
-- `react-native`: 0.81.4
-- `@supabase/supabase-js`: 2.50.0
-- `expo-sqlite`: 16.0.8
-- `react-native-vision-camera`: 4.7.2
-- `react-native-health`: 1.19.0
+- `expo`: 54.0.30
+- `react-native`: 0.83.1
+- `react`: 19.2.3
+- `@supabase/supabase-js`: 2.89.0
+- `expo-sqlite`: 16.0.10
+- `react-native-reanimated`: 4.2.1
 - `arkit-body-tracker`: Custom module
+- `ff-healthkit`: Custom module
 
 ### 12.3 Development Commands
 
@@ -914,4 +915,3 @@ supabase db push             # Deploy migrations
 **Document Status:** Living Document  
 **Next Review:** After MVP completion  
 **Stakeholders:** Product Team, Engineering Team, Design Team
-

@@ -44,7 +44,6 @@ const baseConfig = {
   plugins: [
     'expo-router',
     'expo-web-browser',
-    'react-native-vision-camera',
     './plugins/withARKitBodyTracker.js',
     'expo-font',
     './plugins/withBuildSettings.js',

@@ -13,9 +13,6 @@ try {
   console.log('[ARKitBodyTracker] Attempting to load native module...');
   ARKitBodyTracker = requireNativeModule('ARKitBodyTracker');
   console.log('[ARKitBodyTracker] Native module loaded:', !!ARKitBodyTracker);
-  if (ARKitBodyTracker) {
-    console.log('[ARKitBodyTracker] Module methods:', Object.keys(ARKitBodyTracker));
-  }
 } catch (e) {
   // Log in ALL builds so we can diagnose Release issues
   console.error('[ARKitBodyTracker] FAILED to load native module:', e);

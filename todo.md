@@ -29,6 +29,62 @@
 
 ---
 
+#Bugs
+
+At end of "Record Set App crashes" 
+
+### Record Set App crashes — quick diagnosis + plan (no code changes yet)
+
+**What happens in code**
+- `Record Set` toggles `startRecordingVideo()` / `stopRecordingVideo()` in `app/(tabs)/scan-arkit.tsx`.
+- `startRecordingVideo()` calls native `BodyTracker.startRecording()` (ARKit).
+- `stopRecordingVideo()` calls native `BodyTracker.stopRecording()` and then:
+  - `saveRecordingToCameraRoll()` (MediaLibrary)
+  - `uploadRecordedVideo()` → `uploadWorkoutVideo()` in `lib/services/video-service.ts` (base64 read + Supabase upload)
+
+**Most likely crash vectors (ranked)**
+1) **Memory pressure / OOM** during `FileSystem.readAsStringAsync(..., base64)` for large `.mov` files. iOS can kill the app without JS errors.
+2) **Native recording edge case**: `AVAssetWriter`/pixel buffer adaptor mismatch or session interruption during recording (start/stop while ARSession pauses).
+3) **Stop tracking while recording**: `stopTracking()` calls `BodyTracker.stopRecording()` while ARSession delegate still appending frames → potential race.
+4) **No-frame recording**: stop immediately after start; native path resolves but `finishWriting` returns failure (should surface error but could crash if writer state is bad).
+5) **File type mismatch**: recorded `.mov` uploaded as `.mp4` (not a crash, but can trigger downstream errors).
+
+**Plan to isolate**
+1) **Repro + logs**: Reproduce on device with Xcode console / device logs. Capture: device model, iOS version, whether crash happens on Start vs Stop.
+2) **Memory profile**: Use Instruments (Allocations + Memory graph) during stop → upload to confirm OOM spike.
+3) **Binary isolate**:
+   - First: bypass upload step (temporarily) to see if crash disappears.
+   - Second: bypass MediaLibrary save step.
+4) **Native recorder health**: add targeted native logs around `startRecording`, `appendFrame`, `stopRecording`, and writer status; confirm frames were written before stop.
+5) **File sanity**: inspect output file size/duration immediately after stop; ensure it exists and is non‑zero.
+
+**Likely fixes (depending on results)**
+- If memory: replace base64 upload with streaming/file upload (`FileSystem.uploadAsync`), or compress/shorten clips before upload.
+- If native race: ensure `stopRecording` finishes before pausing session; block stopTracking while recording; handle session interruptions.
+- If no-frame: delay enabling “Stop” for N frames or validate `hasWrittenFrame` before stop.
+- If file type mismatch: upload as `.mov` or transcode to `.mp4` explicitly.
+- **UX change**: don’t auto‑upload on stop. Save locally, show preview, then user chooses “Save/Upload” vs “Discard.” (Also avoids immediate memory spike.)
+
+**Preview-first flow (proposal)**
+- On Stop: finalize recording → save local file URI → open preview modal/screen.
+- Preview UI: video player, duration, size, metrics summary.
+- CTAs: `Save & Upload`, `Save Only`, `Discard`.
+- Background: only upload after explicit user action; show progress; allow cancel.
+
+**Acceptance criteria**
+- Stopping a recording never triggers upload automatically.
+- Preview opens within 1s after stop (or shows a loading state).
+- “Discard” removes the local file and returns to tracking screen.
+- “Save Only” stores to camera roll (if permission) without upload.
+- “Save & Upload” uploads successfully with progress and clear failure messaging.
+
+Logs in terminal dont include timestamp making difficult to determine what action took place when 
+
+
+
+# get rid of coach tab on home  have it just be the sparkle emoji should prob replace with a better "coach" emoji
+
+
 ## Code Quality
 
 ### Utility Consolidation
@@ -44,7 +100,7 @@
 
 ## Release Engineering
 
-- [ ] If disabling New Arch fixes the TestFlight crash, set `EXPO_USE_NEW_ARCH=0` in `eas.json` preview/production and CI envs (GitHub runners)
+- [ ] TestFlight crash triage (New Arch must stay ON for Reanimated): avoid doing `Object.keys(...)` on JSI/TurboModule proxies at module import time; lazy-load heavy native modules where possible
 
 ---
 
