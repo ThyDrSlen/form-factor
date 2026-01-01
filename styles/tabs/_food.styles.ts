@@ -1,5 +1,6 @@
 import { Platform, StyleSheet } from 'react-native';
 import { spacing, borderRadius } from './_theme-constants';
+import { CARD_HEIGHT, CARD_MARGIN } from './_card-dimensions';
 import { tabColors } from './_tab-theme';
 
 // Helper to get the correct font family based on platform and weight
@@ -34,12 +35,13 @@ export const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   cardWrapper: {
-    marginBottom: spacing.sm + spacing.xs,
+    marginBottom: CARD_MARGIN,
     borderRadius: borderRadius.lg,
     overflow: 'hidden',
   },
   cardGradient: {
     borderRadius: borderRadius.lg,
+    minHeight: CARD_HEIGHT,
     padding: 20,
     overflow: 'hidden',
     borderWidth: 1,
@@ -61,7 +63,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     width: 88,
     borderRadius: borderRadius.lg,
-    marginBottom: spacing.sm + spacing.xs,
+    marginBottom: CARD_MARGIN,
     flexDirection: 'column',
   },
   swipeDeleteText: {
@@ -125,7 +127,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs + spacing.sm,
   },
   shareActionButton: {
     flex: 1.35,
