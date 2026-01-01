@@ -1,5 +1,6 @@
 import { Platform, StyleSheet } from 'react-native';
 import { spacing, borderRadius } from './_theme-constants';
+import { CARD_HEIGHT, CARD_MARGIN } from './_card-dimensions';
 import { tabColors } from './_tab-theme';
 
 // Helper to get the correct font family based on platform and weight
@@ -13,8 +14,7 @@ const getFontFamily = (weight: 'regular' | 'medium' | 'bold' = 'regular') => {
   return weight === 'medium' ? 'sans-serif-medium' : 'sans-serif';
 };
 
-export const CARD_HEIGHT = 140;
-export const CARD_MARGIN = 12;
+export { CARD_HEIGHT, CARD_MARGIN };
 
 export const styles = StyleSheet.create({
   container: {
@@ -45,6 +45,7 @@ export const styles = StyleSheet.create({
   },
   cardGradient: {
     borderRadius: borderRadius.lg,
+    minHeight: CARD_HEIGHT,
     padding: 20,
     overflow: 'hidden',
     borderWidth: 1,
