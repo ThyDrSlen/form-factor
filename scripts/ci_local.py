@@ -189,12 +189,34 @@ def run_job_quality() -> List[StepResult]:
     
     # Unused dependencies check (non-blocking)
     log("Checking for unused dependencies...")
-    ok, _ = run("bunx depcheck --ignores='@types/*,eslint*,@babel/*,babel-*,metro-*,expo-*,playwright,jest-expo,@testing-library/*' || true")
-    results.append(StepResult("Depcheck", Status.PASS if ok else Status.WARN, "Non-blocking"))
+    depcheck_cmd = (
+        "bunx --no-install depcheck "
+        "--ignores='@types/*,eslint*,@babel/*,babel-*,metro-*,expo-*,playwright,jest-expo,@testing-library/*'"
+    )
+    ok, output = run(depcheck_cmd, capture=True, timeout=120)
+    if output.strip():
+        print(output.rstrip())
+
     if ok:
+        results.append(StepResult("Depcheck", Status.PASS, "Non-blocking"))
         success("Dependency check complete")
-    else:
-        warn("Some unused dependencies detected (non-blocking)")
+        return results
+
+    # Depcheck is non-blocking and should never hang `git push` due to a missing install or slow network.
+    if output.strip() == "Command timed out":
+        results.append(StepResult("Depcheck", Status.WARN, "Timed out (non-blocking)"))
+        warn("depcheck timed out (non-blocking)")
+        return results
+
+    depcheck_output_lower = output.lower()
+    if "no-install" in depcheck_output_lower and ("not installed" in depcheck_output_lower or "not found" in depcheck_output_lower):
+        results.append(StepResult("Depcheck", Status.SKIP, "depcheck not installed (non-blocking)"))
+        warn("depcheck not installed (non-blocking)")
+        warn("Install with: bun add -d depcheck")
+        return results
+
+    results.append(StepResult("Depcheck", Status.WARN, "Non-blocking"))
+    warn("depcheck reported issues (non-blocking)")
     
     return results
 
