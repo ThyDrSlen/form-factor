@@ -1590,28 +1590,6 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - react-native-worklets-core (1.6.2):
-    - hermes-engine
-    - RCTRequired
-    - RCTTypeSafety
-    - React-Core
-    - React-Core-prebuilt
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
-    - React-ImageManager
-    - React-jsi
-    - React-NativeModulesApple
-    - React-RCTFabric
-    - React-renderercss
-    - React-rendererdebug
-    - React-utils
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - ReactNativeDependencies
-    - Yoga
   - React-NativeModulesApple (0.83.1):
     - hermes-engine
     - React-callinvoker
@@ -2228,8 +2206,6 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - RNWatch (1.1.0):
-    - React
   - RNWorklets (0.7.1):
     - hermes-engine
     - RCTRequired
@@ -2301,18 +2277,6 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - VisionCamera (4.7.3):
-    - VisionCamera/Core (= 4.7.3)
-    - VisionCamera/FrameProcessors (= 4.7.3)
-    - VisionCamera/React (= 4.7.3)
-  - VisionCamera/Core (4.7.3)
-  - VisionCamera/FrameProcessors (4.7.3):
-    - React
-    - React-callinvoker
-    - react-native-worklets-core
-  - VisionCamera/React (4.7.3):
-    - React-Core
-    - VisionCamera/FrameProcessors
   - Yoga (0.0.0)
 
 DEPENDENCIES:
@@ -2385,7 +2349,6 @@ DEPENDENCIES:
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
   - react-native-webview (from `../node_modules/react-native-webview`)
-  - react-native-worklets-core (from `../node_modules/react-native-worklets-core`)
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
   - React-networking (from `../node_modules/react-native/ReactCommon/react/networking`)
   - React-oscompat (from `../node_modules/react-native/ReactCommon/oscompat`)
@@ -2426,9 +2389,7 @@ DEPENDENCIES:
   - RNReanimated (from `../node_modules/react-native-reanimated`)
   - RNScreens (from `../node_modules/react-native-screens`)
   - RNSVG (from `../node_modules/react-native-svg`)
-  - RNWatch (from `../node_modules/react-native-watch-connectivity`)
   - RNWorklets (from `../node_modules/react-native-worklets`)
-  - VisionCamera (from `../node_modules/react-native-vision-camera`)
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
 EXTERNAL SOURCES:
@@ -2569,8 +2530,6 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-safe-area-context"
   react-native-webview:
     :path: "../node_modules/react-native-webview"
-  react-native-worklets-core:
-    :path: "../node_modules/react-native-worklets-core"
   React-NativeModulesApple:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios"
   React-networking:
@@ -2651,12 +2610,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-screens"
   RNSVG:
     :path: "../node_modules/react-native-svg"
-  RNWatch:
-    :path: "../node_modules/react-native-watch-connectivity"
   RNWorklets:
     :path: "../node_modules/react-native-worklets"
-  VisionCamera:
-    :path: "../node_modules/react-native-vision-camera"
   Yoga:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
@@ -2729,7 +2684,6 @@ SPEC CHECKSUMS:
   React-microtasksnativemodule: 0f26742ab54a7d6cd59efb2299956dc9e60ab335
   react-native-safe-area-context: 37e680fc4cace3c0030ee46e8987d24f5d3bdab2
   react-native-webview: 3e303e80cadb5f17118c8c1502aa398e9287e415
-  react-native-worklets-core: f4ac400fe6a0df6cd303a7d2fa3b595f7ac2beac
   React-NativeModulesApple: e86264955e9a6402abb8e355f5888cb973ee78e3
   React-networking: 801db50c86db0c85557564a0422d41be84c3ea9f
   React-oscompat: 759780c1327bb5e50f8e18f41ce40d5ed920abb3
@@ -2770,9 +2724,7 @@ SPEC CHECKSUMS:
   RNReanimated: 86e5991396f1aa514db90d6c79d4c3e37a37bb10
   RNScreens: 6f7a6128b0d33ce66e60309b6c998a2235abe1f3
   RNSVG: bb9dc09f078cafaf09683a67dd5fde641e3e33cb
-  RNWatch: 28fe1f5e0c6410d45fd20925f4796fce05522e3f
   RNWorklets: ac221fc3659271852770abd399c29c955a3411d8
-  VisionCamera: 0044a94f7489f19e19d5938e97dfc36f4784af3c
   Yoga: 35d573dff66536d48493acb65a519482f8219fe8
 
 PODFILE CHECKSUM: 4bd348b544fb5b2e6e5a289d15ff32d3894ae69d
