@@ -69,7 +69,7 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="scan-arkit"
           options={{
-            title: 'Scan',
+            title: 'Analyze',
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="scan-outline" size={20} color={color} />
             ),
