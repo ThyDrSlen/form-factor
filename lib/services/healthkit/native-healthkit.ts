@@ -40,12 +40,57 @@ export function getNativeHealthKit(): NativeHealthKitModule | null {
     return null;
   }
   try {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        sessionId:'debug-session',
+        runId:'run1',
+        hypothesisId:'H_native',
+        location:'native-healthkit.ts:getNativeHealthKit',
+        message:'attempt load FFHealthKit',
+        data:{ cached:false },
+        timestamp:Date.now()
+      })
+    }).catch(()=>{});
+    // #endregion
     cachedNative = requireNativeModule<NativeHealthKitModule>('FFHealthKit');
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        sessionId:'debug-session',
+        runId:'run1',
+        hypothesisId:'H_native',
+        location:'native-healthkit.ts:getNativeHealthKit',
+        message:'FFHealthKit loaded',
+        data:{ loaded:true },
+        timestamp:Date.now()
+      })
+    }).catch(()=>{});
+    // #endregion
   } catch (error) {
     if (!loggedFailure) {
       console.error('[HealthKit] Failed to load FFHealthKit module', error);
       loggedFailure = true;
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        sessionId:'debug-session',
+        runId:'run1',
+        hypothesisId:'H_native',
+        location:'native-healthkit.ts:getNativeHealthKit',
+        message:'FFHealthKit load failed',
+        data:{ error: error instanceof Error ? error.message : String(error) },
+        timestamp:Date.now()
+      })
+    }).catch(()=>{});
+    // #endregion
     cachedNative = null;
   }
   return cachedNative;

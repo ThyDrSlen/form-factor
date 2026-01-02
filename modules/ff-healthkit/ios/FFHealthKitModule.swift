@@ -1,8 +1,68 @@
 import ExpoModulesCore
+import Foundation
 import HealthKit
 
 public class FFHealthKitModule: Module {
-  private let healthStore = HKHealthStore()
+  private lazy var healthStore: HKHealthStore? = {
+    guard self.isHealthKitSupported else { return nil }
+    return HKHealthStore()
+  }()
+
+  private var isHealthKitSupported: Bool {
+    if #available(iOS 14.0, *) {
+      // iOS apps running on macOS (MacFamily) often cannot use HealthKit and may crash
+      // during initialization/calls.
+      if ProcessInfo.processInfo.isiOSAppOnMac {
+        return false
+      }
+    }
+    return HKHealthStore.isHealthDataAvailable()
+  }
+
+  private static func debugLog(_ location: String, _ message: String, _ data: [String: Any]) {
+    let enabled = (Bundle.main.object(forInfoDictionaryKey: "FFDebugLoggingEnabled") as? Bool) ?? false
+    guard enabled else { return }
+
+    let payload: [String: Any] = [
+      "sessionId": "debug-session",
+      "runId": "run1",
+      "hypothesisId": "H_native_healthkit",
+      "location": location,
+      "message": message,
+      "data": data,
+      "timestamp": Int(Date().timeIntervalSince1970 * 1000)
+    ]
+
+    // Attempt POST to local ingest (best-effort).
+    if let url = URL(string: "http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f"),
+       JSONSerialization.isValidJSONObject(payload),
+       let body = try? JSONSerialization.data(withJSONObject: payload, options: []) {
+      var request = URLRequest(url: url)
+      request.httpMethod = "POST"
+      request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+      request.httpBody = body
+      URLSession.shared.dataTask(with: request).resume()
+    }
+
+    // Always write to a local file inside the app container for Mac/iOS retrieval.
+    if let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+      let logURL = documents.appendingPathComponent("ff-healthkit-debug.ndjson")
+      if let body = try? JSONSerialization.data(withJSONObject: payload, options: []) {
+        do {
+          if !FileManager.default.fileExists(atPath: logURL.path) {
+            _ = FileManager.default.createFile(atPath: logURL.path, contents: nil, attributes: nil)
+          }
+          let handle = try FileHandle(forWritingTo: logURL)
+          handle.seekToEndOfFile()
+          handle.write(body)
+          handle.write("\n".data(using: .utf8)!)
+          try handle.close()
+        } catch {
+          // Swallow I/O errors; logging is best-effort.
+        }
+      }
+    }
+  }
 
   // TODO: Add HealthKit write APIs (e.g., workouts) when supported.
   private static let isoFormatter: ISO8601DateFormatter = {
@@ -21,18 +81,53 @@ public class FFHealthKitModule: Module {
     Name("FFHealthKit")
 
     Function("isAvailable") { () -> Bool in
-      return HKHealthStore.isHealthDataAvailable()
+      let supported = self.isHealthKitSupported
+      let isOnMac: Bool
+      if #available(iOS 14.0, *) {
+        isOnMac = ProcessInfo.processInfo.isiOSAppOnMac
+      } else {
+        isOnMac = false
+      }
+      // #region agent log
+      FFHealthKitModule.debugLog(
+        "FFHealthKitModule.swift:isAvailable",
+        "isAvailable called",
+        ["supported": supported, "isIOSAppOnMac": isOnMac]
+      )
+      // #endregion
+      return supported
     }
 
     Function("getAuthorizationStatus") { (readTypes: [String], writeTypes: [String]) -> [String: Bool] in
+      guard self.isHealthKitSupported, self.healthStore != nil else {
+        // #region agent log
+        FFHealthKitModule.debugLog(
+          "FFHealthKitModule.swift:getAuthorizationStatus",
+          "HealthKit unsupported; returning defaults",
+          ["readCount": readTypes.count, "writeCount": writeTypes.count]
+        )
+        // #endregion
+        return ["hasReadPermission": false, "hasSharePermission": false]
+      }
       return self.authorizationSummary(readTypes: readTypes, writeTypes: writeTypes)
     }
 
     AsyncFunction("requestAuthorization") { (readTypes: [String], writeTypes: [String], promise: Promise) in
+      guard self.isHealthKitSupported, let store = self.healthStore else {
+        // #region agent log
+        FFHealthKitModule.debugLog(
+          "FFHealthKitModule.swift:requestAuthorization",
+          "HealthKit unsupported; resolving defaults",
+          ["readCount": readTypes.count, "writeCount": writeTypes.count]
+        )
+        // #endregion
+        promise.resolve(["hasReadPermission": false, "hasSharePermission": false])
+        return
+      }
       let readSet = Set(readTypes.compactMap { self.hkObjectType(for: $0) })
       let writeSet = Set(writeTypes.compactMap { self.hkSampleType(for: $0) })
 
-      self.healthStore.requestAuthorization(toShare: writeSet, read: readSet) { _, error in
+      store.requestAuthorization(toShare: writeSet, read: readSet) { _, error in
         if let error = error {
           promise.reject("E_HEALTHKIT_AUTH", error.localizedDescription)
           return
@@ -42,8 +137,12 @@ public class FFHealthKitModule: Module {
     }
 
     AsyncFunction("getBiologicalSex") { (promise: Promise) in
+      guard self.isHealthKitSupported, let store = self.healthStore else {
+        promise.resolve(NSNull())
+        return
+      }
       do {
-        let sexObject = try self.healthStore.biologicalSex()
+        let sexObject = try store.biologicalSex()
         promise.resolve(self.biologicalSexString(sexObject.biologicalSex))
       } catch {
         promise.resolve(NSNull())
@@ -51,8 +150,12 @@ public class FFHealthKitModule: Module {
     }
 
     AsyncFunction("getDateOfBirth") { (promise: Promise) in
+      guard self.isHealthKitSupported, let store = self.healthStore else {
+        promise.resolve(["birthDate": NSNull(), "age": NSNull()])
+        return
+      }
       do {
-        let components = try self.healthStore.dateOfBirthComponents()
+        let components = try store.dateOfBirthComponents()
         let calendar = Calendar.current
         let date = calendar.date(from: components)
         let birthDate = date.map { self.isoString(from: $0) }
@@ -72,6 +175,10 @@ public class FFHealthKitModule: Module {
     }
 
     AsyncFunction("getQuantitySamples") { (type: String, startDate: String, endDate: String, unit: String, limit: Int?, ascending: Bool?, promise: Promise) in
+      guard self.isHealthKitSupported, let store = self.healthStore else {
+        promise.resolve([])
+        return
+      }
       guard let quantityType = self.hkQuantityType(for: type) else {
         promise.resolve([])
         return
@@ -101,10 +208,14 @@ public class FFHealthKitModule: Module {
         }
         promise.resolve(mapped)
       }
-      self.healthStore.execute(query)
+      store.execute(query)
     }
 
     AsyncFunction("getLatestQuantitySample") { (type: String, unit: String, promise: Promise) in
+      guard self.isHealthKitSupported, let store = self.healthStore else {
+        promise.resolve(NSNull())
+        return
+      }
       guard let quantityType = self.hkQuantityType(for: type) else {
         promise.resolve(NSNull())
         return
@@ -127,10 +238,14 @@ public class FFHealthKitModule: Module {
           "endDate": self.isoString(from: sample.endDate)
         ])
       }
-      self.healthStore.execute(query)
+      store.execute(query)
     }
 
     AsyncFunction("getDailySumSamples") { (type: String, startDate: String, endDate: String, unit: String, promise: Promise) in
+      guard self.isHealthKitSupported, let store = self.healthStore else {
+        promise.resolve([])
+        return
+      }
       guard let quantityType = self.hkQuantityType(for: type) else {
         promise.resolve([])
         return
@@ -171,7 +286,7 @@ public class FFHealthKitModule: Module {
         promise.resolve(output)
       }
 
-      self.healthStore.execute(query)
+      store.execute(query)
     }
   }
 
@@ -187,13 +302,16 @@ public class FFHealthKitModule: Module {
   }
 
   private func authorizationSummary(readTypes: [String], writeTypes: [String]) -> [String: Bool] {
+    guard let store = healthStore else {
+      return ["hasReadPermission": false, "hasSharePermission": false]
+    }
     let hasReadPermission = readTypes.contains { type in
       guard let objectType = hkObjectType(for: type) else { return false }
-      return healthStore.authorizationStatus(for: objectType) == .sharingAuthorized
+      return store.authorizationStatus(for: objectType) == .sharingAuthorized
     }
     let hasSharePermission = writeTypes.contains { type in
       guard let objectType = hkObjectType(for: type) else { return false }
-      return healthStore.authorizationStatus(for: objectType) == .sharingAuthorized
+      return store.authorizationStatus(for: objectType) == .sharingAuthorized
     }
     return [
       "hasReadPermission": hasReadPermission,
