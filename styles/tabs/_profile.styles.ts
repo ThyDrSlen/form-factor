@@ -27,7 +27,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: tabColors.border,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
   avatarContainer: {
     width: 80,
@@ -73,7 +73,6 @@ export const styles = StyleSheet.create({
     fontWeight: '600',
     color: tabColors.textSecondary,
     marginBottom: spacing.sm + spacing.xs,
-    marginLeft: spacing.xs,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     fontFamily: getFontFamily('medium'),
