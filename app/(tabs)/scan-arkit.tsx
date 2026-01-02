@@ -54,10 +54,11 @@ import {
   type PushUpMetrics,
 } from '@/lib/workouts';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
+import { buildVideoMetricsForClip, type RecordingQuality } from '@/lib/services/video-metrics';
 import { styles } from '../../styles/tabs/_scan-arkit.styles';
 
 // Phase and detection mode types are now imported from lib/workouts
-type UploadMetrics =
+type BaseUploadMetrics =
   | {
       mode: 'pullup';
       reps: number;
@@ -72,15 +73,26 @@ type UploadMetrics =
       hipDropRatio: number | null;
     };
 
+type ClipMetaMetrics = {
+  avgFqi: number | null;
+  formScore: number | null;
+  sessionId: string;
+  recordingQuality: RecordingQuality;
+  recordingStartAt: string;
+  recordingEndAt: string;
+  recordingStartFrameTimestamp: number | null;
+  recordingEndFrameTimestamp: number | null;
+};
+
+type ClipUploadMetrics = BaseUploadMetrics & ClipMetaMetrics;
+
 type RecordedPreview = {
   uri: string;
   exercise: string;
-  metrics: UploadMetrics;
+  metrics: ClipUploadMetrics;
   sizeBytes: number | null;
   savedToLibrary: boolean;
 };
-
-type RecordingQuality = 'low' | 'medium' | 'high';
 
 // Thresholds are now imported from workout definitions (PULLUP_THRESHOLDS, PUSHUP_THRESHOLDS)
 
@@ -236,6 +248,14 @@ export default function ScanARKitScreen() {
   const repMinAnglesRef = React.useRef<JointAngles | null>(null);
   const repMaxAnglesRef = React.useRef<JointAngles | null>(null);
   const repCuesRef = React.useRef<{ type: string; ts: string }[]>([]);
+
+  const lastPoseTimestampRef = React.useRef<number | null>(null);
+  const recordingActiveRef = React.useRef(false);
+  const recordingStartAtRef = React.useRef<string | null>(null);
+  const recordingStartEpochMsRef = React.useRef<number>(0);
+  const recordingStartFrameTimestampRef = React.useRef<number | null>(null);
+  const recordingStartRepsRef = React.useRef<number>(0);
+  const recordingFqiScoresRef = React.useRef<number[]>([]);
 
   const { speak: speakCue, stop: stopSpeech } = useSpeechFeedback({
     enabled: audioFeedbackEnabled && isScreenFocused,
@@ -439,6 +459,10 @@ export default function ScanARKitScreen() {
     const fqiResult = calculateFqi(repAngles, durationMs, repNumber, workoutDef);
     const features = extractRepFeatures(repAngles, durationMs);
 
+    if (recordingActiveRef.current && endTs >= recordingStartEpochMsRef.current) {
+      recordingFqiScoresRef.current.push(fqiResult.score);
+    }
+
     // Log the rep
     try {
       await logRep({
@@ -454,7 +478,9 @@ export default function ScanARKitScreen() {
       });
 
       if (__DEV__) {
-        console.log(`[ScanARKit] Rep ${repNumber} logged: FQI=${fqiResult.score}, faults=${fqiResult.detectedFaults.join(',')}`);
+        console.log(
+          `[ScanARKit] Rep ${repNumber} logged: Form Score=${fqiResult.score}, faults=${fqiResult.detectedFaults.join(',')}`
+        );
       }
     } catch (error) {
       if (__DEV__) {
@@ -680,6 +706,8 @@ export default function ScanARKitScreen() {
       transitionPhase('idle');
       return;
     }
+
+    lastPoseTimestampRef.current = pose.timestamp;
 
     // Only log every 30 frames (once per second at 30fps)
     const shouldLog = frameStatsRef.current.frameCount % 30 === 0;
@@ -1169,7 +1197,7 @@ export default function ScanARKitScreen() {
 
     const feedback = detectionMode === 'pullup' ? analyzePullUpForm() : analyzePushUpForm();
     const primaryCue = feedback?.[0];
-    const latestMetricsForUpload = useMemo<UploadMetrics>(
+    const latestMetricsForUpload = useMemo<BaseUploadMetrics>(
       () =>
         detectionMode === 'pullup'
           ? {
@@ -1361,7 +1389,7 @@ export default function ScanARKitScreen() {
       updateWatchContext({ isTracking: !!isTracking, reps: currentReps });
     }, [isTracking, repCount, pushUpReps, detectionMode]);
 
-    const uploadRecordedVideo = useCallback(async (payload: { uri: string; exercise: string; metrics: UploadMetrics }) => {
+    const uploadRecordedVideo = useCallback(async (payload: { uri: string; exercise: string; metrics: ClipUploadMetrics }) => {
       if (uploading) return false;
       try {
         setPreviewError(null);
@@ -1440,24 +1468,44 @@ export default function ScanARKitScreen() {
       try {
         if (DEV) logWithTs('[ScanARKit] Starting recording...');
         setPreviewError(null);
+        recordingActiveRef.current = true;
+        recordingStartAtRef.current = new Date().toISOString();
+        recordingStartEpochMsRef.current = Date.now();
+        recordingStartFrameTimestampRef.current = lastPoseTimestampRef.current;
+        recordingStartRepsRef.current = detectionMode === 'pullup' ? repCount : pushUpReps;
+        recordingFqiScoresRef.current = [];
         setIsRecording(true);
         await BodyTracker.startRecording({ quality: recordingQuality });
       } catch (error) {
         console.error('[ScanARKit] Failed to start ARKit recording', error);
+        recordingActiveRef.current = false;
         setIsRecording(false);
         Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not start recording.');
       }
-    }, [DEV, isRecording, isFinalizingRecording, isTracking, recordPreview, recordingQuality, logWithTs]);
+    }, [DEV, isRecording, isFinalizingRecording, isTracking, recordPreview, recordingQuality, logWithTs, detectionMode, repCount, pushUpReps]);
 
     const stopRecordingVideo = useCallback(async () => {
       if (!isRecording || recordingStopInFlightRef.current) return;
       try {
         if (DEV) logWithTs('[ScanARKit] Stopping recording...');
+        const recordingEndAt = new Date().toISOString();
         const uri = await stopRecordingCore();
         if (uri) {
           const info = await FileSystem.getInfoAsync(uri);
           const sizeBytes = info.exists ? info.size ?? null : null;
-          const metricsSnapshot: UploadMetrics = { ...latestMetricsForUpload } as UploadMetrics;
+          const repsAtStop = detectionMode === 'pullup' ? repCount : pushUpReps;
+          const repsInClip = Math.max(0, repsAtStop - recordingStartRepsRef.current);
+
+          const metricsSnapshot: ClipUploadMetrics = buildVideoMetricsForClip({
+            baseMetrics: { ...latestMetricsForUpload, reps: repsInClip },
+            sessionId: sessionIdRef.current,
+            recordingQuality,
+            recordingStartAt: recordingStartAtRef.current ?? recordingEndAt,
+            recordingEndAt,
+            recordingStartFrameTimestamp: recordingStartFrameTimestampRef.current,
+            recordingEndFrameTimestamp: lastPoseTimestampRef.current,
+            repFqiScores: recordingFqiScoresRef.current,
+          });
           setRecordPreview({
             uri,
             exercise: detectionMode === 'pullup' ? 'Pull-Up' : 'Push-Up',
@@ -1474,8 +1522,10 @@ export default function ScanARKitScreen() {
         console.error('[ScanARKit] Failed to stop ARKit recording', error);
         setIsRecording(false);
         Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not stop recording.');
+      } finally {
+        recordingActiveRef.current = false;
       }
-    }, [DEV, isRecording, stopRecordingCore, latestMetricsForUpload, detectionMode, logWithTs]);
+    }, [DEV, isRecording, stopRecordingCore, latestMetricsForUpload, detectionMode, logWithTs, recordingQuality, repCount, pushUpReps]);
 
     const handleDiscardRecording = useCallback(async () => {
       if (uploading || savingRecording) return;
