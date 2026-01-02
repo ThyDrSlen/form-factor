@@ -987,7 +987,15 @@ fileprivate final class ARVideoRecorder {
             let baseImage = CIImage(cvPixelBuffer: frame.capturedImage)
             self.ciContext.render(baseImage, to: outputBuffer)
             if let pose2D, !pose2D.isEmpty {
-              self.drawOverlay(on: outputBuffer, joints: pose2D, orientation: orientation, viewportSize: viewportSize)
+              let viewToImageTransform: CGAffineTransform? = {
+                guard let viewportSize, viewportSize.width > 0, viewportSize.height > 0 else {
+                  return nil
+                }
+                // `displayTransform` maps from captured-image normalized space -> view normalized space.
+                // We want the inverse so we can render an overlay in captured-image space.
+                return frame.displayTransform(for: orientation, viewportSize: viewportSize).inverted()
+              }()
+              self.drawOverlay(on: outputBuffer, joints: pose2D, viewToImageTransform: viewToImageTransform)
             }
             pixelBuffer = outputBuffer
           } else {
@@ -1006,109 +1014,10 @@ fileprivate final class ARVideoRecorder {
     }
   }
 
-  private func adjustNormalizedPoint(
-    x: Double,
-    y: Double,
-    orientation: UIInterfaceOrientation,
-    bufferWidth: CGFloat,
-    bufferHeight: CGFloat,
-    viewportSize: CGSize?
-  ) -> CGPoint {
-    guard let viewportSize, viewportSize.width > 0, viewportSize.height > 0 else {
-      return CGPoint(x: x, y: y)
-    }
-
-    let clampedX = CGFloat(max(0.0, min(1.0, x)))
-    let clampedY = CGFloat(max(0.0, min(1.0, y)))
-    let viewW = viewportSize.width
-    let viewH = viewportSize.height
-
-    let cameraW: CGFloat
-    let cameraH: CGFloat
-    switch orientation {
-    case .portrait, .portraitUpsideDown:
-      cameraW = bufferHeight
-      cameraH = bufferWidth
-    case .landscapeLeft, .landscapeRight:
-      cameraW = bufferWidth
-      cameraH = bufferHeight
-    default:
-      cameraW = bufferHeight
-      cameraH = bufferWidth
-    }
-
-    if cameraW <= 0 || cameraH <= 0 {
-      return CGPoint(x: clampedX, y: clampedY)
-    }
-
-    let viewAspect = viewW / viewH
-    let cameraAspect = cameraW / cameraH
-    if abs(viewAspect - cameraAspect) < 0.0001 {
-      return CGPoint(x: clampedX, y: clampedY)
-    }
-
-    var nx = clampedX
-    var ny = clampedY
-    if cameraAspect > viewAspect {
-      // Camera is wider than the view; view crops left/right.
-      let scale = viewH / cameraH
-      let displayW = cameraW * scale
-      if displayW > 0 {
-        let offsetX = (displayW - viewW) / 2.0
-        let xInDisplay = clampedX * viewW + offsetX
-        nx = xInDisplay / displayW
-      }
-    } else {
-      // Camera is taller than the view; view crops top/bottom.
-      let scale = viewW / cameraW
-      let displayH = cameraH * scale
-      if displayH > 0 {
-        let offsetY = (displayH - viewH) / 2.0
-        let yInDisplay = clampedY * viewH + offsetY
-        ny = yInDisplay / displayH
-      }
-    }
-
-    return CGPoint(x: min(max(nx, 0), 1), y: min(max(ny, 0), 1))
-  }
-
-  private func mapPointToBuffer(
-    x: Double,
-    y: Double,
-    orientation: UIInterfaceOrientation,
-    width: CGFloat,
-    height: CGFloat,
-    viewportSize: CGSize?
-  ) -> CGPoint {
-    let adjusted = adjustNormalizedPoint(
-      x: x,
-      y: y,
-      orientation: orientation,
-      bufferWidth: width,
-      bufferHeight: height,
-      viewportSize: viewportSize
-    )
-    let nx = Double(adjusted.x)
-    let ny = Double(adjusted.y)
-    switch orientation {
-    case .portrait:
-      return CGPoint(x: ny * Double(width), y: (1.0 - nx) * Double(height))
-    case .portraitUpsideDown:
-      return CGPoint(x: (1.0 - ny) * Double(width), y: nx * Double(height))
-    case .landscapeLeft:
-      return CGPoint(x: (1.0 - nx) * Double(width), y: (1.0 - ny) * Double(height))
-    case .landscapeRight:
-      return CGPoint(x: nx * Double(width), y: ny * Double(height))
-    default:
-      return CGPoint(x: ny * Double(width), y: (1.0 - nx) * Double(height))
-    }
-  }
-
   private func drawOverlay(
     on buffer: CVPixelBuffer,
     joints: [Joint2D],
-    orientation: UIInterfaceOrientation,
-    viewportSize: CGSize?
+    viewToImageTransform: CGAffineTransform?
   ) {
     CVPixelBufferLockBaseAddress(buffer, [])
     defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
@@ -1178,26 +1087,32 @@ fileprivate final class ARVideoRecorder {
       context.setFillColor(red: r, green: g, blue: b, alpha: 0.9)
     }
 
+    func mapJoint(_ joint: Joint2D) -> CGPoint? {
+      guard joint.isTracked else {
+        return nil
+      }
+
+      let viewPoint = CGPoint(x: CGFloat(joint.x), y: CGFloat(joint.y))
+
+      if let viewToImageTransform {
+        let imagePoint = viewPoint.applying(viewToImageTransform)
+        let clampedX = min(max(imagePoint.x, 0), 1)
+        let clampedY = min(max(imagePoint.y, 0), 1)
+        return CGPoint(x: clampedX * CGFloat(width), y: clampedY * CGFloat(height))
+      }
+
+      // Fallback: if we can't compute ARFrame's display transform for some reason, skip drawing.
+      // This avoids drawing with a guessed mapping that can be noticeably mis-scaled.
+      return nil
+    }
+
     func drawLine(_ from: String, _ to: String, color: UInt32) {
       guard let j1 = findJoint(from), let j2 = findJoint(to), j1.isTracked, j2.isTracked else {
         return
       }
-      let p1 = mapPointToBuffer(
-        x: j1.x,
-        y: j1.y,
-        orientation: orientation,
-        width: CGFloat(width),
-        height: CGFloat(height),
-        viewportSize: viewportSize
-      )
-      let p2 = mapPointToBuffer(
-        x: j2.x,
-        y: j2.y,
-        orientation: orientation,
-        width: CGFloat(width),
-        height: CGFloat(height),
-        viewportSize: viewportSize
-      )
+      guard let p1 = mapJoint(j1), let p2 = mapJoint(j2) else {
+        return
+      }
       strokeColor(color)
       context.setLineWidth(lineWidth)
       context.move(to: p1)
@@ -1235,14 +1150,9 @@ fileprivate final class ARVideoRecorder {
     // Joints
     fillColor(0xFFFFFF)
     for joint in joints where joint.isTracked {
-      let point = mapPointToBuffer(
-        x: joint.x,
-        y: joint.y,
-        orientation: orientation,
-        width: CGFloat(width),
-        height: CGFloat(height),
-        viewportSize: viewportSize
-      )
+      guard let point = mapJoint(joint) else {
+        continue
+      }
       let rect = CGRect(
         x: point.x - jointRadius,
         y: point.y - jointRadius,
