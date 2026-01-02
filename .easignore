@@ -20,6 +20,7 @@ test-results/
 /android/
 /ios/build/
 /android/app/build/
+/builds/
 
 # iOS Simulator and Apple caches accidentally added to project
 Library/
