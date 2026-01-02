@@ -9,6 +9,9 @@ const readEnvFlag = (value, defaultValue) => {
   return defaultValue;
 };
 const USE_NEW_ARCH = readEnvFlag(process.env.EXPO_USE_NEW_ARCH, true);
+// Enable ATS exception for local debug logging only when explicitly turned on.
+// This allows posting to http://127.0.0.1:<port> from TestFlight/Release builds.
+const ENABLE_LOCAL_DEBUG_LOGGING = readEnvFlag(process.env.EXPO_PUBLIC_DEBUG_LOGGING, false);
 
 const getUniqueIdentifier = () => {
   if (IS_DEV) return 'com.slenthekid.formfactoreas.dev';
@@ -99,6 +102,30 @@ const baseConfig = {
       NSLocationWhenInUseUsageDescription: 'This app does not use your location, but it is required by Apple Health for workout routes.',
       WKCompanionAppBundleIdentifier: 'com.slenthekid.formfactoreas',
       ITSAppUsesNonExemptEncryption: false,
+      ...(ENABLE_LOCAL_DEBUG_LOGGING
+        ? {
+            // Gate native debug logging/instrumentation in TestFlight builds.
+            FFDebugLoggingEnabled: true,
+            // iOS Local Network privacy prompt (required to reach a LAN/localhost endpoint on modern iOS/macOS).
+            NSLocalNetworkUsageDescription:
+              'Debug mode: allow the app to connect to a local logging server running on this Mac.',
+            NSAppTransportSecurity: {
+              // Allow non-HTTPS to localhost for debug log ingestion.
+              // Keep this gated behind EXPO_PUBLIC_DEBUG_LOGGING.
+              NSAllowsLocalNetworking: true,
+              NSExceptionDomains: {
+                localhost: {
+                  NSExceptionAllowsInsecureHTTPLoads: true,
+                  NSIncludesSubdomains: true,
+                },
+                '127.0.0.1': {
+                  NSExceptionAllowsInsecureHTTPLoads: true,
+                  NSIncludesSubdomains: true,
+                },
+              },
+            },
+          }
+        : {}),
     },
     entitlements: {
       'com.apple.developer.healthkit': true,
