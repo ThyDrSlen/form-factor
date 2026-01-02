@@ -6,24 +6,111 @@ import 'react-native-url-polyfill/auto';
 
 const DEV = __DEV__;
 
-// Expo-compatible polyfills for Hermes
+// #region agent log
+fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({
+    sessionId:'debug-session',
+    runId:'run1',
+    hypothesisId:'H_entry_supabase',
+    location:'lib/supabase.ts:module',
+    message:'supabase module loaded',
+    data:{ platform:Platform.OS },
+    timestamp:Date.now()
+  })
+}).catch(()=>{});
+// #endregion
+
+// Pure JavaScript base64 implementation for Hermes (no Buffer dependency)
+const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+
+function safeAtob(str: string): string {
+  // Normalize base64url -> base64 and strip whitespace.
+  // Many JWT-related values are base64url-encoded (use '-' and '_' and omit padding).
+  let cleaned = str.replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/');
+  const remainder = cleaned.length % 4;
+  if (remainder === 2) cleaned += '==';
+  else if (remainder === 3) cleaned += '=';
+  else if (remainder === 1) throw new Error('Invalid base64 string');
+  let output = '';
+  let buffer = 0;
+  let bits = 0;
+  
+  for (let i = 0; i < cleaned.length; i++) {
+    const char = cleaned[i];
+    if (char === '=') break;
+    
+    const index = BASE64_CHARS.indexOf(char);
+    if (index === -1) throw new Error('Invalid base64 string');
+    
+    buffer = (buffer << 6) | index;
+    bits += 6;
+    
+    if (bits >= 8) {
+      bits -= 8;
+      output += String.fromCharCode((buffer >> bits) & 0xff);
+    }
+  }
+  
+  return output;
+}
+
+function safeBtoa(str: string): string {
+  let output = '';
+  let buffer = 0;
+  let bits = 0;
+  
+  for (let i = 0; i < str.length; i++) {
+    buffer = (buffer << 8) | str.charCodeAt(i);
+    bits += 8;
+    
+    while (bits >= 6) {
+      bits -= 6;
+      output += BASE64_CHARS[(buffer >> bits) & 0x3f];
+    }
+  }
+  
+  if (bits > 0) {
+    output += BASE64_CHARS[(buffer << (6 - bits)) & 0x3f];
+  }
+  
+  // Add padding
+  while (output.length % 4 !== 0) {
+    output += '=';
+  }
+  
+  return output;
+}
+
+// Expo-compatible polyfills for Hermes (using pure JS, not Buffer)
 if (Platform.OS !== 'web') {
-  // Use React Native's built-in Buffer for base64 operations
   if (typeof global.atob === 'undefined') {
-    global.atob = function(str: string) {
-      return Buffer.from(str, 'base64').toString('binary');
-    };
+    global.atob = safeAtob;
   }
   
   if (typeof global.btoa === 'undefined') {
-    global.btoa = function(str: string) {
-      return Buffer.from(str, 'binary').toString('base64');
-    };
+    global.btoa = safeBtoa;
   }
 }
 
 // Validate environment variables
 function validateEnvironment() {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      sessionId:'debug-session',
+      runId:'run1',
+      hypothesisId:'H_env',
+      location:'lib/supabase.ts:validateEnvironment',
+      message:'validateEnvironment start',
+      data:{ hasUrl:!!(process.env.EXPO_PUBLIC_SUPABASE_URL || Constants.expoConfig?.extra?.supabaseUrl), hasAnon:!!(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || Constants.expoConfig?.extra?.supabaseAnonKey) },
+      timestamp:Date.now()
+    })
+  }).catch(()=>{});
+  // #endregion
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || Constants.expoConfig?.extra?.supabaseUrl;
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || Constants.expoConfig?.extra?.supabaseAnonKey;
 
@@ -45,6 +132,21 @@ function validateEnvironment() {
   try {
     new URL(supabaseUrl);
   } catch {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        sessionId:'debug-session',
+        runId:'run1',
+        hypothesisId:'H_env',
+        location:'lib/supabase.ts:validateEnvironment',
+        message:'invalid supabase url',
+        data:{ supabaseUrl },
+        timestamp:Date.now()
+      })
+    }).catch(()=>{});
+    // #endregion
     throw new Error(
       `Invalid EXPO_PUBLIC_SUPABASE_URL format: ${supabaseUrl}\n` +
       'Please ensure it follows the format: https://your-project.supabase.co'
@@ -66,8 +168,38 @@ function validateEnvironment() {
         + 'If auth fails, re-check the key in your Supabase project settings.'
       );
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        sessionId:'debug-session',
+        runId:'run1',
+        hypothesisId:'H_env',
+        location:'lib/supabase.ts:validateEnvironment',
+        message:'anon key atypical format',
+        data:{ looksLikeJwt, looksLikePublishable },
+        timestamp:Date.now()
+      })
+    }).catch(()=>{});
+    // #endregion
   }
 
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      sessionId:'debug-session',
+      runId:'run1',
+      hypothesisId:'H_env',
+      location:'lib/supabase.ts:validateEnvironment',
+      message:'validateEnvironment ok',
+      data:{ supabaseUrlLength:supabaseUrl.length, anonKeyLength:supabaseAnonKey.length },
+      timestamp:Date.now()
+    })
+  }).catch(()=>{});
+  // #endregion
   return { supabaseUrl, supabaseAnonKey };
 }
 

@@ -1,6 +1,6 @@
 import './global.css';
 import { Slot, usePathname, useRouter, useSegments } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { ActivityIndicator, View, Text as RNText, StyleSheet, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-url-polyfill/auto';
@@ -13,21 +13,95 @@ import { NetworkProvider } from '../contexts/NetworkContext';
 import { useFonts, Lexend_400Regular, Lexend_500Medium, Lexend_700Bold } from '@expo-google-fonts/lexend';
 import { ToastProvider } from '../contexts/ToastContext';
 
+// #region agent log
+fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({
+    sessionId:'debug-session',
+    runId:'run1',
+    hypothesisId:'H_entry',
+    location:'app/_layout.tsx:module',
+    message:'module loaded',
+    data:{},
+    timestamp:Date.now()
+  })
+}).catch(()=>{});
+// #endregion
+
 // This layout wraps the entire app with providers
 function RootLayoutNav() {
   // Load Lexend fonts globally
   const [fontsLoaded] = useFonts({ Lexend_400Regular, Lexend_500Medium, Lexend_700Bold });
+  const fontStyleAppliedRef = useRef(false);
 
-  if (fontsLoaded && RNText) {
-    // Apply a global default font family (non-destructive merge)
-    // Note: this affects only Text components that don't explicitly override fontFamily
-    const AnyText = RNText as any;
-    AnyText.defaultProps = AnyText.defaultProps || {};
-    AnyText.defaultProps.style = [
-      { fontFamily: 'Lexend_400Regular' },
-      Array.isArray(AnyText.defaultProps.style) ? AnyText.defaultProps.style : AnyText.defaultProps.style,
-    ];
-  }
+  // Apply global default font family ONCE after fonts load (moved out of render to avoid Hermes issues)
+  useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        sessionId:'debug-session',
+        runId:'run1',
+        hypothesisId:'H_font',
+        location:'app/_layout.tsx:useEffect fonts',
+        message:'font effect check',
+        data:{ fontsLoaded, alreadyApplied:fontStyleAppliedRef.current },
+        timestamp:Date.now()
+      })
+    }).catch(()=>{});
+    // #endregion
+    if (fontsLoaded && RNText && !fontStyleAppliedRef.current) {
+      fontStyleAppliedRef.current = true;
+      try {
+        const AnyText = RNText as any;
+        const existingProps = AnyText.defaultProps || {};
+        const existingStyle = existingProps.style;
+        // Safely merge existing styles - fix the broken ternary that always returned the same value
+        const mergedStyle = [
+          { fontFamily: 'Lexend_400Regular' },
+          ...(Array.isArray(existingStyle) ? existingStyle : existingStyle ? [existingStyle] : []),
+        ];
+        AnyText.defaultProps = { ...existingProps, style: mergedStyle };
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            sessionId:'debug-session',
+            runId:'run1',
+            hypothesisId:'H_font',
+            location:'app/_layout.tsx:useEffect fonts',
+            message:'font defaults applied',
+            data:{ mergedStyleLength:mergedStyle.length },
+            timestamp:Date.now()
+          })
+        }).catch(()=>{});
+        // #endregion
+      } catch (e) {
+        // Silently fail - font styling is not critical
+        if (__DEV__) {
+          console.warn('[Layout] Failed to apply default font style:', e);
+        }
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            sessionId:'debug-session',
+            runId:'run1',
+            hypothesisId:'H_font',
+            location:'app/_layout.tsx:useEffect fonts',
+            message:'font defaults error',
+            data:{ error: e instanceof Error ? e.message : String(e) },
+            timestamp:Date.now()
+          })
+        }).catch(()=>{});
+        // #endregion
+      }
+    }
+  }, [fontsLoaded]);
 
   return (
     <GestureHandlerRootView style={styles.root}>
