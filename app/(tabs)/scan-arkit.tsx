@@ -35,6 +35,8 @@ import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D } from '@/
 import { useSpeechFeedback } from '@/hooks/use-speech-feedback';
 import { generateSessionId, logCueEvent, upsertSessionMetrics } from '@/lib/services/cue-logger';
 import { logPoseSample, flushPoseBuffer, resetFrameCounter } from '@/lib/services/pose-logger';
+import { RepIndexTracker } from '@/lib/services/rep-index-tracker';
+import { shouldEndRep, shouldStartRep } from '@/lib/services/workout-runtime';
 import {
   initSessionContext,
   incrementPoseLost,
@@ -53,6 +55,7 @@ import {
   type PushUpPhase,
   type PushUpMetrics,
 } from '@/lib/workouts';
+import type { WorkoutDefinition, WorkoutMetrics } from '@/lib/types/workout-definitions';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
 import { buildVideoMetricsForClip, type RecordingQuality } from '@/lib/services/video-metrics';
 import { styles } from '../../styles/tabs/_scan-arkit.styles';
@@ -248,6 +251,7 @@ export default function ScanARKitScreen() {
   const repMinAnglesRef = React.useRef<JointAngles | null>(null);
   const repMaxAnglesRef = React.useRef<JointAngles | null>(null);
   const repCuesRef = React.useRef<{ type: string; ts: string }[]>([]);
+  const repIndexTrackerRef = React.useRef(new RepIndexTracker());
 
   const lastPoseTimestampRef = React.useRef<number | null>(null);
   const recordingActiveRef = React.useRef(false);
@@ -362,23 +366,6 @@ export default function ScanARKitScreen() {
     };
   }, []);
 
-  useEffect(() => {
-    if (detectionMode === 'pullup') {
-      pushUpStateRef.current = 'setup';
-      setPushUpPhase('setup');
-      setPushUpReps(0);
-      setPushUpMetrics(null);
-      lastPushUpRepRef.current = 0;
-    } else {
-      repStateRef.current = 'idle';
-      phaseRef.current = 'idle';
-      setPullUpPhase('idle');
-      setRepCount(0);
-      setPullUpMetrics(null);
-      lastRepTimestampRef.current = 0;
-    }
-  }, [detectionMode]);
-
   const transitionPhase = useCallback(
     (next: PullUpPhase) => {
       if (phaseRef.current !== next) {
@@ -397,6 +384,33 @@ export default function ScanARKitScreen() {
     repMaxAnglesRef.current = { ...angles };
     repCuesRef.current = [];
   }, []);
+
+  const resetRepTracking = useCallback(() => {
+    repIndexTrackerRef.current.reset();
+    repStartTsRef.current = 0;
+    repStartAnglesRef.current = null;
+    repMinAnglesRef.current = null;
+    repMaxAnglesRef.current = null;
+    repCuesRef.current = [];
+  }, []);
+
+  useEffect(() => {
+    if (detectionMode === 'pullup') {
+      pushUpStateRef.current = 'setup';
+      setPushUpPhase('setup');
+      setPushUpReps(0);
+      setPushUpMetrics(null);
+      lastPushUpRepRef.current = 0;
+    } else {
+      repStateRef.current = 'idle';
+      phaseRef.current = 'idle';
+      setPullUpPhase('idle');
+      setRepCount(0);
+      setPullUpMetrics(null);
+      lastRepTimestampRef.current = 0;
+    }
+    resetRepTracking();
+  }, [detectionMode, resetRepTracking]);
 
   // Helper: Update min/max angles during rep
   const updateRepAngles = useCallback((angles: JointAngles) => {
@@ -496,152 +510,74 @@ export default function ScanARKitScreen() {
     repCuesRef.current = [];
   }, []);
 
-  const updatePullUpCycle = useCallback(
-    (angles: JointAngles, metrics: PullUpMetrics) => {
-      if (!metrics.armsTracked) {
-        if (repStateRef.current !== 'idle') {
-          repStateRef.current = 'idle';
-          transitionPhase('idle');
-        }
-        return;
-      }
+  const updateWorkoutCycle = useCallback(
+    (angles: JointAngles, metrics: WorkoutMetrics, workoutDef: WorkoutDefinition) => {
+      const now = Date.now();
+      const isPullup = detectionMode === 'pullup';
+      const prevPhase = isPullup ? repStateRef.current : pushUpStateRef.current;
+      const nextPhase = workoutDef.getNextPhase(prevPhase as never, angles, metrics as never);
 
-      const avgElbow = metrics.avgElbow;
-      const state = repStateRef.current;
-
-      if (state === 'idle') {
-        if (avgElbow >= PULLUP_THRESHOLDS.hang) {
-          repStateRef.current = 'hang';
-          transitionPhase('hang');
-        } else if (avgElbow <= PULLUP_THRESHOLDS.engage) {
-          repStateRef.current = 'pull';
-          transitionPhase('pull');
-          // Start tracking this rep
-          startRepTracking(angles);
-        }
-        return;
-      }
-
-      if (state === 'hang') {
-        if (avgElbow <= PULLUP_THRESHOLDS.engage) {
-          repStateRef.current = 'pull';
-          transitionPhase('pull');
-          // Start tracking this rep
-          startRepTracking(angles);
-        }
-        return;
-      }
-
-      if (state === 'pull') {
-        // Update min/max angles while in pull phase
-        updateRepAngles(angles);
-
-        if (avgElbow <= PULLUP_THRESHOLDS.top) {
-          const now = Date.now();
-          if (now - lastRepTimestampRef.current > 400) {
-            repStateRef.current = 'top';
-            transitionPhase('top');
-            lastRepTimestampRef.current = now;
-            const newRepCount = repCount + 1;
-            setRepCount(newRepCount);
-            if (Platform.OS === 'ios') {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-            }
-            // Complete and log the rep
-            completeRepTracking('pullup', newRepCount, angles);
-          }
-        } else if (avgElbow >= PULLUP_THRESHOLDS.hang) {
-          repStateRef.current = 'hang';
-          transitionPhase('hang');
-        }
-        return;
-      }
-
-      if (state === 'top') {
-        // Update min/max angles while in top phase
-        updateRepAngles(angles);
-
-        if (avgElbow >= PULLUP_THRESHOLDS.release) {
-          repStateRef.current = 'hang';
-          transitionPhase('hang');
+      if (nextPhase !== prevPhase) {
+        if (isPullup) {
+          repStateRef.current = nextPhase as PullUpPhase;
+          transitionPhase(nextPhase as PullUpPhase);
+        } else {
+          pushUpStateRef.current = nextPhase as PushUpPhase;
+          setPushUpPhase(nextPhase as PushUpPhase);
         }
       }
-    },
-    [transitionPhase, startRepTracking, updateRepAngles, completeRepTracking, repCount]
-  );
 
-  const updatePushUpCycle = useCallback((angles: JointAngles, metrics: PushUpMetrics) => {
-    if (!metrics.armsTracked || !metrics.wristsTracked) {
-      pushUpStateRef.current = 'setup';
-      setPushUpPhase('setup');
-      return;
-    }
-
-    const now = Date.now();
-    const state = pushUpStateRef.current;
-    const hipStable = metrics.hipDrop === null ? true : metrics.hipDrop <= PUSHUP_THRESHOLDS.hipSagMax;
-    const elbow = metrics.avgElbow;
-
-    if (state === 'setup') {
-      if (elbow >= PUSHUP_THRESHOLDS.readyElbow && hipStable) {
-        pushUpStateRef.current = 'plank';
-        setPushUpPhase('plank');
+      if (repStartTsRef.current > 0 && nextPhase === workoutDef.initialPhase && prevPhase !== nextPhase) {
+        resetRepTracking();
       }
-      return;
-    }
 
-    if (state === 'plank') {
-      if (elbow <= PUSHUP_THRESHOLDS.loweringStart) {
-        pushUpStateRef.current = 'lowering';
-        setPushUpPhase('lowering');
-        // Start tracking this rep
+      if (shouldStartRep(workoutDef.repBoundary as never, prevPhase as never, nextPhase as never)) {
+        const completedCount = isPullup ? repCount : pushUpReps;
+        repIndexTrackerRef.current.startRep(completedCount);
         startRepTracking(angles);
       }
-      return;
-    }
 
-    if (state === 'lowering') {
-      // Update min/max angles while lowering
-      updateRepAngles(angles);
-
-      if (elbow <= PUSHUP_THRESHOLDS.bottom) {
-        pushUpStateRef.current = 'bottom';
-        setPushUpPhase('bottom');
+      if (repStartTsRef.current > 0) {
+        updateRepAngles(angles);
       }
-      return;
-    }
 
-    if (state === 'bottom') {
-      // Update min/max angles at bottom
-      updateRepAngles(angles);
-
-      if (elbow >= PUSHUP_THRESHOLDS.press) {
-        pushUpStateRef.current = 'press';
-        setPushUpPhase('press');
-      }
-      return;
-    }
-
-    if (state === 'press') {
-      // Update min/max angles while pressing
-      updateRepAngles(angles);
-
-      if (elbow >= PUSHUP_THRESHOLDS.finish && hipStable) {
-        if (now - lastPushUpRepRef.current > 400) {
+      const repActive = repStartTsRef.current > 0;
+      const lastRepTimestampMs = isPullup ? lastRepTimestampRef.current : lastPushUpRepRef.current;
+      if (shouldEndRep(workoutDef.repBoundary as never, prevPhase as never, nextPhase as never, repActive, now, lastRepTimestampMs)) {
+        if (isPullup) {
+          lastRepTimestampRef.current = now;
+        } else {
           lastPushUpRepRef.current = now;
-          const newRepCount = pushUpReps + 1;
-          setPushUpReps(newRepCount);
-          if (Platform.OS === 'ios') {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-          }
-          // Complete and log the rep
-          completeRepTracking('pushup', newRepCount, angles);
         }
-        pushUpStateRef.current = 'plank';
-        setPushUpPhase('plank');
+
+        const newRepCount = (isPullup ? repCount : pushUpReps) + 1;
+        const activeRepIndex = repIndexTrackerRef.current.current() ?? newRepCount;
+
+        if (isPullup) {
+          setRepCount(newRepCount);
+        } else {
+          setPushUpReps(newRepCount);
+        }
+
+        if (Platform.OS === 'ios') {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        }
+
+        completeRepTracking(isPullup ? 'pullup' : 'pushup', activeRepIndex, angles);
+        repIndexTrackerRef.current.endRep();
       }
-    }
-  }, [startRepTracking, updateRepAngles, completeRepTracking, pushUpReps]);
+    },
+    [
+      completeRepTracking,
+      detectionMode,
+      repCount,
+      pushUpReps,
+      resetRepTracking,
+      startRepTracking,
+      transitionPhase,
+      updateRepAngles,
+    ]
+  );
 
   useEffect(() => {
     if (DEV) {
@@ -704,6 +640,7 @@ export default function ScanARKitScreen() {
       setPushUpMetrics(null);
       repStateRef.current = 'idle';
       transitionPhase('idle');
+      resetRepTracking();
       return;
     }
 
@@ -738,8 +675,6 @@ export default function ScanARKitScreen() {
       const rw = get('right_hand');
       const spine = get('spine_4');
       const neck = get('neck');
-      const leftAnkle = get('left_foot');
-      const rightAnkle = get('right_foot');
       const valid = {
         leftKnee: !!(lh?.isTracked && lk?.isTracked && la?.isTracked),
         rightKnee: !!(rh?.isTracked && rk?.isTracked && ra?.isTracked),
@@ -800,15 +735,15 @@ export default function ScanARKitScreen() {
 
         // Log pose sample for ML modeling (only when tracking is active)
         if (next && isTracking) {
-          const currentPhase = detectionMode === 'pullup' ? pullUpPhase : pushUpPhase;
-          const currentReps = detectionMode === 'pullup' ? repCount : pushUpReps;
+          const currentPhase = detectionMode === 'pullup' ? phaseRef.current : pushUpStateRef.current;
+          const currentRepIndex = repIndexTrackerRef.current.current();
           
           logPoseSample({
             sessionId: sessionIdRef.current,
             frameTimestamp: pose.timestamp,
             exerciseMode: detectionMode,
             phase: currentPhase,
-            repNumber: currentReps,
+            repNumber: currentRepIndex,
             angles: next,
             fpsAtCapture: fps,
           }).catch((error) => {
@@ -818,58 +753,49 @@ export default function ScanARKitScreen() {
           });
         }
 
-        const avgElbow = (next.leftElbow + next.rightElbow) / 2;
-        const avgShoulder = (next.leftShoulder + next.rightShoulder) / 2;
-        const head = get('head') ?? neck;
-        let headToHand: number | undefined;
-        if (head?.isTracked && lw?.isTracked && rw?.isTracked) {
-          headToHand = head.y - (lw.y + rw.y) / 2;
-        }
+        const jointsMap = new Map<string, { x: number; y: number; isTracked: boolean }>();
+        pose.joints.forEach((joint) => {
+          jointsMap.set(joint.name, { x: joint.x, y: joint.y, isTracked: joint.isTracked });
+        });
 
-        if (detectionMode === 'pullup') {
-          const metrics: PullUpMetrics = {
-            avgElbow,
-            avgShoulder,
-            headToHand,
-            armsTracked: !!(valid.leftElbow && valid.rightElbow),
-          };
-          const now = Date.now();
-          const prevMetrics = pullUpMetricsThrottleRef.current;
-          const metricsChanged =
-            !pullUpMetrics ||
-            Math.abs((pullUpMetrics.avgElbow ?? 0) - metrics.avgElbow) > 0.5 ||
-            Math.abs((pullUpMetrics.avgShoulder ?? 0) - metrics.avgShoulder) > 0.5 ||
-            pullUpMetrics.armsTracked !== metrics.armsTracked;
-          if (metricsChanged || now - prevMetrics > 80) {
-            pullUpMetricsThrottleRef.current = now;
-            setPullUpMetrics(metrics);
+        const workoutDef = getWorkoutById(detectionMode);
+        if (workoutDef) {
+          const metrics = workoutDef.calculateMetrics(next, jointsMap);
+
+          if (detectionMode === 'pullup') {
+            const pullMetrics = metrics as PullUpMetrics;
+            const now = Date.now();
+            const prevMetrics = pullUpMetricsThrottleRef.current;
+            const metricsChanged =
+              !pullUpMetrics ||
+              Math.abs((pullUpMetrics.avgElbow ?? 0) - pullMetrics.avgElbow) > 0.5 ||
+              Math.abs((pullUpMetrics.avgShoulder ?? 0) - pullMetrics.avgShoulder) > 0.5 ||
+              pullUpMetrics.armsTracked !== pullMetrics.armsTracked;
+            if (metricsChanged || now - prevMetrics > 80) {
+              pullUpMetricsThrottleRef.current = now;
+              setPullUpMetrics(pullMetrics);
+            }
+            updateWorkoutCycle(next, pullMetrics, workoutDef);
+          } else if (detectionMode === 'pushup') {
+            const pushMetrics = metrics as PushUpMetrics;
+            setPushUpMetrics(pushMetrics);
+            updateWorkoutCycle(next, pushMetrics, workoutDef);
           }
-          updatePullUpCycle(next, metrics);
-        } else if (detectionMode === 'pushup') {
-          // Push-up metrics using elbow angle and hip drop vs shoulders
-          const shouldersTracked = valid.leftShoulder && valid.rightShoulder;
-          const hipsTracked = valid.leftHip && valid.rightHip;
-          let hipDrop: number | null = null;
-          if (shouldersTracked && hipsTracked && ls && rs && lh && rh && leftAnkle && rightAnkle) {
-            const shoulderY = (ls.y + rs.y) / 2;
-            const hipY = (lh.y + rh.y) / 2;
-            const ankleY = (leftAnkle.y + rightAnkle.y) / 2;
-            const torsoLength = Math.max(0.001, Math.abs(shoulderY - ankleY));
-            hipDrop = Math.abs(hipY - shoulderY) / torsoLength;
-          }
-          const pushMetrics: PushUpMetrics = {
-            avgElbow,
-            hipDrop,
-            armsTracked: !!(valid.leftElbow && valid.rightElbow),
-            wristsTracked: !!(lw?.isTracked && rw?.isTracked),
-          };
-          setPushUpMetrics(pushMetrics);
-          updatePushUpCycle(next, pushMetrics);
+        } else {
+          setPullUpMetrics(null);
+          setPushUpMetrics(null);
         }
       } else {
-        setPullUpMetrics(null);
-        repStateRef.current = 'idle';
-        transitionPhase('idle');
+        resetRepTracking();
+        if (detectionMode === 'pullup') {
+          setPullUpMetrics(null);
+          repStateRef.current = 'idle';
+          transitionPhase('idle');
+        } else {
+          setPushUpMetrics(null);
+          pushUpStateRef.current = 'setup';
+          setPushUpPhase('setup');
+        }
       }
     } catch (error) {
       console.error('[ScanARKit] ❌ Error calculating angles:', error);
@@ -898,7 +824,7 @@ export default function ScanARKitScreen() {
     }
     // DEV is a stable constant; pullUpMetrics would cause infinite loop (read + set in same effect)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pose, transitionPhase, updatePullUpCycle, updatePushUpCycle, detectionMode]);
+  }, [pose, transitionPhase, updateWorkoutCycle, resetRepTracking, detectionMode]);
 
   // Debug pose2D updates
   useEffect(() => {
@@ -981,6 +907,7 @@ export default function ScanARKitScreen() {
       repStateRef.current = 'idle';
       phaseRef.current = 'idle';
       transitionPhase('idle');
+      resetRepTracking();
       setRepCount(0);
       setPullUpMetrics(null);
       lastRepTimestampRef.current = 0;
@@ -1058,6 +985,7 @@ export default function ScanARKitScreen() {
       phaseRef.current = 'idle';
       transitionPhase('idle');
       lastRepTimestampRef.current = 0;
+      resetRepTracking();
       pushUpStateRef.current = 'setup';
       setPushUpPhase('setup');
       setPushUpReps(0);
