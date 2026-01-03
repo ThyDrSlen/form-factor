@@ -88,6 +88,29 @@ export interface RepContext {
 }
 
 // =============================================================================
+// Scoring Metrics (FQI Extraction)
+// =============================================================================
+
+export interface RepAngleWindow {
+  start: JointAngles;
+  end: JointAngles;
+  min: JointAngles;
+  max: JointAngles;
+}
+
+export interface ScoringMetricSnapshot {
+  start: number;
+  end: number;
+  min: number;
+  max: number;
+}
+
+export interface ScoringMetricDefinition {
+  id: string;
+  extract: (repAngles: RepAngleWindow, side: 'left' | 'right') => ScoringMetricSnapshot;
+}
+
+// =============================================================================
 // Fault Definitions
 // =============================================================================
 
@@ -193,6 +216,9 @@ export interface WorkoutDefinition<
 
   /** Ideal angle ranges for key joints */
   angleRanges: Record<string, AngleRange>;
+
+  /** Scoring metric extractors for generalized FQI calculation */
+  scoringMetrics?: ScoringMetricDefinition[];
 
   /** Detectable form faults */
   faults: FaultDefinition[];
