@@ -19,7 +19,7 @@ export interface PoseSample {
   frameTimestamp: number;
   exerciseMode: 'pullup' | 'pushup' | string;
   phase: string;
-  repNumber: number;
+  repNumber: number | null;
   angles: JointAngles;
   positions?: Record<string, { x: number; y: number; z: number }>;
   fpsAtCapture?: number;
@@ -100,7 +100,7 @@ async function flushBuffer(): Promise<void> {
         frame_timestamp: sample.frameTimestamp,
         exercise_mode: sample.exerciseMode,
         phase: sample.phase,
-        rep_number: sample.repNumber,
+        rep_number: sample.repNumber ?? null,
         // Joint angles
         left_elbow_deg: sample.angles.leftElbow,
         right_elbow_deg: sample.angles.rightElbow,

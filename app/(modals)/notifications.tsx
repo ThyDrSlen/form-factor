@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Switch, ActivityIndicator, Linking, Platform } from 'react-native';
+import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Switch, ActivityIndicator, Linking, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 // import * as Notifications from 'expo-notifications';
-import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
+import { useSafeBack } from '@/hooks/use-safe-back';
 import {
   loadNotificationPreferences,
   registerDevicePushToken,
@@ -18,9 +18,9 @@ type PermissionState = 'granted' | 'undetermined' | 'denied';
 type ToggleKey = 'comments' | 'likes' | 'reminders';
 
 export default function NotificationSettingsModal() {
-  const router = useRouter();
   const { user } = useAuth();
   const toast = useToast();
+  const safeBack = useSafeBack(['/(tabs)/profile', '/profile'], { alwaysReplace: true });
   const [permission, setPermission] = useState<PermissionState>('undetermined');
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
@@ -58,6 +58,15 @@ export default function NotificationSettingsModal() {
 
     bootstrap();
   }, [toast, user?.id]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      safeBack();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [safeBack]);
 
   const handleEnable = async () => {
     if (!user?.id) return;
@@ -120,7 +129,7 @@ export default function NotificationSettingsModal() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.iconButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.iconButton} onPress={safeBack}>
           <Ionicons name="close" size={22} color="#9AACD1" />
         </TouchableOpacity>
         <Text style={styles.title}>Notifications</Text>

@@ -9,13 +9,14 @@
  * The weights for each component are defined per workout in WorkoutDefinition.fqiWeights
  */
 
-import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 import type {
   WorkoutDefinition,
   FQIWeights,
   FaultDefinition,
   RepContext,
   AngleRange,
+  RepAngleWindow,
+  ScoringMetricDefinition,
 } from '@/lib/types/workout-definitions';
 import type { RepFeatures } from '@/lib/types/telemetry';
 
@@ -36,16 +37,7 @@ export interface FQIResult {
   detectedFaults: string[];
 }
 
-export interface RepAngles {
-  /** Angles at rep start */
-  start: JointAngles;
-  /** Angles at rep end */
-  end: JointAngles;
-  /** Minimum angles reached during rep */
-  min: JointAngles;
-  /** Maximum angles reached during rep */
-  max: JointAngles;
-}
+export type RepAngles = RepAngleWindow;
 
 // =============================================================================
 // ROM Score Calculation
@@ -59,9 +51,31 @@ export interface RepAngles {
  */
 function calculateRomScore(
   repAngles: RepAngles,
-  angleRanges: Record<string, AngleRange>
+  angleRanges: Record<string, AngleRange>,
+  scoringMetrics?: ScoringMetricDefinition[]
 ): number {
   const scores: number[] = [];
+
+  if (scoringMetrics && scoringMetrics.length > 0) {
+    for (const metric of scoringMetrics) {
+      const range = angleRanges[metric.id];
+      if (!range) continue;
+
+      const left = metric.extract(repAngles, 'left');
+      const right = metric.extract(repAngles, 'right');
+
+      const avgMin = (left.min + right.min) / 2;
+      const avgMax = (left.max + right.max) / 2;
+      const actualRom = Math.abs(avgMax - avgMin);
+      const targetRom = range.max - range.min;
+
+      const romPercentage = Math.min(1, actualRom / targetRom);
+      scores.push(romPercentage * 100);
+    }
+
+    if (scores.length === 0) return 100;
+    return scores.reduce((a, b) => a + b, 0) / scores.length;
+  }
 
   // Check elbow ROM if defined
   if (angleRanges.elbow) {
@@ -121,9 +135,34 @@ function calculateRomScore(
  */
 function calculateDepthScore(
   repAngles: RepAngles,
-  angleRanges: Record<string, AngleRange>
+  angleRanges: Record<string, AngleRange>,
+  scoringMetrics?: ScoringMetricDefinition[]
 ): number {
   const scores: number[] = [];
+
+  if (scoringMetrics && scoringMetrics.length > 0) {
+    for (const metric of scoringMetrics) {
+      const range = angleRanges[metric.id];
+      if (!range) continue;
+
+      const left = metric.extract(repAngles, 'left');
+      const right = metric.extract(repAngles, 'right');
+
+      const avgMin = (left.min + right.min) / 2;
+      const deviation = Math.abs(avgMin - range.optimal);
+      const tolerance = range.tolerance;
+
+      if (deviation <= tolerance) {
+        scores.push(100);
+      } else {
+        const penalty = (deviation - tolerance) * 2;
+        scores.push(Math.max(0, 100 - penalty));
+      }
+    }
+
+    if (scores.length === 0) return 100;
+    return scores.reduce((a, b) => a + b, 0) / scores.length;
+  }
 
   // For movements like pull-ups and push-ups, depth is measured by minimum elbow angle
   if (angleRanges.elbow) {
@@ -233,8 +272,8 @@ export function calculateFqi(
   };
 
   // Calculate component scores
-  const romScore = calculateRomScore(repAngles, workoutDef.angleRanges);
-  const depthScore = calculateDepthScore(repAngles, workoutDef.angleRanges);
+  const romScore = calculateRomScore(repAngles, workoutDef.angleRanges, workoutDef.scoringMetrics);
+  const depthScore = calculateDepthScore(repAngles, workoutDef.angleRanges, workoutDef.scoringMetrics);
   const { faultIds, totalPenalty } = detectFaults(repContext, workoutDef.faults);
 
   // Calculate weighted FQI

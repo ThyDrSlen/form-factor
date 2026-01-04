@@ -230,8 +230,8 @@ const styles = StyleSheet.create({
     color: '#6781A6',
   },
   progressSection: {
-    marginTop: 32,
-    gap: 24,
+    marginTop: 24,
+    gap: 20,
   },
   progressTitle: {
     fontSize: 18,

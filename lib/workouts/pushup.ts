@@ -19,6 +19,7 @@ import type {
   AngleRange,
   WorkoutMetrics,
   RepContext,
+  ScoringMetricDefinition,
 } from '@/lib/types/workout-definitions';
 
 // =============================================================================
@@ -75,6 +76,47 @@ const angleRanges: Record<string, AngleRange> = {
     tolerance: 10,
   },
 };
+
+const scoringMetrics: ScoringMetricDefinition[] = [
+  {
+    id: 'elbow',
+    extract: (rep, side) => {
+      if (side === 'left') {
+        return {
+          start: rep.start.leftElbow,
+          end: rep.end.leftElbow,
+          min: rep.min.leftElbow,
+          max: rep.max.leftElbow,
+        };
+      }
+      return {
+        start: rep.start.rightElbow,
+        end: rep.end.rightElbow,
+        min: rep.min.rightElbow,
+        max: rep.max.rightElbow,
+      };
+    },
+  },
+  {
+    id: 'hip',
+    extract: (rep, side) => {
+      if (side === 'left') {
+        return {
+          start: rep.start.leftHip,
+          end: rep.end.leftHip,
+          min: rep.min.leftHip,
+          max: rep.max.leftHip,
+        };
+      }
+      return {
+        start: rep.start.rightHip,
+        end: rep.end.rightHip,
+        min: rep.min.rightHip,
+        max: rep.max.rightHip,
+      };
+    },
+  },
+];
 
 // =============================================================================
 // Phase Definitions
@@ -345,6 +387,7 @@ export const pushupDefinition: WorkoutDefinition<PushUpPhase, PushUpMetrics> = {
   repBoundary,
   thresholds: PUSHUP_THRESHOLDS,
   angleRanges,
+  scoringMetrics,
   faults,
   fqiWeights,
 
