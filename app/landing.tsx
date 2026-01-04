@@ -127,7 +127,7 @@ export default function LandingPage() {
           <View style={styles.heroMock}>
             <LinearGradient colors={['#0b1b34', '#10335c'] as const} style={styles.heroMockCard}>
               <View style={styles.heroMockHeader}>
-                <Text style={styles.heroMockTitle}>Live rep scan</Text>
+                <Text style={styles.heroMockTitle}>Live rep analysis</Text>
                 <Text style={styles.heroMockMeta}>ARKit + Vision Camera</Text>
               </View>
               <View style={styles.mockVideo}>

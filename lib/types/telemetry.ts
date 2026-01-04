@@ -99,7 +99,7 @@ export interface FrameSample {
   /** Current movement phase */
   phase?: string;
   /** Current rep number */
-  repNumber?: number;
+  repNumber?: number | null;
   /** FPS at capture time */
   fpsAtCapture?: number;
 }
