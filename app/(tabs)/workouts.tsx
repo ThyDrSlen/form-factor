@@ -6,7 +6,6 @@ import { DeleteAction } from '@/components';
 import React, { useCallback, useRef } from 'react';
 import {
     ActivityIndicator,
-    Animated,
     FlatList,
     RefreshControl,
     ScrollView,
@@ -18,7 +17,7 @@ import {
 import { Swipeable } from 'react-native-gesture-handler';
 import { useWorkouts, type Workout } from '../../contexts/WorkoutsContext';
 import { useToast } from '../../contexts/ToastContext';
-import { CARD_HEIGHT, styles } from '../../styles/tabs/_workouts.styles';
+import { styles } from '../../styles/tabs/_workouts.styles';
 
 const buildWorkoutShareMessage = (workout: Workout): string => {
   const workoutDate = workout.date ? new Date(workout.date) : null;
@@ -36,13 +35,10 @@ const buildWorkoutShareMessage = (workout: Workout): string => {
   return [...lines, '', 'Shared from Form Factor'].join('\n');
 };
 
-const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as unknown as React.ComponentType<React.ComponentProps<typeof Animated.FlatList<Workout>>>;
-
 export default function WorkoutsScreen() {
   const router = useRouter();
   const { workouts, loading, refreshWorkouts, deleteWorkout } = useWorkouts();
   const { show: showToast } = useToast();
-  const scrollY = useRef(new Animated.Value(0)).current;
   const refreshing = useRef(false);
   const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
 
@@ -100,25 +96,8 @@ export default function WorkoutsScreen() {
     [showToast]
   );
 
-  const renderItem = (info: { item: Workout; index: number }) => {
-    const { item, index } = info;
-    const inputRange = [
-      -1,
-      0,
-      CARD_HEIGHT * index,
-      CARD_HEIGHT * (index + 2),
-    ];
-
-    const opacity = scrollY.interpolate({
-      inputRange,
-      outputRange: [1, 1, 1, 0],
-    });
-
-    const scale = scrollY.interpolate({
-      inputRange,
-      outputRange: [1, 1, 1, 0.9],
-    });
-
+  const renderItem = (info: { item: Workout }) => {
+    const { item } = info;
     return (
       <Swipeable 
         ref={(ref) => {
@@ -128,7 +107,7 @@ export default function WorkoutsScreen() {
         }}
         renderRightActions={() => renderRightActions(item.id, item.exercise)}
       >
-        <Animated.View style={[styles.card, { opacity, transform: [{ scale }] }]}>
+        <View style={styles.card}>
           <TouchableOpacity 
             activeOpacity={0.9}
             onPress={() => {
@@ -214,7 +193,7 @@ export default function WorkoutsScreen() {
             </View>
           </LinearGradient>
           </TouchableOpacity>
-        </Animated.View>
+        </View>
       </Swipeable>
     );
   };
@@ -257,17 +236,12 @@ export default function WorkoutsScreen() {
           </TouchableOpacity>
         </ScrollView>
       ) : (
-        <AnimatedFlatList
+        <FlatList
           data={workouts}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-            { useNativeDriver: true }
-          )}
-          scrollEventThrottle={16}
           refreshControl={
             <RefreshControl
               refreshing={refreshing.current}

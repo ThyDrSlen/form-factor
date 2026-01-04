@@ -19,6 +19,7 @@ env:
   BUN_VERSION: '1.2.22'
 
 jobs:
+  # credit savings: no EAS builds on PR; rely on local pre-push + CI quality checks
   # Job 1: Code Quality & Testing
   quality:
     name: Code Quality & Testing
@@ -126,12 +127,13 @@ jobs:
         if: ${{ steps.expo_token.outputs.missing == 'false' }}
         run: eas config --platform ios --profile preview
 
-  # Job 3: Preview Build (PR only)
-  build-preview:
-    name: Build Preview
+  upload-production:
+    name: Local production upload
     runs-on: ubuntu-latest
-    needs: [quality, build-check]
-    if: github.event_name == 'pull_request'
+    needs: [build-check]
+    if: github.ref == 'refs/heads/main'
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -167,26 +169,8 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build iOS preview
-        run: eas build --platform ios --profile preview --non-interactive
-
-      - name: Comment PR with build info
-        uses: actions/github-script@v7
-        if: success() && github.event_name == 'pull_request'
-        with:
-          script: |
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## 📱 iOS Preview Build Complete!
-            
-            **Platform:** iOS
-            **Profile:** preview
-            **Commit:** \`${{ github.sha }}\`
-            
-            Check [EAS Dashboard](https://expo.dev) for build download.`
-            });
+      - name: Local EAS production upload (iOS)
+        run: bunx eas upload --platform ios --profile production --local --non-interactive
 
   # Job 4: Staging Deployment
   deploy-staging:
