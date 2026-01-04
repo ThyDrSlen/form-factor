@@ -540,6 +540,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 4,
     flex: 1,
+    marginBottom: 12,
   },
   timeRangeButton: {
     flex: 1,

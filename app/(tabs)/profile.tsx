@@ -427,7 +427,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
           <TouchableOpacity
             style={feedStyles.engagementGroup}
-            onPress={() => router.push(`/(modals)/video-comments?videoId=${item.id}`)}
+            onPress={() => router.push(`/(modals)/video-comments?videoId=${item.id}&returnTo=profile`)}
             activeOpacity={0.8}
           >
             <Ionicons name="chatbubble-ellipses-outline" size={18} color="#9AACD1" />
@@ -684,7 +684,7 @@ Generated: ${new Date().toISOString()}
             <Text style={styles.refreshText}>{loadingVideos ? 'Loading...' : 'Refresh'}</Text>
           </TouchableOpacity>
         </View>
-        <View style={feedStyles.feedContainer}>
+        <View style={[feedStyles.feedContainer, styles.profileFeedContainer]}>
           {loadingVideos && !hasFetchedOnce ? (
             <View style={feedStyles.feedLoading}>
               <ActivityIndicator color="#4C8CFF" />
@@ -702,7 +702,7 @@ Generated: ${new Date().toISOString()}
           ) : null}
 
           {videos.length > 0 ? (
-            <View style={feedStyles.feedListContent}>
+            <View style={[feedStyles.feedListContent, styles.profileFeedListContent]}>
               {videos.map(renderVideoCard)}
             </View>
           ) : null}

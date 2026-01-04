@@ -10,11 +10,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
+import { useSafeBack } from '@/hooks/use-safe-back';
 import {
   addVideoComment,
   fetchVideoComments,
@@ -27,10 +28,8 @@ import { emitCommentEvent } from '@/lib/video-comments-events';
 import { formatRelativeTime, getFormLabel, getFormScore } from '@/lib/video-feed';
 import { styles } from '../../styles/modals/_video-comments.styles';
 
-type SortMode = 'top' | 'newest';
-
 export default function VideoCommentsModal() {
-  const { videoId } = useLocalSearchParams<{ videoId?: string }>();
+  const { videoId, returnTo } = useLocalSearchParams<{ videoId?: string; returnTo?: string }>();
   const { user } = useAuth();
   const { show: showToast } = useToast();
   const [video, setVideo] = useState<VideoWithUrls | null>(null);
@@ -38,7 +37,6 @@ export default function VideoCommentsModal() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [commentInput, setCommentInput] = useState('');
-  const [sortMode, setSortMode] = useState<SortMode>('newest');
   const isFocused = useIsFocused();
 
   const displayName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'You';
@@ -49,18 +47,22 @@ export default function VideoCommentsModal() {
     return video?.comment_count ?? 0;
   }, [comments.length, video?.comment_count]);
 
+  const fallbackPaths = useMemo(() => {
+    if (returnTo === 'profile') {
+      return ['/(tabs)/profile', '/profile'];
+    }
+    return ['/(tabs)/index', '/'];
+  }, [returnTo]);
+
+  const safeBack = useSafeBack(fallbackPaths);
+
   const sortedComments = useMemo(() => {
-    const next = [...comments];
-    next.sort((a, b) => {
+    return [...comments].sort((a, b) => {
       const aTs = new Date(a.created_at).getTime();
       const bTs = new Date(b.created_at).getTime();
-      if (sortMode === 'top') {
-        return bTs - aTs;
-      }
       return bTs - aTs;
     });
-    return next;
-  }, [comments, sortMode]);
+  }, [comments]);
 
   const summaryData = useMemo(() => {
     if (!video) return null;
@@ -204,28 +206,10 @@ export default function VideoCommentsModal() {
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity onPress={safeBack}>
             <Ionicons name="chevron-back" size={22} color="#9AACD1" />
           </TouchableOpacity>
           <Text style={styles.topTitle}>Comments {commentCount}</Text>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={styles.topAction}>Close</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.filterRow}>
-          <TouchableOpacity
-            style={[styles.filterButton, sortMode === 'top' && styles.filterButtonActive]}
-            onPress={() => setSortMode('top')}
-          >
-            <Text style={[styles.filterText, sortMode === 'top' && styles.filterTextActive]}>Top</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterButton, sortMode === 'newest' && styles.filterButtonActive]}
-            onPress={() => setSortMode('newest')}
-          >
-            <Text style={[styles.filterText, sortMode === 'newest' && styles.filterTextActive]}>Newest</Text>
-          </TouchableOpacity>
         </View>
 
         {loading ? (

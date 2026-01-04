@@ -46,6 +46,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
   feedTopLeft: {
     flexDirection: 'row',
@@ -308,37 +309,12 @@ export const styles = StyleSheet.create({
   feedContainer: {
     flex: 1,
     marginTop: spacing.md,
-    marginHorizontal: -spacing.sm,
+    marginHorizontal: -spacing.lg,
   },
   feedListContent: {
     paddingBottom: 120,
     gap: spacing.md,
-    paddingHorizontal: spacing.sm,
-  },
-  feedFilterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  feedFilterButton: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 4,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  feedFilterButtonActive: {
-    backgroundColor: 'rgba(76, 140, 255, 0.25)',
-    borderColor: 'rgba(76, 140, 255, 0.35)',
-  },
-  feedFilterText: {
-    color: tabColors.textSecondary,
-    fontWeight: '600',
-  },
-  feedFilterTextActive: {
-    color: tabColors.textPrimary,
   },
   feedMeta: {
     color: tabColors.textSecondary,

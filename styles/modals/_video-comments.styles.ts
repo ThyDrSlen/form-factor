@@ -10,7 +10,8 @@ export const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: spacing.md,
+    justifyContent: 'flex-start',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
@@ -20,36 +21,6 @@ export const styles = StyleSheet.create({
     color: tabColors.textPrimary,
     fontSize: 18,
     fontWeight: '600',
-  },
-  topAction: {
-    color: tabColors.textSecondary,
-    fontSize: 15,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  filterButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 4,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  filterButtonActive: {
-    backgroundColor: 'rgba(76, 140, 255, 0.25)',
-    borderColor: 'rgba(76, 140, 255, 0.35)',
-  },
-  filterText: {
-    color: tabColors.textSecondary,
-    fontWeight: '600',
-  },
-  filterTextActive: {
-    color: tabColors.textPrimary,
   },
   listContent: {
     paddingHorizontal: spacing.lg,

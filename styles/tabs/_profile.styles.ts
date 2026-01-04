@@ -77,6 +77,12 @@ export const styles = StyleSheet.create({
     letterSpacing: 0.5,
     fontFamily: getFontFamily('medium'),
   },
+  profileFeedContainer: {
+    marginHorizontal: 0,
+  },
+  profileFeedListContent: {
+    paddingHorizontal: 0,
+  },
   menuGroup: {
     gap: spacing.sm,
   },
