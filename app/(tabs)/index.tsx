@@ -275,7 +275,6 @@ export default function HomeScreen() {
   const [coachError, setCoachError] = useState<string | null>(null);
   const [coachSending, setCoachSending] = useState(false);
   const coachListRef = useRef<FlatList<CoachMessage>>(null);
-  const [feedFilter, setFeedFilter] = useState<'following' | 'trending'>('trending');
   const subtitle = useMemo(() => {
     const index = Math.floor(Math.random() * motivationalMessages.length);
     return motivationalMessages[index];
@@ -594,7 +593,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.engagementGroup}
-            onPress={() => router.push(`/(modals)/video-comments?videoId=${item.id}`)}
+            onPress={() => router.push(`/(modals)/video-comments?videoId=${item.id}&returnTo=videos`)}
             activeOpacity={0.8}
           >
             <Ionicons name="chatbubble-ellipses-outline" size={18} color="#9AACD1" />
@@ -691,24 +690,6 @@ export default function HomeScreen() {
 
   const renderVideoFeed = () => (
     <View style={styles.feedContainer}>
-      <View style={styles.feedFilterRow}>
-        <TouchableOpacity
-          style={[styles.feedFilterButton, feedFilter === 'following' && styles.feedFilterButtonActive]}
-          onPress={() => setFeedFilter('following')}
-        >
-          <Text style={[styles.feedFilterText, feedFilter === 'following' && styles.feedFilterTextActive]}>
-            Following
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.feedFilterButton, feedFilter === 'trending' && styles.feedFilterButtonActive]}
-          onPress={() => setFeedFilter('trending')}
-        >
-          <Text style={[styles.feedFilterText, feedFilter === 'trending' && styles.feedFilterTextActive]}>
-            Trending
-          </Text>
-        </TouchableOpacity>
-      </View>
       {loadingVideos && !hasFetchedOnce ? (
         <View style={styles.feedLoading}>
           <ActivityIndicator color="#4C8CFF" />
