@@ -207,7 +207,7 @@ jobs:
   # Job 5: Production Deployment
   deploy-production:
     name: Deploy to Production
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     needs: [quality, build-check]
     if: github.ref == 'refs/heads/main'
     environment: production
