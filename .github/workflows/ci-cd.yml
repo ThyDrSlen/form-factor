@@ -189,12 +189,21 @@ jobs:
 
       - name: Ensure hermesc is available
         run: |
-          HERMESC_SRC="node_modules/hermes-compiler/hermesc/linux64-bin/hermesc"
-          HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/linux64-bin"
-          if [ ! -f "$HERMESC_SRC" ]; then
-            echo "hermesc not found at $HERMESC_SRC"
+          set -euo pipefail
+          HERMESC_SRC="$(find node_modules/hermes-compiler -type f -name hermesc 2>/dev/null | head -n 1 || true)"
+          if [ -z "$HERMESC_SRC" ]; then
+            echo "hermesc not found under node_modules/hermes-compiler"
             ls -la node_modules/hermes-compiler/hermesc || true
             exit 1
+          fi
+          if [[ "$HERMESC_SRC" == *linux* ]]; then
+            HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/linux64-bin"
+          else
+            if [ -d "node_modules/react-native/sdks/hermesc/macos-bin" ]; then
+              HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/macos-bin"
+            else
+              HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/osx-bin"
+            fi
           fi
           mkdir -p "$HERMESC_DEST_DIR"
           ln -sf "$PWD/$HERMESC_SRC" "$HERMESC_DEST_DIR/hermesc"
@@ -283,12 +292,21 @@ jobs:
 
       - name: Ensure hermesc is available
         run: |
-          HERMESC_SRC="node_modules/hermes-compiler/hermesc/linux64-bin/hermesc"
-          HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/linux64-bin"
-          if [ ! -f "$HERMESC_SRC" ]; then
-            echo "hermesc not found at $HERMESC_SRC"
+          set -euo pipefail
+          HERMESC_SRC="$(find node_modules/hermes-compiler -type f -name hermesc 2>/dev/null | head -n 1 || true)"
+          if [ -z "$HERMESC_SRC" ]; then
+            echo "hermesc not found under node_modules/hermes-compiler"
             ls -la node_modules/hermes-compiler/hermesc || true
             exit 1
+          fi
+          if [[ "$HERMESC_SRC" == *linux* ]]; then
+            HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/linux64-bin"
+          else
+            if [ -d "node_modules/react-native/sdks/hermesc/macos-bin" ]; then
+              HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/macos-bin"
+            else
+              HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/osx-bin"
+            fi
           fi
           mkdir -p "$HERMESC_DEST_DIR"
           ln -sf "$PWD/$HERMESC_SRC" "$HERMESC_DEST_DIR/hermesc"
