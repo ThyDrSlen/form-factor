@@ -36,6 +36,7 @@
         "expo-video-thumbnails": "~10.0.8",
         "expo-web-browser": "~15.0.8",
         "ff-healthkit": "file:modules/ff-healthkit",
+        "ff-watch-connectivity": "file:modules/ff-watch-connectivity",
         "moti": "^0.30.0",
         "nativewind": "^4.2.1",
         "react": "19.2.3",
@@ -1311,6 +1312,8 @@
     "fdir": ["fdir@6.5.0", "", { "peerDependencies": { "picomatch": "^3 || ^4" }, "optionalPeers": ["picomatch"] }, "sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg=="],
 
     "ff-healthkit": ["ff-healthkit@file:modules/ff-healthkit", {}],
+
+    "ff-watch-connectivity": ["ff-watch-connectivity@file:modules/ff-watch-connectivity", { "devDependencies": { "expo-modules-core": "*" }, "peerDependencies": { "expo": "*", "react": "*", "react-native": "*" } }],
 
     "file-entry-cache": ["file-entry-cache@8.0.0", "", { "dependencies": { "flat-cache": "^4.0.0" } }, "sha512-XXTUwCvisa5oacNGRP9SfNtYBNAMi+RPwBFmblZEF7N7swHYQS6/Zfk7SRwx4D5j3CH211YNRco1DEMNVfZCnQ=="],
 
