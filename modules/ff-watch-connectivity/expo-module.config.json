@@ -1,0 +1,8 @@
+{
+  "name": "ff-watch-connectivity",
+  "platforms": ["apple"],
+  "apple": {
+    "modules": ["FFWatchConnectivityModule"],
+    "podspecPath": "ff-watch-connectivity.podspec"
+  }
+}

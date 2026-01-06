@@ -92,6 +92,11 @@ node_modules/
 android/*
 build/
 
+.cursor/
+
+.windsurf/
+
+.cursorignore
 # Logs / coverage / tests
 *.log
 npm-debug.log*
