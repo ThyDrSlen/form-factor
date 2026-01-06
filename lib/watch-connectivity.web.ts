@@ -17,7 +17,15 @@ export const updateApplicationContext = (context: any) => {
 };
 
 export function updateWatchContext(patch: Record<string, any>) {
-  latestWatchContext = { ...latestWatchContext, ...patch };
+  for (const [key, value] of Object.entries(patch ?? {})) {
+    if (value === null) {
+      delete latestWatchContext[key];
+      continue;
+    }
+    if (value !== undefined) {
+      latestWatchContext[key] = value;
+    }
+  }
   updateApplicationContext(latestWatchContext);
 }
 
