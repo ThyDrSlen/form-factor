@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+set -e
 . "$(dirname "$0")/_/husky.sh"
 
 if [ "${CI_LOCAL_SKIP:-}" = "1" ]; then
@@ -8,3 +9,15 @@ fi
 
 echo "🚀 Running full CI checks before push..."
 python3 scripts/ci_local.py --quick
+
+# Run an iOS "preview" build locally (no EAS cloud build credits).
+# Skip with: CI_LOCAL_SKIP_EAS_PREVIEW_LOCAL=1 git push
+if [ "${CI_LOCAL_SKIP_EAS_PREVIEW_LOCAL:-}" = "1" ]; then
+  echo "⏭️  Skipping EAS local iOS preview build (CI_LOCAL_SKIP_EAS_PREVIEW_LOCAL=1)"
+elif [ "$(uname -s)" != "Darwin" ]; then
+  echo "⚠️  Skipping EAS local iOS preview build (requires macOS)"
+else
+  echo "🏗️  Running EAS local iOS preview build..."
+  mkdir -p build
+  bunx eas build --platform ios --profile preview --local --non-interactive --output build/eas-preview.ipa
+fi

@@ -30,6 +30,11 @@ Form Factor is an iOS-first fitness and health app built with Expo and Supabase.
 4) Variants map to `APP_VARIANT` in `eas.json` (`development`, `preview`, `staging`, `production`).  
 5) Supabase CLI users: set `SUPABASE_*` values from `.env.example` before running migrations or Edge Functions locally.
 
+## EAS Build Policy
+- `eas build` does **not** run for pull requests; paid builds happen on `main` after merge (and on `develop` if you keep staging deploys automatic).
+- Every PR must pass the Husky `pre-push` hook locally (runs `python3 scripts/ci_local.py --quick`, then a local iOS preview build).
+- You can run `bun run ci:push` anytime to reproduce the hook, or `bun run preview:local:submit` to build locally and upload/submit the same `.ipa`.
+
 ## Testing and QA
 - Lint/types: `bun run lint`, `bun run check:types`, `bun run check:dead-code`.
 - Unit: `bun run test` (Jest + Testing Library).
