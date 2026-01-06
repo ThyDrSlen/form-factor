@@ -82,9 +82,6 @@ Logs in terminal dont include timestamp making difficult to determine what actio
 
 
 
-# get rid of coach tab on home  have it just be the sparkle emoji should prob replace with a better "coach" emoji
-
-
 ## Code Quality
 
 ### Utility Consolidation

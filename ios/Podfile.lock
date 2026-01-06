@@ -103,6 +103,8 @@ PODS:
   - FBLazyVector (0.83.1)
   - ff-healthkit (0.1.0):
     - ExpoModulesCore
+  - ff-watch-connectivity (0.1.0):
+    - ExpoModulesCore
   - hermes-engine (0.14.0):
     - hermes-engine/Pre-built (= 0.14.0)
   - hermes-engine/Pre-built (0.14.0)
@@ -2309,6 +2311,7 @@ DEPENDENCIES:
   - ExpoWebBrowser (from `../node_modules/expo-web-browser/ios`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
   - ff-healthkit (from `../modules/ff-healthkit`)
+  - ff-watch-connectivity (from `../modules/ff-watch-connectivity`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
   - RCTDeprecation (from `../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
   - RCTRequired (from `../node_modules/react-native/Libraries/Required`)
@@ -2451,6 +2454,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/Libraries/FBLazyVector"
   ff-healthkit:
     :path: "../modules/ff-healthkit"
+  ff-watch-connectivity:
+    :path: "../modules/ff-watch-connectivity"
   hermes-engine:
     :podspec: "../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec"
     :tag: hermes-v0.14.0
@@ -2645,6 +2650,7 @@ SPEC CHECKSUMS:
   ExpoWebBrowser: d04a0d6247a0bea4519fbc2ea816610019ad83e0
   FBLazyVector: 3a7ea85f6009224ad89f7daeda516f189e6b5759
   ff-healthkit: 01ff427f0d4a93119f837dae9d57be701a97b786
+  ff-watch-connectivity: 00c8f450fef712d16b00f19ea0f3224d5556a223
   hermes-engine: fe4f424b067e1d13fb76064d763f3b70297a8eb1
   RCTDeprecation: a93fe21ed2fd99e13bf3b011390d1e9769c83d23
   RCTRequired: 176145d35686c966863f268c0f938f58ae23dc78

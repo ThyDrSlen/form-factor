@@ -29,6 +29,7 @@ import {
   getIsWatchAppInstalled,
   getReachability,
 } from '@/lib/watch-connectivity';
+import { buildWatchTrackingPayload } from '@/lib/watch-connectivity/tracking-payload';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D } from '@/lib/arkit/ARKitBodyTracker';
@@ -222,6 +223,8 @@ export default function ScanARKitScreen() {
   const [watchReachable, setWatchReachable] = useState(false);
   const watchMirrorTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const watchMirrorInFlightRef = React.useRef(false);
+  const watchTrackingPublishAtRef = React.useRef(0);
+  const watchTrackingSignatureRef = React.useRef<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -1312,10 +1315,67 @@ export default function ScanARKitScreen() {
 
     // Watch Connectivity: Sync state
     useEffect(() => {
-      const currentReps = detectionMode === 'pullup' ? repCount : pushUpReps;
-      sendMessage({ isTracking: !!isTracking, reps: currentReps });
-      updateWatchContext({ isTracking: !!isTracking, reps: currentReps });
-    }, [isTracking, repCount, pushUpReps, detectionMode]);
+      if (Platform.OS !== 'ios') {
+        return;
+      }
+      if (!watchPaired || !watchInstalled) {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - watchTrackingPublishAtRef.current < 250) {
+        return;
+      }
+
+      const reps = detectionMode === 'pullup' ? repCount : pushUpReps;
+      const phase = detectionMode === 'pullup' ? pullUpPhase : pushUpPhase;
+      let metrics: Record<string, number | null>;
+      if (detectionMode === 'pullup') {
+        metrics = {
+          avgElbowDeg: pullUpMetrics?.avgElbow ?? null,
+          avgShoulderDeg: pullUpMetrics?.avgShoulder ?? null,
+          headToHand: pullUpMetrics?.headToHand ?? null,
+        };
+      } else {
+        metrics = {
+          avgElbowDeg: pushUpMetrics?.avgElbow ?? null,
+          hipDropRatio: pushUpMetrics?.hipDrop ?? null,
+        };
+      }
+
+      const payload = buildWatchTrackingPayload({
+        now,
+        isTracking: !!isTracking,
+        mode: detectionMode,
+        phase,
+        reps,
+        primaryCue: primaryCue ?? null,
+        metrics,
+      });
+
+      const signature = JSON.stringify(payload.tracking);
+      if (signature === watchTrackingSignatureRef.current) {
+        return;
+      }
+
+      watchTrackingSignatureRef.current = signature;
+      watchTrackingPublishAtRef.current = now;
+
+      sendMessage(payload);
+      updateWatchContext(payload);
+    }, [
+      detectionMode,
+      isTracking,
+      primaryCue,
+      pullUpMetrics,
+      pullUpPhase,
+      pushUpMetrics,
+      pushUpPhase,
+      repCount,
+      pushUpReps,
+      watchInstalled,
+      watchPaired,
+    ]);
 
     const uploadRecordedVideo = useCallback(async (payload: { uri: string; exercise: string; metrics: ClipUploadMetrics }) => {
       if (uploading) return false;

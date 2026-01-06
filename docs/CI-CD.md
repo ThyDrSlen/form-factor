@@ -24,14 +24,7 @@ The CI/CD pipeline provides automated testing, building, and deployment for your
   - EAS build configuration validation
   - Dry-run build test
 
-### 3. Preview Build (`build-preview`)
-- **Triggers**: Pull requests only
-- **Purpose**: Creates preview builds for testing
-- **Tasks**:
-  - Builds preview version using EAS
-  - Comments PR with build information
-
-### 4. Staging Deployment (`deploy-staging`)
+### 3. Staging Deployment (`deploy-staging`)
 - **Triggers**: Pushes to `develop` branch
 - **Purpose**: Deploys to staging environment
 - **Tasks**:
@@ -40,7 +33,7 @@ The CI/CD pipeline provides automated testing, building, and deployment for your
   - Deploys OTA update
   - Sends Slack notification
 
-### 5. Production Deployment (`deploy-production`)
+### 4. Production Deployment (`deploy-production`)
 - **Triggers**: Pushes to `main` branch
 - **Purpose**: Deploys to production environment
 - **Tasks**:
@@ -50,7 +43,7 @@ The CI/CD pipeline provides automated testing, building, and deployment for your
   - Creates GitHub release
   - Sends Slack notification
 
-### 6. Security Scan (`security`)
+### 5. Security Scan (`security`)
 - **Triggers**: After quality checks
 - **Purpose**: Scans for security vulnerabilities
 - **Tasks**:
@@ -100,7 +93,7 @@ Ensure your `eas.json` is properly configured with:
 | Push | `main` | Full pipeline + production deployment |
 | Push | `develop` | Full pipeline + staging deployment |
 | Push | Other | Quality checks + build verification |
-| Pull Request | Any | Quality checks + preview build |
+| Pull Request | Any | Quality checks + build verification (no EAS build) |
 
 ## Monitoring
 
