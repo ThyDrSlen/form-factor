@@ -122,6 +122,10 @@ export class BodyTracker {
 
   static stopTracking(): void {}
 
+  static setSubjectLockEnabled(_enabled: boolean): void {}
+
+  static resetSubjectLock(): void {}
+
   static async startRecording(_options?: { quality?: 'low' | 'medium' | 'high' }): Promise<void> {
     throw new Error('ARKit recording is only available on iOS');
   }

@@ -187,6 +187,20 @@ export class BodyTracker {
     ARKitBodyTracker.stopTracking();
   }
 
+  static setSubjectLockEnabled(enabled: boolean): void {
+    if (!ARKitBodyTracker || typeof ARKitBodyTracker.setSubjectLockEnabled !== 'function') {
+      return;
+    }
+    ARKitBodyTracker.setSubjectLockEnabled(enabled);
+  }
+
+  static resetSubjectLock(): void {
+    if (!ARKitBodyTracker || typeof ARKitBodyTracker.resetSubjectLock !== 'function') {
+      return;
+    }
+    ARKitBodyTracker.resetSubjectLock();
+  }
+
   /**
    * Start recording the ARKit camera feed while body tracking is running.
    * The recording is handled natively inside the AR session.

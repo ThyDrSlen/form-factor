@@ -112,6 +112,14 @@ export class BodyTracker {
     // No-op
   }
 
+  static setSubjectLockEnabled(_: boolean): void {
+    // No-op on web
+  }
+
+  static resetSubjectLock(): void {
+    // No-op on web
+  }
+
   static async getCurrentFrameSnapshot(_options?: { maxWidth?: number; quality?: number }): Promise<FrameSnapshot | null> {
     return null;
   }
