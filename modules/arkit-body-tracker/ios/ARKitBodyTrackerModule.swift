@@ -5,6 +5,7 @@ import UIKit
 import AVFoundation
 import CoreImage
 import ImageIO
+import QuartzCore
 
 // Represents a 3D joint with position and tracking state
 public struct Joint3D: Record {
@@ -121,6 +122,11 @@ public class ARKitBodyTrackerModule: Module {
   private let ciContext = CIContext(options: nil)
   fileprivate let sessionMaxDimension: CGFloat = 1920
   fileprivate let sessionMaxFps: Int = 30
+  fileprivate var subjectLockEnabled = true
+  fileprivate var lockedBodyAnchorId: UUID?
+  fileprivate var lockedBodyAnchorLastSeenTs: TimeInterval = 0
+  fileprivate var lockedMissingCount = 0
+  fileprivate let subjectLockTimeout: TimeInterval = 4.0
 
   fileprivate func computePose2DJoints(
     frame: ARFrame,
@@ -436,6 +442,29 @@ public class ARKitBodyTrackerModule: Module {
       }
       semaphore.wait()
       return diagnostics
+    }
+    
+    Function("setSubjectLockEnabled") { (enabled: Bool) in
+      DispatchQueue.main.async { [weak self] in
+        guard let self = self else { return }
+        self.subjectLockEnabled = enabled
+        if !enabled {
+          self.lockedBodyAnchorId = nil
+          self.lockedMissingCount = 0
+          self.lockedBodyAnchorLastSeenTs = 0
+        }
+        print("[ARKit] Subject lock \(enabled ? "enabled" : "disabled")")
+      }
+    }
+
+    Function("resetSubjectLock") { () in
+      DispatchQueue.main.async { [weak self] in
+        guard let self = self else { return }
+        self.lockedBodyAnchorId = nil
+        self.lockedMissingCount = 0
+        self.lockedBodyAnchorLastSeenTs = 0
+        print("[ARKit] Subject lock reset")
+      }
     }
     
     // Start ARKit body tracking session
@@ -785,6 +814,7 @@ public class ARKitBodyTrackerModule: Module {
 
         let quality = (options?["quality"] as? String)?.lowercased()
         let preset = recordingPreset(for: quality)
+        self.videoRecorder.recordingQualityLabel = quality ?? "medium"
         let resolution = configuration.videoFormat.imageResolution
         let scaledResolution = self.scaleRecordingResolution(resolution, maxDimension: preset.maxDimension)
         let width = Int(scaledResolution.width)
@@ -868,6 +898,9 @@ fileprivate final class ARVideoRecorder {
   private var lastPresentationTime = CMTime.zero
   private let timeScale: CMTimeScale = 600
   private var hasWrittenFrame = false
+  fileprivate var recordingQualityLabel: String = "unknown"
+  private var hasLoggedFrameMetrics = false
+  private var hasLoggedOverlayTransform = false
 
   func startRecording(
     width: Int,
@@ -933,6 +966,12 @@ fileprivate final class ARVideoRecorder {
     isRecording = true
     lastPresentationTime = .zero
     hasWrittenFrame = false
+    hasLoggedFrameMetrics = false
+    hasLoggedOverlayTransform = false
+
+    print(
+      "[ARVideoRecorder] Recording started – quality=\(recordingQualityLabel) width=\(width) height=\(height) fps=\(fps) presetMaxDim=\(preset.maxDimension)"
+    )
   }
 
   private func videoTransform(for orientation: UIInterfaceOrientation, width: Int, height: Int) -> CGAffineTransform {
@@ -978,38 +1017,93 @@ fileprivate final class ARVideoRecorder {
         writer.startSession(atSourceTime: timestamp)
       }
 
-      if writer.status == .writing && input.isReadyForMoreMediaData {
-        let pixelBuffer: CVPixelBuffer
-        if let pool = adaptor.pixelBufferPool {
-          var outputBuffer: CVPixelBuffer?
-          let result = CVPixelBufferPoolCreatePixelBuffer(nil, pool, &outputBuffer)
-          if result == kCVReturnSuccess, let outputBuffer {
-            let baseImage = CIImage(cvPixelBuffer: frame.capturedImage)
-            self.ciContext.render(baseImage, to: outputBuffer)
-            if let pose2D, !pose2D.isEmpty {
-              let viewToImageTransform: CGAffineTransform? = {
-                guard let viewportSize, viewportSize.width > 0, viewportSize.height > 0 else {
-                  return nil
-                }
-                // `displayTransform` maps from captured-image normalized space -> view normalized space.
-                // We want the inverse so we can render an overlay in captured-image space.
-                return frame.displayTransform(for: orientation, viewportSize: viewportSize).inverted()
-              }()
-              self.drawOverlay(on: outputBuffer, joints: pose2D, viewToImageTransform: viewToImageTransform)
-            }
-            pixelBuffer = outputBuffer
-          } else {
-            pixelBuffer = frame.capturedImage
-          }
-        } else {
-          pixelBuffer = frame.capturedImage
-        }
+      guard writer.status == .writing, input.isReadyForMoreMediaData else {
+        return
+      }
 
-        if adaptor.append(pixelBuffer, withPresentationTime: timestamp) {
-          self.hasWrittenFrame = true
-        } else if let error = writer.error {
-          print("[ARVideoRecorder] Failed to append frame: \(error.localizedDescription)")
+      var pixelBufferToAppend: CVPixelBuffer = frame.capturedImage
+
+      if let pool = adaptor.pixelBufferPool {
+        var outputBuffer: CVPixelBuffer?
+        let result = CVPixelBufferPoolCreatePixelBuffer(nil, pool, &outputBuffer)
+        if result == kCVReturnSuccess, let outputBuffer {
+          if !self.hasLoggedFrameMetrics {
+            let capturedWidth = CVPixelBufferGetWidth(frame.capturedImage)
+            let capturedHeight = CVPixelBufferGetHeight(frame.capturedImage)
+            let bufferWidth = CVPixelBufferGetWidth(outputBuffer)
+            let bufferHeight = CVPixelBufferGetHeight(outputBuffer)
+            print(
+              "[ARVideoRecorder] Frame sizes -> captured: \(capturedWidth)x\(capturedHeight), buffer: \(bufferWidth)x\(bufferHeight), quality: \(self.recordingQualityLabel)"
+            )
+            self.hasLoggedFrameMetrics = true
+          }
+
+          let baseImage = CIImage(cvPixelBuffer: frame.capturedImage)
+          let targetWidth = CGFloat(CVPixelBufferGetWidth(outputBuffer))
+          let targetHeight = CGFloat(CVPixelBufferGetHeight(outputBuffer))
+          let sourceExtent = baseImage.extent
+          let scaledImage: CIImage
+          if sourceExtent.width > 0 && sourceExtent.height > 0 {
+            let scaleX = targetWidth / sourceExtent.width
+            let scaleY = targetHeight / sourceExtent.height
+            let transform = CGAffineTransform(scaleX: scaleX, y: scaleY)
+            scaledImage = baseImage.transformed(by: transform)
+          } else {
+            scaledImage = baseImage
+          }
+
+          self.ciContext.render(scaledImage, to: outputBuffer)
+
+          if let pose2D, !pose2D.isEmpty {
+            let displayTransform: CGAffineTransform? = {
+              guard let viewportSize, viewportSize.width > 0, viewportSize.height > 0 else {
+                return nil
+              }
+              return frame.displayTransform(for: orientation, viewportSize: viewportSize)
+            }()
+
+            let viewToImageTransform = displayTransform?.inverted()
+            let viewTransformIsInPixels: Bool = {
+              guard let displayTransform else { return false }
+              let maxAbs = max(
+                abs(displayTransform.a),
+                abs(displayTransform.b),
+                abs(displayTransform.c),
+                abs(displayTransform.d)
+              )
+              // Normalized-space transforms are typically within ~[-2, 2].
+              // Pixel-space transforms usually include viewport-sized scalars.
+              return maxAbs > 2.0
+            }()
+
+            if !self.hasLoggedOverlayTransform {
+              let viewportLabel = viewportSize.map { "\($0.width)x\($0.height)" } ?? "nil"
+              let transformLabel = displayTransform.map {
+                "a=\($0.a) b=\($0.b) c=\($0.c) d=\($0.d) tx=\($0.tx) ty=\($0.ty)"
+              } ?? "nil"
+              print(
+                "[ARVideoRecorder] Overlay mapping -> viewport=\(viewportLabel) pixelsTransform=\(viewTransformIsInPixels) displayTransform=\(transformLabel)"
+              )
+              self.hasLoggedOverlayTransform = true
+            }
+
+            self.drawOverlay(
+              on: outputBuffer,
+              joints: pose2D,
+              viewToImageTransform: viewToImageTransform,
+              viewportSize: viewportSize,
+              viewTransformIsInPixels: viewTransformIsInPixels
+            )
+          }
+
+          pixelBufferToAppend = outputBuffer
         }
+      }
+
+      if adaptor.append(pixelBufferToAppend, withPresentationTime: timestamp) {
+        self.hasWrittenFrame = true
+      } else if let error = writer.error {
+        print("[ARVideoRecorder] Failed to append frame: \(error.localizedDescription)")
       }
     }
   }
@@ -1017,7 +1111,9 @@ fileprivate final class ARVideoRecorder {
   private func drawOverlay(
     on buffer: CVPixelBuffer,
     joints: [Joint2D],
-    viewToImageTransform: CGAffineTransform?
+    viewToImageTransform: CGAffineTransform?,
+    viewportSize: CGSize?,
+    viewTransformIsInPixels: Bool
   ) {
     CVPixelBufferLockBaseAddress(buffer, [])
     defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
@@ -1050,8 +1146,8 @@ fileprivate final class ARVideoRecorder {
     context.setLineCap(.round)
 
     let minDim = CGFloat(min(width, height))
-    let lineWidth = max(1.0, minDim * 0.008)
-    let jointRadius = max(2.0, minDim * 0.012)
+    let lineWidth = max(0.5, minDim * 0.004)
+    let jointRadius = max(1.0, minDim * 0.006)
 
     var jointsByName: [String: Joint2D] = [:]
     for joint in joints {
@@ -1092,7 +1188,16 @@ fileprivate final class ARVideoRecorder {
         return nil
       }
 
-      let viewPoint = CGPoint(x: CGFloat(joint.x), y: CGFloat(joint.y))
+      let viewPointNormalized = CGPoint(x: CGFloat(joint.x), y: CGFloat(joint.y))
+      let viewPoint: CGPoint = {
+        if viewTransformIsInPixels, let viewportSize, viewportSize.width > 0, viewportSize.height > 0 {
+          return CGPoint(
+            x: viewPointNormalized.x * viewportSize.width,
+            y: viewPointNormalized.y * viewportSize.height
+          )
+        }
+        return viewPointNormalized
+      }()
 
       if let viewToImageTransform {
         let imagePoint = viewPoint.applying(viewToImageTransform)
@@ -1173,6 +1278,8 @@ fileprivate final class ARVideoRecorder {
     isRecording = false
     let recordedFrames = hasWrittenFrame
     hasWrittenFrame = false
+    hasLoggedFrameMetrics = false
+    hasLoggedOverlayTransform = false
     lastPresentationTime = .zero
 
     queue.async {
@@ -1232,13 +1339,53 @@ fileprivate final class ARKitSessionDelegate: NSObject, ARSessionDelegate {
   func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
     guard let owner else { return }
 
-    for anchor in anchors {
-      if let bodyAnchor = anchor as? ARBodyAnchor {
-        print("[ARKit] Body detected! Updating body anchor. Tracked: \(bodyAnchor.isTracked)")
-        owner.currentBodyAnchor = bodyAnchor
-        break
-      }
+    let bodyAnchors = anchors.compactMap { $0 as? ARBodyAnchor }
+    guard !bodyAnchors.isEmpty else {
+      return
     }
+
+    print("[ARKit] Did update anchors (count: \(bodyAnchors.count))")
+    for anchor in bodyAnchors {
+      print(
+        "[ARKit] Candidate anchor \(anchor.identifier) scale=\(anchor.estimatedScaleFactor) tracked=\(anchor.isTracked)"
+      )
+    }
+
+    let now = CACurrentMediaTime()
+    if owner.subjectLockEnabled, let lockedId = owner.lockedBodyAnchorId {
+      if let locked = bodyAnchors.first(where: { $0.identifier == lockedId }) {
+        print("[ARKit] Locked anchor still in frame: \(locked.identifier)")
+        owner.currentBodyAnchor = locked
+        owner.lockedMissingCount = 0
+        owner.lockedBodyAnchorLastSeenTs = now
+        return
+      }
+
+      owner.lockedMissingCount += 1
+      if now - owner.lockedBodyAnchorLastSeenTs < owner.subjectLockTimeout {
+        print(
+          "[ARKit] Locked anchor missing (\(owner.lockedMissingCount)), waiting \(owner.subjectLockTimeout)s before reacquire"
+        )
+        return
+      }
+
+      print("[ARKit] Locked anchor timed out after \(owner.subjectLockTimeout)s, clearing lock")
+      owner.lockedBodyAnchorId = nil
+      owner.lockedMissingCount = 0
+      owner.lockedBodyAnchorLastSeenTs = 0
+    }
+
+    guard let best = bodyAnchors.max(by: { $0.estimatedScaleFactor < $1.estimatedScaleFactor }) else {
+      return
+    }
+
+    owner.currentBodyAnchor = best
+    if owner.subjectLockEnabled {
+      owner.lockedBodyAnchorId = best.identifier
+      owner.lockedMissingCount = 0
+      owner.lockedBodyAnchorLastSeenTs = now
+    }
+    print("[ARKit] Selected anchor \(best.identifier) (scale=\(best.estimatedScaleFactor))")
   }
 
   func session(_ session: ARSession, didUpdate frame: ARFrame) {
@@ -1261,7 +1408,13 @@ fileprivate final class ARKitSessionDelegate: NSObject, ARSessionDelegate {
   func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
     guard let owner else { return }
     for anchor in anchors {
-      if anchor is ARBodyAnchor {
+      if let bodyAnchor = anchor as? ARBodyAnchor {
+        if owner.lockedBodyAnchorId == bodyAnchor.identifier {
+          owner.lockedBodyAnchorId = nil
+          owner.lockedMissingCount = 0
+          owner.lockedBodyAnchorLastSeenTs = 0
+          print("[ARKit] Locked anchor removed: \(bodyAnchor.identifier)")
+        }
         owner.currentBodyAnchor = nil
         break
       }

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -202,6 +203,8 @@ export default function ScanARKitScreen() {
   const [isFinalizingRecording, setIsFinalizingRecording] = useState(false);
   const [recordPreview, setRecordPreview] = useState<RecordedPreview | null>(null);
   const [recordingQuality, setRecordingQuality] = useState<RecordingQuality>('medium');
+  const [subjectLockEnabled, setSubjectLockEnabled] = useState(true);
+  const [gestureRecordingEnabled, setGestureRecordingEnabled] = useState(true);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [savingRecording, setSavingRecording] = useState(false);
@@ -210,6 +213,8 @@ export default function ScanARKitScreen() {
   const smoothedPose2DRef = React.useRef<Joint2D[] | null>(null);
   const pose2DCacheRef = React.useRef<Record<string, { x: number; y: number }>>({});
   const lastSpokenCueRef = React.useRef<{ cue: string; timestamp: number } | null>(null);
+  const gestureHoldStartRef = React.useRef<number | null>(null);
+  const lastGestureTriggerRef = React.useRef(0);
   const overlayLayout = React.useRef<{ width: number; height: number } | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const isScreenFocused = useIsFocused();
@@ -240,6 +245,10 @@ export default function ScanARKitScreen() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    BodyTracker.setSubjectLockEnabled(subjectLockEnabled);
+  }, [subjectLockEnabled]);
 
   const updateRecordingQuality = useCallback(async (value: RecordingQuality) => {
     setRecordingQuality(value);
@@ -1472,9 +1481,9 @@ export default function ScanARKitScreen() {
       }
     }, [DEV, isRecording, isFinalizingRecording, isTracking, recordPreview, recordingQuality, logWithTs, detectionMode, repCount, pushUpReps]);
 
-    const stopRecordingVideo = useCallback(async () => {
-      if (!isRecording || recordingStopInFlightRef.current) return;
-      try {
+  const stopRecordingVideo = useCallback(async () => {
+    if (!isRecording || recordingStopInFlightRef.current) return;
+    try {
         if (DEV) logWithTs('[ScanARKit] Stopping recording...');
         const recordingEndAt = new Date().toISOString();
         const uri = await stopRecordingCore();
@@ -1506,26 +1515,94 @@ export default function ScanARKitScreen() {
         } else {
           Alert.alert('Recording', 'No video file was generated.');
         }
-      } catch (error) {
-        console.error('[ScanARKit] Failed to stop ARKit recording', error);
-        setIsRecording(false);
-        Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not stop recording.');
-      } finally {
-        recordingActiveRef.current = false;
-      }
-    }, [DEV, isRecording, stopRecordingCore, latestMetricsForUpload, detectionMode, logWithTs, recordingQuality, repCount, pushUpReps]);
+    } catch (error) {
+      console.error('[ScanARKit] Failed to stop ARKit recording', error);
+      setIsRecording(false);
+      Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not stop recording.');
+    } finally {
+      recordingActiveRef.current = false;
+    }
+  }, [DEV, isRecording, stopRecordingCore, latestMetricsForUpload, detectionMode, logWithTs, recordingQuality, repCount, pushUpReps]);
 
-    const handleDiscardRecording = useCallback(async () => {
-      if (uploading || savingRecording) return;
-      if (!recordPreview) {
-        setIsPreviewVisible(false);
-        return;
+  useEffect(() => {
+    if (!gestureRecordingEnabled || isRecording || isFinalizingRecording) {
+      gestureHoldStartRef.current = null;
+      return;
+    }
+
+    if (!smoothedPose2DJoints || smoothedPose2DJoints.length === 0) {
+      gestureHoldStartRef.current = null;
+      return;
+    }
+
+    const findJoint = (needle: string) =>
+      smoothedPose2DJoints.find(
+        (joint) => joint.isTracked && joint.name.toLowerCase().includes(needle)
+      );
+
+    const leftHand = findJoint('left_hand');
+    const rightHand = findJoint('right_hand');
+    const leftShoulder = findJoint('left_shoulder');
+    const rightShoulder = findJoint('right_shoulder');
+
+    const bothHandsAboveShoulders =
+      leftHand &&
+      rightHand &&
+      leftShoulder &&
+      rightShoulder &&
+      leftHand.y < leftShoulder.y - 0.05 &&
+      rightHand.y < rightShoulder.y - 0.05;
+
+    if (bothHandsAboveShoulders) {
+      const now = Date.now();
+      if (!gestureHoldStartRef.current) {
+        gestureHoldStartRef.current = now;
+      } else if (
+        now - gestureHoldStartRef.current >= 500 &&
+        now - lastGestureTriggerRef.current > 2000
+      ) {
+        lastGestureTriggerRef.current = now;
+        gestureHoldStartRef.current = null;
+        startRecordingVideo();
+        const message = 'Gesture recording started';
+        if (Platform.OS === 'android') {
+          ToastAndroid.show(message, ToastAndroid.SHORT);
+        } else {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
       }
-      await cleanupLocalRecording(recordPreview.uri);
-      setRecordPreview(null);
-      setPreviewError(null);
+    } else {
+      gestureHoldStartRef.current = null;
+    }
+  }, [
+    gestureRecordingEnabled,
+    smoothedPose2DJoints,
+    isRecording,
+    isFinalizingRecording,
+    startRecordingVideo,
+  ]);
+
+  const handleDiscardRecording = useCallback(async () => {
+    if (uploading || savingRecording) return;
+    if (!recordPreview) {
       setIsPreviewVisible(false);
-    }, [recordPreview, cleanupLocalRecording, uploading, savingRecording]);
+      return;
+    }
+    await cleanupLocalRecording(recordPreview.uri);
+    setRecordPreview(null);
+    setPreviewError(null);
+    setIsPreviewVisible(false);
+  }, [recordPreview, cleanupLocalRecording, uploading, savingRecording]);
+
+  const handleReacquireSubject = useCallback(() => {
+    BodyTracker.resetSubjectLock();
+    const message = 'Subject lock reset';
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(message, ToastAndroid.SHORT);
+    } else {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }, []);
 
     const handleSaveOnlyRecording = useCallback(async () => {
       if (!recordPreview || uploading || savingRecording) return;
@@ -1836,7 +1913,7 @@ export default function ScanARKitScreen() {
                         x2={x2}
                         y2={y2}
                         stroke={color}
-                        strokeWidth="0.008"
+                        strokeWidth="0.004"
                         strokeLinecap="round"
                         strokeOpacity={0.9}
                       />
@@ -1881,14 +1958,14 @@ export default function ScanARKitScreen() {
               {smoothedPose2DJoints.map((joint: Joint2D, index: number) => {
                 if (!joint.isTracked) return null;
                 return (
-                  <Circle
-                    key={`joint-${index}-${joint.name}`}
-                    cx={joint.x}
-                    cy={joint.y}
-                    r="0.012"
-                    fill="#FFFFFF"
-                    opacity={0.9}
-                  />
+                    <Circle
+                      key={`joint-${index}-${joint.name}`}
+                      cx={joint.x}
+                      cy={joint.y}
+                      r="0.006"
+                      fill="#FFFFFF"
+                      opacity={0.9}
+                    />
                 );
               })}
             </Svg>
@@ -1978,6 +2055,22 @@ export default function ScanARKitScreen() {
 
       {/* Controls */}
       <View style={[styles.controls, { bottom: insets.bottom + 30 }]}>
+        <View style={styles.gestureToggleRow}>
+          <Text style={styles.gestureToggleLabel}>Auto-record gesture</Text>
+          <Switch
+            value={gestureRecordingEnabled}
+            onValueChange={setGestureRecordingEnabled}
+          />
+        </View>
+        <View style={styles.lockControls}>
+          <View style={styles.lockToggleRow}>
+            <Text style={styles.lockLabel}>Lock subject</Text>
+            <Switch value={subjectLockEnabled} onValueChange={setSubjectLockEnabled} />
+          </View>
+          <TouchableOpacity style={styles.lockButton} onPress={handleReacquireSubject}>
+            <Text style={styles.lockButtonText}>Reacquire</Text>
+          </TouchableOpacity>
+        </View>
         <View style={styles.qualitySelector}>
           <Text style={styles.qualityLabel}>Quality</Text>
           <View style={styles.qualityButtons}>
