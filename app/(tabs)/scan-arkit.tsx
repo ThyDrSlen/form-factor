@@ -48,6 +48,7 @@ import {
 import { logRep } from '@/lib/services/rep-logger';
 import { calculateFqi, extractRepFeatures, type RepAngles } from '@/lib/services/fqi-calculator';
 import {
+  DEFAULT_DETECTION_MODE,
   getWorkoutByMode,
   getWorkoutIds,
   getPhaseStaticCue,
@@ -59,26 +60,10 @@ import { buildVideoMetricsForClip, type RecordingQuality } from '@/lib/services/
 import { styles } from '../../styles/tabs/_scan-arkit.styles';
 
 // Phase and detection mode types are now imported from lib/workouts
-type BaseUploadMetrics =
-  | {
-      mode: 'benchpress';
-      reps: number;
-      avgElbowDeg: number | null;
-      avgShoulderDeg: number | null;
-    }
-  | {
-      mode: 'pullup';
-      reps: number;
-      avgElbowDeg: number | null;
-      avgShoulderDeg: number | null;
-      headToHand: number | null;
-    }
-  | {
-      mode: 'pushup';
-      reps: number;
-      avgElbowDeg: number | null;
-      hipDropRatio: number | null;
-    };
+type BaseUploadMetrics = Record<string, unknown> & {
+  mode: DetectionMode;
+  reps: number;
+};
 
 type ClipMetaMetrics = {
   avgFqi: number | null;
@@ -130,6 +115,18 @@ const formatBytes = (bytes?: number | null) => {
   const mb = kb / 1024;
   if (mb < 10) return `${mb.toFixed(1)} MB`;
   return `${Math.round(mb)} MB`;
+};
+
+const getMetricValue = (source: Record<string, unknown> | null | undefined, key: string): number | null => {
+  if (!source) return null;
+  const value = source[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+};
+
+const formatMetricValue = (format: 'deg' | 'percent', value: number | null): string => {
+  if (value === null) return '--';
+  if (format === 'percent') return `${Math.round(value * 100)}%`;
+  return `${value.toFixed(1)}°`;
 };
 
 const PreviewPlayer = ({ uri }: { uri: string }) => {
@@ -187,11 +184,11 @@ export default function ScanARKitScreen() {
   const smoothedAnglesRef = React.useRef<JointAngles | null>(null);
   const jointAnglesStateRef = React.useRef<JointAngles | null>(null);
   const [repCount, setRepCount] = useState(0);
-  const [detectionMode, setDetectionMode] = useState<DetectionMode>('pullup');
+  const [detectionMode, setDetectionMode] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
   const activeWorkoutDef = useMemo(() => getWorkoutByMode(detectionMode), [detectionMode]);
-  const [activePhase, setActivePhase] = useState<string>(getWorkoutByMode('pullup').initialPhase);
+  const [activePhase, setActivePhase] = useState<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
-  const activePhaseRef = React.useRef<string>(getWorkoutByMode('pullup').initialPhase);
+  const activePhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const lastRepTimestampRef = React.useRef(0);
   const [activeMetrics, setActiveMetrics] = useState<WorkoutMetrics | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -977,92 +974,32 @@ export default function ScanARKitScreen() {
       messages.push(phaseCue);
     }
 
-    if (!activeMetrics.armsTracked || activeMetrics.wristsTracked === false) {
-      messages.push('Keep both hands and elbows visible to the camera.');
-      return messages;
-    }
+	    if (!activeMetrics.armsTracked || activeMetrics.wristsTracked === false) {
+	      messages.push('Keep both hands and elbows visible to the camera.');
+	      return messages;
+	    }
 
-    if (activeWorkoutDef.id === 'pullup') {
-      const hangThreshold = activeWorkoutDef.thresholds.hang ?? 150;
-      const topThreshold = activeWorkoutDef.thresholds.top ?? 85;
-      const shoulderElevationThreshold = activeWorkoutDef.thresholds.shoulderElevation ?? 115;
-      const avgElbow = activeMetrics.avgElbow;
-      const avgShoulder = activeMetrics.avgShoulder;
+	    const realtimeCues = activeWorkoutDef.ui?.getRealtimeCues?.({
+	      phaseId: activePhase,
+	      metrics: activeMetrics as never,
+	    });
+	    if (realtimeCues?.length) {
+	      messages.push(...realtimeCues);
+	    }
 
-      if (activePhase === 'hang' && typeof avgElbow === 'number' && avgElbow < hangThreshold - 5) {
-        messages.push('Fully extend your arms before the next rep.');
-      }
+	    return messages.length ? messages : null;
+	  }, [jointAngles, activeMetrics, activePhase, activeWorkoutDef]);
 
-      if (activePhase === 'top' && typeof avgElbow === 'number' && avgElbow > topThreshold + 15) {
-        messages.push('Pull higher to bring your chin past the bar.');
-      }
-
-      if (typeof avgShoulder === 'number' && avgShoulder > shoulderElevationThreshold) {
-        messages.push('Draw your shoulders down to keep your lats engaged.');
-      }
-
-      if (messages.length < 2) {
-        messages.push('Strong reps — keep the descent smooth.');
-      }
-    }
-
-    if (activeWorkoutDef.id === 'pushup') {
-      const hipSagMax = activeWorkoutDef.thresholds.hipSagMax ?? 0.18;
-      const readyElbow = activeWorkoutDef.thresholds.readyElbow ?? 155;
-      const bottomElbow = activeWorkoutDef.thresholds.bottom ?? 90;
-      const hipDrop = (activeMetrics as { hipDrop?: number | null }).hipDrop ?? null;
-      const avgElbow = activeMetrics.avgElbow;
-
-      if (hipDrop !== null && hipDrop > hipSagMax) {
-        messages.push('Squeeze glutes to stop hip sag.');
-      }
-
-      if (activePhase === 'plank' && typeof avgElbow === 'number' && avgElbow < readyElbow - 5) {
-        messages.push('Start from a full lockout to count clean reps.');
-      }
-
-      if (activePhase === 'bottom' && typeof avgElbow === 'number' && avgElbow > bottomElbow + 10) {
-        messages.push('Lower deeper until elbows hit ~90°.');
-      }
-
-      if (messages.length < 2) {
-        messages.push('Smooth tempo — steady down, strong press up.');
-      }
-    }
-
-    return messages.length ? messages : null;
-  }, [jointAngles, activeMetrics, activePhase, activeWorkoutDef]);
-
-    const feedback = analyzeForm();
-    const primaryCue = feedback?.[0];
-    const latestMetricsForUpload = useMemo<BaseUploadMetrics>(() => {
-      switch (detectionMode) {
-        case 'pullup':
-          return {
-            mode: 'pullup',
-            reps: repCount,
-            avgElbowDeg: activeMetrics?.avgElbow ?? null,
-            avgShoulderDeg: activeMetrics?.avgShoulder ?? null,
-            headToHand: activeMetrics?.headToHand ?? null,
-          };
-        case 'pushup':
-          return {
-            mode: 'pushup',
-            reps: repCount,
-            avgElbowDeg: activeMetrics?.avgElbow ?? null,
-            hipDropRatio: (activeMetrics as { hipDrop?: number | null }).hipDrop ?? null,
-          };
-        case 'benchpress':
-          return {
-            mode: 'benchpress',
-            reps: repCount,
-            avgElbowDeg: activeMetrics?.avgElbow ?? null,
-            avgShoulderDeg: activeMetrics?.avgShoulder ?? null,
-          };
-        default:
-          throw new Error(`Unhandled detection mode: ${detectionMode satisfies never}`);
-      }
-    }, [detectionMode, repCount, activeMetrics]);
+	    const feedback = analyzeForm();
+	    const primaryCue = feedback?.[0];
+	    const latestMetricsForUpload = useMemo<BaseUploadMetrics>(
+	      () => ({
+	        mode: detectionMode,
+	        reps: repCount,
+	        ...(activeWorkoutDef.ui?.buildUploadMetrics(activeMetrics as never) ?? {}),
+	      }),
+	      [activeWorkoutDef, activeMetrics, detectionMode, repCount]
+	    );
 
     useEffect(() => {
       if (!primaryCue || !audioFeedbackEnabled) {
@@ -1239,42 +1176,19 @@ export default function ScanARKitScreen() {
         return;
       }
 
-      const now = Date.now();
-      if (now - watchTrackingPublishAtRef.current < 250) {
-        return;
-      }
+	      const now = Date.now();
+	      if (now - watchTrackingPublishAtRef.current < 250) {
+	        return;
+	      }
 
 	      const reps = repCount;
 	      const phase = activePhase;
-	      let metrics: Record<string, number | null>;
-	      switch (latestMetricsForUpload.mode) {
-	        case 'pullup':
-	          metrics = {
-	            avgElbowDeg: latestMetricsForUpload.avgElbowDeg,
-	            avgShoulderDeg: latestMetricsForUpload.avgShoulderDeg,
-	            headToHand: latestMetricsForUpload.headToHand,
-	          };
-	          break;
-	        case 'pushup':
-	          metrics = {
-	            avgElbowDeg: latestMetricsForUpload.avgElbowDeg,
-	            hipDropRatio: latestMetricsForUpload.hipDropRatio,
-	          };
-	          break;
-	        case 'benchpress':
-	          metrics = {
-	            avgElbowDeg: latestMetricsForUpload.avgElbowDeg,
-	            avgShoulderDeg: latestMetricsForUpload.avgShoulderDeg,
-	          };
-	          break;
-	        default:
-	          throw new Error(`Unhandled watch metrics: ${latestMetricsForUpload satisfies never}`);
-	      }
+	      const metrics = activeWorkoutDef.ui?.buildWatchMetrics(activeMetrics as never) ?? {};
 
-      const payload = buildWatchTrackingPayload({
-        now,
-        isTracking: !!isTracking,
-        mode: detectionMode,
+	      const payload = buildWatchTrackingPayload({
+	        now,
+	        isTracking: !!isTracking,
+	        mode: detectionMode,
         phase,
         reps,
         primaryCue: primaryCue ?? null,
@@ -1291,16 +1205,17 @@ export default function ScanARKitScreen() {
 
       sendMessage(payload);
       updateWatchContext(payload);
-    }, [
-      activePhase,
-      detectionMode,
-      isTracking,
-      latestMetricsForUpload,
-      primaryCue,
-      repCount,
-      watchInstalled,
-      watchPaired,
-    ]);
+	    }, [
+	      activePhase,
+	      activeMetrics,
+	      activeWorkoutDef,
+	      detectionMode,
+	      isTracking,
+	      primaryCue,
+	      repCount,
+	      watchInstalled,
+	      watchPaired,
+	    ]);
 
     const uploadRecordedVideo = useCallback(async (payload: { uri: string; exercise: string; metrics: ClipUploadMetrics }) => {
       if (uploading) return false;
@@ -1626,56 +1541,46 @@ export default function ScanARKitScreen() {
 
   const telemetryReps = repCount;
   const showTelemetry = isTracking || telemetryReps > 0;
-  const telemetryTitle = `${activeWorkoutDef.displayName} Tracker`;
-  const telemetryPhaseId = activePhase;
-  const telemetryPhaseLabel =
-    activeWorkoutDef.phases.find((phase) => phase.id === telemetryPhaseId)?.displayName ??
-    String(telemetryPhaseId);
-  const telemetryElbow =
-    activeMetrics?.armsTracked && typeof activeMetrics.avgElbow === 'number'
-      ? `${activeMetrics.avgElbow.toFixed(1)}°`
-      : '--';
-  const hipDrop = (activeMetrics as { hipDrop?: number | null })?.hipDrop;
-  const showHipDrop = hipDrop !== null && hipDrop !== undefined;
-  const showShoulder = typeof activeMetrics?.avgShoulder === 'number';
-  const telemetrySecondaryLabel = showShoulder ? 'Avg Shoulder' : 'Hip Drop';
-  const telemetrySecondaryValue = showShoulder
-    ? `${(activeMetrics?.avgShoulder ?? 0).toFixed(1)}°`
-    : showHipDrop
-    ? `${Math.round((hipDrop ?? 0) * 100)}%`
-    : '--';
-  const previewMetrics = recordPreview?.metrics;
-  const previewReps = previewMetrics?.reps ?? 0;
-  const previewPrimaryValue = previewMetrics?.avgElbowDeg;
+	  const telemetryTitle = `${activeWorkoutDef.displayName} Tracker`;
+	  const telemetryPhaseId = activePhase;
+	  const telemetryPhaseLabel =
+	    activeWorkoutDef.phases.find((phase) => phase.id === telemetryPhaseId)?.displayName ??
+	    String(telemetryPhaseId);
+	  const telemetryUi = activeWorkoutDef.ui;
+	  const telemetryMetricValues = telemetryUi?.buildWatchMetrics(activeMetrics as never) ?? {};
+	  const telemetryPrimaryMetric = telemetryUi?.primaryMetric;
+	  const telemetrySecondaryMetric = telemetryUi?.secondaryMetric;
+	  const telemetryPrimaryLabel = telemetryPrimaryMetric?.label ?? '--';
+	  const telemetryPrimaryDisplay = telemetryPrimaryMetric
+	    ? formatMetricValue(
+	        telemetryPrimaryMetric.format,
+	        getMetricValue(telemetryMetricValues, telemetryPrimaryMetric.key)
+	      )
+	    : '--';
+	  const telemetrySecondaryLabel = telemetrySecondaryMetric?.label ?? '--';
+	  const telemetrySecondaryDisplay = telemetrySecondaryMetric
+	    ? formatMetricValue(
+	        telemetrySecondaryMetric.format,
+	        getMetricValue(telemetryMetricValues, telemetrySecondaryMetric.key)
+	      )
+	    : '--';
+	  const previewMetrics = recordPreview?.metrics;
+	  const previewReps = previewMetrics?.reps ?? 0;
+	  const previewUi = previewMetrics ? getWorkoutByMode(previewMetrics.mode).ui : undefined;
+	  const previewPrimaryMetric = previewUi?.primaryMetric;
+	  const previewSecondaryMetric = previewUi?.secondaryMetric;
+	  const previewPrimaryLabel = previewPrimaryMetric?.label ?? '--';
 	  const previewPrimaryDisplay =
-	    previewPrimaryValue === null || previewPrimaryValue === undefined
-	      ? '--'
-	      : `${previewPrimaryValue.toFixed(1)}°`;
-	  const previewSecondary = (() => {
-	    if (!previewMetrics) {
-	      return { label: '--', display: '--' };
-	    }
-
-	    switch (previewMetrics.mode) {
-	      case 'pushup': {
-	        const value = previewMetrics.hipDropRatio;
-	        const display = value === null || value === undefined ? '--' : `${Math.round(value * 100)}%`;
-	        return { label: 'Hip Drop', display };
-	      }
-	      case 'pullup': {
-	        const value = previewMetrics.avgShoulderDeg;
-	        const display = value === null || value === undefined ? '--' : `${value.toFixed(1)}°`;
-	        return { label: 'Avg Shoulder', display };
-	      }
-	      case 'benchpress': {
-	        const value = previewMetrics.avgShoulderDeg;
-	        const display = value === null || value === undefined ? '--' : `${value.toFixed(1)}°`;
-	        return { label: 'Avg Shoulder', display };
-	      }
-	      default:
-	        throw new Error(`Unhandled preview metrics: ${previewMetrics satisfies never}`);
-	    }
-	  })();
+	    previewMetrics && previewPrimaryMetric
+	      ? formatMetricValue(previewPrimaryMetric.format, getMetricValue(previewMetrics, previewPrimaryMetric.key))
+	      : '--';
+	  const previewSecondary = {
+	    label: previewSecondaryMetric?.label ?? '--',
+	    display:
+	      previewMetrics && previewSecondaryMetric
+	        ? formatMetricValue(previewSecondaryMetric.format, getMetricValue(previewMetrics, previewSecondaryMetric.key))
+	        : '--',
+	  };
 
   return (
     <View style={styles.container}>
@@ -1713,11 +1618,11 @@ export default function ScanARKitScreen() {
             style={styles.workoutSelectorButton}
             onPress={() => setIsDropdownOpen(!isDropdownOpen)}
           >
-            <Ionicons 
-              name={detectionMode === 'pullup' ? "barbell-outline" : "duplicate-outline"} 
-              size={16} 
-              color="#F5F7FF" 
-            />
+	            <Ionicons 
+	              name={(activeWorkoutDef.ui?.iconName ?? 'barbell-outline') as any} 
+	              size={16} 
+	              color="#F5F7FF" 
+	            />
             <Text style={styles.workoutSelectorText}>
               {activeWorkoutDef.displayName}
             </Text>
@@ -1878,11 +1783,11 @@ export default function ScanARKitScreen() {
           )}
         </View>
 
-        {/* Pull-up telemetry display */}
-        {showTelemetry && (
-          <View style={[styles.anglesDisplay, { top: insets.top + 54 }]}>
-            <Text style={styles.anglesTitle}>{telemetryTitle}</Text>
-            <View style={styles.anglesGrid}>
+	        {/* Workout telemetry display */}
+	        {showTelemetry && (
+	          <View style={[styles.anglesDisplay, { top: insets.top + 54 }]}>
+	            <Text style={styles.anglesTitle}>{telemetryTitle}</Text>
+	            <View style={styles.anglesGrid}>
               <View style={styles.angleItem}>
                 <Text style={styles.angleLabel}>Reps</Text>
                 <Text style={styles.angleValue}>{telemetryReps}</Text>
@@ -1891,17 +1796,17 @@ export default function ScanARKitScreen() {
                 <Text style={styles.angleLabel}>Phase</Text>
                 <Text style={styles.angleValue}>{telemetryPhaseLabel}</Text>
               </View>
-              <View style={styles.angleItem}>
-                <Text style={styles.angleLabel}>Avg Elbow</Text>
-                <Text style={styles.angleValue}>{telemetryElbow}</Text>
-              </View>
-              <View style={styles.angleItem}>
-                <Text style={styles.angleLabel}>{telemetrySecondaryLabel}</Text>
-                <Text style={styles.angleValue}>{telemetrySecondaryValue}</Text>
-              </View>
-            </View>
-          </View>
-        )}
+	              <View style={styles.angleItem}>
+	                <Text style={styles.angleLabel}>{telemetryPrimaryLabel}</Text>
+	                <Text style={styles.angleValue}>{telemetryPrimaryDisplay}</Text>
+	              </View>
+	              <View style={styles.angleItem}>
+	                <Text style={styles.angleLabel}>{telemetrySecondaryLabel}</Text>
+	                <Text style={styles.angleValue}>{telemetrySecondaryDisplay}</Text>
+	              </View>
+	            </View>
+	          </View>
+	        )}
 
         {/* Form feedback */}
         {feedback && (
@@ -2091,11 +1996,11 @@ export default function ScanARKitScreen() {
                 <Text style={styles.previewMetaValue}>{formatBytes(recordPreview?.sizeBytes)}</Text>
               </View>
             </View>
-            <View style={styles.previewMetaRow}>
-              <View style={styles.previewMetaItem}>
-                <Text style={styles.previewMetaLabel}>Avg Elbow</Text>
-                <Text style={styles.previewMetaValue}>{previewPrimaryDisplay}</Text>
-              </View>
+	            <View style={styles.previewMetaRow}>
+	              <View style={styles.previewMetaItem}>
+	                <Text style={styles.previewMetaLabel}>{previewPrimaryLabel}</Text>
+	                <Text style={styles.previewMetaValue}>{previewPrimaryDisplay}</Text>
+	              </View>
               <View style={styles.previewMetaItem}>
                 <Text style={styles.previewMetaLabel}>{previewSecondary.label}</Text>
                 <Text style={styles.previewMetaValue}>{previewSecondary.display}</Text>
