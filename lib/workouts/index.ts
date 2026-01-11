@@ -8,10 +8,12 @@
 import type { WorkoutDefinition, WorkoutRegistry } from '@/lib/types/workout-definitions';
 
 // Import individual workout definitions
+import { benchpressDefinition, type BenchPressPhase, type BenchPressMetrics } from './benchpress';
 import { pullupDefinition, type PullUpPhase, type PullUpMetrics } from './pullup';
 import { pushupDefinition, type PushUpPhase, type PushUpMetrics } from './pushup';
 
 export const workoutsByMode = {
+  benchpress: benchpressDefinition,
   pullup: pullupDefinition,
   pushup: pushupDefinition,
 } as const;
@@ -21,6 +23,7 @@ export const workoutsByMode = {
 // =============================================================================
 
 // Re-export individual definitions for direct import
+export { benchpressDefinition, BENCHPRESS_THRESHOLDS, type BenchPressPhase, type BenchPressMetrics } from './benchpress';
 export { pullupDefinition, PULLUP_THRESHOLDS, type PullUpPhase, type PullUpMetrics } from './pullup';
 export { pushupDefinition, PUSHUP_THRESHOLDS, type PushUpPhase, type PushUpMetrics } from './pushup';
 export { getPhaseStaticCue } from './helpers';
@@ -40,6 +43,7 @@ export type { WorkoutDefinition, WorkoutRegistry } from '@/lib/types/workout-def
  * but the registry needs to store them generically for lookup purposes.
  */
 export const workoutRegistry: WorkoutRegistry = {
+  benchpress: benchpressDefinition as unknown as WorkoutDefinition,
   pullup: pullupDefinition as unknown as WorkoutDefinition,
   pushup: pushupDefinition as unknown as WorkoutDefinition,
 };

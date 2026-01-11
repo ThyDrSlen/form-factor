@@ -61,6 +61,12 @@ import { styles } from '../../styles/tabs/_scan-arkit.styles';
 // Phase and detection mode types are now imported from lib/workouts
 type BaseUploadMetrics =
   | {
+      mode: 'benchpress';
+      reps: number;
+      avgElbowDeg: number | null;
+      avgShoulderDeg: number | null;
+    }
+  | {
       mode: 'pullup';
       reps: number;
       avgElbowDeg: number | null;
@@ -971,8 +977,7 @@ export default function ScanARKitScreen() {
       messages.push(phaseCue);
     }
 
-    const wristsTracked = activeMetrics.wristsTracked ?? true;
-    if (!activeMetrics.armsTracked || (activeWorkoutDef.id === 'pushup' && !wristsTracked)) {
+    if (!activeMetrics.armsTracked || activeMetrics.wristsTracked === false) {
       messages.push('Keep both hands and elbows visible to the camera.');
       return messages;
     }
@@ -1030,24 +1035,34 @@ export default function ScanARKitScreen() {
 
     const feedback = analyzeForm();
     const primaryCue = feedback?.[0];
-    const latestMetricsForUpload = useMemo<BaseUploadMetrics>(
-      () =>
-        detectionMode === 'pullup'
-          ? {
-              mode: 'pullup',
-              reps: repCount,
-              avgElbowDeg: activeMetrics?.avgElbow ?? null,
-              avgShoulderDeg: activeMetrics?.avgShoulder ?? null,
-              headToHand: activeMetrics?.headToHand ?? null,
-            }
-          : {
-              mode: 'pushup',
-              reps: repCount,
-              avgElbowDeg: activeMetrics?.avgElbow ?? null,
-              hipDropRatio: (activeMetrics as { hipDrop?: number | null }).hipDrop ?? null,
-            },
-      [detectionMode, repCount, activeMetrics]
-    );
+    const latestMetricsForUpload = useMemo<BaseUploadMetrics>(() => {
+      switch (detectionMode) {
+        case 'pullup':
+          return {
+            mode: 'pullup',
+            reps: repCount,
+            avgElbowDeg: activeMetrics?.avgElbow ?? null,
+            avgShoulderDeg: activeMetrics?.avgShoulder ?? null,
+            headToHand: activeMetrics?.headToHand ?? null,
+          };
+        case 'pushup':
+          return {
+            mode: 'pushup',
+            reps: repCount,
+            avgElbowDeg: activeMetrics?.avgElbow ?? null,
+            hipDropRatio: (activeMetrics as { hipDrop?: number | null }).hipDrop ?? null,
+          };
+        case 'benchpress':
+          return {
+            mode: 'benchpress',
+            reps: repCount,
+            avgElbowDeg: activeMetrics?.avgElbow ?? null,
+            avgShoulderDeg: activeMetrics?.avgShoulder ?? null,
+          };
+        default:
+          throw new Error(`Unhandled detection mode: ${detectionMode satisfies never}`);
+      }
+    }, [detectionMode, repCount, activeMetrics]);
 
     useEffect(() => {
       if (!primaryCue || !audioFeedbackEnabled) {
@@ -1229,21 +1244,32 @@ export default function ScanARKitScreen() {
         return;
       }
 
-      const reps = repCount;
-      const phase = activePhase;
-      let metrics: Record<string, number | null>;
-      if (latestMetricsForUpload.mode === 'pullup') {
-        metrics = {
-          avgElbowDeg: latestMetricsForUpload.avgElbowDeg,
-          avgShoulderDeg: latestMetricsForUpload.avgShoulderDeg,
-          headToHand: latestMetricsForUpload.headToHand,
-        };
-      } else {
-        metrics = {
-          avgElbowDeg: latestMetricsForUpload.avgElbowDeg,
-          hipDropRatio: latestMetricsForUpload.hipDropRatio,
-        };
-      }
+	      const reps = repCount;
+	      const phase = activePhase;
+	      let metrics: Record<string, number | null>;
+	      switch (latestMetricsForUpload.mode) {
+	        case 'pullup':
+	          metrics = {
+	            avgElbowDeg: latestMetricsForUpload.avgElbowDeg,
+	            avgShoulderDeg: latestMetricsForUpload.avgShoulderDeg,
+	            headToHand: latestMetricsForUpload.headToHand,
+	          };
+	          break;
+	        case 'pushup':
+	          metrics = {
+	            avgElbowDeg: latestMetricsForUpload.avgElbowDeg,
+	            hipDropRatio: latestMetricsForUpload.hipDropRatio,
+	          };
+	          break;
+	        case 'benchpress':
+	          metrics = {
+	            avgElbowDeg: latestMetricsForUpload.avgElbowDeg,
+	            avgShoulderDeg: latestMetricsForUpload.avgShoulderDeg,
+	          };
+	          break;
+	        default:
+	          throw new Error(`Unhandled watch metrics: ${latestMetricsForUpload satisfies never}`);
+	      }
 
       const payload = buildWatchTrackingPayload({
         now,
@@ -1621,24 +1647,35 @@ export default function ScanARKitScreen() {
   const previewMetrics = recordPreview?.metrics;
   const previewReps = previewMetrics?.reps ?? 0;
   const previewPrimaryValue = previewMetrics?.avgElbowDeg;
-  const previewPrimaryDisplay =
-    previewPrimaryValue === null || previewPrimaryValue === undefined
-      ? '--'
-      : `${previewPrimaryValue.toFixed(1)}°`;
-  const previewSecondaryLabel = previewMetrics?.mode === 'pullup' ? 'Avg Shoulder' : 'Hip Drop';
-  const previewSecondaryValue =
-    previewMetrics?.mode === 'pullup'
-      ? previewMetrics?.avgShoulderDeg
-      : previewMetrics?.hipDropRatio;
-  const previewSecondaryDisplay = previewMetrics
-    ? previewMetrics.mode === 'pullup'
-      ? previewSecondaryValue === null || previewSecondaryValue === undefined
-        ? '--'
-        : `${previewSecondaryValue.toFixed(1)}°`
-      : previewSecondaryValue === null || previewSecondaryValue === undefined
-      ? '--'
-      : `${Math.round(previewSecondaryValue * 100)}%`
-    : '--';
+	  const previewPrimaryDisplay =
+	    previewPrimaryValue === null || previewPrimaryValue === undefined
+	      ? '--'
+	      : `${previewPrimaryValue.toFixed(1)}°`;
+	  const previewSecondary = (() => {
+	    if (!previewMetrics) {
+	      return { label: '--', display: '--' };
+	    }
+
+	    switch (previewMetrics.mode) {
+	      case 'pushup': {
+	        const value = previewMetrics.hipDropRatio;
+	        const display = value === null || value === undefined ? '--' : `${Math.round(value * 100)}%`;
+	        return { label: 'Hip Drop', display };
+	      }
+	      case 'pullup': {
+	        const value = previewMetrics.avgShoulderDeg;
+	        const display = value === null || value === undefined ? '--' : `${value.toFixed(1)}°`;
+	        return { label: 'Avg Shoulder', display };
+	      }
+	      case 'benchpress': {
+	        const value = previewMetrics.avgShoulderDeg;
+	        const display = value === null || value === undefined ? '--' : `${value.toFixed(1)}°`;
+	        return { label: 'Avg Shoulder', display };
+	      }
+	      default:
+	        throw new Error(`Unhandled preview metrics: ${previewMetrics satisfies never}`);
+	    }
+	  })();
 
   return (
     <View style={styles.container}>
@@ -2060,8 +2097,8 @@ export default function ScanARKitScreen() {
                 <Text style={styles.previewMetaValue}>{previewPrimaryDisplay}</Text>
               </View>
               <View style={styles.previewMetaItem}>
-                <Text style={styles.previewMetaLabel}>{previewSecondaryLabel}</Text>
-                <Text style={styles.previewMetaValue}>{previewSecondaryDisplay}</Text>
+                <Text style={styles.previewMetaLabel}>{previewSecondary.label}</Text>
+                <Text style={styles.previewMetaValue}>{previewSecondary.display}</Text>
               </View>
               <View style={styles.previewMetaItem}>
                 <Text style={styles.previewMetaLabel}>Library</Text>
