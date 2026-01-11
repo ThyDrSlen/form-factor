@@ -50,6 +50,8 @@ export const workoutRegistry: WorkoutRegistry = {
 
 export type DetectionMode = keyof typeof workoutsByMode;
 
+export const DEFAULT_DETECTION_MODE: DetectionMode = 'pullup';
+
 export function getWorkoutByMode<M extends DetectionMode>(mode: M): (typeof workoutsByMode)[M] {
   return workoutsByMode[mode];
 }

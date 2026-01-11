@@ -1,4 +1,4 @@
-export type WatchTrackingMode = 'benchpress' | 'pullup' | 'pushup';
+export type WatchTrackingMode = string;
 
 export type WatchTrackingPayload = {
   v: 1;

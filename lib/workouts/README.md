@@ -9,6 +9,7 @@ Each workout lives in its own file (for example `pullup.ts`, `pushup.ts`) and ex
 - **Thresholds** (`thresholds`): numeric cutoffs used by the state machine and cues
 - **Metrics** (`calculateMetrics`): per-frame derived values from joint angles (and optional joint positions)
 - **Phase transition** (`getNextPhase`): “given phase + angles + metrics, what phase is next?”
+- **UI adapter** (`ui`): icon/labels + watch/upload metrics shaping + optional realtime cues
 - **Faults / scoring** (`faults`, `fqiWeights`, `scoringMetrics`): used by the FQI calculator + rep logging
 
 ## Adding a new workout
@@ -19,6 +20,7 @@ Each workout lives in its own file (for example `pullup.ts`, `pushup.ts`) and ex
    - `export interface <Workout>Metrics extends WorkoutMetrics { ... }`
    - `export const <WORKOUT>_THRESHOLDS = { ... } as const`
    - `export const <id>Definition: WorkoutDefinition<<Workout>Phase, <Workout>Metrics> = { ... }`
+   - Include `ui` so the tracker/watch can consume the workout without hard-coded logic in `scan-arkit.tsx`
 3. Register it in `lib/workouts/index.ts`:
    - Import `<id>Definition`
    - Add it to `workoutsByMode`

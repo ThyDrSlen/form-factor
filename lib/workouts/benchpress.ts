@@ -345,9 +345,22 @@ export const benchpressDefinition: WorkoutDefinition<BenchPressPhase, BenchPress
   faults,
   fqiWeights,
 
+  ui: {
+    iconName: 'duplicate-outline',
+    primaryMetric: { key: 'avgElbowDeg', label: 'Avg Elbow', format: 'deg' },
+    secondaryMetric: { key: 'avgShoulderDeg', label: 'Avg Shoulder', format: 'deg' },
+    buildUploadMetrics: (metrics) => ({
+      avgElbowDeg: metrics?.avgElbow ?? null,
+      avgShoulderDeg: metrics?.avgShoulder ?? null,
+    }),
+    buildWatchMetrics: (metrics) => ({
+      avgElbowDeg: metrics?.avgElbow ?? null,
+      avgShoulderDeg: metrics?.avgShoulder ?? null,
+    }),
+  },
+
   calculateMetrics,
   getNextPhase,
 };
 
 export default benchpressDefinition;
-

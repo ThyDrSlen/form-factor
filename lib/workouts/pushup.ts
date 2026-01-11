@@ -391,6 +391,47 @@ export const pushupDefinition: WorkoutDefinition<PushUpPhase, PushUpMetrics> = {
   faults,
   fqiWeights,
 
+  ui: {
+    iconName: 'duplicate-outline',
+    primaryMetric: { key: 'avgElbowDeg', label: 'Avg Elbow', format: 'deg' },
+    secondaryMetric: { key: 'hipDropRatio', label: 'Hip Drop', format: 'percent' },
+    buildUploadMetrics: (metrics) => ({
+      avgElbowDeg: metrics?.avgElbow ?? null,
+      hipDropRatio: metrics?.hipDrop ?? null,
+    }),
+    buildWatchMetrics: (metrics) => ({
+      avgElbowDeg: metrics?.avgElbow ?? null,
+      hipDropRatio: metrics?.hipDrop ?? null,
+    }),
+    getRealtimeCues: ({ phaseId, metrics }) => {
+      const messages: string[] = [];
+      const hipSagMax = PUSHUP_THRESHOLDS.hipSagMax;
+      const readyElbow = PUSHUP_THRESHOLDS.readyElbow;
+      const bottomElbow = PUSHUP_THRESHOLDS.bottom;
+
+      const hipDrop = metrics.hipDrop ?? null;
+      const avgElbow = metrics.avgElbow;
+
+      if (hipDrop !== null && hipDrop > hipSagMax) {
+        messages.push('Squeeze glutes to stop hip sag.');
+      }
+
+      if (phaseId === 'plank' && typeof avgElbow === 'number' && avgElbow < readyElbow - 5) {
+        messages.push('Start from a full lockout to count clean reps.');
+      }
+
+      if (phaseId === 'bottom' && typeof avgElbow === 'number' && avgElbow > bottomElbow + 10) {
+        messages.push('Lower deeper until elbows hit ~90°.');
+      }
+
+      if (messages.length === 0) {
+        messages.push('Smooth tempo — steady down, strong press up.');
+      }
+
+      return messages;
+    },
+  },
+
   calculateMetrics,
   getNextPhase,
 };

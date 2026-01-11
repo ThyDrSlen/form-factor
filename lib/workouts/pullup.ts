@@ -353,6 +353,49 @@ export const pullupDefinition: WorkoutDefinition<PullUpPhase, PullUpMetrics> = {
   faults,
   fqiWeights,
 
+  ui: {
+    iconName: 'barbell-outline',
+    primaryMetric: { key: 'avgElbowDeg', label: 'Avg Elbow', format: 'deg' },
+    secondaryMetric: { key: 'avgShoulderDeg', label: 'Avg Shoulder', format: 'deg' },
+    buildUploadMetrics: (metrics) => ({
+      avgElbowDeg: metrics?.avgElbow ?? null,
+      avgShoulderDeg: metrics?.avgShoulder ?? null,
+      headToHand: metrics?.headToHand ?? null,
+    }),
+    buildWatchMetrics: (metrics) => ({
+      avgElbowDeg: metrics?.avgElbow ?? null,
+      avgShoulderDeg: metrics?.avgShoulder ?? null,
+      headToHand: metrics?.headToHand ?? null,
+    }),
+    getRealtimeCues: ({ phaseId, metrics }) => {
+      const messages: string[] = [];
+      const hangThreshold = PULLUP_THRESHOLDS.hang;
+      const topThreshold = PULLUP_THRESHOLDS.top;
+      const shoulderElevationThreshold = PULLUP_THRESHOLDS.shoulderElevation;
+
+      const avgElbow = metrics.avgElbow;
+      const avgShoulder = metrics.avgShoulder;
+
+      if (phaseId === 'hang' && typeof avgElbow === 'number' && avgElbow < hangThreshold - 5) {
+        messages.push('Fully extend your arms before the next rep.');
+      }
+
+      if (phaseId === 'top' && typeof avgElbow === 'number' && avgElbow > topThreshold + 15) {
+        messages.push('Pull higher to bring your chin past the bar.');
+      }
+
+      if (typeof avgShoulder === 'number' && avgShoulder > shoulderElevationThreshold) {
+        messages.push('Draw your shoulders down to keep your lats engaged.');
+      }
+
+      if (messages.length === 0) {
+        messages.push('Strong reps — keep the descent smooth.');
+      }
+
+      return messages;
+    },
+  },
+
   calculateMetrics,
   getNextPhase,
 };

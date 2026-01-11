@@ -181,6 +181,38 @@ export interface WorkoutMetrics {
 }
 
 // =============================================================================
+// UI Adapter (Scan/Watch/Upload shaping)
+// =============================================================================
+
+export type WorkoutUiMetricFormat = 'deg' | 'percent';
+
+export interface WorkoutUiMetric {
+  /** Key in the metrics payload (upload/watch) */
+  key: string;
+  /** Human-readable label */
+  label: string;
+  /** Display format */
+  format: WorkoutUiMetricFormat;
+}
+
+export interface WorkoutUiAdapter<TMetrics extends WorkoutMetrics = WorkoutMetrics> {
+  /** Icon name for the workout selector (Ionicons) */
+  iconName: string;
+  /** Primary metric displayed in telemetry/preview */
+  primaryMetric: WorkoutUiMetric;
+  /** Secondary metric displayed in telemetry/preview (optional) */
+  secondaryMetric?: WorkoutUiMetric;
+
+  /** Build flat numeric metrics for upload persistence */
+  buildUploadMetrics: (metrics: TMetrics | null) => Record<string, number | null>;
+  /** Build flat numeric metrics for the watch mirror */
+  buildWatchMetrics: (metrics: TMetrics | null) => Record<string, number | null>;
+
+  /** Optional realtime cue hook beyond phase static cues */
+  getRealtimeCues?: (args: { phaseId: string; metrics: TMetrics }) => string[] | null;
+}
+
+// =============================================================================
 // Complete Workout Definition
 // =============================================================================
 
@@ -225,6 +257,9 @@ export interface WorkoutDefinition<
 
   /** Weights for FQI calculation */
   fqiWeights: FQIWeights;
+
+  /** Optional UI adapter for scan/watch/upload shaping */
+  ui?: WorkoutUiAdapter<TMetrics>;
 
   /**
    * Calculate workout-specific metrics from joint angles
