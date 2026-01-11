@@ -23,11 +23,10 @@ Each workout lives in its own file (for example `pullup.ts`, `pushup.ts`) and ex
    - Import `<id>Definition`
    - Add it to `workoutsByMode`
    - Add it to `workoutRegistry`
-   - Extend the `DetectionMode` union + `isDetectionMode` accordingly
+   - `DetectionMode` is derived from `workoutsByMode` keys (no manual union)
 
 ## Notes
 
 - Prefer keeping **all** workout-specific heuristics inside the workout file (not in `scan-arkit.tsx`).
 - Keep thresholds named and documented (avoid magic numbers sprinkled through the UI).
 - If you need a new metric for UI/telemetry, add it to that workout’s `Metrics` type and compute it in `calculateMetrics`.
-

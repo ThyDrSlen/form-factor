@@ -11,7 +11,7 @@ import type { WorkoutDefinition, WorkoutRegistry } from '@/lib/types/workout-def
 import { pullupDefinition, type PullUpPhase, type PullUpMetrics } from './pullup';
 import { pushupDefinition, type PushUpPhase, type PushUpMetrics } from './pushup';
 
-const workoutsByMode = {
+export const workoutsByMode = {
   pullup: pullupDefinition,
   pushup: pushupDefinition,
 } as const;
@@ -44,10 +44,9 @@ export const workoutRegistry: WorkoutRegistry = {
   pushup: pushupDefinition as unknown as WorkoutDefinition,
 };
 
-export function getWorkoutByMode(mode: 'pullup'): typeof workoutsByMode.pullup;
-export function getWorkoutByMode(mode: 'pushup'): typeof workoutsByMode.pushup;
-export function getWorkoutByMode(mode: DetectionMode): (typeof workoutsByMode)[DetectionMode];
-export function getWorkoutByMode(mode: DetectionMode): (typeof workoutsByMode)[DetectionMode] {
+export type DetectionMode = keyof typeof workoutsByMode;
+
+export function getWorkoutByMode<M extends DetectionMode>(mode: M): (typeof workoutsByMode)[M] {
   return workoutsByMode[mode];
 }
 
@@ -63,8 +62,8 @@ export function getWorkoutById(id: string): WorkoutDefinition | undefined {
 /**
  * Get all available workout IDs
  */
-export function getWorkoutIds(): string[] {
-  return Object.keys(workoutRegistry);
+export function getWorkoutIds(): DetectionMode[] {
+  return Object.keys(workoutsByMode) as DetectionMode[];
 }
 
 /**
@@ -74,19 +73,9 @@ export function isValidWorkoutId(id: string): boolean {
   return id in workoutRegistry;
 }
 
-// =============================================================================
-// Detection Mode Type (for backward compatibility with scan-arkit.tsx)
-// =============================================================================
-
-/**
- * Union type of all available workout IDs
- * This can be used as a type guard in components
- */
-export type DetectionMode = 'pullup' | 'pushup';
-
 /**
  * Type guard to check if a string is a valid detection mode
  */
 export function isDetectionMode(mode: string): mode is DetectionMode {
-  return mode === 'pullup' || mode === 'pushup';
+  return mode in workoutsByMode;
 }

@@ -48,11 +48,9 @@ import {
 import { logRep } from '@/lib/services/rep-logger';
 import { calculateFqi, extractRepFeatures, type RepAngles } from '@/lib/services/fqi-calculator';
 import {
-  getWorkoutById,
   getWorkoutByMode,
   getWorkoutIds,
   getPhaseStaticCue,
-  isDetectionMode,
   type DetectionMode,
 } from '@/lib/workouts';
 import type { WorkoutDefinition, WorkoutMetrics } from '@/lib/types/workout-definitions';
@@ -437,7 +435,7 @@ export default function ScanARKitScreen() {
 
   // Helper: Complete and log a rep
   const completeRepTracking = useCallback(async (
-    exercise: string,
+    workoutDef: WorkoutDefinition,
     repNumber: number,
     endAngles: JointAngles
   ) => {
@@ -445,11 +443,7 @@ export default function ScanARKitScreen() {
       return; // No rep was being tracked
     }
 
-    const workoutDef = getWorkoutById(exercise);
-    if (!workoutDef) {
-      if (__DEV__) console.warn(`[ScanARKit] No workout definition for ${exercise}`);
-      return;
-    }
+    const exercise = workoutDef.id;
 
     const endTs = Date.now();
     const durationMs = endTs - repStartTsRef.current;
@@ -539,7 +533,7 @@ export default function ScanARKitScreen() {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
         }
 
-        completeRepTracking(workoutDef.id, activeRepIndex, angles);
+        completeRepTracking(workoutDef, activeRepIndex, angles);
         repIndexTrackerRef.current.endRep();
       }
     },
@@ -729,20 +723,14 @@ export default function ScanARKitScreen() {
           jointsMap.set(joint.name, { x: joint.x, y: joint.y, isTracked: joint.isTracked });
         });
 
-        const workoutDef = getWorkoutById(detectionMode);
-        if (workoutDef) {
-          const metrics = workoutDef.calculateMetrics(next, jointsMap) as WorkoutMetrics;
-          setActiveMetrics(metrics);
-          updateWorkoutCycle(next, metrics, workoutDef);
-        } else {
-          setActiveMetrics(null);
-        }
+        const metrics = activeWorkoutDef.calculateMetrics(next, jointsMap) as WorkoutMetrics;
+        setActiveMetrics(metrics);
+        updateWorkoutCycle(next, metrics, activeWorkoutDef as unknown as WorkoutDefinition);
       } else {
         resetRepTracking();
         setActiveMetrics(null);
-        const nextInitialPhase = getWorkoutByMode(detectionMode).initialPhase;
-        activePhaseRef.current = nextInitialPhase;
-        transitionPhase(nextInitialPhase);
+        activePhaseRef.current = activeWorkoutDef.initialPhase;
+        transitionPhase(activeWorkoutDef.initialPhase);
       }
     } catch (error) {
       console.error('[ScanARKit] ❌ Error calculating angles:', error);
@@ -1702,7 +1690,6 @@ export default function ScanARKitScreen() {
           {isDropdownOpen && (
             <View style={styles.dropdownMenu}>
               {getWorkoutIds()
-                .filter(isDetectionMode)
                 .map((mode) => (
                   <TouchableOpacity
                     key={mode}
