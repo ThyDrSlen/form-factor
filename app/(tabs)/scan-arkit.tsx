@@ -49,9 +49,11 @@ import { logRep } from '@/lib/services/rep-logger';
 import { calculateFqi, extractRepFeatures, type RepAngles } from '@/lib/services/fqi-calculator';
 import {
   getWorkoutById,
+  getWorkoutByMode,
+  getWorkoutIds,
+  getPhaseStaticCue,
+  isDetectionMode,
   type DetectionMode,
-  PULLUP_THRESHOLDS,
-  PUSHUP_THRESHOLDS,
   type PullUpPhase,
   type PullUpMetrics,
   type PushUpPhase,
@@ -187,6 +189,7 @@ export default function ScanARKitScreen() {
   const [repCount, setRepCount] = useState(0);
   const [pullUpPhase, setPullUpPhase] = useState<PullUpPhase>('idle');
   const [detectionMode, setDetectionMode] = useState<DetectionMode>('pullup');
+  const activeWorkoutDef = useMemo(() => getWorkoutByMode(detectionMode), [detectionMode]);
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
   const phaseRef = React.useRef<PullUpPhase>('idle');
   const repStateRef = React.useRef<PullUpPhase>('idle');
@@ -1058,14 +1061,8 @@ export default function ScanARKitScreen() {
     //Need better cues eg. imagine breaking a pencil behind back(lat pulldown ), keep back straight (squats), keep back arched + reverse J movement + squeeze at top (bench press), 
     //
 
-    const phasePrompts: Record<PullUpPhase, string> = {
-      idle: 'Get set beneath the bar and brace your core.',
-      hang: 'Engage your shoulders before you start the pull.',
-      pull: 'Drive elbows toward your ribs and stay tight.',
-      top: 'Squeeze at the top, then lower with control.',
-    };
-
-    messages.push(phasePrompts[pullUpPhase]);
+    const pullupDef = getWorkoutByMode('pullup');
+    messages.push(getPhaseStaticCue(pullupDef, pullUpPhase) ?? 'Get set beneath the bar and brace your core.');
 
     if (!pullUpMetrics.armsTracked) {
       messages.push('Keep both elbows and hands visible to the camera.');
@@ -1074,15 +1071,19 @@ export default function ScanARKitScreen() {
 
     const { avgElbow, avgShoulder } = pullUpMetrics;
 
-    if (pullUpPhase === 'hang' && avgElbow < PULLUP_THRESHOLDS.hang - 5) {
+    const hangThreshold = pullupDef.thresholds.hang ?? 150;
+    const topThreshold = pullupDef.thresholds.top ?? 85;
+    const shoulderElevationThreshold = pullupDef.thresholds.shoulderElevation ?? 115;
+
+    if (pullUpPhase === 'hang' && avgElbow < hangThreshold - 5) {
       messages.push('Fully extend your arms before the next rep.');
     }
 
-    if (pullUpPhase === 'top' && avgElbow > PULLUP_THRESHOLDS.top + 15) {
+    if (pullUpPhase === 'top' && avgElbow > topThreshold + 15) {
       messages.push('Pull higher to bring your chin past the bar.');
     }
 
-    if (avgShoulder > 115) {
+    if (avgShoulder > shoulderElevationThreshold) {
       messages.push('Draw your shoulders down to keep your lats engaged.');
     }
 
@@ -1102,29 +1103,27 @@ export default function ScanARKitScreen() {
       return messages;
     }
 
-    const phasePrompts: Record<PushUpPhase, string> = {
-      setup: 'Set a strong plank: hands under shoulders, glutes tight.',
-      plank: 'Lower under control; keep hips level.',
-      lowering: 'Elbows ~45°; keep core braced.',
-      bottom: 'Pause briefly, chest just above the floor.',
-      press: 'Drive the floor away and lock out.',
-    };
-    messages.push(phasePrompts[pushUpPhase]);
+    const pushupDef = getWorkoutByMode('pushup');
+    messages.push(getPhaseStaticCue(pushupDef, pushUpPhase) ?? 'Set a strong plank: hands under shoulders, glutes tight.');
 
     if (!pushUpMetrics.armsTracked || !pushUpMetrics.wristsTracked) {
       messages.push('Keep both hands and elbows visible to the camera.');
       return messages;
     }
 
-    if (pushUpMetrics.hipDrop !== null && pushUpMetrics.hipDrop > PUSHUP_THRESHOLDS.hipSagMax) {
+    const hipSagMax = pushupDef.thresholds.hipSagMax ?? 0.18;
+    const readyElbow = pushupDef.thresholds.readyElbow ?? 155;
+    const bottomElbow = pushupDef.thresholds.bottom ?? 90;
+
+    if (pushUpMetrics.hipDrop !== null && pushUpMetrics.hipDrop > hipSagMax) {
       messages.push('Squeeze glutes to stop hip sag.');
     }
 
-    if (pushUpPhase === 'plank' && pushUpMetrics.avgElbow < PUSHUP_THRESHOLDS.readyElbow - 5) {
+    if (pushUpPhase === 'plank' && pushUpMetrics.avgElbow < readyElbow - 5) {
       messages.push('Start from a full lockout to count clean reps.');
     }
 
-    if (pushUpPhase === 'bottom' && pushUpMetrics.avgElbow > PUSHUP_THRESHOLDS.bottom + 10) {
+    if (pushUpPhase === 'bottom' && pushUpMetrics.avgElbow > bottomElbow + 10) {
       messages.push('Lower deeper until elbows hit ~90°.');
     }
 
@@ -1505,7 +1504,7 @@ export default function ScanARKitScreen() {
           });
           setRecordPreview({
             uri,
-            exercise: detectionMode === 'pullup' ? 'Pull-Up' : 'Push-Up',
+            exercise: activeWorkoutDef.displayName,
             metrics: metricsSnapshot,
             sizeBytes,
             savedToLibrary: false,
@@ -1522,7 +1521,7 @@ export default function ScanARKitScreen() {
     } finally {
       recordingActiveRef.current = false;
     }
-  }, [DEV, isRecording, stopRecordingCore, latestMetricsForUpload, detectionMode, logWithTs, recordingQuality, repCount, pushUpReps]);
+  }, [DEV, isRecording, stopRecordingCore, latestMetricsForUpload, detectionMode, logWithTs, recordingQuality, repCount, pushUpReps, activeWorkoutDef.displayName]);
 
   useEffect(() => {
     if (!gestureRecordingEnabled || isRecording || isFinalizingRecording) {
@@ -1708,27 +1707,13 @@ export default function ScanARKitScreen() {
     );
   }
 
-  const showTelemetry = detectionMode === 'pullup' ? (isTracking || repCount > 0) : (isTracking || pushUpReps > 0);
-  const telemetryTitle = detectionMode === 'pullup' ? 'Pull-Up Tracker' : 'Push-Up Tracker';
   const telemetryReps = detectionMode === 'pullup' ? repCount : pushUpReps;
+  const showTelemetry = isTracking || telemetryReps > 0;
+  const telemetryTitle = `${activeWorkoutDef.displayName} Tracker`;
+  const telemetryPhaseId = detectionMode === 'pullup' ? pullUpPhase : pushUpPhase;
   const telemetryPhaseLabel =
-    detectionMode === 'pullup'
-      ? pullUpPhase === 'idle'
-        ? 'Waiting'
-        : pullUpPhase === 'hang'
-        ? 'Hang'
-        : pullUpPhase === 'pull'
-        ? 'Pull'
-        : 'Top'
-      : pushUpPhase === 'setup'
-      ? 'Setup'
-      : pushUpPhase === 'plank'
-      ? 'Plank'
-      : pushUpPhase === 'lowering'
-      ? 'Lowering'
-      : pushUpPhase === 'bottom'
-      ? 'Bottom'
-      : 'Press';
+    activeWorkoutDef.phases.find((phase) => phase.id === telemetryPhaseId)?.displayName ??
+    String(telemetryPhaseId);
   const telemetryElbow =
     detectionMode === 'pullup'
       ? pullUpMetrics?.armsTracked
@@ -1810,31 +1795,29 @@ export default function ScanARKitScreen() {
               color="#F5F7FF" 
             />
             <Text style={styles.workoutSelectorText}>
-              {detectionMode === 'pullup' ? 'Pull-Ups' : 'Push-Ups'}
+              {activeWorkoutDef.displayName}
             </Text>
             <Ionicons name="chevron-down" size={16} color="#F5F7FF" />
           </TouchableOpacity>
           
           {isDropdownOpen && (
             <View style={styles.dropdownMenu}>
-              <TouchableOpacity
-                style={styles.dropdownItem}
-                onPress={() => {
-                  setDetectionMode('pullup');
-                  setIsDropdownOpen(false);
-                }}
-              >
-                <Text style={styles.dropdownItemText}>Pull-Ups</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.dropdownItem}
-                onPress={() => {
-                  setDetectionMode('pushup');
-                  setIsDropdownOpen(false);
-                }}
-              >
-                <Text style={styles.dropdownItemText}>Push-Ups</Text>
-              </TouchableOpacity>
+              {getWorkoutIds()
+                .filter(isDetectionMode)
+                .map((mode) => (
+                  <TouchableOpacity
+                    key={mode}
+                    style={styles.dropdownItem}
+                    onPress={() => {
+                      setDetectionMode(mode);
+                      setIsDropdownOpen(false);
+                    }}
+                  >
+                    <Text style={styles.dropdownItemText}>
+                      {getWorkoutByMode(mode).displayName}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
             </View>
           )}
         </View>
