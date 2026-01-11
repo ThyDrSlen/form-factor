@@ -11,6 +11,11 @@ import type { WorkoutDefinition, WorkoutRegistry } from '@/lib/types/workout-def
 import { pullupDefinition, type PullUpPhase, type PullUpMetrics } from './pullup';
 import { pushupDefinition, type PushUpPhase, type PushUpMetrics } from './pushup';
 
+const workoutsByMode = {
+  pullup: pullupDefinition,
+  pushup: pushupDefinition,
+} as const;
+
 // =============================================================================
 // Re-exports
 // =============================================================================
@@ -18,6 +23,7 @@ import { pushupDefinition, type PushUpPhase, type PushUpMetrics } from './pushup
 // Re-export individual definitions for direct import
 export { pullupDefinition, PULLUP_THRESHOLDS, type PullUpPhase, type PullUpMetrics } from './pullup';
 export { pushupDefinition, PUSHUP_THRESHOLDS, type PushUpPhase, type PushUpMetrics } from './pushup';
+export { getPhaseStaticCue } from './helpers';
 
 // Re-export type utilities
 export type { WorkoutDefinition, WorkoutRegistry } from '@/lib/types/workout-definitions';
@@ -37,6 +43,13 @@ export const workoutRegistry: WorkoutRegistry = {
   pullup: pullupDefinition as unknown as WorkoutDefinition,
   pushup: pushupDefinition as unknown as WorkoutDefinition,
 };
+
+export function getWorkoutByMode(mode: 'pullup'): typeof workoutsByMode.pullup;
+export function getWorkoutByMode(mode: 'pushup'): typeof workoutsByMode.pushup;
+export function getWorkoutByMode(mode: DetectionMode): (typeof workoutsByMode)[DetectionMode];
+export function getWorkoutByMode(mode: DetectionMode): (typeof workoutsByMode)[DetectionMode] {
+  return workoutsByMode[mode];
+}
 
 /**
  * Get a workout definition by ID
