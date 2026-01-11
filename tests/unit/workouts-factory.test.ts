@@ -6,6 +6,12 @@ test('getWorkoutByMode returns pullup definition', () => {
   expect(def.displayName).toBeTruthy();
 });
 
+test('getWorkoutByMode returns benchpress definition', () => {
+  const def = getWorkoutByMode('benchpress');
+  expect(def.id).toBe('benchpress');
+  expect(def.displayName).toBeTruthy();
+});
+
 test('getPhaseStaticCue returns a cue for initial phase', () => {
   const def = getWorkoutByMode('pushup');
   const cue = getPhaseStaticCue(def, def.initialPhase);
