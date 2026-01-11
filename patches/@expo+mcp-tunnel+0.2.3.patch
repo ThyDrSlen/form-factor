@@ -1,0 +1,13 @@
+diff --git a/node_modules/@expo/mcp-tunnel/package.json b/node_modules/@expo/mcp-tunnel/package.json
+index 673bedbc6213faddadba6c7fe854b324b7442d33..bbe4d6f0ec52ae2b47326d13a8e0a914136c5a3a 100644
+--- a/node_modules/@expo/mcp-tunnel/package.json
++++ b/node_modules/@expo/mcp-tunnel/package.json
+@@ -21,7 +21,7 @@
+   "author": "650 Industries, Inc.",
+   "license": "MIT",
+   "dependencies": {
+-    "@modelcontextprotocol/sdk": "^1.17.5",
++    "@modelcontextprotocol/sdk": "^1.25.2",
+     "ws": "^8.18.3",
+     "zod-to-json-schema": "^3.24.6",
+     "zod": "^3.25.76"
