@@ -1,6 +1,6 @@
-import { PULLUP_THRESHOLDS, PUSHUP_THRESHOLDS } from '@/lib/workouts';
+import { BENCHPRESS_THRESHOLDS, PULLUP_THRESHOLDS, PUSHUP_THRESHOLDS } from '@/lib/workouts';
 
-type Mode = 'pullup' | 'pushup';
+type Mode = 'benchpress' | 'pullup' | 'pushup';
 
 export type VideoFeedMetrics = {
   mode?: Mode;
@@ -36,11 +36,12 @@ const toNumber = (value: unknown): number | null => {
 };
 
 const resolveMode = (exercise?: string | null, metrics?: VideoFeedMetrics | null): Mode | null => {
-  if (metrics?.mode === 'pullup' || metrics?.mode === 'pushup') {
+  if (metrics?.mode === 'benchpress' || metrics?.mode === 'pullup' || metrics?.mode === 'pushup') {
     return metrics.mode;
   }
   if (!exercise) return null;
   const normalized = exercise.toLowerCase();
+  if (normalized.includes('bench')) return 'benchpress';
   if (normalized.includes('pull')) return 'pullup';
   if (normalized.includes('push')) return 'pushup';
   return null;
@@ -205,6 +206,36 @@ export const getFormScore = (
     return normalizeScore(weighted / totalWeight);
   }
 
+  if (mode === 'benchpress') {
+    const elbow = toNumber(metrics.avgElbowDeg ?? metrics.avgElbow);
+    const shoulder = toNumber(metrics.avgShoulderDeg ?? metrics.avgShoulder);
+    if (elbow === null && shoulder === null) return null;
+
+    const elbowScore = elbow === null
+      ? null
+      : normalizeScore(
+          clamp(
+            1 - (elbow - BENCHPRESS_THRESHOLDS.bottom) / (BENCHPRESS_THRESHOLDS.readyElbow - BENCHPRESS_THRESHOLDS.bottom),
+            0,
+            1
+          ) * 100
+        );
+
+    const shoulderScore = shoulder === null
+      ? null
+      : normalizeScore(
+          shoulder <= BENCHPRESS_THRESHOLDS.elbowFlareShoulderMax
+            ? 100
+            : 100 - (shoulder - BENCHPRESS_THRESHOLDS.elbowFlareShoulderMax) * 2
+        );
+
+    const elbowWeight = elbowScore === null ? 0 : 0.7;
+    const shoulderWeight = shoulderScore === null ? 0 : 0.3;
+    const totalWeight = elbowWeight + shoulderWeight || 1;
+    const weighted = (elbowScore ?? 0) * elbowWeight + (shoulderScore ?? 0) * shoulderWeight;
+    return normalizeScore(weighted / totalWeight);
+  }
+
   return null;
 };
 
@@ -246,6 +277,23 @@ export const getPrimaryCue = (
     }
     if (elbow !== null && elbow < PUSHUP_THRESHOLDS.readyElbow - 5) {
       return 'Start from a full lockout to count clean reps.';
+    }
+    return 'Smooth tempo - steady down, strong press up.';
+  }
+
+  if (mode === 'benchpress') {
+    const elbow = toNumber(metrics.avgElbowDeg ?? metrics.avgElbow);
+    const shoulder = toNumber(metrics.avgShoulderDeg ?? metrics.avgShoulder);
+    if (elbow === null && shoulder === null) return null;
+
+    if (shoulder !== null && shoulder > BENCHPRESS_THRESHOLDS.elbowFlareShoulderMax) {
+      return 'Tuck elbows slightly to protect your shoulders.';
+    }
+    if (elbow !== null && elbow > BENCHPRESS_THRESHOLDS.bottom + 10) {
+      return 'Lower the bar closer to your chest for full range.';
+    }
+    if (elbow !== null && elbow < BENCHPRESS_THRESHOLDS.readyElbow - 5) {
+      return 'Finish each rep with a full lockout.';
     }
     return 'Smooth tempo - steady down, strong press up.';
   }
