@@ -1,4 +1,4 @@
-export type WatchTrackingMode = 'pullup' | 'pushup';
+export type WatchTrackingMode = string;
 
 export type WatchTrackingPayload = {
   v: 1;
@@ -41,4 +41,3 @@ export function buildWatchTrackingPayload(args: {
     },
   };
 }
-
