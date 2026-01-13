@@ -6,6 +6,7 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { ensureUserId } from '@/lib/auth-utils';
 import { getTelemetryContext, incrementLowConfidenceFrame } from './telemetry-context';
 import { shouldLogFramesSync } from './consent-service';
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
@@ -55,17 +56,6 @@ let flushTimer: NodeJS.Timeout | null = null;
 let lastSampleTime = 0;
 let isFlushing = false;
 let frameCounter = 0;
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-async function ensureUserId(): Promise<string> {
-  const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  if (!data.user?.id) throw new Error('Not signed in');
-  return data.user.id;
-}
 
 /**
  * Check if confidence is below threshold

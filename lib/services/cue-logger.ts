@@ -7,6 +7,7 @@
 
 import * as Crypto from 'expo-crypto';
 import { supabase } from '@/lib/supabase';
+import { ensureUserId } from '@/lib/auth-utils';
 import { getTelemetryContext, getEnvironmentContext, getSessionQuality, getRetentionClass } from './telemetry-context';
 import type { SessionMetricsPayload } from '@/lib/types/telemetry';
 
@@ -28,17 +29,6 @@ type CueEventPayload = {
 
 // Re-export SessionMetricsPayload for backward compatibility
 export type { SessionMetricsPayload };
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-async function ensureUserId(): Promise<string> {
-  const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  if (!data.user?.id) throw new Error('Not signed in');
-  return data.user.id;
-}
 
 /**
  * Generate a unique session ID

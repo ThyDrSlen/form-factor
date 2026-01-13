@@ -6,6 +6,7 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { ensureUserId } from '@/lib/auth-utils';
 import type { TelemetryConsent } from '@/lib/types/telemetry';
 
 // =============================================================================
@@ -26,20 +27,6 @@ const DEFAULT_CONSENT: TelemetryConsent = {
 let cachedConsent: TelemetryConsent | null = null;
 let cacheExpiry = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-// =============================================================================
-// Core Functions
-// =============================================================================
-
-/**
- * Get current user ID from auth
- */
-async function ensureUserId(): Promise<string> {
-  const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  if (!data.user?.id) throw new Error('Not signed in');
-  return data.user.id;
-}
 
 /**
  * Get user's telemetry consent settings
