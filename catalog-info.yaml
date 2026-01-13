@@ -1,0 +1,135 @@
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: form-factor
+  title: Form Factor
+  description: Form Factor mobile app, backend, edge functions, and native modules
+  annotations:
+    github.com/project-slug: ThyDrSlen/form-factor
+    backstage.io/techdocs-ref: dir:.
+spec:
+  owner: platform-team
+  lifecycle: production
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform-team
+  title: Platform Team
+spec:
+  type: team
+  profile:
+    displayName: Platform Team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: form-factor-api
+  description: Public API surface for Form Factor backend (Supabase)
+spec:
+  type: openapi
+  lifecycle: production
+  owner: platform-team
+  system: form-factor
+  definition: |
+    openapi: 3.0.0
+    info:
+      title: Form Factor API
+      version: 0.0.0
+    paths: {}
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: form-factor-app
+  title: Form Factor Mobile App
+  description: iOS-first fitness app built with Expo and React Native
+  annotations:
+    github.com/project-slug: ThyDrSlen/form-factor
+  tags:
+    - expo
+    - react-native
+    - ios
+  links:
+    - url: https://expo.dev
+      title: Expo Dashboard
+spec:
+  type: mobile-app
+  lifecycle: production
+  owner: platform-team
+  system: form-factor
+  dependsOn:
+    - component:form-factor-backend
+    - component:arkit-body-tracker
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: form-factor-backend
+  description: Supabase backend with PostgreSQL, Auth, and Storage
+  annotations:
+    github.com/project-slug: ThyDrSlen/form-factor
+  tags:
+    - supabase
+    - postgresql
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: form-factor
+  providesApis:
+    - form-factor-api
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: coach-edge-function
+  description: AI coach powered by OpenAI - provides workout recommendations
+  annotations:
+    github.com/project-slug: ThyDrSlen/form-factor
+  tags:
+    - supabase
+    - edge-function
+    - openai
+spec:
+  type: edge-function
+  lifecycle: production
+  owner: platform-team
+  system: form-factor
+  subcomponentOf: component:form-factor-backend
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: notify-edge-function
+  description: Push notification delivery via Expo Push API
+  annotations:
+    github.com/project-slug: ThyDrSlen/form-factor
+  tags:
+    - supabase
+    - edge-function
+    - notifications
+spec:
+  type: edge-function
+  lifecycle: production
+  owner: platform-team
+  system: form-factor
+  subcomponentOf: component:form-factor-backend
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: arkit-body-tracker
+  description: Custom Expo native module for ARKit body pose detection
+  annotations:
+    github.com/project-slug: ThyDrSlen/form-factor
+  tags:
+    - arkit
+    - swift
+    - native-module
+spec:
+  type: library
+  lifecycle: production
+  owner: platform-team
+  system: form-factor
