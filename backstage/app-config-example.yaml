@@ -1,0 +1,26 @@
+# Example app-config.yaml additions for Backstage
+# Copy these sections into ~/Projects/backstage-form-factor/app-config.yaml
+
+# GitHub Integration
+integrations:
+  github:
+    - host: github.com
+      token: ${GITHUB_TOKEN}
+
+# Catalog Locations
+catalog:
+  locations:
+    - type: url
+      target: https://github.com/ThyDrSlen/form-factor/blob/main/catalog-info.yaml
+    - type: url
+      target: https://github.com/ThyDrSlen/form-factor/blob/main/backstage/templates/supabase-edge-function/template.yaml
+      rules:
+        - allow: [Template]
+
+# TechDocs Configuration
+techdocs:
+  builder: local
+  generator:
+    runIn: local
+  publisher:
+    type: local
