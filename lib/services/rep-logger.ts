@@ -7,19 +7,9 @@
 
 import * as Crypto from 'expo-crypto';
 import { supabase } from '@/lib/supabase';
+import { ensureUserId } from '@/lib/auth-utils';
 import { getTelemetryContext } from './telemetry-context';
 import type { RepEvent, SetSummary, RepLabel, EmittedCue, RepFeatures } from '@/lib/types/telemetry';
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-async function ensureUserId(): Promise<string> {
-  const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  if (!data.user?.id) throw new Error('Not signed in');
-  return data.user.id;
-}
 
 /**
  * Generate a UUID for rep/set IDs

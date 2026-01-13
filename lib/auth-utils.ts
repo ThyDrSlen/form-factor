@@ -2,7 +2,45 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
-import { supabase } from './supabase'; // We'll create this next
+import { supabase } from './supabase';
+
+// =============================================================================
+// User ID Utilities
+// =============================================================================
+
+/**
+ * Gets the current authenticated user's ID.
+ * Throws if the user is not signed in.
+ *
+ * @throws {Error} If the user is not authenticated
+ * @returns {Promise<string>} The current user's ID
+ */
+export async function ensureUserId(): Promise<string> {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  if (!data.user?.id) throw new Error('Not signed in');
+  return data.user.id;
+}
+
+/**
+ * Gets the current authenticated user's ID, or null if not signed in.
+ * Does not throw on missing auth.
+ *
+ * @returns {Promise<string | null>} The current user's ID or null
+ */
+export async function getUserIdOrNull(): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user?.id) return null;
+    return data.user.id;
+  } catch {
+    return null;
+  }
+}
+
+// =============================================================================
+// Apple Authentication
+// =============================================================================
 
 // Generate a secure random string for the nonce
 const generateNonce = async (length: number = 32): Promise<string> => {
