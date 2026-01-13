@@ -13,19 +13,19 @@
 - [x] Wire `logRep()` into rep completion flow
 
 ### Remaining: Workout Architecture
-- [ ] Refactor scan-arkit.tsx to use workout definitions from `lib/workouts/`
-- [ ] Replace hardcoded thresholds with values from workout definitions
-- [ ] Create workout factory pattern to replace if/else workout selection
-- [ ] Document workout definition structure for contributors
+- [x] Refactor scan-arkit.tsx to use workout definitions from `lib/workouts/`
+- [x] Replace hardcoded thresholds with values from workout definitions
+- [x] Create workout factory pattern to replace if/else workout selection (`getWorkoutByMode()`)
+- [x] Document workout definition structure for contributors (see `lib/workouts/README.md`)
 
 ### Next Workouts to Implement
-- [ ] RDLs
+- [x] RDLs (`lib/workouts/rdl.ts`)
 - [ ] Chinups
-- [ ] Deadlift
+- [x] Deadlift (`lib/workouts/deadlift.ts`)
 - [ ] Dead Hang
-- [ ] Squats
-- [ ] Benchpress
-- [ ] Farmers Walk
+- [x] Squats (`lib/workouts/squat.ts`)
+- [x] Benchpress (`lib/workouts/benchpress.ts`)
+- [x] Farmers Walk (`lib/workouts/farmers-walk.ts`)
 
 ---
 
@@ -65,32 +65,34 @@ At end of "Record Set App crashes"
 - If file type mismatch: upload as `.mov` or transcode to `.mp4` explicitly.
 - **UX change**: don’t auto‑upload on stop. Save locally, show preview, then user chooses “Save/Upload” vs “Discard.” (Also avoids immediate memory spike.)
 
-**Preview-first flow (proposal)**
+**Preview-first flow (✅ IMPLEMENTED)**
 - On Stop: finalize recording → save local file URI → open preview modal/screen.
 - Preview UI: video player, duration, size, metrics summary.
-- CTAs: `Save & Upload`, `Save Only`, `Discard`.
+- CTAs: `Publish + Save`, `Save only`, `Discard`.
 - Background: only upload after explicit user action; show progress; allow cancel.
 
-**Acceptance criteria**
-- Stopping a recording never triggers upload automatically.
-- Preview opens within 1s after stop (or shows a loading state).
-- “Discard” removes the local file and returns to tracking screen.
-- “Save Only” stores to camera roll (if permission) without upload.
-- “Save & Upload” uploads successfully with progress and clear failure messaging.
+**Acceptance criteria** (verified in code)
+- ✅ Stopping a recording never triggers upload automatically.
+- ✅ Preview opens after stop (with finalizing state).
+- ✅ "Discard" removes the local file and returns to tracking screen.
+- ✅ "Save Only" stores to camera roll (if permission) without upload.
+- ✅ "Publish + Save" uploads successfully with progress and clear failure messaging.
 
-Logs in terminal dont include timestamp making difficult to determine what action took place when 
+**Still needs testing**: The crash may still occur during the finalization/stop step itself (memory pressure during `stopRecording`). The preview-first flow mitigates the upload-side memory issues but native recorder crashes still need investigation.
+
+**Logs in terminal don't include timestamps** — Note: `scan-arkit.tsx` has a `logWithTs()` helper but it's only used in a few places. Consider using it consistently or adding timestamps to all debug logs.
 
 
 
 ## Code Quality
 
 ### Utility Consolidation
-- [ ] Consolidate `ensureUserId()` into single auth utility (currently duplicated in: consent-service.ts, cue-logger.ts, pose-logger.ts, rep-logger.ts, video-service.ts)
+- [x] Consolidate `ensureUserId()` into single auth utility → moved to `lib/auth-utils.ts`
 - [ ] Audit platform-utils usage across codebase (forgot-password.tsx, sign-in.tsx, sign-up.tsx, add-food.tsx, notifications.tsx, DashboardHealth.tsx)
 - [ ] Ensure all utility functions are reused (no redeclaration without documented reason)
 
 ### Code Cleanup
-- [ ] Review scan-arkit.tsx for remaining TODOs
+- [x] Review scan-arkit.tsx for remaining TODOs (none found)
 - [ ] Determine what proprietary code (heuristics, joint angle modeling) should not be in public repo
 
 ---
@@ -105,12 +107,12 @@ Logs in terminal dont include timestamp making difficult to determine what actio
 
 - [ ] Will skeleton overlay adjust to size of the user?
 - [ ] Why does React need separate toast import for Android (line 2)?
-- [ ] If front camera doesn't support form tracking, should we disable it?
-- [ ] Are we using 2D or 3D tracking currently?
+- [x] If front camera doesn't support form tracking, should we disable it? → ARKit requires back camera only; code enforces this with alert.
+- [x] Are we using 2D or 3D tracking currently? → 3D via ARKit; 2D projection overlay on top (`pose2D`).
 - [ ] How do goals/objectives influence heuristics (explosive athletes vs. lifters, 1RM edge case)?
 - [ ] Should logging be more centralized?
-- [ ] Should scan even be displayed on web? (probably not)
-- [ ] What is `Haptics.impactAsync()`?
+- [x] Should scan even be displayed on web? (probably not) → Already handled: web shows "Device not supported" state.
+- [x] What is `Haptics.impactAsync()`? → `expo-haptics` for haptic feedback (used on rep completion, recording start, etc.)
 
 ### Cue System Clarification
 - [ ] Standardize terminology: "cues" not "prompts" to avoid confusion with coach prompts
