@@ -272,6 +272,7 @@ function calculateMetrics(
     avgHip,
     avgKnee,
     avgShoulder,
+    armsTracked: false, // Deadlift doesn't require arm tracking
     legsTracked,
   };
 }
