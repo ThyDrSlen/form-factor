@@ -282,6 +282,7 @@ function calculateMetrics(
   return {
     avgKnee,
     avgHip,
+    armsTracked: false, // Squat doesn't require arm tracking
     legsTracked,
   };
 }

@@ -280,6 +280,7 @@ function calculateMetrics(
   return {
     avgHip,
     avgKnee,
+    armsTracked: false, // RDL doesn't require arm tracking
     legsTracked,
   };
 }
