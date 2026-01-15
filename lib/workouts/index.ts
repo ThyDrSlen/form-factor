@@ -9,6 +9,7 @@ import type { WorkoutDefinition, WorkoutRegistry } from '@/lib/types/workout-def
 
 // Import individual workout definitions
 import { benchpressDefinition, type BenchPressPhase, type BenchPressMetrics } from './benchpress';
+import { deadHangDefinition, type DeadHangPhase, type DeadHangMetrics } from './dead-hang';
 import { deadliftDefinition, type DeadliftPhase, type DeadliftMetrics } from './deadlift';
 import { farmersWalkDefinition, type FarmersWalkPhase, type FarmersWalkMetrics } from './farmers-walk';
 import { pullupDefinition, type PullUpPhase, type PullUpMetrics } from './pullup';
@@ -18,6 +19,7 @@ import { squatDefinition, type SquatPhase, type SquatMetrics } from './squat';
 
 export const workoutsByMode = {
   benchpress: benchpressDefinition,
+  dead_hang: deadHangDefinition,
   deadlift: deadliftDefinition,
   farmers_walk: farmersWalkDefinition,
   pullup: pullupDefinition,
@@ -32,6 +34,7 @@ export const workoutsByMode = {
 
 // Re-export individual definitions for direct import
 export { benchpressDefinition, BENCHPRESS_THRESHOLDS, type BenchPressPhase, type BenchPressMetrics } from './benchpress';
+export { deadHangDefinition, DEAD_HANG_THRESHOLDS, type DeadHangPhase, type DeadHangMetrics } from './dead-hang';
 export { deadliftDefinition, DEADLIFT_THRESHOLDS, type DeadliftPhase, type DeadliftMetrics } from './deadlift';
 export { farmersWalkDefinition, FARMERS_WALK_THRESHOLDS, type FarmersWalkPhase, type FarmersWalkMetrics } from './farmers-walk';
 export { pullupDefinition, PULLUP_THRESHOLDS, type PullUpPhase, type PullUpMetrics } from './pullup';
@@ -56,6 +59,7 @@ export type { WorkoutDefinition, WorkoutRegistry } from '@/lib/types/workout-def
  */
 export const workoutRegistry: WorkoutRegistry = {
   benchpress: benchpressDefinition as unknown as WorkoutDefinition,
+  dead_hang: deadHangDefinition as unknown as WorkoutDefinition,
   deadlift: deadliftDefinition as unknown as WorkoutDefinition,
   farmers_walk: farmersWalkDefinition as unknown as WorkoutDefinition,
   pullup: pullupDefinition as unknown as WorkoutDefinition,

@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Switch, ActivityIndicator, Linking, Platform } from 'react-native';
+import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Switch, ActivityIndicator, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 // import * as Notifications from 'expo-notifications';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { useSafeBack } from '@/hooks/use-safe-back';
+import { isAndroid, isIOS } from '@/lib/platform-utils';
 import {
   loadNotificationPreferences,
   registerDevicePushToken,
@@ -60,7 +61,7 @@ export default function NotificationSettingsModal() {
   }, [toast, user?.id]);
 
   useEffect(() => {
-    if (Platform.OS !== 'android') return;
+    if (!isAndroid()) return;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       safeBack();
       return true;
@@ -119,7 +120,7 @@ export default function NotificationSettingsModal() {
   };
 
   const openSystemSettings = () => {
-    if (Platform.OS === 'ios') {
+    if (isIOS()) {
       Linking.openURL('app-settings:');
     } else {
       Linking.openSettings();
