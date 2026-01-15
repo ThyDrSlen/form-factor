@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useHealthKit } from '@/contexts/HealthKitContext';
 import { getHealthKitGuidance } from '@/components/health-kit/healthkit-guidance';
+import { isIOS } from '@/lib/platform-utils';
 
 interface StatProps {
   label: string;
@@ -33,8 +34,7 @@ export function DashboardHealth() {
   const { status, isLoading, stepsToday, latestHeartRate, requestPermissions } = useHealthKit();
 
   // Hide HealthKit UI on non-iOS platforms (e.g., web, Android)
-  const isIOS = Platform.OS === 'ios';
-  if (!isIOS) {
+  if (!isIOS()) {
     return null;
   }
 

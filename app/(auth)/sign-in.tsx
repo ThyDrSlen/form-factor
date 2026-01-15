@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
+import { isIOS } from '@/lib/platform-utils';
 
 type FormData = {
   email: string;
@@ -17,6 +18,7 @@ export default function SignInScreen() {
     password: '',
     fullName: '',
   });
+  const isiOS = isIOS();
   const {
     signInWithGoogle,
     signInWithApple,
@@ -129,7 +131,7 @@ export default function SignInScreen() {
     <View style={styles.container}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={isiOS ? 'padding' : 'height'}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -231,7 +233,7 @@ export default function SignInScreen() {
               </Text>
             </TouchableOpacity>
 
-            {Platform.OS === 'ios' && (
+            {isiOS && (
               <TouchableOpacity
                 style={[styles.socialButton, isSigningIn && styles.buttonDisabled]}
                 onPress={() => handleSocialAuth('apple')}
