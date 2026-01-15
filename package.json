@@ -49,6 +49,7 @@
     "@expo/fingerprint": "0.15.1",
     "node-forge": "^1.3.2",
     "react-server-dom-webpack": "19.2.3",
+    "hono": "4.11.4",
     "qs": "6.14.1"
   },
   "dependencies": {
@@ -121,7 +122,8 @@
     "jest-expo": "^54.0.16",
     "knip": "^5.80.2",
     "patch-package": "^8.0.1",
-    "react-test-renderer": "19.2.3"
+    "react-test-renderer": "19.2.3",
+    "hono": "4.11.4"
   },
   "private": true,
   "trustedDependencies": [
