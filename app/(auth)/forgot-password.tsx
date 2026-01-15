@@ -1,8 +1,9 @@
-import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, KeyboardAvoidingView, TouchableOpacity } from 'react-native';
 import { Text, TextInput, Button } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
+import { getPlatformValue } from '@/lib/platform-utils';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
@@ -49,7 +50,7 @@ export default function ForgotPasswordScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={getPlatformValue({ ios: 'padding', default: 'height' })}
         style={styles.keyboardAvoidingView}
       >
         <ScrollView 

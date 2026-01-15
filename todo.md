@@ -22,7 +22,7 @@
 - [x] RDLs (`lib/workouts/rdl.ts`)
 - [ ] Chinups
 - [x] Deadlift (`lib/workouts/deadlift.ts`)
-- [ ] Dead Hang
+- [x] Dead Hang (`lib/workouts/dead-hang.ts`)
 - [x] Squats (`lib/workouts/squat.ts`)
 - [x] Benchpress (`lib/workouts/benchpress.ts`)
 - [x] Farmers Walk (`lib/workouts/farmers-walk.ts`)
@@ -88,7 +88,7 @@ At end of "Record Set App crashes"
 
 ### Utility Consolidation
 - [x] Consolidate `ensureUserId()` into single auth utility → moved to `lib/auth-utils.ts`
-- [ ] Audit platform-utils usage across codebase (forgot-password.tsx, sign-in.tsx, sign-up.tsx, add-food.tsx, notifications.tsx, DashboardHealth.tsx)
+- [x] Audit platform-utils usage across codebase (forgot-password.tsx, sign-in.tsx, sign-up.tsx, add-food.tsx, notifications.tsx, DashboardHealth.tsx)
 - [ ] Ensure all utility functions are reused (no redeclaration without documented reason)
 
 ### Code Cleanup
