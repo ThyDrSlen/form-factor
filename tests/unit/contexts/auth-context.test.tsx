@@ -173,6 +173,10 @@ describe('AuthContext', () => {
       expect(result.current.loading).toBe(true);
       expect(result.current.user).toBeNull();
       expect(result.current.session).toBeNull();
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
     });
 
     it('should restore valid stored session', async () => {

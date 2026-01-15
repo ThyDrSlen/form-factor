@@ -9,7 +9,6 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Platform,
   Keyboard,
   InputAccessoryView,
   KeyboardAvoidingView,
@@ -20,10 +19,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFood } from '../../contexts/FoodContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useSafeBack } from '../../hooks/use-safe-back';
+import { isIOS } from '@/lib/platform-utils';
 
 export default function AddFoodScreen() {
   const { addFood } = useFood();
   const { show: showToast } = useToast();
+  const isiOS = isIOS();
 
   const [name, setName] = useState('');
   const [calories, setCalories] = useState('');
@@ -83,7 +84,7 @@ export default function AddFoodScreen() {
       addFood(foodEntry);
 
       // Haptic feedback
-      if (Platform.OS === 'ios') {
+      if (isiOS) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
 
@@ -113,8 +114,8 @@ export default function AddFoodScreen() {
 
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+        behavior={isiOS ? 'padding' : undefined}
+        keyboardVerticalOffset={isiOS ? 64 : 0}
       >
         <ScrollView
           contentContainerStyle={styles.content}
@@ -155,7 +156,7 @@ export default function AddFoodScreen() {
               returnKeyType="next"
               onSubmitEditing={() => proteinRef.current?.focus()}
               blurOnSubmit={false}
-              inputAccessoryViewID={Platform.OS === 'ios' ? accessoryID : undefined}
+              inputAccessoryViewID={isiOS ? accessoryID : undefined}
             />
           </View>
 
@@ -175,7 +176,7 @@ export default function AddFoodScreen() {
                 returnKeyType="next"
                 onSubmitEditing={() => carbsRef.current?.focus()}
                 blurOnSubmit={false}
-                inputAccessoryViewID={Platform.OS === 'ios' ? accessoryID : undefined}
+                inputAccessoryViewID={isiOS ? accessoryID : undefined}
               />
             </View>
 
@@ -194,7 +195,7 @@ export default function AddFoodScreen() {
                 returnKeyType="next"
                 onSubmitEditing={() => fatRef.current?.focus()}
                 blurOnSubmit={false}
-                inputAccessoryViewID={Platform.OS === 'ios' ? accessoryID : undefined}
+                inputAccessoryViewID={isiOS ? accessoryID : undefined}
               />
             </View>
 
@@ -212,7 +213,7 @@ export default function AddFoodScreen() {
                 ref={fatRef}
                 returnKeyType="done"
                 onSubmitEditing={() => Keyboard.dismiss()}
-                inputAccessoryViewID={Platform.OS === 'ios' ? accessoryID : undefined}
+                inputAccessoryViewID={isiOS ? accessoryID : undefined}
               />
             </View>
           </View>
@@ -244,7 +245,7 @@ export default function AddFoodScreen() {
             <DateTimePicker
               value={date}
               mode="datetime"
-              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              display={isiOS ? 'inline' : 'default'}
               minuteInterval={1}
               onChange={(event: any, selectedDate?: Date) => {
                 if (event?.type === 'dismissed') {
@@ -278,7 +279,7 @@ export default function AddFoodScreen() {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
-      {Platform.OS === 'ios' && (
+      {isiOS && (
         <InputAccessoryView nativeID={accessoryID}>
           <View style={styles.accessoryContainer}>
             <View style={styles.flex} />
