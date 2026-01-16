@@ -31,6 +31,7 @@ import {
   getReachability,
 } from '@/lib/watch-connectivity';
 import { buildWatchTrackingPayload } from '@/lib/watch-connectivity/tracking-payload';
+import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D } from '@/lib/arkit/ARKitBodyTracker';
@@ -150,9 +151,6 @@ export default function ScanARKitScreen() {
   const DEV = __DEV__;
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const logWithTs = useCallback((...args: unknown[]) => {
-    console.log(new Date().toISOString(), ...args);
-  }, []);
   // ARKit body tracking supports back camera only; remove VisionCamera preview dependency.
   const cameraPosition = 'back' as const;
   const ensureMediaLibraryPermission = useCallback(async () => {
@@ -163,7 +161,7 @@ export default function ScanARKitScreen() {
       const next = await MediaLibrary.requestPermissionsAsync();
       return next.granted;
     } catch (error) {
-      console.warn('[ScanARKit] Media library permission check failed', error);
+      warnWithTs('[ScanARKit] Media library permission check failed', error);
       return false;
     }
   }, []);
@@ -324,7 +322,7 @@ export default function ScanARKitScreen() {
   useEffect(() => {
     initSessionContext().catch((error) => {
       if (__DEV__) {
-        console.warn('[ScanARKit] Failed to initialize session context', error);
+        warnWithTs('[ScanARKit] Failed to initialize session context', error);
       }
     });
     resetFrameCounter();
@@ -346,7 +344,7 @@ export default function ScanARKitScreen() {
       // Flush any remaining pose samples before session ends
       flushPoseBuffer().catch((error) => {
         if (__DEV__) {
-          console.warn('[ScanARKit] Failed to flush pose buffer on cleanup', error);
+          warnWithTs('[ScanARKit] Failed to flush pose buffer on cleanup', error);
         }
       });
 
@@ -481,13 +479,13 @@ export default function ScanARKitScreen() {
       });
 
       if (__DEV__) {
-        console.log(
+        logWithTs(
           `[ScanARKit] Rep ${repNumber} logged: Form Score=${fqiResult.score}, faults=${fqiResult.detectedFaults.join(',')}`
         );
       }
     } catch (error) {
       if (__DEV__) {
-        console.error('[ScanARKit] Failed to log rep', error);
+        errorWithTs('[ScanARKit] Failed to log rep', error);
       }
     }
 
@@ -552,8 +550,8 @@ export default function ScanARKitScreen() {
 
   useEffect(() => {
     if (DEV) {
-      console.log('[ScanARKit] Component mounted - Platform:', Platform.OS);
-      console.log('[ScanARKit] nativeSupported value:', nativeSupported);
+      logWithTs('[ScanARKit] Component mounted - Platform:', Platform.OS);
+      logWithTs('[ScanARKit] nativeSupported value:', nativeSupported);
     }
     
     if (Platform.OS === 'web') {
@@ -562,10 +560,10 @@ export default function ScanARKitScreen() {
     }
 
     if (nativeSupported) {
-      if (DEV) console.log('[ScanARKit] Device is supported!');
+      if (DEV) logWithTs('[ScanARKit] Device is supported!');
       setSupportStatus('supported');
     } else {
-      if (DEV) console.log('[ScanARKit] Device NOT supported');
+      if (DEV) logWithTs('[ScanARKit] Device NOT supported');
       setSupportStatus('unsupported');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -574,7 +572,7 @@ export default function ScanARKitScreen() {
   // Auto-start tracking when supported
   useEffect(() => {
     if (DEV) {
-      console.log('[ScanARKit] Auto-start check:', {
+      logWithTs('[ScanARKit] Auto-start check:', {
         supportStatus,
         isTracking,
         cameraPosition,
@@ -583,7 +581,7 @@ export default function ScanARKitScreen() {
     }
     
     if (supportStatus === 'supported' && !isTracking && cameraPosition === 'back') {
-      if (DEV) console.log('[ScanARKit] ✅ Auto-starting tracking...');
+      if (DEV) logWithTs('[ScanARKit] ✅ Auto-starting tracking...');
       startTracking();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -592,7 +590,7 @@ export default function ScanARKitScreen() {
   // Debug pose updates (throttled logging)
   useEffect(() => {
     if (!pose) {
-      if (DEV) console.log('[ScanARKit] ℹ️ No pose data');
+      if (DEV) logWithTs('[ScanARKit] ℹ️ No pose data');
       // Track pose lost if we were previously tracking
       if (jointAnglesStateRef.current !== null && isTracking) {
         incrementPoseLost();
@@ -619,7 +617,7 @@ export default function ScanARKitScreen() {
     const shouldLog = frameStatsRef.current.frameCount % 30 === 0;
     
     if (shouldLog && DEV) {
-      console.log('[ScanARKit] 📊 Pose update:', {
+      logWithTs('[ScanARKit] 📊 Pose update:', {
         joints: pose.joints.length,
         timestamp: pose.timestamp,
         isTracking: pose.isTracking,
@@ -677,7 +675,7 @@ export default function ScanARKitScreen() {
       }
 
       if (shouldLog && next && DEV) {
-        console.log('[ScanARKit] 📐 Joint angles:', {
+        logWithTs('[ScanARKit] 📐 Joint angles:', {
           leftKnee: next.leftKnee.toFixed(1),
           rightKnee: next.rightKnee.toFixed(1),
           leftElbow: next.leftElbow.toFixed(1),
@@ -716,7 +714,7 @@ export default function ScanARKitScreen() {
             fpsAtCapture: fps,
           }).catch((error) => {
             if (__DEV__) {
-              console.warn('[ScanARKit] Failed to log pose sample', error);
+              warnWithTs('[ScanARKit] Failed to log pose sample', error);
             }
           });
         }
@@ -736,7 +734,7 @@ export default function ScanARKitScreen() {
         transitionPhase(activeWorkoutDef.initialPhase);
       }
     } catch (error) {
-      console.error('[ScanARKit] ❌ Error calculating angles:', error);
+      errorWithTs('[ScanARKit] ❌ Error calculating angles:', error);
     }
 
     frameStatsRef.current.frameCount += 1;
@@ -749,7 +747,7 @@ export default function ScanARKitScreen() {
     if (elapsed >= 1) {
       const newFps = Math.round(frameStatsRef.current.frameCount / elapsed);
       if (DEV) {
-        console.log('[ScanARKit] 🎯 Performance:', {
+        logWithTs('[ScanARKit] 🎯 Performance:', {
           fps: newFps,
           totalFrames: frameStatsRef.current.frameCount
         });
@@ -767,7 +765,7 @@ export default function ScanARKitScreen() {
   // Debug pose2D updates
   useEffect(() => {
     if (DEV && pose2D) {
-      console.log('[ScanARKit] 📍 pose2D update:', {
+      logWithTs('[ScanARKit] 📍 pose2D update:', {
         joints: pose2D.joints.length,
         tracked: pose2D.joints.filter(j => j.isTracked).length,
         isTracking: pose2D.isTracking
@@ -837,7 +835,7 @@ export default function ScanARKitScreen() {
   const startTracking = useCallback(async () => {
     if (DEV) logWithTs('[ScanARKit] Starting tracking...');
     if (cameraPosition !== 'back') {
-      if (DEV) console.warn('[ScanARKit] Skipping tracking start: ARKit requires back camera');
+      if (DEV) warnWithTs('[ScanARKit] Skipping tracking start: ARKit requires back camera');
       Alert.alert('Back camera required', 'ARKit body tracking only works with the back camera.');
       return;
     }
@@ -860,9 +858,9 @@ export default function ScanARKitScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (error) {
-      console.error('[ScanARKit] ❌ Failed to start tracking:', error);
+      errorWithTs('[ScanARKit] ❌ Failed to start tracking:', error);
       if (DEV) {
-        console.error('[ScanARKit] Error details:', {
+        errorWithTs('[ScanARKit] Error details:', {
           message: error instanceof Error ? error.message : String(error),
           stack: error instanceof Error ? error.stack : undefined
         });
@@ -885,7 +883,7 @@ export default function ScanARKitScreen() {
       }
       return path.startsWith('file://') ? path : `file://${path}`;
     } catch (error) {
-      console.error('[ScanARKit] Failed to stop ARKit recording', error);
+      errorWithTs('[ScanARKit] Failed to stop ARKit recording', error);
       setIsRecording(false);
       throw error;
     } finally {
@@ -906,7 +904,7 @@ export default function ScanARKitScreen() {
             FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
           }
         } catch (error) {
-          console.error('[ScanARKit] ❌ Error stopping recording when stopping tracking:', error);
+          errorWithTs('[ScanARKit] ❌ Error stopping recording when stopping tracking:', error);
         }
       }
 
@@ -928,7 +926,7 @@ export default function ScanARKitScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
     } catch (error) {
-      console.error('[ScanARKit] ❌ Error stopping tracking:', error);
+      errorWithTs('[ScanARKit] ❌ Error stopping tracking:', error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopNativeTracking, transitionPhase, isRecording, stopRecordingCore, logWithTs, detectionMode]);
@@ -1081,7 +1079,7 @@ export default function ScanARKitScreen() {
           ts: Date.now(),
         });
       } catch (error) {
-        if (DEV) console.warn('[ScanARKit] Watch mirror snapshot failed', error);
+        if (DEV) warnWithTs('[ScanARKit] Watch mirror snapshot failed', error);
       } finally {
         watchMirrorInFlightRef.current = false;
       }
@@ -1106,7 +1104,7 @@ export default function ScanARKitScreen() {
           setWatchInstalled(!!installed);
           setWatchReachable(!!reachable);
         } catch (error) {
-          if (DEV) console.warn('[ScanARKit] Watch status check failed', error);
+          if (DEV) warnWithTs('[ScanARKit] Watch status check failed', error);
         }
       };
 
@@ -1242,7 +1240,7 @@ export default function ScanARKitScreen() {
         });
         return true;
       } catch (error) {
-        console.error('[ScanARKit] Upload recorded video failed', error);
+        errorWithTs('[ScanARKit] Upload recorded video failed', error);
         const message = error instanceof Error ? error.message : 'Could not upload recording.';
         setPreviewError(message);
         Alert.alert('Upload failed', message);
@@ -1266,7 +1264,7 @@ export default function ScanARKitScreen() {
         await MediaLibrary.saveToLibraryAsync(uri);
         return true;
       } catch (error) {
-        console.error('[ScanARKit] Failed to save recording to camera roll', error);
+        errorWithTs('[ScanARKit] Failed to save recording to camera roll', error);
         return false;
       }
     }, [ensureMediaLibraryPermission]);
@@ -1275,7 +1273,7 @@ export default function ScanARKitScreen() {
       try {
         await FileSystem.deleteAsync(uri, { idempotent: true });
       } catch (error) {
-        console.warn('[ScanARKit] Failed to delete local recording', error);
+        warnWithTs('[ScanARKit] Failed to delete local recording', error);
       }
     }, []);
 
@@ -1305,7 +1303,7 @@ export default function ScanARKitScreen() {
         setIsRecording(true);
         await BodyTracker.startRecording({ quality: recordingQuality });
       } catch (error) {
-        console.error('[ScanARKit] Failed to start ARKit recording', error);
+        errorWithTs('[ScanARKit] Failed to start ARKit recording', error);
         recordingActiveRef.current = false;
         setIsRecording(false);
         Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not start recording.');
@@ -1347,7 +1345,7 @@ export default function ScanARKitScreen() {
           Alert.alert('Recording', 'No video file was generated.');
         }
     } catch (error) {
-      console.error('[ScanARKit] Failed to stop ARKit recording', error);
+      errorWithTs('[ScanARKit] Failed to stop ARKit recording', error);
       setIsRecording(false);
       Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not stop recording.');
     } finally {

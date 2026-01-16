@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { Platform } from 'react-native';
+import { logWithTs } from '@/lib/logger';
 
 /**
  * useSafeBack
@@ -22,7 +23,7 @@ export function useSafeBack(
 
   const safeBack = useCallback(() => {
     const canGo = typeof navigation?.canGoBack === 'function' && navigation.canGoBack();
-    console.log('[useSafeBack] invoked', { canGoBack: canGo, fallback });
+    logWithTs('[useSafeBack] invoked', { canGoBack: canGo, fallback });
     if (!options?.alwaysReplace && canGo) {
       navigation.goBack();
       return;
@@ -32,7 +33,7 @@ export function useSafeBack(
     const target = Platform.OS === 'web'
       ? paths.find((path) => !path.includes('(')) ?? paths[0]
       : paths[0];
-    console.log('[useSafeBack] replacing to', target);
+    logWithTs('[useSafeBack] replacing to', target);
     router.replace(target);
   }, [navigation, router, fallback, options?.alwaysReplace]);
 

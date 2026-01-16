@@ -5,6 +5,8 @@
  * to allow the app to compile and run on web without crashes.
  */
 
+import { warnWithTs } from '@/lib/logger';
+
 /**
  * Represents a 3D joint position in world space (meters)
  */
@@ -83,7 +85,7 @@ export class BodyTracker {
    */
   static isSupported(): boolean {
     if (__DEV__) {
-      console.warn('[BodyTracker.web] ARKit body tracking is not available on web platform');
+      warnWithTs('[BodyTracker.web] ARKit body tracking is not available on web platform');
     }
     return false;
   }
@@ -129,7 +131,7 @@ export class BodyTracker {
    * Returns 0 on web
    */
   static calculateAngle(joint1: Joint3D, joint2: Joint3D, joint3: Joint3D): number {
-    console.warn('[BodyTracker.web] calculateAngle is not available on web');
+    warnWithTs('[BodyTracker.web] calculateAngle is not available on web');
     return 0;
   }
 
@@ -138,7 +140,7 @@ export class BodyTracker {
    * Returns 0 on web
    */
   static getJointDistance(joint1: Joint3D, joint2: Joint3D): number {
-    console.warn('[BodyTracker.web] getJointDistance is not available on web');
+    warnWithTs('[BodyTracker.web] getJointDistance is not available on web');
     return 0;
   }
 

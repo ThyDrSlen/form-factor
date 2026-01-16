@@ -1,6 +1,7 @@
 import { Session } from '@supabase/supabase-js';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import { supabase } from '../supabase';
 
  // Ensure the auth session is correctly completed when returning to the app (iOS 11+)
@@ -25,7 +26,7 @@ export class OAuthHandler {
   constructor() {
     // In Expo Router, group folders like (auth) are omitted from the URL path
     this.redirectUrl = Linking.createURL('/callback');
-    console.log('[OAuthHandler] Configured redirect URL:', this.redirectUrl);
+    logWithTs('[OAuthHandler] Configured redirect URL:', this.redirectUrl);
   }
 
   static getInstance(): OAuthHandler {
@@ -40,7 +41,7 @@ export class OAuthHandler {
    */
   async initiateOAuth(provider: 'google' | 'apple'): Promise<AuthResult> {
     try {
-      console.log(`[OAuthHandler] Starting ${provider} OAuth flow`);
+      logWithTs(`[OAuthHandler] Starting ${provider} OAuth flow`);
 
       // Start the OAuth flow with Supabase
       const { data, error } = await supabase.auth.signInWithOAuth({
@@ -52,7 +53,7 @@ export class OAuthHandler {
       });
 
       if (error) {
-        console.error(`[OAuthHandler] Error starting ${provider} OAuth:`, error);
+        errorWithTs(`[OAuthHandler] Error starting ${provider} OAuth:`, error);
         return {
           success: false,
           error: `Failed to start ${provider} sign-in: ${error.message}`,
@@ -60,14 +61,14 @@ export class OAuthHandler {
       }
 
       if (!data.url) {
-        console.error(`[OAuthHandler] No OAuth URL returned from Supabase`);
+        errorWithTs(`[OAuthHandler] No OAuth URL returned from Supabase`);
         return {
           success: false,
           error: `No authentication URL received from ${provider}`,
         };
       }
 
-      console.log(`[OAuthHandler] Opening OAuth URL for ${provider}`);
+      logWithTs(`[OAuthHandler] Opening OAuth URL for ${provider}`);
 
       // Open the OAuth URL in browser
       const result = await WebBrowser.openAuthSessionAsync(
@@ -75,7 +76,7 @@ export class OAuthHandler {
         this.redirectUrl
       );
 
-      console.log(`[OAuthHandler] OAuth browser result:`, result.type);
+      logWithTs(`[OAuthHandler] OAuth browser result:`, result.type);
 
       if (result.type === 'success') {
         // Parse the callback URL to extract tokens or code
@@ -95,7 +96,7 @@ export class OAuthHandler {
       }
 
       if (result.type === 'cancel') {
-        console.log(`[OAuthHandler] User cancelled ${provider} OAuth`);
+        logWithTs(`[OAuthHandler] User cancelled ${provider} OAuth`);
         return {
           success: false,
           error: 'Sign-in was cancelled',
@@ -103,7 +104,7 @@ export class OAuthHandler {
       }
 
       if (result.type === 'dismiss') {
-        console.log(`[OAuthHandler] ${provider} OAuth was dismissed`);
+        logWithTs(`[OAuthHandler] ${provider} OAuth was dismissed`);
         return {
           success: false,
           error: 'Sign-in was dismissed',
@@ -115,7 +116,7 @@ export class OAuthHandler {
         error: `Unexpected OAuth result: ${result.type}`,
       };
     } catch (error) {
-      console.error(`[OAuthHandler] Unexpected error in ${provider} OAuth:`, error);
+      errorWithTs(`[OAuthHandler] Unexpected error in ${provider} OAuth:`, error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'An unexpected error occurred',
@@ -128,13 +129,13 @@ export class OAuthHandler {
    */
   async handleCallback(url: string): Promise<Session | null> {
     try {
-      console.log('[OAuthHandler] Processing callback URL:', url);
+      logWithTs('[OAuthHandler] Processing callback URL:', url);
 
       // Parse tokens from the URL
       const tokens = this.parseTokensFromUrl(url);
       
       if (tokens) {
-        console.log('[OAuthHandler] Found tokens in URL, setting session');
+        logWithTs('[OAuthHandler] Found tokens in URL, setting session');
         
         // Set session using the extracted tokens
         const { data, error } = await supabase.auth.setSession({
@@ -143,12 +144,12 @@ export class OAuthHandler {
         });
 
         if (error) {
-          console.error('[OAuthHandler] Error setting session from tokens:', error);
+          errorWithTs('[OAuthHandler] Error setting session from tokens:', error);
           return null;
         }
 
         if (data.session) {
-          console.log('[OAuthHandler] Successfully created session from tokens');
+          logWithTs('[OAuthHandler] Successfully created session from tokens');
           return data.session;
         }
       }
@@ -158,25 +159,25 @@ export class OAuthHandler {
       const code = queryParams?.code as string;
 
       if (code) {
-        console.log('[OAuthHandler] Found authorization code, exchanging for session');
+        logWithTs('[OAuthHandler] Found authorization code, exchanging for session');
         
         const { data, error } = await supabase.auth.exchangeCodeForSession(code);
         
         if (error) {
-          console.error('[OAuthHandler] Error exchanging code for session:', error);
+          errorWithTs('[OAuthHandler] Error exchanging code for session:', error);
           return null;
         }
 
         if (data.session) {
-          console.log('[OAuthHandler] Successfully exchanged code for session');
+          logWithTs('[OAuthHandler] Successfully exchanged code for session');
           return data.session;
         }
       }
 
-      console.log('[OAuthHandler] No tokens or code found in callback URL');
+      logWithTs('[OAuthHandler] No tokens or code found in callback URL');
       return null;
     } catch (error) {
-      console.error('[OAuthHandler] Error handling callback:', error);
+      errorWithTs('[OAuthHandler] Error handling callback:', error);
       return null;
     }
   }
@@ -186,7 +187,7 @@ export class OAuthHandler {
    */
   parseTokensFromUrl(url: string): ParsedTokens | null {
     try {
-      console.log('[OAuthHandler] Parsing tokens from URL');
+      logWithTs('[OAuthHandler] Parsing tokens from URL');
 
       // Handle both hash fragments and query parameters
       const hashMatch = url.match(/#(.+)/);
@@ -196,13 +197,13 @@ export class OAuthHandler {
       let searchParams: URLSearchParams;
       
       if (hashMatch) {
-        console.log('[OAuthHandler] Found hash fragment in URL');
+        logWithTs('[OAuthHandler] Found hash fragment in URL');
         searchParams = new URLSearchParams(hashMatch[1]);
       } else if (queryMatch) {
-        console.log('[OAuthHandler] Found query parameters in URL');
+        logWithTs('[OAuthHandler] Found query parameters in URL');
         searchParams = new URLSearchParams(queryMatch[1]);
       } else {
-        console.log('[OAuthHandler] No hash or query parameters found');
+        logWithTs('[OAuthHandler] No hash or query parameters found');
         return null;
       }
 
@@ -216,7 +217,7 @@ export class OAuthHandler {
         searchParams.get('refresh_token') || 
         searchParams.get('refreshToken');
 
-      console.log('[OAuthHandler] Token extraction result:', {
+      logWithTs('[OAuthHandler] Token extraction result:', {
         hasAccessToken: !!accessToken,
         hasRefreshToken: !!refreshToken,
         accessTokenLength: accessToken?.length || 0,
@@ -230,10 +231,10 @@ export class OAuthHandler {
         };
       }
 
-      console.log('[OAuthHandler] Missing required tokens');
+      logWithTs('[OAuthHandler] Missing required tokens');
       return null;
     } catch (error) {
-      console.error('[OAuthHandler] Error parsing tokens from URL:', error);
+      errorWithTs('[OAuthHandler] Error parsing tokens from URL:', error);
       return null;
     }
   }
@@ -249,13 +250,13 @@ export class OAuthHandler {
 
     // Access tokens are typically JWTs and should be longer
     if (tokens.accessToken.length < 50) {
-      console.warn('[OAuthHandler] Access token seems too short');
+      warnWithTs('[OAuthHandler] Access token seems too short');
       return false;
     }
 
     // Refresh tokens should also be substantial
     if (tokens.refreshToken.length < 20) {
-      console.warn('[OAuthHandler] Refresh token seems too short');
+      warnWithTs('[OAuthHandler] Refresh token seems too short');
       return false;
     }
 

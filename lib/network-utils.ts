@@ -4,6 +4,7 @@
  */
 
 import { Platform } from 'react-native';
+import { errorWithTs, logWithTs } from '@/lib/logger';
 
 export interface NetworkStatus {
   isConnected: boolean;
@@ -32,7 +33,7 @@ export const testSupabaseConnection = async (): Promise<NetworkStatus> => {
     // Test basic connectivity to Supabase health endpoint
     const healthUrl = `${supabaseUrl}/health`;
     
-    console.log('[Network] Testing connection to:', healthUrl);
+    logWithTs('[Network] Testing connection to:', healthUrl);
     
     const response = await fetch(healthUrl, {
       method: 'GET',
@@ -46,7 +47,7 @@ export const testSupabaseConnection = async (): Promise<NetworkStatus> => {
 
     const isHealthy = response.ok;
     
-    console.log('[Network] Supabase health check:', {
+    logWithTs('[Network] Supabase health check:', {
       status: response.status,
       ok: response.ok,
       healthy: isHealthy,
@@ -58,7 +59,7 @@ export const testSupabaseConnection = async (): Promise<NetworkStatus> => {
       timestamp,
     };
   } catch (error) {
-    console.error('[Network] Connection test failed:', error);
+    errorWithTs('[Network] Connection test failed:', error);
     
     let errorMessage = 'Unknown network error';
     
@@ -129,7 +130,7 @@ export const runDiagnostics = async (): Promise<{
   network: NetworkStatus;
   recommendations: string[];
 }> => {
-  console.log('[Diagnostics] Running comprehensive diagnostics...');
+  logWithTs('[Diagnostics] Running comprehensive diagnostics...');
   
   const environment = checkEnvironmentConfig();
   const network = await testSupabaseConnection();
@@ -156,7 +157,7 @@ export const runDiagnostics = async (): Promise<{
     }
   }
   
-  console.log('[Diagnostics] Results:', {
+  logWithTs('[Diagnostics] Results:', {
     environment: environment.isValid ? '✅ Valid' : '❌ Invalid',
     network: network.isConnected ? '✅ Connected' : '❌ Failed',
     recommendations: recommendations.length,

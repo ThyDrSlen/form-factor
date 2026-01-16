@@ -1,10 +1,11 @@
 import { Platform } from 'react-native';
+import { logWithTs } from '@/lib/logger';
 import { HealthKitPermissions, HealthPermissionStatus } from './health-types';
 import { getNativeHealthKit } from './native-healthkit';
 
 const TAG = '[HealthKit]';
 function hkLog(...args: unknown[]): void {
-  console.log(TAG, ...args);
+  logWithTs(TAG, ...args);
 }
 
 function buildStatus(partial: Omit<HealthPermissionStatus, 'lastCheckedAt'>): HealthPermissionStatus {

@@ -1,3 +1,5 @@
+import { logWithTs } from '@/lib/logger';
+
 const noop = () => {};
 
 let latestWatchContext: Record<string, any> = {};
@@ -8,12 +10,12 @@ export const watchEvents = {
 };
 
 export const sendMessage = (message: any) => {
-  console.log('[WatchConnectivity Mock] sendMessage:', message);
+  logWithTs('[WatchConnectivity Mock] sendMessage:', message);
 };
 
 export const updateApplicationContext = (context: any) => {
   latestWatchContext = context ?? {};
-  console.log('[WatchConnectivity Mock] updateApplicationContext:', context);
+  logWithTs('[WatchConnectivity Mock] updateApplicationContext:', context);
 };
 
 export function updateWatchContext(patch: Record<string, any>) {

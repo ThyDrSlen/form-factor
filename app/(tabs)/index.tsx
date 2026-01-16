@@ -21,6 +21,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { DashboardHealth } from '@/components';
+import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import {
   deleteVideo,
   getVideoById,
@@ -108,7 +109,7 @@ const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: Fee
     currentUriRef.current = uri;
     player.replaceAsync({ uri }).catch((error) => {
       if (__DEV__) {
-        console.warn('[FeedVideoPlayer] replaceAsync failed', error);
+        warnWithTs('[FeedVideoPlayer] replaceAsync failed', error);
       }
     });
   }, [player, uri]);
@@ -161,7 +162,7 @@ const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: Fee
     if (!videoViewRef.current?.enterFullscreen) return;
     videoViewRef.current.enterFullscreen().catch((error) => {
       if (__DEV__) {
-        console.warn('[FeedVideoPlayer] enterFullscreen failed', error);
+        warnWithTs('[FeedVideoPlayer] enterFullscreen failed', error);
       }
     });
   }, []);
@@ -305,7 +306,7 @@ export default function HomeScreen() {
       setHasFetchedOnce(true);
     } catch (error) {
       if (__DEV__) {
-        console.warn('Failed to load videos', error);
+        warnWithTs('Failed to load videos', error);
       }
       setFeedError('Unable to load videos right now.');
     } finally {
@@ -349,7 +350,7 @@ export default function HomeScreen() {
           })
           .catch((error) => {
             if (__DEV__) {
-              console.warn('[Home] Failed to refresh comment counts', error);
+              warnWithTs('[Home] Failed to refresh comment counts', error);
             }
           });
       }
@@ -415,7 +416,7 @@ export default function HomeScreen() {
         message: video.signedUrl,
       });
     } catch (error) {
-      console.warn('Share failed', error);
+      warnWithTs('Share failed', error);
     }
   }, []);
 
@@ -448,7 +449,7 @@ export default function HomeScreen() {
       Alert.alert('Success', 'Video uploaded successfully');
       loadVideos(true);
     } catch (error) {
-      console.error('Upload failed', error);
+      errorWithTs('Upload failed', error);
       Alert.alert('Error', 'Failed to upload video');
       setLoadingVideos(false);
     }
@@ -461,7 +462,7 @@ export default function HomeScreen() {
         setVideos((prev) => prev.filter((video) => video.id !== videoId));
         showToast('Video deleted', { type: 'info' });
       } catch (error) {
-        console.error('[Home] Failed to delete video', error);
+        errorWithTs('[Home] Failed to delete video', error);
         showToast('Unable to delete video right now.', { type: 'error' });
       }
     },
@@ -483,7 +484,7 @@ export default function HomeScreen() {
         );
       } catch (error) {
         if (__DEV__) {
-          console.warn('[Home] Failed to toggle like', error);
+          warnWithTs('[Home] Failed to toggle like', error);
         }
         showToast('Unable to update like right now.', { type: 'error' });
       }
@@ -619,7 +620,7 @@ export default function HomeScreen() {
         <TouchableOpacity 
           style={styles.actionCardWrapper}
           onPress={() => {
-            console.log('Navigating to add-workout');
+            logWithTs('Navigating to add-workout');
             router.push('/(modals)/add-workout');
           }}
         >
@@ -640,7 +641,7 @@ export default function HomeScreen() {
         <TouchableOpacity 
           style={styles.actionCardWrapper}
           onPress={() => {
-            console.log('Navigating to add-food');
+            logWithTs('Navigating to add-food');
             router.push('/(modals)/add-food');
           }}
         >

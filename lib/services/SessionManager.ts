@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Session } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
+import { errorWithTs, logWithTs } from '@/lib/logger';
 
 const SESSION_STORAGE_KEY = '@fitness_app_session';
 const SESSION_TIMESTAMP_KEY = '@fitness_app_session_timestamp';
@@ -35,7 +36,7 @@ export class SessionManager {
         expiresAt,
       };
 
-      console.log('[SessionManager] Storing session:', {
+      logWithTs('[SessionManager] Storing session:', {
         userId: session.user?.id,
         expiresAt: new Date(expiresAt).toISOString(),
         hasRefreshToken: !!session.refresh_token,
@@ -44,9 +45,9 @@ export class SessionManager {
       // Store session data
       await AsyncStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(storedSession));
       
-      console.log('[SessionManager] Session stored successfully');
+      logWithTs('[SessionManager] Session stored successfully');
     } catch (error) {
-      console.error('[SessionManager] Error storing session:', error);
+      errorWithTs('[SessionManager] Error storing session:', error);
       throw new Error('Failed to store session');
     }
   }
@@ -58,21 +59,21 @@ export class SessionManager {
     try {
       // On web, we don't use AsyncStorage - let Supabase handle it
       if (Platform.OS === 'web') {
-        console.log('[SessionManager] Web platform - skipping AsyncStorage retrieval');
+        logWithTs('[SessionManager] Web platform - skipping AsyncStorage retrieval');
         return null;
       }
 
       const storedData = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
       
       if (!storedData) {
-        console.log('[SessionManager] No stored session found');
+        logWithTs('[SessionManager] No stored session found');
         return null;
       }
 
       const parsedData: StoredSession = JSON.parse(storedData);
       const { session, timestamp, expiresAt } = parsedData;
 
-      console.log('[SessionManager] Found stored session:', {
+      logWithTs('[SessionManager] Found stored session:', {
         userId: session.user?.id,
         storedAt: new Date(timestamp).toISOString(),
         expiresAt: new Date(expiresAt).toISOString(),
@@ -81,22 +82,22 @@ export class SessionManager {
 
       // Check if session is expired
       if (Date.now() > expiresAt) {
-        console.log('[SessionManager] Stored session is expired, clearing it');
+        logWithTs('[SessionManager] Stored session is expired, clearing it');
         await this.clearSession();
         return null;
       }
 
       // Validate session structure
       if (!this.isValidSession(session)) {
-        console.log('[SessionManager] Stored session is invalid, clearing it');
+        logWithTs('[SessionManager] Stored session is invalid, clearing it');
         await this.clearSession();
         return null;
       }
 
-      console.log('[SessionManager] Retrieved valid session');
+      logWithTs('[SessionManager] Retrieved valid session');
       return session;
     } catch (error) {
-      console.error('[SessionManager] Error retrieving session:', error);
+      errorWithTs('[SessionManager] Error retrieving session:', error);
       // Clear corrupted session data
       await this.clearSession();
       return null;
@@ -108,11 +109,11 @@ export class SessionManager {
    */
   async clearSession(): Promise<void> {
     try {
-      console.log('[SessionManager] Clearing stored session');
+      logWithTs('[SessionManager] Clearing stored session');
       await AsyncStorage.multiRemove([SESSION_STORAGE_KEY, SESSION_TIMESTAMP_KEY]);
-      console.log('[SessionManager] Session cleared successfully');
+      logWithTs('[SessionManager] Session cleared successfully');
     } catch (error) {
-      console.error('[SessionManager] Error clearing session:', error);
+      errorWithTs('[SessionManager] Error clearing session:', error);
       // Don't throw here - clearing should always succeed
     }
   }
@@ -136,7 +137,7 @@ export class SessionManager {
       const now = Date.now();
       const isExpired = now >= expiresAt;
       
-      console.log('[SessionManager] Session expiry check:', {
+      logWithTs('[SessionManager] Session expiry check:', {
         expiresAt: new Date(expiresAt).toISOString(),
         now: new Date(now).toISOString(),
         isExpired,
@@ -146,7 +147,7 @@ export class SessionManager {
     }
 
     // If no expiry time, consider it valid (shouldn't happen with Supabase)
-    console.log('[SessionManager] Session has no expiry time - considering valid');
+    logWithTs('[SessionManager] Session has no expiry time - considering valid');
     return true;
   }
 

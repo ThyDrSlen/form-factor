@@ -5,6 +5,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
+import { logWithTs } from '@/lib/logger';
 
 const { width: screenWidth } = Dimensions.get('window');
 const chartWidth = screenWidth - 40;
@@ -23,7 +24,7 @@ export function TestChart() {
     ],
   };
 
-  console.log('TestChart - Rendering with test data:', testData);
+  logWithTs('TestChart - Rendering with test data:', testData);
 
   return (
     <View style={styles.container}>
