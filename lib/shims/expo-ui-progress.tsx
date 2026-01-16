@@ -1,5 +1,6 @@
 import React from 'react';
 import { Platform, View, ViewStyle, StyleProp } from 'react-native';
+import { warnWithTs } from '@/lib/logger';
 
 // Try to lazy-load native module on iOS only
 let NativeCircularProgress: React.ComponentType<{ style?: StyleProp<ViewStyle> }> | null = null;
@@ -11,7 +12,7 @@ if (Platform.OS === 'ios') {
     NativeCircularProgress = native?.CircularProgress ?? null;
   } catch (e) {
     if (__DEV__) {
-      console.warn('[shim:@expo/ui/Progress] Native module not found, falling back to placeholder');
+      warnWithTs('[shim:@expo/ui/Progress] Native module not found, falling back to placeholder');
     }
   }
 }

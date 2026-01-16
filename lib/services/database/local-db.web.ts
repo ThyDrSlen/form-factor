@@ -1,6 +1,8 @@
 // Web-compatible version using localStorage (simplified for web)
 // For production web, consider using IndexedDB wrapper like Dexie.js
 
+import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
+
 export interface LocalFood {
   id: string;
   name: string;
@@ -55,7 +57,7 @@ class LocalDatabase {
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
-    console.log('[LocalDB-Web] Initializing localStorage...');
+    logWithTs('[LocalDB-Web] Initializing localStorage...');
     this.initialized = true;
   }
 
@@ -68,7 +70,7 @@ class LocalDatabase {
       const data = localStorage.getItem(key);
       return data ? JSON.parse(data) : [];
     } catch (e) {
-      console.warn(`[LocalDB-Web] Failed to parse data for key ${key}`, e);
+      warnWithTs(`[LocalDB-Web] Failed to parse data for key ${key}`, e);
       return [];
     }
   }
@@ -77,7 +79,7 @@ class LocalDatabase {
     try {
       localStorage.setItem(key, JSON.stringify(data));
     } catch (e) {
-      console.error(`[LocalDB-Web] Failed to save data for key ${key}`, e);
+      errorWithTs(`[LocalDB-Web] Failed to save data for key ${key}`, e);
     }
   }
 
@@ -377,7 +379,7 @@ class LocalDatabase {
     localStorage.removeItem(this.getStorageKey('workouts'));
     localStorage.removeItem(this.getStorageKey('health_metrics'));
     localStorage.removeItem(this.getStorageKey('sync_queue'));
-    console.log('[LocalDB-Web] All data cleared');
+    logWithTs('[LocalDB-Web] All data cleared');
   }
 
   async close(): Promise<void> {

@@ -7,6 +7,7 @@
 
 import { supabase } from '@/lib/supabase';
 import { ensureUserId } from '@/lib/auth-utils';
+import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import { getTelemetryContext, incrementLowConfidenceFrame } from './telemetry-context';
 import { shouldLogFramesSync } from './consent-service';
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
@@ -119,13 +120,13 @@ async function flushBuffer(): Promise<void> {
     }
 
     if (__DEV__) {
-      console.log(`[pose-logger] Flushed ${samplesToFlush.length} pose samples to Supabase`);
+      logWithTs(`[pose-logger] Flushed ${samplesToFlush.length} pose samples to Supabase`);
     }
   } catch (error) {
     // Re-add samples to buffer on error (they'll be retried on next flush)
     buffer.unshift(...samplesToFlush);
     if (__DEV__) {
-      console.warn('[pose-logger] Failed to flush pose samples', error);
+      warnWithTs('[pose-logger] Failed to flush pose samples', error);
     }
   } finally {
     isFlushing = false;
@@ -144,7 +145,7 @@ function scheduleFlush(): void {
     flushTimer = null;
     flushBuffer().catch((error) => {
       if (__DEV__) {
-        console.error('[pose-logger] Error in scheduled flush', error);
+        errorWithTs('[pose-logger] Error in scheduled flush', error);
       }
     });
   }, FLUSH_INTERVAL_MS);
@@ -215,7 +216,7 @@ export async function logPoseSample(sample: PoseSample): Promise<void> {
     }
   } catch (error) {
     if (__DEV__) {
-      console.warn('[pose-logger] Failed to queue pose sample', error, sample);
+      warnWithTs('[pose-logger] Failed to queue pose sample', error, sample);
     }
   }
 }

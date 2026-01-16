@@ -1,4 +1,5 @@
 import { OAuthHandler } from '@/lib/services/OAuthHandler';
+import { errorWithTs, logWithTs } from '@/lib/logger';
 import * as Linking from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect } from 'react';
@@ -14,14 +15,14 @@ export default function AuthCallback() {
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
-        console.log('[AuthCallback] Processing auth callback with OAuthHandler...');
+        logWithTs('[AuthCallback] Processing auth callback with OAuthHandler...');
 
         // Build a URL to parse from Linking or window (web)
         const initialUrl = (await Linking.getInitialURL()) || (typeof window !== 'undefined' ? window.location.href : '');
-        console.log('[AuthCallback] Initial URL:', initialUrl);
+        logWithTs('[AuthCallback] Initial URL:', initialUrl);
 
         if (!initialUrl) {
-          console.error('[AuthCallback] No URL found for callback processing');
+          errorWithTs('[AuthCallback] No URL found for callback processing');
           router.replace('/sign-in?error=no_url');
           return;
         }
@@ -30,15 +31,15 @@ export default function AuthCallback() {
         const session = await oauthHandler.handleCallback(initialUrl);
 
         if (session) {
-          console.log('[AuthCallback] Successfully processed callback and created session');
+          logWithTs('[AuthCallback] Successfully processed callback and created session');
           await sessionManager.storeSession(session);
           router.replace('/');
         } else {
-          console.error('[AuthCallback] Failed to create session from callback');
+          errorWithTs('[AuthCallback] Failed to create session from callback');
           router.replace('/sign-in?error=callback_failed');
         }
       } catch (error) {
-        console.error('[AuthCallback] Unexpected error in auth callback:', error);
+        errorWithTs('[AuthCallback] Unexpected error in auth callback:', error);
         router.replace('/sign-in?error=unexpected');
       }
     };

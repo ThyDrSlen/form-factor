@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useHealthKit } from '../../contexts/HealthKitContext';
 import { useUnits } from '../../contexts/UnitsContext';
+import { logWithTs } from '@/lib/logger';
 import { WeightTrendChart } from './WeightTrendChart.chartkit';
 import { WeightInsights } from './WeightInsights';
 import { WeightStatistics } from './WeightStatistics';
@@ -30,7 +31,7 @@ export function WeightDashboard({ onClose }: WeightDashboardProps) {
   const { weightAnalysis, /* weightHistory90Days, */ weightHistory180Days } = useHealthKit();
   
   // Debug logging
-  console.log('WeightDashboard - HealthKit data:', {
+  logWithTs('WeightDashboard - HealthKit data:', {
     hasWeightAnalysis: !!weightAnalysis,
     weightHistory180DaysLength: weightHistory180Days.length,
     weightHistory180DaysSample: weightHistory180Days.slice(0, 3)
@@ -64,7 +65,7 @@ export function WeightDashboard({ onClose }: WeightDashboardProps) {
     }));
     
     // Debug logging
-    console.log('WeightDashboard - Data flow:', {
+    logWithTs('WeightDashboard - Data flow:', {
       weightAnalysis: !!weightAnalysis,
       weightHistory180DaysLength: weightHistory180Days.length,
       selectedPeriod,

@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFood } from '../../contexts/FoodContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useSafeBack } from '../../hooks/use-safe-back';
+import { errorWithTs, logWithTs } from '@/lib/logger';
 import { isIOS } from '@/lib/platform-utils';
 
 export default function AddFoodScreen() {
@@ -80,7 +81,7 @@ export default function AddFoodScreen() {
         date: date.toISOString(),
       };
 
-      console.log('Saving food:', foodEntry);
+      logWithTs('Saving food:', foodEntry);
       addFood(foodEntry);
 
       // Haptic feedback
@@ -94,7 +95,7 @@ export default function AddFoodScreen() {
       // Navigate back after short delay
       setTimeout(() => safeBack(), 500);
     } catch (error) {
-      console.error('Error saving food:', error);
+      errorWithTs('Error saving food:', error);
       showToast('Failed to save meal. Please try again.', { type: 'error' });
     } finally {
       setSaving(false);

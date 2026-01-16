@@ -11,6 +11,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 import type { WorkoutDefinition, WorkoutMetrics } from '@/lib/types/workout-definitions';
 import { getWorkoutById, type DetectionMode } from '@/lib/workouts';
@@ -171,7 +172,7 @@ export function useWorkoutController<TPhase extends string = string>(
 
       const workoutDef = getWorkoutById(exercise);
       if (!workoutDef) {
-        if (__DEV__) console.warn(`[WorkoutController] No workout definition for ${exercise}`);
+        if (__DEV__) warnWithTs(`[WorkoutController] No workout definition for ${exercise}`);
         return;
       }
 
@@ -204,7 +205,7 @@ export function useWorkoutController<TPhase extends string = string>(
         });
 
         if (__DEV__) {
-          console.log(
+          logWithTs(
             `[WorkoutController] Rep ${repNumber} logged: FQI=${fqiResult.score}, faults=${fqiResult.detectedFaults.join(',')}`
           );
         }
@@ -213,7 +214,7 @@ export function useWorkoutController<TPhase extends string = string>(
         callbacks?.onRepComplete?.(repNumber, fqiResult.score, fqiResult.detectedFaults);
       } catch (error) {
         if (__DEV__) {
-          console.error('[WorkoutController] Failed to log rep', error);
+          errorWithTs('[WorkoutController] Failed to log rep', error);
         }
       }
 

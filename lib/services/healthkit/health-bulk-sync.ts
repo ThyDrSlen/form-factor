@@ -5,6 +5,7 @@
 
 import { localDB } from '@/lib/services/database/local-db';
 import { syncService } from '@/lib/services/database/sync-service';
+import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import { getStepHistoryAsync, getWeightHistoryAsync, type HealthMetricPoint } from './health-metrics';
 
 export interface BulkSyncProgress {
@@ -137,12 +138,12 @@ async function writeHealthDataToLocalDB(
           await localDB.insertHealthMetric(point);
           successCount++;
         } catch (err) {
-          console.warn('[BulkSync] Failed to insert point', { date: point.summary_date, err });
+          warnWithTs('[BulkSync] Failed to insert point', { date: point.summary_date, err });
           failedCount++;
         }
       }
     } catch (err) {
-      console.error('[BulkSync] Exception during batch write', err);
+      errorWithTs('[BulkSync] Exception during batch write', err);
       failedCount += batch.length;
     }
   }
@@ -167,7 +168,7 @@ export async function syncAllHealthKitDataToSupabase(
   }
 
   try {
-    console.log('[BulkSync] Starting bulk import for', days, 'days');
+    logWithTs('[BulkSync] Starting bulk import for', days, 'days');
     
     // Phase 1: Fetch data from HealthKit
     onProgress?.({
@@ -182,7 +183,7 @@ export async function syncAllHealthKitDataToSupabase(
       getWeightHistoryAsync(days),
     ]);
 
-    console.log('[BulkSync] Fetched', {
+    logWithTs('[BulkSync] Fetched', {
       steps: stepHistory.length,
       weights: weightHistory.length,
     });
@@ -198,12 +199,12 @@ export async function syncAllHealthKitDataToSupabase(
     const mergedData = mergeHealthData(userId, stepHistory, weightHistory);
     const dataPoints = Array.from(mergedData.values());
 
-    console.log('[BulkSync] Prepared', dataPoints.length, 'records for import');
+    logWithTs('[BulkSync] Prepared', dataPoints.length, 'records for import');
 
     // Phase 3: Write to local DB (instant, offline-capable)
     const { success, failed } = await writeHealthDataToLocalDB(dataPoints, onProgress);
 
-    console.log('[BulkSync] Local import complete', { success, failed });
+    logWithTs('[BulkSync] Local import complete', { success, failed });
 
     // Phase 4: Trigger background sync to Supabase
     onProgress?.({
@@ -215,7 +216,7 @@ export async function syncAllHealthKitDataToSupabase(
 
     // Trigger background sync (non-blocking)
     syncService.syncToSupabase().catch(err => {
-      console.warn('[BulkSync] Background sync to Supabase failed', err);
+      warnWithTs('[BulkSync] Background sync to Supabase failed', err);
     });
 
     return {
@@ -224,7 +225,7 @@ export async function syncAllHealthKitDataToSupabase(
       errors: failed,
     };
   } catch (error: any) {
-    console.error('[BulkSync] Failed to import health data', error);
+    errorWithTs('[BulkSync] Failed to import health data', error);
     
     onProgress?.({
       phase: 'error',
@@ -280,7 +281,7 @@ export async function getExistingDataRange(
       count,
     };
   } catch (err) {
-    console.error('[BulkSync] Failed to check existing data range', err);
+    errorWithTs('[BulkSync] Failed to check existing data range', err);
     return { earliest: null, latest: null, count: 0 };
   }
 }

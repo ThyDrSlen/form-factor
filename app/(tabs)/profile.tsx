@@ -6,6 +6,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { HealthTrendsView } from '@/components/dashboard-health/HealthTrendsView';
+import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { deleteVideo, getVideoById, listVideos, toggleVideoLike, VideoWithUrls } from '@/lib/services/video-service';
 import { router } from 'expo-router';
 import Constants from 'expo-constants';
@@ -61,7 +62,7 @@ const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: Fee
     currentUriRef.current = uri;
     player.replaceAsync({ uri }).catch((error) => {
       if (__DEV__) {
-        console.warn('[ProfileVideoPlayer] replaceAsync failed', error);
+        warnWithTs('[ProfileVideoPlayer] replaceAsync failed', error);
       }
     });
   }, [player, uri]);
@@ -114,7 +115,7 @@ const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: Fee
     if (!videoViewRef.current?.enterFullscreen) return;
     videoViewRef.current.enterFullscreen().catch((error) => {
       if (__DEV__) {
-        console.warn('[ProfileVideoPlayer] enterFullscreen failed', error);
+        warnWithTs('[ProfileVideoPlayer] enterFullscreen failed', error);
       }
     });
   }, []);
@@ -221,7 +222,7 @@ export default function ProfileScreen() {
       setHasFetchedOnce(true);
     } catch (error) {
       if (__DEV__) {
-        console.warn('Failed to load profile videos', error);
+        warnWithTs('Failed to load profile videos', error);
       }
       setFeedError('Unable to load your videos right now.');
     } finally {
@@ -264,7 +265,7 @@ export default function ProfileScreen() {
           })
           .catch((error) => {
             if (__DEV__) {
-              console.warn('[Profile] Failed to refresh comment counts', error);
+              warnWithTs('[Profile] Failed to refresh comment counts', error);
             }
           });
       }
@@ -285,7 +286,7 @@ export default function ProfileScreen() {
         message: video.signedUrl,
       });
     } catch (error) {
-      console.warn('Share failed', error);
+      warnWithTs('Share failed', error);
     }
   }, []);
 
@@ -296,7 +297,7 @@ export default function ProfileScreen() {
         setVideos((prev) => prev.filter((video) => video.id !== videoId));
         showToast('Video deleted', { type: 'info' });
       } catch (error) {
-        console.error('[Profile] Failed to delete video', error);
+        errorWithTs('[Profile] Failed to delete video', error);
         showToast('Unable to delete video right now.', { type: 'error' });
       }
     },
@@ -345,7 +346,7 @@ export default function ProfileScreen() {
         );
       } catch (error) {
         if (__DEV__) {
-          console.warn('[Profile] Failed to toggle like', error);
+          warnWithTs('[Profile] Failed to toggle like', error);
         }
         showToast('Unable to update like right now.', { type: 'error' });
       }
@@ -459,7 +460,7 @@ export default function ProfileScreen() {
               await signOut();
               router.replace('/(auth)/sign-in');
             } catch (error) {
-              console.error('Error signing out:', error);
+              errorWithTs('Error signing out:', error);
             }
           },
         },
@@ -599,7 +600,7 @@ Generated: ${new Date().toISOString()}
         title: 'Form Factor Debug Report',
       });
     } catch (error) {
-      console.error('Failed to share:', error);
+      errorWithTs('Failed to share:', error);
     }
   };
 

@@ -16,6 +16,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { useSafeBack } from '@/hooks/use-safe-back';
+import { warnWithTs } from '@/lib/logger';
 import {
   addVideoComment,
   fetchVideoComments,
@@ -115,7 +116,7 @@ export default function VideoCommentsModal() {
       setComments(commentData);
     } catch (error) {
       if (__DEV__) {
-        console.warn('[Comments] Failed to load video/comments', error);
+        warnWithTs('[Comments] Failed to load video/comments', error);
       }
       showToast('Unable to load comments right now.', { type: 'error' });
     } finally {
@@ -154,7 +155,7 @@ export default function VideoCommentsModal() {
       emitCommentEvent({ type: 'commentAdded', videoId });
     } catch (error) {
       if (__DEV__) {
-        console.warn('[Comments] Failed to add comment', error);
+        warnWithTs('[Comments] Failed to add comment', error);
       }
       showToast('Unable to send comment right now.', { type: 'error' });
     } finally {

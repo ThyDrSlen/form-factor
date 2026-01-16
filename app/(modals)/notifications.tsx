@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { useSafeBack } from '@/hooks/use-safe-back';
+import { warnWithTs } from '@/lib/logger';
 import { isAndroid, isIOS } from '@/lib/platform-utils';
 import {
   loadNotificationPreferences,
@@ -50,7 +51,7 @@ export default function NotificationSettingsModal() {
           });
         }
       } catch (err) {
-        console.warn('[notifications] Failed to load settings', err);
+        warnWithTs('[notifications] Failed to load settings', err);
         toast.show('Unable to load notification settings', { type: 'error' });
       } finally {
         setLoading(false);
@@ -89,7 +90,7 @@ export default function NotificationSettingsModal() {
         toast.show('Notifications enabled for this device', { type: 'success' });
       }
     } catch (err) {
-      console.warn('[notifications] Enable failed', err);
+      warnWithTs('[notifications] Enable failed', err);
       toast.show('Unable to enable notifications', { type: 'error' });
     } finally {
       setRegistering(false);
@@ -111,7 +112,7 @@ export default function NotificationSettingsModal() {
         reminders: updated.reminders,
       });
     } catch (err) {
-      console.warn('[notifications] Failed to update preferences', err);
+      warnWithTs('[notifications] Failed to update preferences', err);
       setPrefs(prefs);
       toast.show('Could not save preference', { type: 'error' });
     } finally {

@@ -6,6 +6,7 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
+import { logWithTs } from '@/lib/logger';
 import type { HealthMetricPoint } from '../../lib/services/healthkit/health-metrics';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -27,7 +28,7 @@ export function WeightTrendChart({
 }: WeightTrendChartProps) {
   
   // Debug logging
-  console.log('WeightTrendChart.chartkit - Data received:', {
+  logWithTs('WeightTrendChart.chartkit - Data received:', {
     dataLength: data.length,
     period,
     weightUnit,

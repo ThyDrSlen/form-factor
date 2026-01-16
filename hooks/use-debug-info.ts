@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { localDB } from '@/lib/services/database/local-db';
+import { errorWithTs } from '@/lib/logger';
 import { useNetwork } from '@/contexts/NetworkContext';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -81,7 +82,7 @@ export function useDebugInfo() {
       
       setDebugInfo(info);
     } catch (error) {
-      console.error('[useDebugInfo] Error fetching debug info:', error);
+      errorWithTs('[useDebugInfo] Error fetching debug info:', error);
     } finally {
       setLoading(false);
     }
