@@ -3,6 +3,7 @@ import { Text, TextInput, Button } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
+import { errorWithTs } from '@/lib/logger';
 import { getPlatformValue } from '@/lib/platform-utils';
 
 export default function ForgotPasswordScreen() {
@@ -20,7 +21,7 @@ export default function ForgotPasswordScreen() {
       await new Promise(resolve => setTimeout(resolve, 1000));
       setEmailSent(true);
     } catch (error) {
-      console.error('Password reset error:', error);
+      errorWithTs('Password reset error:', error);
       // Handle error (show error message to user)
     } finally {
       setLoading(false);

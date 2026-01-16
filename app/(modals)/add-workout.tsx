@@ -21,6 +21,7 @@ import {
 import { useWorkouts } from '../../contexts/WorkoutsContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useSafeBack } from '../../hooks/use-safe-back';
+import { errorWithTs, logWithTs } from '@/lib/logger';
 
 const COMMON_WORKOUTS = [
   'Bench Press',
@@ -210,7 +211,7 @@ export default function AddWorkoutScreen() {
         date: new Date().toISOString(),
       };
 
-      console.log('Saving workout:', workout);
+      logWithTs('Saving workout:', workout);
       await addWorkout(workout);
 
       showToast('Workout saved!', { type: 'success' });
@@ -218,13 +219,13 @@ export default function AddWorkoutScreen() {
         {
           text: 'OK',
           onPress: () => {
-            console.log('[AddWorkout] success -> safeBack');
+            logWithTs('[AddWorkout] success -> safeBack');
             safeBack();
           },
         },
       ]);
     } catch (error) {
-      console.error('Error saving workout:', error);
+      errorWithTs('Error saving workout:', error);
       showToast('Failed to save workout. Please try again.', { type: 'error' });
       Alert.alert('Error', 'Failed to save workout. Please try again.');
     } finally {

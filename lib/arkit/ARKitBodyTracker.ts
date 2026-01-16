@@ -13,16 +13,17 @@
  */
 import * as React from 'react';
 import { Platform } from 'react-native';
+import { errorWithTs } from '@/lib/logger';
 
 // Log a critical warning if this file is loaded on iOS
 if (Platform.OS === 'ios') {
-  console.error('='.repeat(60));
-  console.error('CRITICAL: Wrong ARKit file loaded on iOS!');
-  console.error('Expected: ARKitBodyTracker.ios.ts');
-  console.error('Got: ARKitBodyTracker.ts (fallback)');
-  console.error('This is a Metro bundler resolution bug.');
-  console.error('Try: npx expo start --clear');
-  console.error('='.repeat(60));
+  errorWithTs('='.repeat(60));
+  errorWithTs('CRITICAL: Wrong ARKit file loaded on iOS!');
+  errorWithTs('Expected: ARKitBodyTracker.ios.ts');
+  errorWithTs('Got: ARKitBodyTracker.ts (fallback)');
+  errorWithTs('This is a Metro bundler resolution bug.');
+  errorWithTs('Try: npx expo start --clear');
+  errorWithTs('='.repeat(60));
 }
 
 export interface Joint3D {
@@ -103,7 +104,7 @@ export class BodyTracker {
 
   static isSupported(): boolean {
     if (Platform.OS === 'ios') {
-      console.error('[BodyTracker] WRONG FILE! This is the fallback, not .ios.ts');
+      errorWithTs('[BodyTracker] WRONG FILE! This is the fallback, not .ios.ts');
     }
     return false;
   }
@@ -176,7 +177,7 @@ export function useBodyTracking(_fps: number = 30) {
 
   React.useEffect(() => {
     if (Platform.OS === 'ios') {
-      console.error('[useBodyTracking] WRONG FILE LOADED! Expected .ios.ts');
+      errorWithTs('[useBodyTracking] WRONG FILE LOADED! Expected .ios.ts');
     }
   }, []);
 

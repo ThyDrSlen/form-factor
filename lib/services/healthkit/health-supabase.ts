@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { warnWithTs } from '@/lib/logger';
 import type { HealthMetricPoint } from './health-metrics';
 
 interface HealthMetricsRow {
@@ -94,7 +95,7 @@ export async function fetchSupabaseHealthSnapshot(
     .order('summary_date', { ascending: true });
 
   if (error) {
-    console.warn('[HealthSupabase] Failed to fetch health metrics', error.message);
+    warnWithTs('[HealthSupabase] Failed to fetch health metrics', error.message);
     return null;
   }
 

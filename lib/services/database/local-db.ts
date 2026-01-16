@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import { errorWithTs, logWithTs } from '@/lib/logger';
 
 export interface LocalFood {
   id: string;
@@ -50,13 +51,13 @@ class LocalDatabase {
 
     this.initPromise = (async () => {
       try {
-        console.log('[LocalDB] Opening database...');
+        logWithTs('[LocalDB] Opening database...');
         this.db = await SQLite.openDatabaseAsync('formfactor.db');
         
         await this.createTables();
-        console.log('[LocalDB] Database initialized successfully');
+        logWithTs('[LocalDB] Database initialized successfully');
       } catch (error) {
-        console.error('[LocalDB] Failed to initialize database:', error);
+        errorWithTs('[LocalDB] Failed to initialize database:', error);
         throw error;
       }
     })();
@@ -139,7 +140,7 @@ class LocalDatabase {
       CREATE INDEX IF NOT EXISTS idx_health_metrics_synced ON health_metrics(synced);
     `);
 
-    console.log('[LocalDB] Tables created successfully');
+    logWithTs('[LocalDB] Tables created successfully');
   }
 
   // Food operations
@@ -491,7 +492,7 @@ class LocalDatabase {
     if (!this.db) throw new Error('Database not initialized');
 
     await this.db.runAsync('DELETE FROM sync_queue');
-    console.log('[LocalDB] Sync queue cleared');
+    logWithTs('[LocalDB] Sync queue cleared');
   }
 
   // Database utilities
@@ -504,7 +505,7 @@ class LocalDatabase {
       DELETE FROM health_metrics;
       DELETE FROM sync_queue;
     `);
-    console.log('[LocalDB] All data cleared');
+    logWithTs('[LocalDB] All data cleared');
   }
 
   async close(): Promise<void> {
@@ -512,7 +513,7 @@ class LocalDatabase {
       await this.db.closeAsync();
       this.db = null;
       this.initPromise = null;
-      console.log('[LocalDB] Database closed');
+      logWithTs('[LocalDB] Database closed');
     }
   }
 }

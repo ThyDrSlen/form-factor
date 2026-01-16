@@ -6,6 +6,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { PermissionStatus } from 'expo-modules-core';
+import { errorWithTs, infoWithTs, warnWithTs } from '@/lib/logger';
 import { supabase } from '../supabase';
 
 let Device: typeof ExpoDevice | undefined;
@@ -13,7 +14,7 @@ try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   Device = require('expo-device');
 } catch (error) {
-  console.warn('[notifications] expo-device is unavailable; push registration limited.', error);
+  warnWithTs('[notifications] expo-device is unavailable; push registration limited.', error);
 }
 
 export type NotificationPreferences = {
@@ -99,7 +100,7 @@ export async function registerDevicePushToken(
   }
 
   if (!Device?.isDevice) {
-    console.info('[notifications] Skipping push registration on simulator/web');
+    infoWithTs('[notifications] Skipping push registration on simulator/web');
     return { status: PermissionStatus.UNDETERMINED, error: 'Device push unsupported' };
   }
 
@@ -146,7 +147,7 @@ export async function registerDevicePushToken(
   });
 
   if (error) {
-    console.error('[notifications] Failed to save push token', error);
+    errorWithTs('[notifications] Failed to save push token', error);
     return { status: permissionStatus, error: error.message, token };
   }
 
@@ -165,7 +166,7 @@ export async function unregisterDevicePushToken(userId?: string) {
     .match({ token, user_id: userId });
 
   if (error) {
-    console.warn('[notifications] Failed to unregister token', error);
+    warnWithTs('[notifications] Failed to unregister token', error);
   } else {
     await AsyncStorage.removeItem(LAST_PUSH_TOKEN_KEY);
   }

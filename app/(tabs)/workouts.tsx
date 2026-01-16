@@ -3,6 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { DeleteAction } from '@/components';
+import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import React, { useCallback, useRef } from 'react';
 import {
     ActivityIndicator,
@@ -50,7 +51,7 @@ export default function WorkoutsScreen() {
 
   const handleAddPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    console.log('Navigating to add-workout modal from workouts tab');
+    logWithTs('Navigating to add-workout modal from workouts tab');
     router.push('/(modals)/add-workout');
   };
 
@@ -64,7 +65,7 @@ export default function WorkoutsScreen() {
         // Clean up ref
         swipeableRefs.current.delete(id);
       } catch (error) {
-        console.error('[Workouts] delete failed', error);
+        errorWithTs('[Workouts] delete failed', error);
         showToast('Failed to delete workout', { type: 'error' });
       }
     },
@@ -89,7 +90,7 @@ export default function WorkoutsScreen() {
         await Share.share({ message });
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       } catch (error) {
-        console.warn('[Workouts] share failed', error);
+        warnWithTs('[Workouts] share failed', error);
         showToast('Unable to share this workout right now.', { type: 'error' });
       }
     },

@@ -2,6 +2,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
+import { errorWithTs, logWithTs } from '@/lib/logger';
 import { supabase } from './supabase';
 
 // =============================================================================
@@ -82,9 +83,9 @@ export const signInWithApple = async () => {
   } catch (error: any) {
     if (error.code === 'ERR_CANCELED') {
       // Handle cancelation
-      console.log('Sign in with Apple was canceled');
+      logWithTs('Sign in with Apple was canceled');
     } else {
-      console.error('Error signing in with Apple:', error);
+      errorWithTs('Error signing in with Apple:', error);
       throw error;
     }
   }
@@ -104,10 +105,10 @@ export const signOutFromApple = async () => {
       });
     } catch (appleError) {
       // Handle Apple sign out error
-      console.error('Error signing out from Apple:', appleError);
+      errorWithTs('Error signing out from Apple:', appleError);
     }
   } catch (error) {
-    console.error('Error signing out:', error);
+    errorWithTs('Error signing out:', error);
     throw error;
   }
 };

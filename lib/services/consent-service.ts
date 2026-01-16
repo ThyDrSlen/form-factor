@@ -7,6 +7,7 @@
 
 import { supabase } from '@/lib/supabase';
 import { ensureUserId } from '@/lib/auth-utils';
+import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import type { TelemetryConsent } from '@/lib/types/telemetry';
 
 // =============================================================================
@@ -70,7 +71,7 @@ export async function getConsent(): Promise<TelemetryConsent> {
     return consent;
   } catch (error) {
     if (__DEV__) {
-      console.warn('[consent-service] Failed to get consent, using defaults', error);
+      warnWithTs('[consent-service] Failed to get consent, using defaults', error);
     }
     return { ...DEFAULT_CONSENT };
   }
@@ -114,11 +115,11 @@ export async function updateConsent(consent: Partial<TelemetryConsent>): Promise
     cacheExpiry = 0;
 
     if (__DEV__) {
-      console.log('[consent-service] Consent updated', consent);
+      logWithTs('[consent-service] Consent updated', consent);
     }
   } catch (error) {
     if (__DEV__) {
-      console.error('[consent-service] Failed to update consent', error);
+      errorWithTs('[consent-service] Failed to update consent', error);
     }
     throw error;
   }

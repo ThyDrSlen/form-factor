@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { DeleteAction } from '@/components';
+import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import { Swipeable } from 'react-native-gesture-handler';
 import React, { useCallback, useRef } from 'react';
 import {
@@ -52,7 +53,7 @@ export default function FoodScreen() {
 
   const handleAddPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    console.log('Navigating to add-food modal from food tab');
+    logWithTs('Navigating to add-food modal from food tab');
     router.push('/(modals)/add-food');
   };
 
@@ -66,7 +67,7 @@ export default function FoodScreen() {
         // Clean up ref
         swipeableRefs.current.delete(id);
       } catch (error) {
-        console.error('[Food] delete failed', error);
+        errorWithTs('[Food] delete failed', error);
         showToast('Failed to delete entry', { type: 'error' });
       }
     },
@@ -80,7 +81,7 @@ export default function FoodScreen() {
         await Share.share({ message });
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       } catch (error) {
-        console.warn('[Food] Share failed', error);
+        warnWithTs('[Food] Share failed', error);
         showToast('Unable to share meal right now', { type: 'error' });
       }
     },

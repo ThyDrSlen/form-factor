@@ -8,6 +8,7 @@ import { useUnits } from '@/contexts/UnitsContext';
 import { useWorkouts } from '@/contexts/WorkoutsContext';
 import { useFood } from '@/contexts/FoodContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { errorWithTs } from '@/lib/logger';
 import { 
   fetchHealthTrendData, 
   getComparisonMetrics,
@@ -168,7 +169,7 @@ export function HealthTrendsView() {
         const data = await fetchHealthTrendData(user.id, days);
         setTrendData(data);
       } catch (error) {
-        console.error('[HealthTrends] Failed to load trend data', error);
+        errorWithTs('[HealthTrends] Failed to load trend data', error);
       } finally {
         setIsLoadingTrends(false);
       }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import * as Speech from 'expo-speech';
+import { warnWithTs } from '@/lib/logger';
 import { Audio, InterruptionModeIOS } from 'expo-av';
 
 interface SpeechFeedbackOptions {
@@ -67,8 +68,7 @@ export function useSpeechFeedback({
     } catch (error) {
       audioConfiguredRef.current = false;
       if (__DEV__) {
-        // eslint-disable-next-line no-console
-        console.warn('[SpeechFeedback] Failed to set audio mode', error);
+        warnWithTs('[SpeechFeedback] Failed to set audio mode', error);
       }
     }
   }, [shouldAllowRecording]);
