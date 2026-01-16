@@ -10,7 +10,7 @@
         "@react-native-async-storage/async-storage": "^2.2.0",
         "@react-native-community/datetimepicker": "8.5.1",
         "@supabase/supabase-js": "^2.90.1",
-        "arkit-body-tracker": "file:modules/arkit-body-tracker",
+        "arkit-body-tracker": "workspace:*",
         "buffer": "^6.0.3",
         "expo": "54.0.30",
         "expo-apple-authentication": "~8.0.8",
@@ -36,8 +36,8 @@
         "expo-video": "^3.0.15",
         "expo-video-thumbnails": "~10.0.8",
         "expo-web-browser": "~15.0.8",
-        "ff-healthkit": "file:modules/ff-healthkit",
-        "ff-watch-connectivity": "file:modules/ff-watch-connectivity",
+        "ff-healthkit": "workspace:*",
+        "ff-watch-connectivity": "workspace:*",
         "moti": "^0.30.0",
         "nativewind": "^4.2.1",
         "react": "19.2.3",
@@ -76,6 +76,34 @@
         "knip": "^5.80.2",
         "patch-package": "^8.0.1",
         "react-test-renderer": "19.2.3",
+      },
+    },
+    "modules/arkit-body-tracker": {
+      "name": "arkit-body-tracker",
+      "version": "1.0.0",
+      "devDependencies": {
+        "expo-modules-core": "*",
+      },
+      "peerDependencies": {
+        "expo": "*",
+        "react": "*",
+        "react-native": "*",
+      },
+    },
+    "modules/ff-healthkit": {
+      "name": "ff-healthkit",
+      "version": "0.1.0",
+    },
+    "modules/ff-watch-connectivity": {
+      "name": "ff-watch-connectivity",
+      "version": "0.1.0",
+      "devDependencies": {
+        "expo-modules-core": "*",
+      },
+      "peerDependencies": {
+        "expo": "*",
+        "react": "*",
+        "react-native": "*",
       },
     },
   },
@@ -833,7 +861,7 @@
 
     "aria-hidden": ["aria-hidden@1.2.6", "", { "dependencies": { "tslib": "^2.0.0" } }, "sha512-ik3ZgC9dY/lYVVM++OISsaYDeg1tb0VtP5uL3ouh1koGOaUMDPpbFIei4JkFimWUFPn90sbMNMXQAIVOlnYKJA=="],
 
-    "arkit-body-tracker": ["arkit-body-tracker@file:modules/arkit-body-tracker", { "devDependencies": { "expo-modules-core": "*" }, "peerDependencies": { "expo": "*", "react": "*", "react-native": "*" } }],
+    "arkit-body-tracker": ["arkit-body-tracker@workspace:modules/arkit-body-tracker"],
 
     "array-buffer-byte-length": ["array-buffer-byte-length@1.0.2", "", { "dependencies": { "call-bound": "^1.0.3", "is-array-buffer": "^3.0.5" } }, "sha512-LHE+8BuR7RYGDKvnrmcuSq3tDcKv9OFEXQt/HpbZhY7V6h0zlUXutnAD82GiFx9rdieCMjkvtcsPqBwgUl1Iiw=="],
 
@@ -1317,9 +1345,9 @@
 
     "fdir": ["fdir@6.5.0", "", { "peerDependencies": { "picomatch": "^3 || ^4" }, "optionalPeers": ["picomatch"] }, "sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg=="],
 
-    "ff-healthkit": ["ff-healthkit@file:modules/ff-healthkit", {}],
+    "ff-healthkit": ["ff-healthkit@workspace:modules/ff-healthkit"],
 
-    "ff-watch-connectivity": ["ff-watch-connectivity@file:modules/ff-watch-connectivity", { "devDependencies": { "expo-modules-core": "*" }, "peerDependencies": { "expo": "*", "react": "*", "react-native": "*" } }],
+    "ff-watch-connectivity": ["ff-watch-connectivity@workspace:modules/ff-watch-connectivity"],
 
     "file-entry-cache": ["file-entry-cache@8.0.0", "", { "dependencies": { "flat-cache": "^4.0.0" } }, "sha512-XXTUwCvisa5oacNGRP9SfNtYBNAMi+RPwBFmblZEF7N7swHYQS6/Zfk7SRwx4D5j3CH211YNRco1DEMNVfZCnQ=="],
 
