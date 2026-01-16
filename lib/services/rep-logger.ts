@@ -8,6 +8,7 @@
 import * as Crypto from 'expo-crypto';
 import { supabase } from '@/lib/supabase';
 import { ensureUserId } from '@/lib/auth-utils';
+import { errorWithTs, logWithTs } from '@/lib/logger';
 import { getTelemetryContext } from './telemetry-context';
 import type { RepEvent, SetSummary, RepLabel, EmittedCue, RepFeatures } from '@/lib/types/telemetry';
 
@@ -59,13 +60,13 @@ export async function logRep(rep: RepEvent): Promise<string> {
     }
 
     if (__DEV__) {
-      console.log(`[rep-logger] Logged rep ${rep.repIndex} for ${rep.exercise}`, { repId, fqi: rep.fqi });
+      logWithTs(`[rep-logger] Logged rep ${rep.repIndex} for ${rep.exercise}`, { repId, fqi: rep.fqi });
     }
 
     return repId;
   } catch (error) {
     if (__DEV__) {
-      console.error('[rep-logger] Failed to log rep', error, rep);
+      errorWithTs('[rep-logger] Failed to log rep', error, rep);
     }
     throw error;
   }
@@ -106,13 +107,13 @@ export async function logSet(set: SetSummary): Promise<string> {
     }
 
     if (__DEV__) {
-      console.log(`[rep-logger] Logged set for ${set.exercise}`, { setId, reps: set.repsCount });
+      logWithTs(`[rep-logger] Logged set for ${set.exercise}`, { setId, reps: set.repsCount });
     }
 
     return setId;
   } catch (error) {
     if (__DEV__) {
-      console.error('[rep-logger] Failed to log set', error, set);
+      errorWithTs('[rep-logger] Failed to log set', error, set);
     }
     throw error;
   }
@@ -136,11 +137,11 @@ export async function updateSetMedia(setId: string, mediaUri: string, mediaSha25
     }
 
     if (__DEV__) {
-      console.log(`[rep-logger] Updated set ${setId} with media`, { mediaUri });
+      logWithTs(`[rep-logger] Updated set ${setId} with media`, { mediaUri });
     }
   } catch (error) {
     if (__DEV__) {
-      console.error('[rep-logger] Failed to update set media', error);
+      errorWithTs('[rep-logger] Failed to update set media', error);
     }
     throw error;
   }
@@ -161,11 +162,11 @@ export async function linkRepsToSet(repIds: string[], setId: string): Promise<vo
     }
 
     if (__DEV__) {
-      console.log(`[rep-logger] Linked ${repIds.length} reps to set ${setId}`);
+      logWithTs(`[rep-logger] Linked ${repIds.length} reps to set ${setId}`);
     }
   } catch (error) {
     if (__DEV__) {
-      console.error('[rep-logger] Failed to link reps to set', error);
+      errorWithTs('[rep-logger] Failed to link reps to set', error);
     }
     throw error;
   }
@@ -199,13 +200,13 @@ export async function labelRep(label: RepLabel): Promise<string> {
     }
 
     if (__DEV__) {
-      console.log(`[rep-logger] Added label to rep ${label.repId}`, { labelId, source: label.labelSource });
+      logWithTs(`[rep-logger] Added label to rep ${label.repId}`, { labelId, source: label.labelSource });
     }
 
     return labelId;
   } catch (error) {
     if (__DEV__) {
-      console.error('[rep-logger] Failed to label rep', error, label);
+      errorWithTs('[rep-logger] Failed to label rep', error, label);
     }
     throw error;
   }

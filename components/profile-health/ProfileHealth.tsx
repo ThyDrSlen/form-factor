@@ -5,6 +5,7 @@ import Svg, { Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import { useHealthKit } from '@/contexts/HealthKitContext';
 import { useUnits } from '@/contexts/UnitsContext';
 import { getHealthKitGuidance } from '@/components/health-kit/healthkit-guidance';
+import { warnWithTs } from '@/lib/logger';
 import type { HealthMetricPoint } from '@/lib/services/healthkit/health-metrics';
 
 function formatNumber(value: number | null | undefined, options?: Intl.NumberFormatOptions) {
@@ -341,7 +342,7 @@ async function loadNativeCircularProgress() {
     const module = await import('@/lib/shims/expo-ui-progress');
     NativeCircularProgressRef.current = module.CircularProgress as React.ComponentType<{ style?: unknown }>;
   } catch (error) {
-    console.warn('[ProfileHealth] Failed to load @expo/ui/Progress', error);
+    warnWithTs('[ProfileHealth] Failed to load @expo/ui/Progress', error);
     NativeCircularProgressRef.current = null;
   }
 

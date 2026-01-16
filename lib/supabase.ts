@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import 'react-native-url-polyfill/auto';
+import { logWithTs, warnWithTs } from '@/lib/logger';
 
 const DEV = __DEV__;
 
@@ -163,7 +164,7 @@ function validateEnvironment() {
   if (!(looksLikeJwt || looksLikePublishable)) {
     // Do not throw to allow newer formats moving forward; warn for visibility in dev logs.
     if (DEV) {
-      console.warn(
+      warnWithTs(
         '[Supabase] EXPO_PUBLIC_SUPABASE_ANON_KEY does not look like a typical JWT or publishable key. Continuing anyway. '
         + 'If auth fails, re-check the key in your Supabase project settings.'
       );
@@ -207,7 +208,7 @@ function validateEnvironment() {
 const { supabaseUrl, supabaseAnonKey } = validateEnvironment();
 
 if (DEV) {
-  console.log('[Supabase] Initializing client:', {
+  logWithTs('[Supabase] Initializing client:', {
     url: supabaseUrl,
     platform: Platform.OS,
     hasAsyncStorage: Platform.OS !== 'web',
@@ -234,5 +235,5 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 // Log successful initialization (dev only)
 if (DEV) {
-  console.log('[Supabase] Client initialized successfully');
+  logWithTs('[Supabase] Client initialized successfully');
 }

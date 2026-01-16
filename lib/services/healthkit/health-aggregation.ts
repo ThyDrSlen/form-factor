@@ -5,6 +5,7 @@
  */
 
 import { localDB } from '@/lib/services/database/local-db';
+import { warnWithTs } from '@/lib/logger';
 
 export interface AggregatedHealthMetrics {
   period: string; // ISO date string (week start or month start)
@@ -105,7 +106,7 @@ export async function fetchDailyHealthMetrics(
 
     return filled;
   } catch (error) {
-    console.warn('[HealthAggregation] Failed to fetch daily metrics from local DB', error);
+    warnWithTs('[HealthAggregation] Failed to fetch daily metrics from local DB', error);
     return [];
   }
 }

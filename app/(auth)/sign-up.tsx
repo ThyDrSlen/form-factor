@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { useState } from 'react';
+import { errorWithTs } from '@/lib/logger';
 import { getPlatformValue } from '@/lib/platform-utils';
 
 export default function SignUpScreen() {
@@ -21,7 +22,7 @@ export default function SignUpScreen() {
       if (error) throw error;
       // On successful sign-up, the auth state will change and the user will be redirected
     } catch (error) {
-      console.error('Sign up error:', error);
+      errorWithTs('Sign up error:', error);
       // Handle error (show error message to user)
     } finally {
       setLoading(false);

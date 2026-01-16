@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import Constants from 'expo-constants';
 import { supabase } from '@/lib/supabase';
+import { warnWithTs } from '@/lib/logger';
 
 const VIDEO_BUCKET = 'videos';
 const THUMBNAIL_BUCKET = 'video-thumbnails';
@@ -113,14 +114,14 @@ async function getVideoCount(table: 'video_likes' | 'video_comments', videoId: s
       .eq('video_id', videoId);
     if (error) {
       if (__DEV__) {
-        console.warn(`[video-service] Failed to fetch ${table} count`, error);
+        warnWithTs(`[video-service] Failed to fetch ${table} count`, error);
       }
       return null;
     }
     return typeof count === 'number' ? count : null;
   } catch (error) {
     if (__DEV__) {
-      console.warn(`[video-service] Failed to fetch ${table} count`, error);
+      warnWithTs(`[video-service] Failed to fetch ${table} count`, error);
     }
     return null;
   }
@@ -214,11 +215,11 @@ export async function uploadWorkoutVideo(opts: {
         contentType: 'image/jpeg',
       });
     } catch (error) {
-      console.warn('[video-service] Thumbnail generation failed', error);
+      warnWithTs('[video-service] Thumbnail generation failed', error);
       thumbnailPath = null;
     }
   } else {
-    console.warn('[video-service] Skipping thumbnail for large video');
+    warnWithTs('[video-service] Skipping thumbnail for large video');
   }
 
   // Persist video record; reuse generated id for join paths
@@ -418,7 +419,7 @@ export async function deleteVideo(videoId: string) {
     if (!path) return;
     const { error: storageError } = await supabase.storage.from(bucket).remove([path]);
     if (storageError) {
-      console.warn(`[video-service] Failed to remove ${path} from ${bucket}`, storageError);
+      warnWithTs(`[video-service] Failed to remove ${path} from ${bucket}`, storageError);
     }
   };
 

@@ -1,4 +1,5 @@
 import { requireNativeModule } from 'expo-modules-core';
+import { warnWithTs } from '@/lib/logger';
 import { sanitizeForNative } from '@/lib/watch-connectivity/payload';
 
 type WatchEventName = 'message' | 'reachability' | 'paired' | 'installed';
@@ -25,7 +26,7 @@ let Native: NativeModuleShape | null = null;
 try {
   Native = requireNativeModule('FFWatchConnectivity');
 } catch (error) {
-  console.warn('[watch-connectivity] FFWatchConnectivity native module not available', error);
+  warnWithTs('[watch-connectivity] FFWatchConnectivity native module not available', error);
   Native = null;
 }
 

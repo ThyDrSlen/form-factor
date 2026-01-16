@@ -18,6 +18,7 @@ import type {
   RepAngleWindow,
   ScoringMetricDefinition,
 } from '@/lib/types/workout-definitions';
+import { warnWithTs } from '@/lib/logger';
 import type { RepFeatures } from '@/lib/types/telemetry';
 
 // =============================================================================
@@ -230,7 +231,7 @@ function detectFaults(
     } catch {
       // If fault condition throws, skip it (defensive)
       if (__DEV__) {
-        console.warn(`[fqi-calculator] Fault condition failed for ${fault.id}`);
+        warnWithTs(`[fqi-calculator] Fault condition failed for ${fault.id}`);
       }
     }
   }

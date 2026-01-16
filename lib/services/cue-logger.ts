@@ -8,6 +8,7 @@
 import * as Crypto from 'expo-crypto';
 import { supabase } from '@/lib/supabase';
 import { ensureUserId } from '@/lib/auth-utils';
+import { warnWithTs } from '@/lib/logger';
 import { getTelemetryContext, getEnvironmentContext, getSessionQuality, getRetentionClass } from './telemetry-context';
 import type { SessionMetricsPayload } from '@/lib/types/telemetry';
 
@@ -67,7 +68,7 @@ export async function logCueEvent(event: CueEventPayload): Promise<void> {
     });
   } catch (error) {
     if (__DEV__) {
-      console.warn('[cue-logger] failed to log cue event', error, event);
+      warnWithTs('[cue-logger] failed to log cue event', error, event);
     }
   }
 }
@@ -140,7 +141,7 @@ export async function upsertSessionMetrics(metrics: SessionMetricsPayload): Prom
     await supabase.from('session_metrics').upsert(payload, { onConflict: 'session_id' });
   } catch (error) {
     if (__DEV__) {
-      console.warn('[cue-logger] failed to upsert session metrics', error, metrics);
+      warnWithTs('[cue-logger] failed to upsert session metrics', error, metrics);
     }
   }
 }

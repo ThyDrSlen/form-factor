@@ -6,6 +6,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { Svg, Line, Circle, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
+import { logWithTs } from '@/lib/logger';
 import type { HealthMetricPoint } from '../../lib/services/healthkit/health-metrics';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -76,7 +77,7 @@ export function WeightTrendChart({
   }, [normalizedData, period]);
 
   // Debug logging
-  console.log('WeightTrendChart.svg - Data received:', {
+  logWithTs('WeightTrendChart.svg - Data received:', {
     dataLength: normalizedData.length,
     period,
     weightUnit,

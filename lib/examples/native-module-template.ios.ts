@@ -10,6 +10,7 @@
 
 import { requireNativeModule } from 'expo-modules-core';
 import { Platform } from 'react-native';
+import { errorWithTs } from '@/lib/logger';
 
 // Import the native module
 const NativeMyModule = requireNativeModule('MyModuleName');
@@ -61,7 +62,7 @@ export class MyModule {
     try {
       return NativeMyModule.isAvailable();
     } catch (error) {
-      console.error('[MyModule] Error checking availability:', error);
+      errorWithTs('[MyModule] Error checking availability:', error);
       return false;
     }
   }
@@ -73,7 +74,7 @@ export class MyModule {
     try {
       await NativeMyModule.initialize(options);
     } catch (error) {
-      console.error('[MyModule] Initialization failed:', error);
+      errorWithTs('[MyModule] Initialization failed:', error);
       throw error;
     }
   }
@@ -86,7 +87,7 @@ export class MyModule {
       const data = await NativeMyModule.getData();
       return data;
     } catch (error) {
-      console.error('[MyModule] Failed to get data:', error);
+      errorWithTs('[MyModule] Failed to get data:', error);
       return [];
     }
   }
@@ -98,7 +99,7 @@ export class MyModule {
     try {
       return NativeMyModule.getStatus();
     } catch (error) {
-      console.error('[MyModule] Failed to get status:', error);
+      errorWithTs('[MyModule] Failed to get status:', error);
       return {
         isAvailable: false,
         isEnabled: false,
@@ -113,7 +114,7 @@ export class MyModule {
     try {
       await NativeMyModule.start();
     } catch (error) {
-      console.error('[MyModule] Failed to start:', error);
+      errorWithTs('[MyModule] Failed to start:', error);
       throw error;
     }
   }
@@ -125,7 +126,7 @@ export class MyModule {
     try {
       NativeMyModule.stop();
     } catch (error) {
-      console.error('[MyModule] Failed to stop:', error);
+      errorWithTs('[MyModule] Failed to stop:', error);
     }
   }
 }
@@ -167,7 +168,7 @@ export function useMyModule(
 
     if (available && options.enabled) {
       MyModule.initialize(options).catch(err => {
-        console.error('[useMyModule] Initialization error:', err);
+        errorWithTs('[useMyModule] Initialization error:', err);
         setError(err);
       });
     }
@@ -188,7 +189,7 @@ export function useMyModule(
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       setError(error);
-      console.error('[useMyModule] Refresh error:', error);
+      errorWithTs('[useMyModule] Refresh error:', error);
     } finally {
       setIsLoading(false);
     }

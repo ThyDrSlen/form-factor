@@ -5,6 +5,8 @@
  * for web builds. Copy and modify for your module.
  */
 
+import { warnWithTs } from '@/lib/logger';
+
 // ============================================================================
 // Types (MUST match iOS implementation exactly)
 // ============================================================================
@@ -48,7 +50,7 @@ export class MyModule {
    */
   static isAvailable(): boolean {
     if (__DEV__) {
-      console.warn('[MyModule.web] This module is not available on web platform');
+      warnWithTs('[MyModule.web] This module is not available on web platform');
     }
     return false;
   }
@@ -58,7 +60,7 @@ export class MyModule {
    * No-op on web
    */
   static async initialize(options: MyModuleOptions): Promise<void> {
-    console.warn('[MyModule.web] initialize() not available on web');
+    warnWithTs('[MyModule.web] initialize() not available on web');
     // No-op
   }
 
@@ -68,7 +70,7 @@ export class MyModule {
    */
   static async getData(): Promise<MyModuleData[]> {
     if (__DEV__) {
-      console.warn('[MyModule.web] getData() not available on web');
+      warnWithTs('[MyModule.web] getData() not available on web');
     }
     return [];
   }
@@ -133,7 +135,7 @@ export function useMyModule(
   const [error] = useState<Error | null>(null);
 
   const refresh = async () => {
-    console.warn('[useMyModule.web] refresh() not available on web');
+    warnWithTs('[useMyModule.web] refresh() not available on web');
   };
 
   const start = async () => {

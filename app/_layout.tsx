@@ -12,6 +12,7 @@ import { UnitsProvider } from '../contexts/UnitsContext';
 import { NetworkProvider } from '../contexts/NetworkContext';
 import { useFonts, Lexend_400Regular, Lexend_500Medium, Lexend_700Bold } from '@expo-google-fonts/lexend';
 import { ToastProvider } from '../contexts/ToastContext';
+import { logWithTs, warnWithTs } from '@/lib/logger';
 
 // #region agent log
 fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
@@ -82,7 +83,7 @@ function RootLayoutNav() {
       } catch (e) {
         // Silently fail - font styling is not critical
         if (__DEV__) {
-          console.warn('[Layout] Failed to apply default font style:', e);
+          warnWithTs('[Layout] Failed to apply default font style:', e);
         }
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
@@ -145,11 +146,11 @@ function InitialLayout() {
 
   useEffect(() => {
     if (loading) {
-      console.log('[Layout] Auth is loading, waiting...');
+      logWithTs('[Layout] Auth is loading, waiting...');
       return;
     }
 
-    console.log('[Layout] Routing check:', {
+    logWithTs('[Layout] Routing check:', {
       user: !!user,
       segments,
       inAuthGroup,
@@ -160,21 +161,21 @@ function InitialLayout() {
     });
 
     if (!user && isWebRootLanding) {
-      console.log('[Layout] Web root detected, redirecting to landing');
+      logWithTs('[Layout] Web root detected, redirecting to landing');
       router.replace('/landing');
       return;
     }
 
     // If user is signed in but in auth group, redirect to tabs
     if (user && inAuthGroup) {
-      console.log('[Layout] User signed in but in auth group, redirecting to tabs');
+      logWithTs('[Layout] User signed in but in auth group, redirecting to tabs');
       router.replace('/(tabs)');
       return;
     }
 
     // If user is signed in but on root path, redirect to tabs
     if (user && pathname === '/') {
-      console.log('[Layout] User signed in on root, redirecting to tabs');
+      logWithTs('[Layout] User signed in on root, redirecting to tabs');
       router.replace('/(tabs)');
       return;
     }
@@ -183,12 +184,12 @@ function InitialLayout() {
 
     // If user is not signed in but not in auth group, redirect to sign-in
     if (!user && !inAuthGroup && !inModalsGroup && !isPublicRoute) {
-      console.log('[Layout] User not signed in, redirecting to sign-in');
+      logWithTs('[Layout] User not signed in, redirecting to sign-in');
       router.replace('/sign-in');
       return;
     }
 
-    console.log('[Layout] No redirect needed');
+    logWithTs('[Layout] No redirect needed');
   }, [user, loading, segments, inAuthGroup, inTabsGroup, inModalsGroup, isPublicRoute, isWebRootLanding, pathname, router]);
 
   if (loading) {

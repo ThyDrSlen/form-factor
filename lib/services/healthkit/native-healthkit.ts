@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { requireNativeModule } from 'expo-modules-core';
+import { errorWithTs } from '@/lib/logger';
 
 export type HealthKitAuthorizationSummary = {
   hasReadPermission: boolean;
@@ -73,7 +74,7 @@ export function getNativeHealthKit(): NativeHealthKitModule | null {
     // #endregion
   } catch (error) {
     if (!loggedFailure) {
-      console.error('[HealthKit] Failed to load FFHealthKit module', error);
+      errorWithTs('[HealthKit] Failed to load FFHealthKit module', error);
       loggedFailure = true;
     }
     // #region agent log

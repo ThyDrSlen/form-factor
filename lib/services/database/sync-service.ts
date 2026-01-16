@@ -1,6 +1,7 @@
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../../supabase';
 import { localDB, LocalFood, LocalWorkout, LocalHealthMetric } from './local-db';
+import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 
 type SyncCallback = () => void;
 
@@ -36,16 +37,16 @@ class SyncService {
     try {
       if (table === 'foods') {
         await localDB.hardDeleteFood(id);
-        console.warn('[SyncService] Removed foreign food from local cache:', id);
+        warnWithTs('[SyncService] Removed foreign food from local cache:', id);
       } else if (table === 'workouts') {
         await localDB.hardDeleteWorkout(id);
-        console.warn('[SyncService] Removed foreign workout from local cache:', id);
+        warnWithTs('[SyncService] Removed foreign workout from local cache:', id);
       } else if (table === 'health_metrics') {
         await localDB.deleteHealthMetric(id);
-        console.warn('[SyncService] Removed foreign health metric from local cache:', id);
+        warnWithTs('[SyncService] Removed foreign health metric from local cache:', id);
       }
     } catch (purgeError) {
-      console.error('[SyncService] Failed to purge local record', { table, id, purgeError });
+      errorWithTs('[SyncService] Failed to purge local record', { table, id, purgeError });
     }
   }
 
@@ -65,32 +66,32 @@ class SyncService {
   async initializeRealtimeSync(userId: string): Promise<void> {
     // Prevent duplicate subscriptions
     if (this.foodChannel || this.workoutChannel || this.healthChannel) {
-      console.log('[SyncService] Realtime already initialized, skipping');
+      logWithTs('[SyncService] Realtime already initialized, skipping');
       return;
     }
 
-    console.log('[SyncService] Initializing Realtime subscriptions for user:', userId);
+    logWithTs('[SyncService] Initializing Realtime subscriptions for user:', userId);
 
     const logChannelStatus = (label: string, status: string, err?: Error | null) => {
       if (status === 'SUBSCRIBED') {
-        console.log(`[SyncService] ✅ ${label} channel subscribed`);
+        logWithTs(`[SyncService] ✅ ${label} channel subscribed`);
         return;
       }
       if (status === 'CHANNEL_ERROR') {
         if (err?.message) {
-          console.error(`[SyncService] ❌ ${label} channel error:`, err);
+          errorWithTs(`[SyncService] ❌ ${label} channel error:`, err);
         } else {
-          console.warn(
+          warnWithTs(
             `[SyncService] ⚠️ ${label} channel error without details (check realtime publication/RLS)`
           );
         }
         return;
       }
       if (status === 'TIMED_OUT') {
-        console.warn(`[SyncService] ⏱️ ${label} channel timeout, will retry`);
+        warnWithTs(`[SyncService] ⏱️ ${label} channel timeout, will retry`);
         return;
       }
-      console.log(`[SyncService] ${label} channel status:`, status);
+      logWithTs(`[SyncService] ${label} channel status:`, status);
     };
 
     // Subscribe to foods table changes
@@ -105,7 +106,7 @@ class SyncService {
           filter: `user_id=eq.${userId}`,
         },
         async (payload) => {
-          console.log('[SyncService] Realtime food change:', payload);
+          logWithTs('[SyncService] Realtime food change:', payload);
           await this.handleRealtimeFoodChange(payload);
         }
       )
@@ -125,7 +126,7 @@ class SyncService {
           filter: `user_id=eq.${userId}`,
         },
         async (payload) => {
-          console.log('[SyncService] Realtime workout change:', payload);
+          logWithTs('[SyncService] Realtime workout change:', payload);
           await this.handleRealtimeWorkoutChange(payload);
         }
       )
@@ -145,7 +146,7 @@ class SyncService {
           filter: `user_id=eq.${userId}`,
         },
         async (payload) => {
-          console.log('[SyncService] Realtime health metric change:', payload);
+          logWithTs('[SyncService] Realtime health metric change:', payload);
           await this.handleRealtimeHealthMetricChange(payload);
         }
       )
@@ -164,7 +165,7 @@ class SyncService {
         
         // If local has unsaved changes, don't overwrite (local wins, will sync later)
         if (localFood && localFood.synced === 0) {
-          console.log(`[SyncService] Local food ${payload.new.id} has unsaved changes, keeping local version`);
+          logWithTs(`[SyncService] Local food ${payload.new.id} has unsaved changes, keeping local version`);
           return;
         }
 
@@ -195,7 +196,7 @@ class SyncService {
         this.notifySyncComplete();
       }
     } catch (error) {
-      console.error('[SyncService] Error handling realtime food change:', error);
+      errorWithTs('[SyncService] Error handling realtime food change:', error);
     }
   }
 
@@ -209,7 +210,7 @@ class SyncService {
         
         // If local has unsaved changes, don't overwrite (local wins, will sync later)
         if (localWorkout && localWorkout.synced === 0) {
-          console.log(`[SyncService] Local workout ${payload.new.id} has unsaved changes, keeping local version`);
+          logWithTs(`[SyncService] Local workout ${payload.new.id} has unsaved changes, keeping local version`);
           return;
         }
 
@@ -240,7 +241,7 @@ class SyncService {
         this.notifySyncComplete();
       }
     } catch (error) {
-      console.error('[SyncService] Error handling realtime workout change:', error);
+      errorWithTs('[SyncService] Error handling realtime workout change:', error);
     }
   }
 
@@ -253,7 +254,7 @@ class SyncService {
         
         // If local has unsaved changes, don't overwrite (local wins, will sync later)
         if (localMetric && localMetric.synced === 0) {
-          console.log(`[SyncService] Local health metric ${payload.new.id} has unsaved changes, keeping local version`);
+          logWithTs(`[SyncService] Local health metric ${payload.new.id} has unsaved changes, keeping local version`);
           return;
         }
 
@@ -284,13 +285,13 @@ class SyncService {
         this.notifySyncComplete();
       }
     } catch (error) {
-      console.error('[SyncService] Error handling realtime health metric change:', error);
+      errorWithTs('[SyncService] Error handling realtime health metric change:', error);
     }
   }
 
   // Cleanup Realtime subscriptions
   async cleanupRealtimeSync(): Promise<void> {
-    console.log('[SyncService] Cleaning up Realtime subscriptions');
+    logWithTs('[SyncService] Cleaning up Realtime subscriptions');
 
     if (this.foodChannel) {
       await supabase.removeChannel(this.foodChannel);
@@ -311,18 +312,18 @@ class SyncService {
   // Sync local changes to Supabase
   async syncToSupabase(): Promise<void> {
     if (this.isSyncing) {
-      console.log('[SyncService] Sync already in progress');
+      logWithTs('[SyncService] Sync already in progress');
       return;
     }
 
     this.isSyncing = true;
-    console.log('[SyncService] Starting sync to Supabase...');
+    logWithTs('[SyncService] Starting sync to Supabase...');
 
     try {
       // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        console.log('[SyncService] No authenticated user, skipping sync');
+        logWithTs('[SyncService] No authenticated user, skipping sync');
         return;
       }
 
@@ -341,10 +342,10 @@ class SyncService {
       // Cleanup synced deleted items
       await localDB.cleanupSyncedDeletes();
 
-      console.log('[SyncService] Sync to Supabase completed');
+      logWithTs('[SyncService] Sync to Supabase completed');
       this.notifySyncComplete();
     } catch (error) {
-      console.error('[SyncService] Error syncing to Supabase:', error);
+      errorWithTs('[SyncService] Error syncing to Supabase:', error);
     } finally {
       this.isSyncing = false;
     }
@@ -355,12 +356,12 @@ class SyncService {
     const unsyncedFoods = await localDB.getUnsyncedFoods();
     if (unsyncedFoods.length === 0) return;
 
-    console.log(`[SyncService] Syncing ${unsyncedFoods.length} foods to Supabase`);
+    logWithTs(`[SyncService] Syncing ${unsyncedFoods.length} foods to Supabase`);
 
     // Get current user
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      console.warn('[SyncService] No authenticated user, cannot sync foods');
+      warnWithTs('[SyncService] No authenticated user, cannot sync foods');
       return;
     }
 
@@ -389,7 +390,7 @@ class SyncService {
 
           // If server version is newer, skip local update (server wins)
           if (existing && new Date(existing.updated_at) > new Date(food.updated_at)) {
-            console.log(`[SyncService] Server version of food ${food.id} is newer, skipping local update`);
+            logWithTs(`[SyncService] Server version of food ${food.id} is newer, skipping local update`);
             await localDB.updateFoodSyncStatus(food.id, true);
             continue;
           }
@@ -413,16 +414,16 @@ class SyncService {
 
           if (error) throw error;
           await localDB.updateFoodSyncStatus(food.id, true);
-          console.log(`[SyncService] Synced food ${food.id} to server (local was newer)`);
+          logWithTs(`[SyncService] Synced food ${food.id} to server (local was newer)`);
         }
       } catch (error) {
         if (this.isRlsViolation(error)) {
-          console.warn(`[SyncService] Food ${food.id} rejected by RLS, purging local copy`);
+          warnWithTs(`[SyncService] Food ${food.id} rejected by RLS, purging local copy`);
           await this.purgeLocalRecord('foods', food.id);
           continue;
         }
 
-        console.error(`[SyncService] Failed to sync food ${food.id}:`, error);
+        errorWithTs(`[SyncService] Failed to sync food ${food.id}:`, error);
         // Add to sync queue for retry (strip local-only fields)
         const { deleted, synced, ...cleanFood } = food;
         await localDB.addToSyncQueue('foods', food.deleted ? 'delete' : 'upsert', food.id, cleanFood);
@@ -435,12 +436,12 @@ class SyncService {
     const unsyncedWorkouts = await localDB.getUnsyncedWorkouts();
     if (unsyncedWorkouts.length === 0) return;
 
-    console.log(`[SyncService] Syncing ${unsyncedWorkouts.length} workouts to Supabase`);
+    logWithTs(`[SyncService] Syncing ${unsyncedWorkouts.length} workouts to Supabase`);
 
     // Get current user
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      console.warn('[SyncService] No authenticated user, cannot sync workouts');
+      warnWithTs('[SyncService] No authenticated user, cannot sync workouts');
       return;
     }
 
@@ -469,7 +470,7 @@ class SyncService {
 
           // If server version is newer, skip local update (server wins)
           if (existing && new Date(existing.updated_at) > new Date(workout.updated_at)) {
-            console.log(`[SyncService] Server version of workout ${workout.id} is newer, skipping local update`);
+            logWithTs(`[SyncService] Server version of workout ${workout.id} is newer, skipping local update`);
             await localDB.updateWorkoutSyncStatus(workout.id, true);
             continue;
           }
@@ -493,16 +494,16 @@ class SyncService {
 
           if (error) throw error;
           await localDB.updateWorkoutSyncStatus(workout.id, true);
-          console.log(`[SyncService] Synced workout ${workout.id} to server (local was newer)`);
+          logWithTs(`[SyncService] Synced workout ${workout.id} to server (local was newer)`);
         }
       } catch (error) {
         if (this.isRlsViolation(error)) {
-          console.warn(`[SyncService] Workout ${workout.id} rejected by RLS, purging local copy`);
+          warnWithTs(`[SyncService] Workout ${workout.id} rejected by RLS, purging local copy`);
           await this.purgeLocalRecord('workouts', workout.id);
           continue;
         }
 
-        console.error(`[SyncService] Failed to sync workout ${workout.id}:`, error);
+        errorWithTs(`[SyncService] Failed to sync workout ${workout.id}:`, error);
         // Add to sync queue for retry (strip local-only fields)
         const { deleted, synced, ...cleanWorkout } = workout;
         await localDB.addToSyncQueue('workouts', workout.deleted ? 'delete' : 'upsert', workout.id, cleanWorkout);
@@ -513,19 +514,19 @@ class SyncService {
   // Sync health metrics to Supabase with Last-Write-Wins conflict resolution
   private async syncHealthMetricsToSupabase(): Promise<void> {
     const unsyncedMetrics = await localDB.getUnsyncedHealthMetrics();
-    console.log(`[SyncService] Syncing ${unsyncedMetrics.length} health metrics to Supabase`);
+    logWithTs(`[SyncService] Syncing ${unsyncedMetrics.length} health metrics to Supabase`);
 
     // Get current user
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      console.warn('[SyncService] No authenticated user, cannot sync health metrics');
+      warnWithTs('[SyncService] No authenticated user, cannot sync health metrics');
       return;
     }
 
     for (const metric of unsyncedMetrics) {
       try {
         if (!metric.user_id || metric.user_id !== user.id) {
-          console.warn(
+          warnWithTs(
             `[SyncService] Skipping health metric ${metric.id} because it belongs to another user (${metric.user_id})`
           );
           await this.purgeLocalRecord('health_metrics', metric.id);
@@ -546,7 +547,7 @@ class SyncService {
 
         // If server version is newer, skip local update (server wins)
         if (existing && new Date(existing.updated_at) > new Date(metric.updated_at)) {
-          console.log(`[SyncService] Server version of health metric ${metric.id} is newer, skipping local update`);
+          logWithTs(`[SyncService] Server version of health metric ${metric.id} is newer, skipping local update`);
           await localDB.updateHealthMetricSyncStatus(metric.id, true);
           continue;
         }
@@ -572,15 +573,15 @@ class SyncService {
 
         if (error) throw error;
         await localDB.updateHealthMetricSyncStatus(metric.id, true);
-        console.log(`[SyncService] Synced health metric ${metric.id} to server (local was newer)`);
+        logWithTs(`[SyncService] Synced health metric ${metric.id} to server (local was newer)`);
       } catch (error) {
         if (this.isRlsViolation(error)) {
-          console.warn(`[SyncService] Health metric ${metric.id} rejected by RLS, purging local copy`);
+          warnWithTs(`[SyncService] Health metric ${metric.id} rejected by RLS, purging local copy`);
           await this.purgeLocalRecord('health_metrics', metric.id);
           continue;
         }
 
-        console.error(`[SyncService] Failed to sync health metric ${metric.id}:`, error);
+        errorWithTs(`[SyncService] Failed to sync health metric ${metric.id}:`, error);
         // Add to sync queue for retry
         const { synced, ...cleanMetric } = metric;
         await localDB.addToSyncQueue('health_metrics', 'upsert', metric.id, cleanMetric);
@@ -591,19 +592,19 @@ class SyncService {
   // Process items in sync queue
   private async processSyncQueue(): Promise<void> {
     const queue = await localDB.getSyncQueue();
-    console.log(`[SyncService] Processing ${queue.length} items in sync queue`);
+    logWithTs(`[SyncService] Processing ${queue.length} items in sync queue`);
 
     // Get current user
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      console.warn('[SyncService] No authenticated user, cannot process sync queue');
+      warnWithTs('[SyncService] No authenticated user, cannot process sync queue');
       return;
     }
 
     for (const item of queue) {
       try {
         if (item.retry_count >= 5) {
-          console.warn(`[SyncService] Max retries reached for queue item ${item.id}, removing`);
+          warnWithTs(`[SyncService] Max retries reached for queue item ${item.id}, removing`);
           await localDB.removeSyncQueueItem(item.id);
           continue;
         }
@@ -663,7 +664,7 @@ class SyncService {
         }
       } catch (error) {
         if (this.isRlsViolation(error)) {
-          console.warn(`[SyncService] Queue item ${item.id} was rejected by RLS, purging local record`);
+          warnWithTs(`[SyncService] Queue item ${item.id} was rejected by RLS, purging local record`);
           if (this.isManagedTable(item.table_name)) {
             await this.purgeLocalRecord(item.table_name, item.record_id);
           }
@@ -672,13 +673,13 @@ class SyncService {
         }
 
         if (this.isInvalidUuid(error) && item.table_name === 'health_metrics') {
-          console.warn(`[SyncService] Queue item ${item.id} had invalid UUID, dropping metric`);
+          warnWithTs(`[SyncService] Queue item ${item.id} had invalid UUID, dropping metric`);
           await this.purgeLocalRecord('health_metrics', item.record_id);
           await localDB.removeSyncQueueItem(item.id);
           continue;
         }
 
-        console.error(`[SyncService] Failed to process queue item ${item.id}:`, error);
+        errorWithTs(`[SyncService] Failed to process queue item ${item.id}:`, error);
         await localDB.incrementSyncQueueRetry(item.id);
       }
     }
@@ -686,7 +687,7 @@ class SyncService {
 
   // Download all data from Supabase to local DB
   async downloadFromSupabase(): Promise<void> {
-    console.log('[SyncService] Downloading data from Supabase...');
+    logWithTs('[SyncService] Downloading data from Supabase...');
 
     try {
       // Download foods
@@ -710,13 +711,13 @@ class SyncService {
           
           // If local version is deleted and unsynced, skip download (local delete wins)
           if (existingLocal?.deleted === 1 && existingLocal?.synced === 0) {
-            console.log(`[SyncService] Skipping food ${food.id} - local deletion pending sync`);
+            logWithTs(`[SyncService] Skipping food ${food.id} - local deletion pending sync`);
             continue;
           }
 
           // If exists locally and local is newer, skip (local wins)
           if (existingLocal && new Date(existingLocal.updated_at) > new Date(food.updated_at)) {
-            console.log(`[SyncService] Skipping food ${food.id} - local is newer`);
+            logWithTs(`[SyncService] Skipping food ${food.id} - local is newer`);
             continue;
           }
 
@@ -742,14 +743,14 @@ class SyncService {
             await localDB.insertFood(localFood);
           }
         }
-        console.log(`[SyncService] Downloaded ${foods.length} foods`);
+        logWithTs(`[SyncService] Downloaded ${foods.length} foods`);
       }
 
       // Delete local items that were deleted on server
       // (items that exist locally with synced=1 but don't exist on server)
       for (const localFood of allLocalFoods) {
         if (localFood.synced === 1 && !serverFoodIds.has(localFood.id) && localFood.deleted === 0) {
-          console.log(`[SyncService] Deleting food ${localFood.id} - removed on server`);
+          logWithTs(`[SyncService] Deleting food ${localFood.id} - removed on server`);
           await localDB.hardDeleteFood(localFood.id);
         }
       }
@@ -778,13 +779,13 @@ class SyncService {
           
           // If local version is deleted and unsynced, skip download (local delete wins)
           if (existingLocal?.deleted === 1 && existingLocal?.synced === 0) {
-            console.log(`[SyncService] Skipping workout ${workout.id} - local deletion pending sync`);
+            logWithTs(`[SyncService] Skipping workout ${workout.id} - local deletion pending sync`);
             continue;
           }
 
           // If exists locally and local is newer, skip (local wins)
           if (existingLocal && new Date(existingLocal.updated_at) > new Date(workout.updated_at)) {
-            console.log(`[SyncService] Skipping workout ${workout.id} - local is newer`);
+            logWithTs(`[SyncService] Skipping workout ${workout.id} - local is newer`);
             continue;
           }
 
@@ -810,21 +811,21 @@ class SyncService {
             await localDB.insertWorkout(localWorkout);
           }
         }
-        console.log(`[SyncService] Downloaded ${workouts.length} workouts`);
+        logWithTs(`[SyncService] Downloaded ${workouts.length} workouts`);
       }
 
       // Delete local items that were deleted on server
       // (items that exist locally with synced=1 but don't exist on server)
       for (const localWorkout of allLocalWorkouts) {
         if (localWorkout.synced === 1 && !serverWorkoutIds.has(localWorkout.id) && localWorkout.deleted === 0) {
-          console.log(`[SyncService] Deleting workout ${localWorkout.id} - removed on server`);
+          logWithTs(`[SyncService] Deleting workout ${localWorkout.id} - removed on server`);
           await localDB.hardDeleteWorkout(localWorkout.id);
         }
       }
 
       this.notifySyncComplete();
     } catch (error) {
-      console.error('[SyncService] Error downloading from Supabase:', error);
+      errorWithTs('[SyncService] Error downloading from Supabase:', error);
     }
   }
 
@@ -832,27 +833,27 @@ class SyncService {
   private async cleanupSyncedDeletes(): Promise<void> {
     try {
       await localDB.cleanupSyncedDeletes();
-      console.log('[SyncService] Cleaned up synced deleted items');
+      logWithTs('[SyncService] Cleaned up synced deleted items');
     } catch (error) {
-      console.error('[SyncService] Error cleaning up deleted items:', error);
+      errorWithTs('[SyncService] Error cleaning up deleted items:', error);
     }
   }
 
   // Full sync: download from Supabase then push local changes
   async fullSync(): Promise<void> {
     if (this.syncPromise) {
-      console.log('[SyncService] Joining existing sync request');
+      logWithTs('[SyncService] Joining existing sync request');
       return this.syncPromise;
     }
 
     this.syncPromise = (async () => {
-      console.log('[SyncService] Starting full sync...');
+      logWithTs('[SyncService] Starting full sync...');
       try {
         await this.downloadFromSupabase();
         await this.syncToSupabase();
-        console.log('[SyncService] Full sync completed');
+        logWithTs('[SyncService] Full sync completed');
       } catch (error) {
-        console.error('[SyncService] Error during full sync:', error);
+        errorWithTs('[SyncService] Error during full sync:', error);
       } finally {
         this.syncPromise = null;
       }
@@ -863,9 +864,9 @@ class SyncService {
 
   // Clear stuck sync queue items (useful for fixing corrupted queue)
   async clearSyncQueue(): Promise<void> {
-    console.log('[SyncService] Clearing sync queue...');
+    logWithTs('[SyncService] Clearing sync queue...');
     await localDB.clearSyncQueue();
-    console.log('[SyncService] Sync queue cleared');
+    logWithTs('[SyncService] Sync queue cleared');
   }
 }
 
