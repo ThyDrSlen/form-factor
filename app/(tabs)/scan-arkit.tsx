@@ -1308,7 +1308,7 @@ export default function ScanARKitScreen() {
         setIsRecording(false);
         Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not start recording.');
       }
-    }, [DEV, isRecording, isFinalizingRecording, isTracking, recordPreview, recordingQuality, logWithTs, repCount]);
+    }, [DEV, isRecording, isFinalizingRecording, isTracking, recordPreview, recordingQuality, repCount]);
 
   const stopRecordingVideo = useCallback(async () => {
     if (!isRecording || recordingStopInFlightRef.current) return;
@@ -1351,7 +1351,7 @@ export default function ScanARKitScreen() {
     } finally {
       recordingActiveRef.current = false;
     }
-  }, [DEV, isRecording, stopRecordingCore, latestMetricsForUpload, logWithTs, recordingQuality, repCount, activeWorkoutDef.displayName]);
+  }, [DEV, isRecording, stopRecordingCore, latestMetricsForUpload, recordingQuality, repCount, activeWorkoutDef.displayName]);
 
   useEffect(() => {
     if (!gestureRecordingEnabled || isRecording || isFinalizingRecording) {

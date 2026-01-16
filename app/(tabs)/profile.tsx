@@ -6,7 +6,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { HealthTrendsView } from '@/components/dashboard-health/HealthTrendsView';
-import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
+import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { deleteVideo, getVideoById, listVideos, toggleVideoLike, VideoWithUrls } from '@/lib/services/video-service';
 import { router } from 'expo-router';
 import Constants from 'expo-constants';
