@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-url-polyfill/auto';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { FoodProvider } from '../contexts/FoodContext';
+import { NutritionGoalsProvider, useNutritionGoals } from '../contexts/NutritionGoalsContext';
 import { WorkoutsProvider } from '../contexts/WorkoutsContext';
 import { HealthKitProvider } from '../contexts/HealthKitContext';
 import { UnitsProvider } from '../contexts/UnitsContext';
@@ -112,15 +113,17 @@ function RootLayoutNav() {
             <UnitsProvider>
               <HealthKitProvider>
                 <WorkoutsProvider>
-                  <FoodProvider>
-                    {!fontsLoaded ? (
-                      <View style={styles.splash}>
-                        <ActivityIndicator color="#4C8CFF" />
-                      </View>
-                    ) : (
-                      <InitialLayout />
-                    )}
-                  </FoodProvider>
+                  <NutritionGoalsProvider>
+                    <FoodProvider>
+                      {!fontsLoaded ? (
+                        <View style={styles.splash}>
+                          <ActivityIndicator color="#4C8CFF" />
+                        </View>
+                      ) : (
+                        <InitialLayout />
+                      )}
+                    </FoodProvider>
+                  </NutritionGoalsProvider>
                 </WorkoutsProvider>
               </HealthKitProvider>
             </UnitsProvider>
@@ -136,7 +139,9 @@ function InitialLayout() {
   const segments = useSegments();
   const inAuthGroup = segments[0] === '(auth)';
   const inTabsGroup = segments[0] === '(tabs)';
+  const inOnboardingGroup = segments[0] === '(onboarding)';
   const { user, loading } = useAuth();
+  const { goals, loading: goalsLoading } = useNutritionGoals();
   const router = useRouter();
   const pathname = usePathname();
   const inModalsGroup = pathname.startsWith('/(modals)');
@@ -145,7 +150,7 @@ function InitialLayout() {
   const isWebRootLanding = Platform.OS === 'web' && pathname === '/';
 
   useEffect(() => {
-    if (loading) {
+    if (loading || goalsLoading) {
       logWithTs('[Layout] Auth is loading, waiting...');
       return;
     }
@@ -163,6 +168,18 @@ function InitialLayout() {
     if (!user && isWebRootLanding) {
       logWithTs('[Layout] Web root detected, redirecting to landing');
       router.replace('/landing');
+      return;
+    }
+
+    if (user && !goals && !inOnboardingGroup) {
+      logWithTs('[Layout] Missing nutrition goals, redirecting to onboarding');
+      router.replace('/(onboarding)/nutrition-goals');
+      return;
+    }
+
+    if (user && goals && inOnboardingGroup) {
+      logWithTs('[Layout] Goals configured, redirecting to tabs');
+      router.replace('/(tabs)');
       return;
     }
 
@@ -190,7 +207,7 @@ function InitialLayout() {
     }
 
     logWithTs('[Layout] No redirect needed');
-  }, [user, loading, segments, inAuthGroup, inTabsGroup, inModalsGroup, isPublicRoute, isWebRootLanding, pathname, router]);
+  }, [user, loading, goalsLoading, goals, segments, inAuthGroup, inTabsGroup, inOnboardingGroup, inModalsGroup, isPublicRoute, isWebRootLanding, pathname, router]);
 
   if (loading) {
     return (

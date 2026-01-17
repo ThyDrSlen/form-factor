@@ -1,6 +1,6 @@
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../../supabase';
-import { localDB, LocalFood, LocalWorkout, LocalHealthMetric } from './local-db';
+import { localDB, LocalFood, LocalWorkout, LocalHealthMetric, LocalNutritionGoals } from './local-db';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 
 type SyncCallback = () => void;
@@ -9,6 +9,7 @@ class SyncService {
   private foodChannel: RealtimeChannel | null = null;
   private workoutChannel: RealtimeChannel | null = null;
   private healthChannel: RealtimeChannel | null = null;
+  private nutritionGoalsChannel: RealtimeChannel | null = null;
   private isSyncing = false;
   private syncPromise: Promise<void> | null = null;
   private syncCallbacks: SyncCallback[] = [];
@@ -29,11 +30,11 @@ class SyncService {
     return this.getErrorCode(error) === '22P02';
   }
 
-  private isManagedTable(table: string): table is 'foods' | 'workouts' | 'health_metrics' {
-    return table === 'foods' || table === 'workouts' || table === 'health_metrics';
+  private isManagedTable(table: string): table is 'foods' | 'workouts' | 'health_metrics' | 'nutrition_goals' {
+    return table === 'foods' || table === 'workouts' || table === 'health_metrics' || table === 'nutrition_goals';
   }
 
-  private async purgeLocalRecord(table: 'foods' | 'workouts' | 'health_metrics', id: string): Promise<void> {
+  private async purgeLocalRecord(table: 'foods' | 'workouts' | 'health_metrics' | 'nutrition_goals', id: string): Promise<void> {
     try {
       if (table === 'foods') {
         await localDB.hardDeleteFood(id);
@@ -44,6 +45,9 @@ class SyncService {
       } else if (table === 'health_metrics') {
         await localDB.deleteHealthMetric(id);
         warnWithTs('[SyncService] Removed foreign health metric from local cache:', id);
+      } else if (table === 'nutrition_goals') {
+        await localDB.deleteNutritionGoals(id);
+        warnWithTs('[SyncService] Removed foreign nutrition goals from local cache:', id);
       }
     } catch (purgeError) {
       errorWithTs('[SyncService] Failed to purge local record', { table, id, purgeError });
@@ -289,6 +293,38 @@ class SyncService {
     }
   }
 
+  private async handleRealtimeNutritionGoalsChange(payload: any): Promise<void> {
+    try {
+      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+        const localGoals = await localDB.getNutritionGoalsById(payload.new.id);
+
+        if (localGoals && localGoals.synced === 0) {
+          logWithTs(`[SyncService] Local nutrition goals ${payload.new.id} has unsaved changes, keeping local version`);
+          return;
+        }
+
+        const goals: LocalNutritionGoals = {
+          id: payload.new.id,
+          user_id: payload.new.user_id,
+          calories_goal: payload.new.calories_goal,
+          protein_goal: payload.new.protein_goal,
+          carbs_goal: payload.new.carbs_goal,
+          fat_goal: payload.new.fat_goal,
+          synced: 1,
+          updated_at: payload.new.updated_at || new Date().toISOString(),
+        };
+
+        await localDB.upsertNutritionGoals(goals, 1);
+        this.notifySyncComplete();
+      } else if (payload.eventType === 'DELETE') {
+        await localDB.deleteNutritionGoals(payload.old.id);
+        this.notifySyncComplete();
+      }
+    } catch (error) {
+      errorWithTs('[SyncService] Error handling realtime nutrition goals change:', error);
+    }
+  }
+
   // Cleanup Realtime subscriptions
   async cleanupRealtimeSync(): Promise<void> {
     logWithTs('[SyncService] Cleaning up Realtime subscriptions');
@@ -306,6 +342,11 @@ class SyncService {
     if (this.healthChannel) {
       await supabase.removeChannel(this.healthChannel);
       this.healthChannel = null;
+    }
+
+    if (this.nutritionGoalsChannel) {
+      await supabase.removeChannel(this.nutritionGoalsChannel);
+      this.nutritionGoalsChannel = null;
     }
   }
 
@@ -335,6 +376,8 @@ class SyncService {
 
       // Sync health metrics
       await this.syncHealthMetricsToSupabase();
+
+      await this.syncNutritionGoalsToSupabase();
 
       // Process sync queue
       await this.processSyncQueue();
@@ -589,6 +632,73 @@ class SyncService {
     }
   }
 
+  private async syncNutritionGoalsToSupabase(): Promise<void> {
+    const unsyncedGoals = await localDB.getUnsyncedNutritionGoals();
+    if (unsyncedGoals.length === 0) return;
+
+    logWithTs(`[SyncService] Syncing ${unsyncedGoals.length} nutrition goals to Supabase`);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      warnWithTs('[SyncService] No authenticated user, cannot sync nutrition goals');
+      return;
+    }
+
+    for (const goals of unsyncedGoals) {
+      try {
+        if (!goals.user_id || goals.user_id !== user.id) {
+          warnWithTs(`[SyncService] Skipping nutrition goals ${goals.id} for different user (${goals.user_id})`);
+          await this.purgeLocalRecord('nutrition_goals', goals.id);
+          continue;
+        }
+
+        const { data: existing, error: fetchError } = await supabase
+          .from('nutrition_goals')
+          .select('updated_at')
+          .eq('user_id', user.id)
+          .single();
+
+        if (fetchError && fetchError.code !== 'PGRST116') {
+          throw fetchError;
+        }
+
+        if (existing && new Date(existing.updated_at) > new Date(goals.updated_at)) {
+          logWithTs(`[SyncService] Server version of nutrition goals ${goals.id} is newer, skipping local update`);
+          await localDB.updateNutritionGoalsSyncStatus(goals.id, true);
+          continue;
+        }
+
+        const goalsData = {
+          id: goals.id,
+          user_id: user.id,
+          calories_goal: goals.calories_goal,
+          protein_goal: goals.protein_goal,
+          carbs_goal: goals.carbs_goal,
+          fat_goal: goals.fat_goal,
+          updated_at: goals.updated_at,
+        };
+
+        const { error } = await supabase
+          .from('nutrition_goals')
+          .upsert([goalsData], { onConflict: 'user_id' });
+
+        if (error) throw error;
+        await localDB.updateNutritionGoalsSyncStatus(goals.id, true);
+        logWithTs(`[SyncService] Synced nutrition goals ${goals.id} to server (local was newer)`);
+      } catch (error) {
+        if (this.isRlsViolation(error)) {
+          warnWithTs(`[SyncService] Nutrition goals ${goals.id} rejected by RLS, purging local copy`);
+          await this.purgeLocalRecord('nutrition_goals', goals.id);
+          continue;
+        }
+
+        errorWithTs(`[SyncService] Failed to sync nutrition goals ${goals.id}:`, error);
+        const { synced, ...cleanGoals } = goals;
+        await localDB.addToSyncQueue('nutrition_goals', 'upsert', goals.id, cleanGoals);
+      }
+    }
+  }
+
   // Process items in sync queue
   private async processSyncQueue(): Promise<void> {
     const queue = await localDB.getSyncQueue();
@@ -641,6 +751,11 @@ class SyncService {
               .from('health_metrics')
               .upsert([upsertData], { onConflict: 'user_id,summary_date' });
             upsertError = error;
+          } else if (item.table_name === 'nutrition_goals') {
+            const { error } = await supabase
+              .from('nutrition_goals')
+              .upsert([upsertData], { onConflict: 'user_id' });
+            upsertError = error;
           } else {
             const { error } = await supabase
               .from(item.table_name)
@@ -661,6 +776,8 @@ class SyncService {
           await localDB.updateWorkoutSyncStatus(item.record_id, true);
         } else if (item.table_name === 'health_metrics') {
           await localDB.updateHealthMetricSyncStatus(item.record_id, true);
+        } else if (item.table_name === 'nutrition_goals') {
+          await localDB.updateNutritionGoalsSyncStatus(item.record_id, true);
         }
       } catch (error) {
         if (this.isRlsViolation(error)) {
@@ -820,6 +937,39 @@ class SyncService {
         if (localWorkout.synced === 1 && !serverWorkoutIds.has(localWorkout.id) && localWorkout.deleted === 0) {
           logWithTs(`[SyncService] Deleting workout ${localWorkout.id} - removed on server`);
           await localDB.hardDeleteWorkout(localWorkout.id);
+        }
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: nutritionGoals, error: nutritionGoalsError } = await supabase
+          .from('nutrition_goals')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+
+        if (nutritionGoalsError && nutritionGoalsError.code !== 'PGRST116') {
+          throw nutritionGoalsError;
+        }
+
+        if (nutritionGoals) {
+          const localGoals = await localDB.getNutritionGoals(user.id);
+          if (localGoals && localGoals.synced === 0 && new Date(localGoals.updated_at) > new Date(nutritionGoals.updated_at)) {
+            logWithTs(`[SyncService] Skipping nutrition goals ${nutritionGoals.id} - local is newer`);
+          } else {
+            await localDB.upsertNutritionGoals(
+              {
+                id: nutritionGoals.id,
+                user_id: nutritionGoals.user_id,
+                calories_goal: nutritionGoals.calories_goal,
+                protein_goal: nutritionGoals.protein_goal,
+                carbs_goal: nutritionGoals.carbs_goal,
+                fat_goal: nutritionGoals.fat_goal,
+              },
+              1
+            );
+            logWithTs('[SyncService] Downloaded nutrition goals');
+          }
         }
       }
 
