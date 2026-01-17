@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
+import { useNutritionGoals } from '@/contexts/NutritionGoalsContext';
 import { HealthTrendsView } from '@/components/dashboard-health/HealthTrendsView';
 import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { deleteVideo, getVideoById, listVideos, toggleVideoLike, VideoWithUrls } from '@/lib/services/video-service';
@@ -196,10 +197,12 @@ const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: Fee
 export default function ProfileScreen() {
   const { user, signOut, updateProfile } = useAuth();
   const { show: showToast } = useToast();
+  const { goals, saveGoals: saveNutritionGoals } = useNutritionGoals();
   const [isFixing, setIsFixing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isEditProfileVisible, setIsEditProfileVisible] = useState(false);
+  const [isEditGoalsVisible, setIsEditGoalsVisible] = useState(false);
   const [fullName, setFullName] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
   const [videos, setVideos] = useState<VideoWithUrls[]>([]);
@@ -208,6 +211,11 @@ export default function ProfileScreen() {
   const [hasFetchedOnce, setHasFetchedOnce] = useState(false);
   const [likedVideos, setLikedVideos] = useState<Record<string, boolean>>({});
   const { debugInfo, loading: debugLoading, refresh: refreshDebugInfo } = useDebugInfo();
+  const [isSavingGoals, setIsSavingGoals] = useState(false);
+  const [calories, setCalories] = useState('');
+  const [protein, setProtein] = useState('');
+  const [carbs, setCarbs] = useState('');
+  const [fat, setFat] = useState('');
   const currentName = user?.user_metadata?.full_name || user?.user_metadata?.name || '';
   const memberSinceYear = user?.created_at ? new Date(user.created_at).getFullYear() : new Date().getFullYear();
   const displayName = currentName || user?.email?.split('@')[0] || 'User';
@@ -636,6 +644,50 @@ Generated: ${new Date().toISOString()}
     }
   };
 
+  const handleOpenEditGoals = () => {
+    setCalories(goals?.calories?.toString() || '');
+    setProtein(goals?.protein?.toString() || '');
+    setCarbs(goals?.carbs?.toString() || '');
+    setFat(goals?.fat?.toString() || '');
+    setIsEditGoalsVisible(true);
+  };
+
+  const normalizeDecimal = (value: string): string => {
+    const cleaned = value.replace(/[^0-9.]/g, '');
+    const firstDot = cleaned.indexOf('.');
+    if (firstDot === -1) return cleaned;
+    return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+  };
+
+  const handleSaveGoals = async () => {
+    if (!calories.trim() || parseFloat(calories) <= 0) {
+      Alert.alert('Error', 'Please enter valid calorie goal');
+      return;
+    }
+
+    try {
+      setIsSavingGoals(true);
+      const { error } = await saveNutritionGoals({
+        calories: parseFloat(calories),
+        protein: protein.trim() ? parseFloat(protein) : undefined,
+        carbs: carbs.trim() ? parseFloat(carbs) : undefined,
+        fat: fat.trim() ? parseFloat(fat) : undefined,
+      });
+
+      if (error) {
+        Alert.alert('Error', error.message || 'Could not update nutrition goals.');
+        return;
+      }
+
+      setIsEditGoalsVisible(false);
+      Alert.alert('Goals updated', 'Your nutrition goals have been saved.');
+    } catch (error) {
+      Alert.alert('Error', error instanceof Error ? error.message : 'Could not update nutrition goals.');
+    } finally {
+      setIsSavingGoals(false);
+    }
+  };
+
   const MenuItem = ({ icon, title, onPress, danger = false }: any) => (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
       <LinearGradient
@@ -828,6 +880,7 @@ Generated: ${new Date().toISOString()}
         <Text style={styles.sectionTitle}>Account</Text>
         <View style={styles.menuGroup}>
           <MenuItem icon="person-outline" title="Edit Profile" onPress={handleOpenEditProfile} />
+          <MenuItem icon="nutrition-outline" title="Nutrition Goals" onPress={handleOpenEditGoals} />
           <MenuItem icon="notifications-outline" title="Notifications" onPress={handleOpenNotifications} />
           <MenuItem icon="lock-closed-outline" title="Privacy & Security" onPress={() => {}} />
         </View>
@@ -885,6 +938,99 @@ Generated: ${new Date().toISOString()}
                 disabled={isSavingName}
               >
                 {isSavingName ? (
+                  <ActivityIndicator color="#0F2339" />
+                ) : (
+                  <Text style={[styles.modalButtonText, styles.modalButtonTextPrimary]}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={isEditGoalsVisible} animationType="slide" transparent onRequestClose={() => (!isSavingGoals ? setIsEditGoalsVisible(false) : null)}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => (!isSavingGoals ? setIsEditGoalsVisible(false) : null)}
+          />
+          <View style={styles.modalContent}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Edit Nutrition Goals</Text>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.modalLabel}>Daily Calories *</Text>
+              <TextInput
+                value={calories}
+                onChangeText={(t) => setCalories(normalizeDecimal(t))}
+                inputMode="decimal"
+                keyboardType="decimal-pad"
+                placeholder="e.g., 2000"
+                placeholderTextColor="#6781A6"
+                style={styles.modalInput}
+                editable={!isSavingGoals}
+              />
+            </View>
+
+            <View style={styles.modalRow}>
+              <View style={styles.modalThirdWidth}>
+                <Text style={styles.modalLabel}>Protein (g)</Text>
+                <TextInput
+                  value={protein}
+                  onChangeText={(t) => setProtein(normalizeDecimal(t))}
+                  inputMode="decimal"
+                  keyboardType="decimal-pad"
+                  placeholder="Optional"
+                  placeholderTextColor="#6781A6"
+                  style={styles.modalInput}
+                  editable={!isSavingGoals}
+                />
+              </View>
+
+              <View style={styles.modalThirdWidth}>
+                <Text style={styles.modalLabel}>Carbs (g)</Text>
+                <TextInput
+                  value={carbs}
+                  onChangeText={(t) => setCarbs(normalizeDecimal(t))}
+                  inputMode="decimal"
+                  keyboardType="decimal-pad"
+                  placeholder="Optional"
+                  placeholderTextColor="#6781A6"
+                  style={styles.modalInput}
+                  editable={!isSavingGoals}
+                />
+              </View>
+
+              <View style={styles.modalThirdWidth}>
+                <Text style={styles.modalLabel}>Fat (g)</Text>
+                <TextInput
+                  value={fat}
+                  onChangeText={(t) => setFat(normalizeDecimal(t))}
+                  inputMode="decimal"
+                  keyboardType="decimal-pad"
+                  placeholder="Optional"
+                  placeholderTextColor="#6781A6"
+                  style={styles.modalInput}
+                  editable={!isSavingGoals}
+                />
+              </View>
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSecondary]}
+                onPress={() => setIsEditGoalsVisible(false)}
+                disabled={isSavingGoals}
+              >
+                <Text style={[styles.modalButtonText, styles.modalButtonTextSecondary]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonPrimary]}
+                onPress={handleSaveGoals}
+                disabled={isSavingGoals}
+              >
+                {isSavingGoals ? (
                   <ActivityIndicator color="#0F2339" />
                 ) : (
                   <Text style={[styles.modalButtonText, styles.modalButtonTextPrimary]}>Save</Text>

@@ -5,6 +5,7 @@ import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 're
 import { useHealthKit } from '@/contexts/HealthKitContext';
 import { useWorkouts } from '@/contexts/WorkoutsContext';
 import { useFood } from '@/contexts/FoodContext';
+import { useNutritionGoals } from '@/contexts/NutritionGoalsContext';
 
 interface ActivityRingProps {
   progress: number; // 0-1
@@ -79,8 +80,8 @@ export function ActivityRings() {
   const { stepsToday } = useHealthKit();
   const { workouts } = useWorkouts();
   const { foods } = useFood();
+  const { goals: nutritionGoals } = useNutritionGoals();
 
-  // Calculate today's metrics
   const steps = stepsToday || 0;
   const calories = foods
     .filter(f => {
@@ -98,10 +99,9 @@ export function ActivityRings() {
     })
     .reduce((sum, w) => sum + (w.duration || 0), 0);
 
-  // Daily goals (customize as needed)
   const goals = {
     steps: 8000,
-    calories: 2000,
+    calories: nutritionGoals?.calories || 2000,
     exerciseMinutes: 30,
   };
 
