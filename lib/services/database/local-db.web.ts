@@ -42,6 +42,17 @@ export interface LocalHealthMetric {
   updated_at: string;
 }
 
+export interface LocalNutritionGoals {
+  id: string;
+  user_id: string;
+  calories_goal: number;
+  protein_goal: number;
+  carbs_goal: number;
+  fat_goal: number;
+  synced: number;
+  updated_at: string;
+}
+
 export interface SyncQueueItem {
   id: number;
   table_name: string;
@@ -61,7 +72,7 @@ class LocalDatabase {
     this.initialized = true;
   }
 
-  private getStorageKey(type: 'foods' | 'workouts' | 'health_metrics' | 'sync_queue'): string {
+  private getStorageKey(type: 'foods' | 'workouts' | 'health_metrics' | 'nutrition_goals' | 'sync_queue'): string {
     return `formfactor_${type}`;
   }
 
@@ -305,6 +316,56 @@ class LocalDatabase {
   async getHealthMetricsCount(userId: string): Promise<number> {
     const metrics = this.getData<LocalHealthMetric>(this.getStorageKey('health_metrics'));
     return metrics.filter(m => m.user_id === userId).length;
+  }
+
+  async upsertNutritionGoals(goals: Omit<LocalNutritionGoals, 'synced' | 'updated_at'>, synced = 0): Promise<void> {
+    const stored = this.getData<LocalNutritionGoals>(this.getStorageKey('nutrition_goals'));
+    const existingIndex = stored.findIndex(item => item.id === goals.id || item.user_id === goals.user_id);
+    const newGoals = {
+      ...goals,
+      synced,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (existingIndex >= 0) {
+      stored[existingIndex] = newGoals;
+    } else {
+      stored.push(newGoals);
+    }
+    this.setData(this.getStorageKey('nutrition_goals'), stored);
+  }
+
+  async getNutritionGoals(userId: string): Promise<LocalNutritionGoals | null> {
+    const stored = this.getData<LocalNutritionGoals>(this.getStorageKey('nutrition_goals'));
+    return stored.find(item => item.user_id === userId) || null;
+  }
+
+  async getNutritionGoalsById(id: string): Promise<LocalNutritionGoals | null> {
+    const stored = this.getData<LocalNutritionGoals>(this.getStorageKey('nutrition_goals'));
+    return stored.find(item => item.id === id) || null;
+  }
+
+  async getUnsyncedNutritionGoals(): Promise<LocalNutritionGoals[]> {
+    const stored = this.getData<LocalNutritionGoals>(this.getStorageKey('nutrition_goals'));
+    return stored.filter(item => item.synced === 0);
+  }
+
+  async updateNutritionGoalsSyncStatus(id: string, synced: boolean): Promise<void> {
+    await this.updateNutritionGoals(id, { synced: synced ? 1 : 0 });
+  }
+
+  async updateNutritionGoals(id: string, updates: Partial<LocalNutritionGoals>): Promise<void> {
+    const stored = this.getData<LocalNutritionGoals>(this.getStorageKey('nutrition_goals'));
+    const index = stored.findIndex(item => item.id === id);
+    if (index !== -1) {
+      stored[index] = { ...stored[index], ...updates, updated_at: new Date().toISOString() };
+      this.setData(this.getStorageKey('nutrition_goals'), stored);
+    }
+  }
+
+  async deleteNutritionGoals(id: string): Promise<void> {
+    const stored = this.getData<LocalNutritionGoals>(this.getStorageKey('nutrition_goals'));
+    this.setData(this.getStorageKey('nutrition_goals'), stored.filter(item => item.id !== id));
   }
 
   // Sync queue operations
