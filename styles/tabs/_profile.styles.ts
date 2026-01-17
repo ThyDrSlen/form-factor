@@ -297,7 +297,15 @@ export const styles = StyleSheet.create({
   modalButtonTextPrimary: {
     color: '#0F2339',
   },
+  inputContainer: {
+    marginBottom: 20,
+  },
+  modalRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalThirdWidth: {
+    flex: 1,
+  },
 });
 
-// Default export to satisfy Expo Router (this file is not a route)
-export default null;

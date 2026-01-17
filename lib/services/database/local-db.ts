@@ -40,6 +40,17 @@ export interface LocalHealthMetric {
   updated_at: string;
 }
 
+export interface LocalNutritionGoals {
+  id: string;
+  user_id: string;
+  calories_goal: number;
+  protein_goal: number;
+  carbs_goal: number;
+  fat_goal: number;
+  synced: number;
+  updated_at: string;
+}
+
 class LocalDatabase {
   public db: SQLite.SQLiteDatabase | null = null;
   private initPromise: Promise<void> | null = null;
@@ -117,7 +128,19 @@ class LocalDatabase {
       );
     `);
 
-    // Create sync queue table for operations that failed to sync
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS nutrition_goals (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        calories_goal REAL NOT NULL,
+        protein_goal REAL NOT NULL,
+        carbs_goal REAL NOT NULL,
+        fat_goal REAL NOT NULL,
+        synced INTEGER DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
     await this.db.execAsync(`
       CREATE TABLE IF NOT EXISTS sync_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -138,6 +161,7 @@ class LocalDatabase {
       CREATE INDEX IF NOT EXISTS idx_workouts_synced ON workouts(synced);
       CREATE INDEX IF NOT EXISTS idx_health_metrics_user_date ON health_metrics(user_id, summary_date DESC);
       CREATE INDEX IF NOT EXISTS idx_health_metrics_synced ON health_metrics(synced);
+      CREATE INDEX IF NOT EXISTS idx_nutrition_goals_user ON nutrition_goals(user_id);
     `);
 
     logWithTs('[LocalDB] Tables created successfully');
@@ -451,6 +475,99 @@ class LocalDatabase {
     return result[0]?.count || 0;
   }
 
+  async upsertNutritionGoals(goals: Omit<LocalNutritionGoals, 'synced' | 'updated_at'>, synced = 0): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO nutrition_goals (id, user_id, calories_goal, protein_goal, carbs_goal, fat_goal, synced, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ,
+      [
+        goals.id,
+        goals.user_id,
+        goals.calories_goal,
+        goals.protein_goal,
+        goals.carbs_goal,
+        goals.fat_goal,
+        synced,
+        new Date().toISOString(),
+      ]
+    );
+  }
+
+  async getNutritionGoals(userId: string): Promise<LocalNutritionGoals | null> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getAllAsync<LocalNutritionGoals>(
+      'SELECT * FROM nutrition_goals WHERE user_id = ? LIMIT 1',
+      [userId]
+    );
+    return result[0] || null;
+  }
+
+  async getNutritionGoalsById(id: string): Promise<LocalNutritionGoals | null> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getAllAsync<LocalNutritionGoals>(
+      'SELECT * FROM nutrition_goals WHERE id = ? LIMIT 1',
+      [id]
+    );
+    return result[0] || null;
+  }
+
+  async getUnsyncedNutritionGoals(): Promise<LocalNutritionGoals[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = await this.db.getAllAsync<LocalNutritionGoals>(
+      'SELECT * FROM nutrition_goals WHERE synced = 0'
+    );
+    return result;
+  }
+
+  async updateNutritionGoalsSyncStatus(id: string, synced: boolean): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    await this.db.runAsync(
+      'UPDATE nutrition_goals SET synced = ?, updated_at = ? WHERE id = ?',
+      [synced ? 1 : 0, new Date().toISOString(), id]
+    );
+  }
+
+  async updateNutritionGoals(id: string, updates: Partial<LocalNutritionGoals>): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const fields = Object.keys(updates).filter(k => k !== 'id');
+    if (fields.length === 0) return;
+
+    const setClauses = fields.map(f => `${f} = ?`).join(', ');
+    const values = fields.map(f => {
+      const val = updates[f as keyof LocalNutritionGoals];
+      return val === undefined ? null : val;
+    });
+    values.push(id);
+
+    await this.db.runAsync(
+      `UPDATE nutrition_goals SET ${setClauses} WHERE id = ?`,
+      values
+    );
+  }
+
+  async insertNutritionGoals(goals: Omit<LocalNutritionGoals, 'synced' | 'updated_at'>): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO nutrition_goals (id, user_id, calories_goal, protein_goal, carbs_goal, fat_goal, synced, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+      [goals.id, goals.user_id, goals.calories_goal, goals.protein_goal, goals.carbs_goal, goals.fat_goal, new Date().toISOString()]
+    );
+  }
+
+  async deleteNutritionGoals(id: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    await this.db.runAsync('DELETE FROM nutrition_goals WHERE id = ?', [id]);
+  }
+
   // Sync queue operations
   async addToSyncQueue(tableName: string, operation: string, recordId: string, data?: any): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
@@ -485,7 +602,6 @@ class LocalDatabase {
 
     await this.db.runAsync('DELETE FROM foods WHERE deleted = 1 AND synced = 1');
     await this.db.runAsync('DELETE FROM workouts WHERE deleted = 1 AND synced = 1');
-    // Health metrics don't have soft deletes, so no cleanup needed
   }
 
   async clearSyncQueue(): Promise<void> {
@@ -503,6 +619,7 @@ class LocalDatabase {
       DELETE FROM foods;
       DELETE FROM workouts;
       DELETE FROM health_metrics;
+      DELETE FROM nutrition_goals;
       DELETE FROM sync_queue;
     `);
     logWithTs('[LocalDB] All data cleared');
