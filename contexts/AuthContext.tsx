@@ -69,6 +69,7 @@ type AuthContextType = {
   signInWithGoogle: () => Promise<{ error?: AuthError }>;
   signInWithApple: () => Promise<{ error?: AuthError }>;
   signInWithEmail: (email: string, password: string) => Promise<{ error?: AuthError }>;
+  signInWithMagicLink: (email: string) => Promise<{ error?: AuthError }>;
   signUpWithEmail: (email: string, password: string, userData?: { fullName?: string }) => Promise<{ error?: AuthError }>;
   resetPassword: (email: string) => Promise<{ error?: AuthError }>;
   updateProfile: (updates: { fullName?: string }) => Promise<{ error?: AuthError | Error }>;
@@ -416,6 +417,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isMockUser, sessionManager, user]);
 
+  const signInWithMagicLink = useCallback(async (email: string) => {
+    try {
+      setIsSigningIn(true);
+      setError(null);
+
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: redirectUrl,
+          shouldCreateUser: true,
+        },
+      });
+
+      if (error) {
+        return { error };
+      }
+
+      return { error: undefined };
+    } catch (error) {
+      const appErr = createError('auth', 'MAGIC_LINK_FAILED', error instanceof Error ? error.message : 'Failed to send magic link', {
+        retryable: true,
+        severity: 'error',
+        details: error,
+      });
+      logError(appErr, { feature: 'auth', location: 'signInWithMagicLink' });
+      setError(mapToUserMessage(appErr));
+      return { error: { message: appErr.message, status: 500 } as AuthError };
+    } finally {
+      setIsSigningIn(false);
+    }
+  }, []);
+
   const signInWithEmail = useCallback(async (email: string, password: string) => {
     try {
       setIsSigningIn(true);
@@ -603,6 +636,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signInWithGoogle,
     signInWithApple,
     signInWithEmail,
+    signInWithMagicLink,
     signUpWithEmail,
     resetPassword,
     updateProfile,
