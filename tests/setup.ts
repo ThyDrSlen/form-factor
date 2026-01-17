@@ -33,6 +33,7 @@ const mockSupabaseAuth = {
   getSession: jest.fn().mockResolvedValue({ data: { session: null } }),
   setSession: jest.fn().mockResolvedValue({ error: null }),
   signInWithPassword: jest.fn(),
+  signInWithOtp: jest.fn(),
   signUp: jest.fn(),
   signOut: jest.fn().mockResolvedValue({ error: null }),
   updateUser: jest.fn(),

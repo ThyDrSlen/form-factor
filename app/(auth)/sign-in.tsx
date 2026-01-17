@@ -12,7 +12,9 @@ type FormData = {
 
 export default function SignInScreen() {
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isMagicLink, setIsMagicLink] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     email: '',
     password: '',
@@ -23,6 +25,7 @@ export default function SignInScreen() {
     signInWithGoogle,
     signInWithApple,
     signInWithEmail,
+    signInWithMagicLink,
     signUpWithEmail,
     isSigningIn,
     error: authError,
@@ -127,6 +130,29 @@ export default function SignInScreen() {
     }
   };
 
+  const handleMagicLink = async () => {
+    if (!formData.email || !formData.email.includes('@')) {
+      setErrorMessage('Please enter a valid email address');
+      return;
+    }
+
+    setErrorMessage('');
+    clearError();
+
+    try {
+      const { error } = await signInWithMagicLink(formData.email.trim());
+
+      if (error) {
+        setErrorMessage(getErrorMessage(error));
+        return;
+      }
+
+      setMagicLinkSent(true);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
+
   return (
     <View style={styles.container}>
       <KeyboardAvoidingView
@@ -171,7 +197,6 @@ export default function SignInScreen() {
               </View>
             )}
 
-            {/* Email input */}
             <View style={styles.inputContainer}>
               <TextInput
                 style={styles.input}
@@ -186,31 +211,66 @@ export default function SignInScreen() {
               />
             </View>
 
-            {/* Password input */}
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor="#6781A6"
-                value={formData.password}
-                onChangeText={(text) => setFormData(prev => ({ ...prev, password: text }))}
-                secureTextEntry
-                editable={!isSigningIn}
-              />
-            </View>
+            {!isMagicLink && (
+              <>
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Password"
+                    placeholderTextColor="#6781A6"
+                    value={formData.password}
+                    onChangeText={(text) => setFormData(prev => ({ ...prev, password: text }))}
+                    secureTextEntry
+                    editable={!isSigningIn}
+                  />
+                </View>
 
-            {/* Login button */}
+                <TouchableOpacity
+                  style={[styles.loginButton, isSigningIn && styles.buttonDisabled]}
+                  onPress={handleEmailAuth}
+                  disabled={isSigningIn}
+                >
+                  <Text style={styles.buttonText}>
+                    {isSigningIn ? 'Logging In...' : 'Log In'}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {isMagicLink && magicLinkSent && (
+              <View style={styles.successContainer}>
+                <Text style={styles.successText}>
+                  Magic link sent! Check your email to sign in.
+                </Text>
+              </View>
+            )}
+
             <TouchableOpacity
-              style={[styles.loginButton, isSigningIn && styles.buttonDisabled]}
-              onPress={handleEmailAuth}
+              style={styles.magicLinkToggle}
+              onPress={() => {
+                setIsMagicLink(!isMagicLink);
+                setErrorMessage('');
+                setMagicLinkSent(false);
+              }}
               disabled={isSigningIn}
             >
-              <Text style={styles.buttonText}>
-                {isSigningIn ? 'Logging In...' : 'Log In'}
+              <Text style={styles.magicLinkToggleText}>
+                {isMagicLink ? 'Use password sign in' : 'Send magic link instead'}
               </Text>
             </TouchableOpacity>
 
-            {/* Sign up link */}
+            {isMagicLink && (
+              <TouchableOpacity
+                style={[styles.loginButton, isSigningIn && styles.buttonDisabled]}
+                onPress={handleMagicLink}
+                disabled={isSigningIn || magicLinkSent}
+              >
+                <Text style={styles.buttonText}>
+                  {isSigningIn ? 'Sending...' : magicLinkSent ? 'Link Sent' : 'Send Magic Link'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <View style={styles.signUpContainer}>
               <Text style={styles.signUpText}>
                 Don&apos;t have an account?{' '}
@@ -374,6 +434,29 @@ const styles = StyleSheet.create({
   signUpText: {
     fontSize: 16,
     color: '#8E8E93',
+  },
+  magicLinkToggle: {
+    marginBottom: 16,
+    paddingVertical: 8,
+  },
+  magicLinkToggleText: {
+    fontSize: 14,
+    color: '#007AFF',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  successContainer: {
+    backgroundColor: 'rgba(52, 199, 89, 0.1)',
+    borderWidth: 1,
+    borderColor: '#34C759',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  successText: {
+    fontSize: 14,
+    color: '#34C759',
+    textAlign: 'center',
   },
   socialButtonText: {
     fontSize: 17,
