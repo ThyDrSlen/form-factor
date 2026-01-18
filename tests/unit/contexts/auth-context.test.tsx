@@ -59,6 +59,7 @@ const mockSupabaseAuth = (global as any).__mockSupabaseAuth as {
   getSession: jest.Mock;
   setSession: jest.Mock;
   signInWithPassword: jest.Mock;
+  signInWithOtp: jest.Mock;
   signUp: jest.Mock;
   signOut: jest.Mock;
   updateUser: jest.Mock;
@@ -319,6 +320,50 @@ describe('AuthContext', () => {
       await waitFor(() => {
         expect(result.current.isSigningIn).toBe(false);
       });
+    });
+  });
+
+  describe('signInWithMagicLink', () => {
+    it('should send a magic link with redirect', async () => {
+      mockSupabaseAuth.signInWithOtp.mockResolvedValue({ data: {}, error: null });
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      let signInResult: { error?: any };
+      await act(async () => {
+        signInResult = await result.current.signInWithMagicLink('test@example.com');
+      });
+
+      expect(signInResult!.error).toBeUndefined();
+      expect(mockSupabaseAuth.signInWithOtp).toHaveBeenCalledWith({
+        email: 'test@example.com',
+        options: expect.objectContaining({
+          emailRedirectTo: expect.stringContaining('callback'),
+          shouldCreateUser: true,
+        }),
+      });
+    });
+
+    it('should return error on failed magic link request', async () => {
+      const authError = { message: 'Too many requests', status: 429 };
+      mockSupabaseAuth.signInWithOtp.mockResolvedValue({ data: null, error: authError });
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      let signInResult: { error?: any };
+      await act(async () => {
+        signInResult = await result.current.signInWithMagicLink('test@example.com');
+      });
+
+      expect(signInResult!.error).toEqual(authError);
     });
   });
 
