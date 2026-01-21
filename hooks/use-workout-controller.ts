@@ -59,13 +59,17 @@ export interface UseWorkoutControllerOptions {
   enableHaptics?: boolean;
 }
 
+export interface ResetWorkoutOptions {
+  preserveRepCount?: boolean;
+}
+
 export interface UseWorkoutControllerReturn<TPhase extends string = string> {
   /** Current workout state */
   state: WorkoutControllerState<TPhase>;
   /** Process a new frame of joint angles */
   processFrame: (angles: JointAngles, joints?: Map<string, { x: number; y: number; isTracked: boolean }>) => void;
   /** Reset the workout state */
-  reset: () => void;
+  reset: (options?: ResetWorkoutOptions) => void;
   /** Change the active workout */
   setWorkout: (workoutId: DetectionMode) => void;
   /** Get the current workout definition */
@@ -311,13 +315,17 @@ export function useWorkoutController<TPhase extends string = string>(
   // Control Methods
   // =============================================================================
 
-  const reset = useCallback(() => {
+  const reset = useCallback((options?: ResetWorkoutOptions) => {
     const def = workoutDefRef.current;
     const initialPhase = (def?.initialPhase ?? 'idle') as TPhase;
+    const preserveRepCount = options?.preserveRepCount ?? false;
+    const nextRepCount = preserveRepCount ? repCountRef.current : 0;
 
     phaseRef.current = initialPhase;
-    repCountRef.current = 0;
-    lastRepTimestampRef.current = 0;
+    repCountRef.current = nextRepCount;
+    if (!preserveRepCount) {
+      lastRepTimestampRef.current = 0;
+    }
     repTrackingRef.current = {
       startTs: 0,
       startAngles: null,
@@ -328,7 +336,7 @@ export function useWorkoutController<TPhase extends string = string>(
 
     setState({
       phase: initialPhase,
-      repCount: 0,
+      repCount: nextRepCount,
       metrics: null,
       isActive: false,
     });
