@@ -95,6 +95,10 @@ Ensure your `eas.json` is properly configured with:
 | Push | Other | Quality checks + build verification |
 | Pull Request | Any | Quality checks + build verification (no EAS build) |
 
+## TODO Issue Sync
+
+A daily GitHub Action scans tracked files for `TODO`, `FIXME`, and `HACK` comments and syncs them to GitHub issues. Issues are labeled `todo` and `auto-generated`, assigned to `ThyDrSlen`, and closed automatically when the TODO is removed. The workflow can also be run manually via `workflow_dispatch`.
+
 ## Monitoring
 
 ### GitHub Actions
