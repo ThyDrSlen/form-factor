@@ -39,15 +39,13 @@ import { useSpeechFeedback } from '@/hooks/use-speech-feedback';
 import { generateSessionId, logCueEvent, upsertSessionMetrics } from '@/lib/services/cue-logger';
 import { logPoseSample, flushPoseBuffer, resetFrameCounter } from '@/lib/services/pose-logger';
 import { RepIndexTracker } from '@/lib/services/rep-index-tracker';
-import { shouldEndRep, shouldStartRep } from '@/lib/services/workout-runtime';
 import {
   initSessionContext,
   incrementPoseLost,
   markCuesDisabled,
   getSessionQuality,
 } from '@/lib/services/telemetry-context';
-import { logRep } from '@/lib/services/rep-logger';
-import { calculateFqi, extractRepFeatures, type RepAngles } from '@/lib/services/fqi-calculator';
+import { useWorkoutController } from '@/hooks/use-workout-controller';
 import {
   DEFAULT_DETECTION_MODE,
   getWorkoutByMode,
@@ -55,7 +53,7 @@ import {
   getPhaseStaticCue,
   type DetectionMode,
 } from '@/lib/workouts';
-import type { WorkoutDefinition, WorkoutMetrics } from '@/lib/types/workout-definitions';
+import type { WorkoutMetrics } from '@/lib/types/workout-definitions';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
 import { buildVideoMetricsForClip, type RecordingQuality } from '@/lib/services/video-metrics';
 import { styles } from '../../styles/tabs/_scan-arkit.styles';
@@ -187,7 +185,6 @@ export default function ScanARKitScreen() {
   const [activePhase, setActivePhase] = useState<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
   const activePhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
-  const lastRepTimestampRef = React.useRef(0);
   const [activeMetrics, setActiveMetrics] = useState<WorkoutMetrics | null>(null);
   const [uploading, setUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -248,12 +245,6 @@ export default function ScanARKitScreen() {
     } catch {}
   }, []);
 
-  // Rep tracking refs for FQI calculation and logging
-  const repStartTsRef = React.useRef<number>(0);
-  const repStartAnglesRef = React.useRef<JointAngles | null>(null);
-  const repMinAnglesRef = React.useRef<JointAngles | null>(null);
-  const repMaxAnglesRef = React.useRef<JointAngles | null>(null);
-  const repCuesRef = React.useRef<{ type: string; ts: string }[]>([]);
   const repIndexTrackerRef = React.useRef(new RepIndexTracker());
 
   const lastPoseTimestampRef = React.useRef<number | null>(null);
@@ -375,23 +366,37 @@ export default function ScanARKitScreen() {
     }
   }, []);
 
-  // Helper: Start tracking a new rep
-  const startRepTracking = useCallback((angles: JointAngles) => {
-    repStartTsRef.current = Date.now();
-    repStartAnglesRef.current = { ...angles };
-    repMinAnglesRef.current = { ...angles };
-    repMaxAnglesRef.current = { ...angles };
-    repCuesRef.current = [];
-  }, []);
+  const workoutControllerCallbacks = useMemo(() => ({
+    onPhaseChange: (nextPhase: string, prevPhase: string) => {
+      transitionPhase(nextPhase);
+      if (nextPhase === activeWorkoutDef.initialPhase && prevPhase !== nextPhase) {
+        repIndexTrackerRef.current.reset();
+      }
+      if (nextPhase === activeWorkoutDef.repBoundary.startPhase) {
+        repIndexTrackerRef.current.startRep(repCount);
+      }
+    },
+    onRepComplete: (repNumber: number, fqi: number) => {
+      setRepCount(repNumber);
+      repIndexTrackerRef.current.endRep();
+      if (recordingActiveRef.current && Date.now() >= recordingStartEpochMsRef.current) {
+        recordingFqiScoresRef.current.push(fqi);
+      }
+    },
+  }), [activeWorkoutDef, repCount, transitionPhase]);
 
-  const resetRepTracking = useCallback(() => {
-    repIndexTrackerRef.current.reset();
-    repStartTsRef.current = 0;
-    repStartAnglesRef.current = null;
-    repMinAnglesRef.current = null;
-    repMaxAnglesRef.current = null;
-    repCuesRef.current = [];
-  }, []);
+  const workoutController = useWorkoutController(detectionMode, {
+    sessionId: sessionIdRef.current,
+    callbacks: workoutControllerCallbacks,
+    enableHaptics: true,
+  });
+
+  const {
+    processFrame: processWorkoutFrame,
+    reset: resetWorkoutController,
+    setWorkout: setWorkoutController,
+    addRepCue: addWorkoutRepCue,
+  } = workoutController;
 
   useEffect(() => {
     const nextInitialPhase = getWorkoutByMode(detectionMode).initialPhase;
@@ -399,154 +404,9 @@ export default function ScanARKitScreen() {
     setActivePhase(nextInitialPhase);
     setRepCount(0);
     setActiveMetrics(null);
-    lastRepTimestampRef.current = 0;
-    resetRepTracking();
-  }, [detectionMode, resetRepTracking]);
-
-  // Helper: Update min/max angles during rep
-  const updateRepAngles = useCallback((angles: JointAngles) => {
-    if (repStartTsRef.current === 0) return; // Not tracking a rep
-
-    const min = repMinAnglesRef.current;
-    const max = repMaxAnglesRef.current;
-
-    if (min && max) {
-      repMinAnglesRef.current = {
-        leftKnee: Math.min(min.leftKnee, angles.leftKnee),
-        rightKnee: Math.min(min.rightKnee, angles.rightKnee),
-        leftElbow: Math.min(min.leftElbow, angles.leftElbow),
-        rightElbow: Math.min(min.rightElbow, angles.rightElbow),
-        leftHip: Math.min(min.leftHip, angles.leftHip),
-        rightHip: Math.min(min.rightHip, angles.rightHip),
-        leftShoulder: Math.min(min.leftShoulder, angles.leftShoulder),
-        rightShoulder: Math.min(min.rightShoulder, angles.rightShoulder),
-      };
-      repMaxAnglesRef.current = {
-        leftKnee: Math.max(max.leftKnee, angles.leftKnee),
-        rightKnee: Math.max(max.rightKnee, angles.rightKnee),
-        leftElbow: Math.max(max.leftElbow, angles.leftElbow),
-        rightElbow: Math.max(max.rightElbow, angles.rightElbow),
-        leftHip: Math.max(max.leftHip, angles.leftHip),
-        rightHip: Math.max(max.rightHip, angles.rightHip),
-        leftShoulder: Math.max(max.leftShoulder, angles.leftShoulder),
-        rightShoulder: Math.max(max.rightShoulder, angles.rightShoulder),
-      };
-    }
-  }, []);
-
-  // Helper: Complete and log a rep
-  const completeRepTracking = useCallback(async (
-    workoutDef: WorkoutDefinition,
-    repNumber: number,
-    endAngles: JointAngles
-  ) => {
-    if (repStartTsRef.current === 0 || !repStartAnglesRef.current || !repMinAnglesRef.current || !repMaxAnglesRef.current) {
-      return; // No rep was being tracked
-    }
-
-    const exercise = workoutDef.id;
-
-    const endTs = Date.now();
-    const durationMs = endTs - repStartTsRef.current;
-
-    const repAngles: RepAngles = {
-      start: repStartAnglesRef.current,
-      end: endAngles,
-      min: repMinAnglesRef.current,
-      max: repMaxAnglesRef.current,
-    };
-
-    // Calculate FQI and extract features
-    const fqiResult = calculateFqi(repAngles, durationMs, repNumber, workoutDef);
-    const features = extractRepFeatures(repAngles, durationMs);
-
-    if (recordingActiveRef.current && endTs >= recordingStartEpochMsRef.current) {
-      recordingFqiScoresRef.current.push(fqiResult.score);
-    }
-
-    // Log the rep
-    try {
-      await logRep({
-        sessionId: sessionIdRef.current,
-        repIndex: repNumber,
-        exercise,
-        startTs: new Date(repStartTsRef.current).toISOString(),
-        endTs: new Date(endTs).toISOString(),
-        features,
-        fqi: fqiResult.score,
-        faultsDetected: fqiResult.detectedFaults,
-        cuesEmitted: repCuesRef.current,
-      });
-
-      if (__DEV__) {
-        logWithTs(
-          `[ScanARKit] Rep ${repNumber} logged: Form Score=${fqiResult.score}, faults=${fqiResult.detectedFaults.join(',')}`
-        );
-      }
-    } catch (error) {
-      if (__DEV__) {
-        errorWithTs('[ScanARKit] Failed to log rep', error);
-      }
-    }
-
-    // Reset tracking state
-    repStartTsRef.current = 0;
-    repStartAnglesRef.current = null;
-    repMinAnglesRef.current = null;
-    repMaxAnglesRef.current = null;
-    repCuesRef.current = [];
-  }, []);
-
-  const updateWorkoutCycle = useCallback(
-    (angles: JointAngles, metrics: WorkoutMetrics, workoutDef: WorkoutDefinition) => {
-      const now = Date.now();
-      const prevPhase = activePhaseRef.current;
-      const nextPhase = workoutDef.getNextPhase(prevPhase as never, angles, metrics as never) as string;
-
-      if (nextPhase !== prevPhase) {
-        transitionPhase(nextPhase);
-      }
-
-      if (repStartTsRef.current > 0 && nextPhase === workoutDef.initialPhase && prevPhase !== nextPhase) {
-        resetRepTracking();
-      }
-
-      if (shouldStartRep(workoutDef.repBoundary as never, prevPhase as never, nextPhase as never)) {
-        repIndexTrackerRef.current.startRep(repCount);
-        startRepTracking(angles);
-      }
-
-      if (repStartTsRef.current > 0) {
-        updateRepAngles(angles);
-      }
-
-      const repActive = repStartTsRef.current > 0;
-      const lastRepTimestampMs = lastRepTimestampRef.current;
-      if (shouldEndRep(workoutDef.repBoundary as never, prevPhase as never, nextPhase as never, repActive, now, lastRepTimestampMs)) {
-        lastRepTimestampRef.current = now;
-
-        const newRepCount = repCount + 1;
-        const activeRepIndex = repIndexTrackerRef.current.current() ?? newRepCount;
-
-        setRepCount(newRepCount);
-
-        if (Platform.OS === 'ios') {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-        }
-
-        completeRepTracking(workoutDef, activeRepIndex, angles);
-        repIndexTrackerRef.current.endRep();
-      }
-    },
-    [
-      completeRepTracking,
-      repCount,
-      resetRepTracking,
-      startRepTracking,
-      transitionPhase,
-      updateRepAngles,
-    ]
-  );
+    repIndexTrackerRef.current.reset();
+    setWorkoutController(detectionMode);
+  }, [detectionMode, setWorkoutController]);
 
   useEffect(() => {
     if (DEV) {
@@ -607,7 +467,8 @@ export default function ScanARKitScreen() {
       const nextInitialPhase = getWorkoutByMode(detectionMode).initialPhase;
       activePhaseRef.current = nextInitialPhase;
       transitionPhase(nextInitialPhase);
-      resetRepTracking();
+      repIndexTrackerRef.current.reset();
+      resetWorkoutController({ preserveRepCount: true });
       return;
     }
 
@@ -726,9 +587,10 @@ export default function ScanARKitScreen() {
 
         const metrics = activeWorkoutDef.calculateMetrics(next, jointsMap) as WorkoutMetrics;
         setActiveMetrics(metrics);
-        updateWorkoutCycle(next, metrics, activeWorkoutDef as unknown as WorkoutDefinition);
+        processWorkoutFrame(next, jointsMap);
       } else {
-        resetRepTracking();
+        repIndexTrackerRef.current.reset();
+        resetWorkoutController({ preserveRepCount: true });
         setActiveMetrics(null);
         activePhaseRef.current = activeWorkoutDef.initialPhase;
         transitionPhase(activeWorkoutDef.initialPhase);
@@ -760,7 +622,7 @@ export default function ScanARKitScreen() {
     }
     // DEV is a stable constant; avoid dependency churn in hot loop
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pose, transitionPhase, updateWorkoutCycle, resetRepTracking, detectionMode]);
+  }, [pose, transitionPhase, detectionMode, activeWorkoutDef, processWorkoutFrame, resetWorkoutController]);
 
   // Debug pose2D updates
   useEffect(() => {
@@ -843,10 +705,10 @@ export default function ScanARKitScreen() {
       const nextInitialPhase = getWorkoutByMode(detectionMode).initialPhase;
       activePhaseRef.current = nextInitialPhase;
       transitionPhase(nextInitialPhase);
-      resetRepTracking();
+      repIndexTrackerRef.current.reset();
+      resetWorkoutController();
       setRepCount(0);
       setActiveMetrics(null);
-      lastRepTimestampRef.current = 0;
 
       const startTime = Date.now();
       await startNativeTracking();
@@ -867,7 +729,7 @@ export default function ScanARKitScreen() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startNativeTracking, transitionPhase, cameraPosition, logWithTs, detectionMode]);
+  }, [startNativeTracking, transitionPhase, cameraPosition, logWithTs, detectionMode, resetWorkoutController]);
 
   const stopRecordingCore = useCallback(async () => {
     if (!isRecording || recordingStopInFlightRef.current) {
@@ -915,8 +777,8 @@ export default function ScanARKitScreen() {
       const nextInitialPhase = getWorkoutByMode(detectionMode).initialPhase;
       activePhaseRef.current = nextInitialPhase;
       transitionPhase(nextInitialPhase);
-      lastRepTimestampRef.current = 0;
-      resetRepTracking();
+      repIndexTrackerRef.current.reset();
+      resetWorkoutController();
       setRepCount(0);
       setFps(0);
       
@@ -929,7 +791,7 @@ export default function ScanARKitScreen() {
       errorWithTs('[ScanARKit] ❌ Error stopping tracking:', error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stopNativeTracking, transitionPhase, isRecording, stopRecordingCore, logWithTs, detectionMode]);
+  }, [stopNativeTracking, transitionPhase, isRecording, stopRecordingCore, logWithTs, detectionMode, resetWorkoutController]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -1011,14 +873,8 @@ export default function ScanARKitScreen() {
       lastSpokenCueRef.current = { cue: primaryCue, timestamp: now };
       speakCue(primaryCue);
 
-      // Track cue for rep logging (if rep is being tracked)
-      if (repStartTsRef.current > 0) {
-        repCuesRef.current.push({
-          type: primaryCue,
-          ts: new Date(now).toISOString(),
-        });
-      }
-    }, [primaryCue, audioFeedbackEnabled, speakCue]);
+      addWorkoutRepCue(primaryCue);
+    }, [primaryCue, audioFeedbackEnabled, speakCue, addWorkoutRepCue]);
 
     const canMirrorFromArkit =
       Platform.OS === 'ios' &&
