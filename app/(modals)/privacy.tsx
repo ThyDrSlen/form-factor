@@ -45,7 +45,7 @@ export default function PrivacySecurityModal() {
       const subscription = BackHandler.addEventListener('hardwareBackPress', handleHardwareBackPress);
       return () => subscription.remove();
     }
-  }, [safeBack]);
+  }, [handleHardwareBackPress]);
 
   const handleExportData = async () => {
     if (!user?.id) {

@@ -36,7 +36,7 @@ export default function AboutModal() {
       const subscription = BackHandler.addEventListener('hardwareBackPress', handleHardwareBackPress);
       return () => subscription.remove();
     }
-  }, [safeBack]);
+  }, [handleHardwareBackPress]);
 
   const handleTermsOfService = () => {
     Linking.openURL('https://formfactor.app/terms');
