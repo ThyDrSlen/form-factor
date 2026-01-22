@@ -5,7 +5,8 @@ import Constants from 'expo-constants';
 import { useSafeBack } from '@/hooks/use-safe-back';
 
 type LinkItemProps = {
-  icon: string;
+  icon?: string;
+  logo?: string;
   title: string;
   onPress: () => void;
 };
