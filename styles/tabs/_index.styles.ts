@@ -615,6 +615,17 @@ export const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
+  coachWelcomeExampleContainer: {
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  coachWelcomeExample: {
+    fontSize: 13,
+    color: tabColors.textSecondary,
+    lineHeight: 18,
+  },
 });
 
 // Default export to satisfy Expo Router (this file is not a route)
