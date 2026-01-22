@@ -642,12 +642,6 @@ export const styles = StyleSheet.create({
     color: tabColors.textPrimary,
     marginBottom: spacing.xs,
   },
-  coachWelcomeText: {
-    fontSize: 14,
-    color: tabColors.textSecondary,
-    lineHeight: 20,
-    marginBottom: spacing.md,
-  },
   coachWelcomeButton: {
     backgroundColor: tabColors.accent,
     paddingHorizontal: spacing.lg,
@@ -655,6 +649,12 @@ export const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     alignSelf: 'flex-start',
     marginTop: spacing.sm,
+  },
+  coachWelcomeText: {
+    fontSize: 14,
+    color: tabColors.textSecondary,
+    lineHeight: 20,
+    marginBottom: spacing.md,
   },
   coachWelcomeButtonText: {
     color: '#ffffff',
