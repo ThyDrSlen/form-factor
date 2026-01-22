@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Linking, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeBack } from '@/hooks/use-safe-back';
-import { useToast } from '@/contexts/ToastContext';
 
 type FAQItemProps = {
   question: string;
@@ -75,7 +74,7 @@ export default function HelpSupportModal() {
       const subscription = BackHandler.addEventListener('hardwareBackPress', handleHardwareBackPress);
       return () => subscription.remove();
     }
-  }, [safeBack]);
+  }, [handleHardwareBackPress]);
 
   const handleContactSupport = () => {
     Linking.openURL('mailto:support@formfactor.app?subject=Form Factor Support Request');
