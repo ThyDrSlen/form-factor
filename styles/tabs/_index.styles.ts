@@ -615,6 +615,63 @@ export const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
+  coachWelcome: {
+    backgroundColor: '#0C1E36',
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: '#4C8CFF',
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  coachWelcomeHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+  },
+  coachWelcomeClose: {
+    padding: spacing.xs,
+    marginRight: spacing.xs,
+  },
+  coachWelcomeTitleContainer: {
+    flex: 1,
+    paddingLeft: spacing.xs,
+  },
+  coachWelcomeTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: tabColors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  coachWelcomeText: {
+    fontSize: 14,
+    color: tabColors.textSecondary,
+    lineHeight: 20,
+    marginBottom: spacing.md,
+  },
+  coachWelcomeButton: {
+    backgroundColor: tabColors.accent,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+  },
+  coachWelcomeButtonText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  coachWelcomeExampleContainer: {
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  coachWelcomeExample: {
+    fontSize: 13,
+    color: tabColors.textSecondary,
+    lineHeight: 18,
+  },
 });
 
 // Default export to satisfy Expo Router (this file is not a route)
