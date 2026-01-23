@@ -621,6 +621,18 @@ Generated: ${new Date().toISOString()}
     router.push('/(modals)/notifications');
   };
 
+  const handleOpenPrivacy = () => {
+    router.push('/(modals)/privacy');
+  };
+
+  const handleOpenHelpSupport = () => {
+    router.push('/(modals)/help-support');
+  };
+
+  const handleOpenAbout = () => {
+    router.push('/(modals)/about');
+  };
+
   const handleSaveProfile = async () => {
     const trimmedName = fullName.trim();
     if (!trimmedName) {
@@ -882,7 +894,7 @@ Generated: ${new Date().toISOString()}
           <MenuItem icon="person-outline" title="Edit Profile" onPress={handleOpenEditProfile} />
           <MenuItem icon="nutrition-outline" title="Nutrition Goals" onPress={handleOpenEditGoals} />
           <MenuItem icon="notifications-outline" title="Notifications" onPress={handleOpenNotifications} />
-          <MenuItem icon="lock-closed-outline" title="Privacy & Security" onPress={() => {}} />
+          <MenuItem icon="lock-closed-outline" title="Privacy & Security" onPress={handleOpenPrivacy} />
         </View>
       </View>
 
@@ -890,8 +902,8 @@ Generated: ${new Date().toISOString()}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>App</Text>
         <View style={styles.menuGroup}>
-          <MenuItem icon="help-circle-outline" title="Help & Support" onPress={() => {}} />
-          <MenuItem icon="information-circle-outline" title="About" onPress={() => {}} />
+          <MenuItem icon="help-circle-outline" title="Help & Support" onPress={handleOpenHelpSupport} />
+          <MenuItem icon="information-circle-outline" title="About" onPress={handleOpenAbout} />
         </View>
       </View>
 

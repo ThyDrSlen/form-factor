@@ -8,6 +8,9 @@ import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
 import { styles } from '../../styles/tabs/_index.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const COACH_WELCOME_SEEN_KEY = 'coach_welcome_seen';
 
 const coachIntroMessage: CoachMessage = {
   id: 'intro',
@@ -30,6 +33,7 @@ export default function CoachScreen() {
   const [coachInput, setCoachInput] = useState('');
   const [coachError, setCoachError] = useState<string | null>(null);
   const [coachSending, setCoachSending] = useState(false);
+  const [showCoachWelcome, setShowCoachWelcome] = useState(false);
   const coachListRef = useRef<FlatList<CoachMessage>>(null);
 
   const bottomOffset = Math.max(tabBarHeight, insets.bottom) + spacing.md;
@@ -79,9 +83,52 @@ export default function CoachScreen() {
     }
   };
 
+  const handleDismissWelcome = async () => {
+    setShowCoachWelcome(false);
+    await AsyncStorage.setItem(COACH_WELCOME_SEEN_KEY, 'true');
+  };
+
+  // Check if user has seen coach welcome on first visit
+  React.useEffect(() => {
+    const checkWelcomeSeen = async () => {
+      const seen = await AsyncStorage.getItem(COACH_WELCOME_SEEN_KEY);
+      if (!seen && coachMessages.length === 1) {
+        setShowCoachWelcome(true);
+      }
+    };
+    checkWelcomeSeen();
+  }, [coachMessages.length]);
+
   return (
     <View style={[styles.container, { paddingBottom: bottomOffset }]}>
       <View style={styles.coachContainer}>
+        {showCoachWelcome && (
+          <View style={styles.coachWelcome}>
+            <View style={styles.coachWelcomeHeader}>
+              <TouchableOpacity onPress={handleDismissWelcome} style={styles.coachWelcomeClose}>
+                <Ionicons name="close-circle" size={20} color="#4C8CFF" />
+              </TouchableOpacity>
+              <View style={styles.coachWelcomeTitleContainer}>
+                <Text style={styles.coachWelcomeTitle}>Welcome to your AI Coach</Text>
+              </View>
+            </View>
+            <Text style={styles.coachWelcomeText}>
+              Tell me your fitness goals, available time, or any injuries and I&apos;ll craft personalized plans and recovery suggestions. I use your health data (sleep, heart rate, activity, weight trends) to adjust recommendations. Try prompts like:
+            </Text>
+            <View style={styles.coachWelcomeExampleContainer}>
+              <Text style={styles.coachWelcomeExample}>• &quot;Plan a week of workouts&quot;</Text>
+              <Text style={styles.coachWelcomeExample}>• &quot;Give me recovery ideas after heavy squats&quot;</Text>
+              <Text style={styles.coachWelcomeExample}>• &quot;Suggest a high-protein meal for today&quot;</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.coachWelcomeButton}
+              onPress={handleDismissWelcome}
+            >
+              <Text style={styles.coachWelcomeButtonText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={styles.quickPrompts}>
           {coachQuickPrompts.map(prompt => (
             <TouchableOpacity
