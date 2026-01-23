@@ -18,8 +18,10 @@ import { useRouter } from 'expo-router';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { isIOS } from '@/lib/platform-utils';
 
+type IoniconName = keyof typeof Ionicons.glyphMap;
+
 interface FeatureCardProps {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IoniconName;
   title: string;
   description: string;
   delay: number;
@@ -123,7 +125,7 @@ export default function ARKitPermissionsScreen() {
     }
   };
 
-  const features: { icon: keyof typeof Ionicons.glyphMap; title: string; description: string }[] = [
+  const features: Omit<FeatureCardProps, 'delay'>[] = [
     {
       icon: 'eye-outline',
       title: 'Real-Time Analysis',

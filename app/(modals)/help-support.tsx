@@ -3,6 +3,8 @@ import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Linking, ScrollV
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeBack } from '@/hooks/use-safe-back';
 
+type IoniconName = keyof typeof Ionicons.glyphMap;
+
 type FAQItemProps = {
   question: string;
   answer: string;
@@ -21,7 +23,7 @@ const FAQItem = ({ question, answer, isExpanded, onPress }: FAQItemProps) => (
 );
 
 type SupportOptionProps = {
-  icon: string;
+  icon: IoniconName;
   title: string;
   subtitle: string;
   onPress: () => void;
@@ -30,7 +32,8 @@ type SupportOptionProps = {
 const SupportOption = ({ icon, title, subtitle, onPress }: SupportOptionProps) => (
   <TouchableOpacity style={styles.supportOption} onPress={onPress} activeOpacity={0.7}>
     <View style={styles.supportIconContainer}>
-      <Ionicons name={icon as any} size={24} color="#4C8CFF" />
+        <Ionicons name={icon} size={24} color="#4C8CFF" />
+
     </View>
     <View style={styles.supportTextContainer}>
       <Text style={styles.supportTitle}>{title}</Text>
