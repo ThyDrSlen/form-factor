@@ -61,7 +61,6 @@ const faqs = [
 
 export default function HelpSupportModal() {
   const safeBack = useSafeBack(['/(tabs)/profile', '/profile'], { alwaysReplace: true });
-  const toast = useToast();
   const [expandedFAQ, setExpandedFAQ] = useState<number | null>(0);
 
   const handleHardwareBackPress = () => {
@@ -145,14 +144,14 @@ export default function HelpSupportModal() {
         <Text style={styles.sectionTitle}>Community</Text>
         <View style={styles.card}>
           <SupportOption
-            logo="logo-twitter"
+            icon="logo-twitter"
             title="Follow us on X"
             subtitle="@formfactorapp"
             onPress={() => Linking.openURL('https://twitter.com/formfactorapp')}
           />
           <View style={styles.divider} />
           <SupportOption
-            logo="logo-instagram"
+            icon="logo-instagram"
             title="Instagram"
             subtitle="@formfactorapp"
             onPress={() => Linking.openURL('https://instagram.com/formfactorapp')}

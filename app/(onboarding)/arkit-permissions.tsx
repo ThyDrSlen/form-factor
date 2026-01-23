@@ -11,16 +11,15 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Permissions from 'expo-camera';
+import { useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { isIOS } from '@/lib/platform-utils';
 
 interface FeatureCardProps {
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   title: string;
   description: string;
   delay: number;
@@ -53,17 +52,16 @@ function FeatureCard({ icon, title, description, delay }: FeatureCardProps) {
 
 export default function ARKitPermissionsScreen() {
   const router = useRouter();
-  const safeBack = useSafeBack();
+  const safeBack = useSafeBack('/(tabs)');
   const insets = useSafeAreaInsets();
   const isiOS = isIOS();
   
-  const [permissionStatus, setPermissionStatus] = useState<'undetermined' | 'granted' | 'denied'>('undetermined');
+  const [permission, requestPermission] = useCameraPermissions();
   const [isRequesting, setIsRequesting] = useState(false);
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(50));
 
   useEffect(() => {
-    // Animate entrance
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -77,38 +75,21 @@ export default function ARKitPermissionsScreen() {
       }),
     ]).start();
     
-    // Check current permission status
-    checkPermissionStatus();
-  }, [fadeAnim, slideAnim]);
-
-  const checkPermissionStatus = async () => {
-    try {
-      const { status } = await Permissions.getCameraPermissionsStatus();
-      setPermissionStatus(status === 'granted' ? 'granted' : status === 'denied' ? 'denied' : 'undetermined');
-      
-      // If already granted, redirect to usage onboarding
-      if (status === 'granted') {
-        router.replace('/(onboarding)/arkit-usage');
-      }
-    } catch (error) {
-      console.error('Error checking camera permission:', error);
+    if (permission?.granted) {
+      router.replace('/(onboarding)/arkit-usage');
     }
-  };
+  }, [fadeAnim, slideAnim, permission?.granted]);
 
   const handleRequestPermission = async () => {
     if (isRequesting) return;
     
     setIsRequesting(true);
     try {
-      const { status } = await Permissions.requestCameraPermissions();
-      const newStatus = status === 'granted' ? 'granted' : 'denied';
-      setPermissionStatus(newStatus);
+      const response = await requestPermission();
       
-      if (status === 'granted') {
-        // Success - move to usage onboarding
+      if (response.granted) {
         router.replace('/(onboarding)/arkit-usage');
       } else {
-        // Permission denied - show helpful message
         Alert.alert(
           'Camera Access Needed',
           'To analyze your form, Form Factor needs camera access. You can enable it later in Settings.',
@@ -142,7 +123,7 @@ export default function ARKitPermissionsScreen() {
     }
   };
 
-  const features = [
+  const features: { icon: keyof typeof Ionicons.glyphMap; title: string; description: string }[] = [
     {
       icon: 'eye-outline',
       title: 'Real-Time Analysis',
@@ -234,7 +215,7 @@ export default function ARKitPermissionsScreen() {
 
           {/* Action Buttons */}
           <Animated.View style={[styles.actionsSection, { opacity: fadeAnim }]}>
-            {permissionStatus === 'denied' ? (
+            {permission?.status === 'denied' ? (
               <TouchableOpacity 
                 style={styles.settingsButton}
                 onPress={handleOpenSettings}
