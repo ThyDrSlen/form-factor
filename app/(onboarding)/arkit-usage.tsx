@@ -15,8 +15,10 @@ import { useRouter } from 'expo-router';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { isIOS } from '@/lib/platform-utils';
 
+type IoniconName = keyof typeof Ionicons.glyphMap;
+
 interface TipCardProps {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IoniconName;
   title: string;
   tips: string[];
   delay: number;
@@ -127,7 +129,7 @@ export default function ARKitUsageScreen() {
     router.replace('/(tabs)');
   };
 
-  const setupTips: { icon: keyof typeof Ionicons.glyphMap; title: string; tips: string[] }[] = [
+  const setupTips: Omit<TipCardProps, 'delay'>[] = [
     {
       icon: 'aperture-outline',
       title: 'Phone Position',
