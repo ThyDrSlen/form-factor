@@ -113,12 +113,12 @@ export default function CoachScreen() {
               </View>
             </View>
             <Text style={styles.coachWelcomeText}>
-              Tell me your fitness goals, available time, or any injuries and I'll craft personalized plans and recovery suggestions. I use your health data (sleep, heart rate, activity, weight trends) to adjust recommendations. Try prompts like:
+              Tell me your fitness goals, available time, or any injuries and I&apos;ll craft personalized plans and recovery suggestions. I use your health data (sleep, heart rate, activity, weight trends) to adjust recommendations. Try prompts like:
             </Text>
             <View style={styles.coachWelcomeExampleContainer}>
-              <Text style={styles.coachWelcomeExample}>• "Plan a week of workouts"</Text>
-              <Text style={styles.coachWelcomeExample}>• "Give me recovery ideas after heavy squats"</Text>
-              <Text style={styles.coachWelcomeExample}>• "Suggest a high-protein meal for today"</Text>
+              <Text style={styles.coachWelcomeExample}>• &quot;Plan a week of workouts&quot;</Text>
+              <Text style={styles.coachWelcomeExample}>• &quot;Give me recovery ideas after heavy squats&quot;</Text>
+              <Text style={styles.coachWelcomeExample}>• &quot;Suggest a high-protein meal for today&quot;</Text>
             </View>
             <TouchableOpacity
               style={styles.coachWelcomeButton}
