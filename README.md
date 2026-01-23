@@ -40,10 +40,129 @@ Form Factor is an iOS-first fitness and health app built with Expo and Supabase.
 - Unit: `bun run test` (Jest + Testing Library).
 - E2E (web target): `bunx playwright test` (uses Expo web via `etc/playwright.config.ts`).
 
-## Backend notes
-- Schema: core tables for `foods`, `workouts`, `health_metrics` with RLS; `videos`, `video_comments`, `video_likes`, `video_views`; notification token/preference tables; migrations in `supabase/migrations`.
-- Storage: buckets `videos` (private) and `video-thumbnails` (public) with policies in migration `012_create_video_buckets.sql`.
-- Edge Functions: `coach` (OpenAI-backed, configure `OPENAI_API_KEY`, `COACH_MODEL`, `COACH_MAX_TOKENS`, `COACH_TEMPERATURE`) and `notify` (Expo push; secure with `NOTIFY_SECRET` and service-role key for lookups).
+## Backend (Supabase)
+
+```mermaid
+---
+title: Backend Architecture (Supabase)
+accTitle: Backend Architecture Diagram
+accDescr: Expo app uses Supabase Auth, Postgres (RLS), Storage, and Edge Functions (coach/notify) plus OpenAI and Expo Push.
+---
+flowchart TD
+  App[Expo App<br/>(iOS/Web)] -->|OAuth / email| Auth[Supabase Auth]
+  App -->|JWT| DB[(Postgres<br/>RLS)]
+  App -->|Upload + Signed URLs| Storage[Supabase Storage]
+
+  App -->|functions.invoke('coach')| Coach[Edge Function: coach]
+  Coach -->|Chat Completions| OpenAI[OpenAI API]
+
+  Server[Server/Cron/Webhook] -->|POST + x-notify-secret (optional)| Notify[Edge Function: notify]
+  Notify -->|Lookup tokens (service role)| DB
+  Notify --> Expo[Expo Push Service]
+  Expo --> Device[User Device]
+
+  classDef supabase fill:#3ECF8D,stroke:#2E86C1,stroke-width:1px,color:#111
+  classDef edge fill:#FED7AA,stroke:#F5A623,stroke-width:1px,color:#111
+  classDef external fill:#EEE,stroke:#555,stroke-width:1px,stroke-dasharray: 4 4,color:#111
+
+  class Auth,DB,Storage supabase
+  class Coach,Notify edge
+  class OpenAI,Expo,Server,Device external
+```
+
+### Schema (simplified ER map)
+
+```mermaid
+erDiagram
+  AUTH_USERS ||--o{ WORKOUTS : owns
+  AUTH_USERS ||--o{ FOODS : owns
+  AUTH_USERS ||--o{ HEALTH_METRICS : owns
+  AUTH_USERS ||--o{ NUTRITION_GOALS : owns
+
+  AUTH_USERS ||--o{ NOTIFICATION_TOKENS : registers
+  AUTH_USERS ||--|| NOTIFICATION_PREFERENCES : configures
+
+  AUTH_USERS ||--o{ VIDEOS : uploads
+  VIDEOS ||--o{ VIDEO_COMMENTS : has
+  VIDEOS ||--o{ VIDEO_LIKES : has
+  VIDEOS ||--o{ VIDEO_VIEWS : has
+
+  AUTH_USERS ||--o{ SETS : logs
+  SETS ||--o{ REPS : contains
+  REPS ||--o{ REP_LABELS : labeled_by
+
+  AUTH_USERS ||--o{ CUE_EVENTS : emits
+  AUTH_USERS ||--o{ SESSION_METRICS : aggregates
+  AUTH_USERS ||--o{ POSE_SAMPLES : records
+
+  WORKOUTS { uuid id PK }
+  FOODS { uuid id PK }
+  HEALTH_METRICS { uuid id PK }
+  NUTRITION_GOALS { uuid id PK }
+
+  VIDEOS { uuid id PK }
+  VIDEO_COMMENTS { uuid id PK }
+  VIDEO_LIKES { uuid video_id FK  uuid user_id FK }
+  VIDEO_VIEWS { uuid video_id FK  uuid user_id FK }
+
+  SETS { uuid set_id PK }
+  REPS { uuid rep_id PK  uuid set_id FK }
+  REP_LABELS { uuid label_id PK  uuid rep_id FK }
+
+  CUE_EVENTS { uuid id PK  text session_id }
+  SESSION_METRICS { uuid id PK  text session_id }
+  POSE_SAMPLES { uuid id PK  text session_id }
+```
+
+### Storage buckets (policies)
+
+| Bucket | Public read | Insert | Select | Delete |
+|---|---:|---|---|---|
+| `videos` | No | authenticated + `owner = auth.uid()` | authenticated + `owner = auth.uid()` | authenticated + `owner = auth.uid()` |
+| `video-thumbnails` | Yes | authenticated + `owner = auth.uid()` | public | authenticated + `owner = auth.uid()` |
+
+### Edge Functions (request flow)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor User
+  participant App as Expo App
+  participant Coach as Edge Function: coach
+  participant OpenAI as OpenAI API
+
+  User->>App: Enter prompt
+  App->>Coach: functions.invoke('coach')<br/>JWT + {messages, context}
+  Coach->>OpenAI: Chat completion (OPENAI_API_KEY)
+  OpenAI-->>Coach: Response text
+  Coach-->>App: { message }
+  App-->>User: Render response
+```
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Server as Cron/Webhook/Backend
+  participant Notify as Edge Function: notify
+  participant DB as Postgres (service role)
+  participant Expo as Expo Push API
+  participant Device as User Device
+
+  Server->>Notify: POST + x-notify-secret (optional)<br/>{userIds or tokens, title, body, data}
+  Notify->>DB: Lookup tokens (SUPABASE_SERVICE_ROLE_KEY)
+  DB-->>Notify: Tokens
+  Notify->>Expo: Send batch (<= 90 tokens/request)
+  Expo-->>Notify: Receipts
+  Notify->>DB: Prune invalid tokens
+  Notify-->>Server: {delivered, invalidTokens, attempted}
+  Expo-->>Device: Push notification
+```
+
+### Source-of-truth links
+- Migrations / schema: `supabase/migrations/`
+- Storage policies: `supabase/migrations/012_create_video_buckets.sql`
+- Coach guide: `docs/COACH_FUNCTION.md`
+- Edge function code: `supabase/functions/coach/index.ts`, `supabase/functions/notify/index.ts`
 
 ## Documentation
 - Repo standards and commands: `docs/AGENTS.md`.
