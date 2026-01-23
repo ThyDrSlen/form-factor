@@ -16,7 +16,7 @@ import { useSafeBack } from '@/hooks/use-safe-back';
 import { isIOS } from '@/lib/platform-utils';
 
 interface TipCardProps {
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   title: string;
   tips: string[];
   delay: number;
@@ -97,7 +97,7 @@ function ExerciseCard({ emoji, name, delay }: ExerciseCardProps) {
 
 export default function ARKitUsageScreen() {
   const router = useRouter();
-  const safeBack = useSafeBack();
+  const safeBack = useSafeBack('/(tabs)');
   const insets = useSafeAreaInsets();
   const isiOS = isIOS();
   
@@ -127,7 +127,7 @@ export default function ARKitUsageScreen() {
     router.replace('/(tabs)');
   };
 
-  const setupTips = [
+  const setupTips: { icon: keyof typeof Ionicons.glyphMap; title: string; tips: string[] }[] = [
     {
       icon: 'aperture-outline',
       title: 'Phone Position',
@@ -217,7 +217,7 @@ export default function ARKitUsageScreen() {
             </View>
             <Text style={styles.heroTitle}>Ready to Track Your Form?</Text>
             <Text style={styles.heroSubtitle}>
-              Let\'s get you set up for successful form tracking with your camera.
+              Let&apos;s get you set up for successful form tracking with your camera.
             </Text>
           </Animated.View>
 
@@ -261,7 +261,7 @@ export default function ARKitUsageScreen() {
                 <View style={styles.safetyTip}>
                   <Ionicons name="warning-outline" size={20} color="#FF6B6B" />
                   <Text style={styles.safetyTipText}>
-                    Use mirrors for safety - don\'t rely solely on your phone
+                    Use mirrors for safety - don&apos;t rely solely on your phone
                   </Text>
                 </View>
                 <View style={styles.safetyTip}>
