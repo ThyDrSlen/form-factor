@@ -13,28 +13,29 @@ export const styles = StyleSheet.create({
   header: {
     display: 'none', // Effectively remove the header container
   },
-  closeButton: {
-    position: 'absolute',
-    top: 10,
-    left: spacing.md,
-    zIndex: 101,
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: scanPalette.overlayMuted,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: scanPalette.border,
-  },
   headerTitle: {
     display: 'none',
   },
-  infoButton: {
+  topBar: {
     position: 'absolute',
-    top: 10,
-    right: spacing.md,
-    zIndex: 101,
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 120,
+    paddingHorizontal: spacing.md,
+  },
+  topBarContent: {
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  topBarCenter: {
+    flex: 1,
+    alignItems: 'center',
+    marginHorizontal: spacing.sm,
+  },
+  topBarButton: {
     width: 32,
     height: 32,
     alignItems: 'center',
@@ -96,9 +97,8 @@ export const styles = StyleSheet.create({
     borderRadius: 2,
   },
   workoutSelectorContainer: {
-    position: 'absolute',
-    left: 56, // spacing.md (16) + button width (32) + gap (8)
     zIndex: 60,
+    alignItems: 'center',
   },
   workoutSelectorButton: {
     flexDirection: 'row',
@@ -316,64 +316,87 @@ export const styles = StyleSheet.create({
       },
     }),
   },
-  watchMirrorButton: {
-    position: 'absolute',
-    top: 100,
-    right: 128,
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+  settingsOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
+  settingsBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  settingsSheet: {
     backgroundColor: scanPalette.overlay,
-    borderRadius: 22,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
     borderWidth: 1,
     borderColor: scanPalette.border,
-    zIndex: 100,
-    ...Platform.select({
-      web: { boxShadow: '0 2px 6px rgba(0,0,0,0.3)' },
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-        elevation: 10,
-      },
-    }),
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
   },
-  watchMirrorButtonActive: {
-    backgroundColor: scanPalette.textPrimary,
-    borderColor: '#7AA9FF',
+  settingsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
   },
-  watchMirrorButtonDisabled: {
-    opacity: 0.45,
+  settingsTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: scanPalette.textPrimary,
   },
-  audioToggleButton: {
-    position: 'absolute',
-    top: 100,
-    right: 72,
-    width: 44,
-    height: 44,
+  settingsCloseButton: {
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: scanPalette.overlay,
-    borderRadius: 22,
+    backgroundColor: scanPalette.overlayMuted,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: scanPalette.border,
-    zIndex: 100,
-    ...Platform.select({
-      web: { boxShadow: '0 2px 6px rgba(0,0,0,0.3)' },
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-        elevation: 10,
-      },
-    }),
   },
-  audioToggleButtonActive: {
-    backgroundColor: scanPalette.textPrimary,
-    borderColor: '#7AA9FF',
+  settingsSection: {
+    gap: spacing.sm,
+  },
+  settingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  settingsLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: scanPalette.textPrimary,
+  },
+  settingsLabelGroup: {
+    flex: 1,
+    gap: 2,
+  },
+  settingsHint: {
+    fontSize: 12,
+    color: scanPalette.textSecondary,
+  },
+  settingsDivider: {
+    height: 1,
+    backgroundColor: scanPalette.border,
+    marginVertical: spacing.md,
+  },
+  settingsButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: scanPalette.border,
+    backgroundColor: scanPalette.overlayMuted,
+  },
+  settingsButtonDisabled: {
+    opacity: 0.5,
+  },
+  settingsButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: scanPalette.textPrimary,
   },
   zoomControls: {
     position: 'absolute',
