@@ -109,13 +109,6 @@ erDiagram
   POSE_SAMPLES { uuid id PK  text session_id }
 ```
 
-### Storage buckets (policies)
-
-| Bucket | Public read | Insert | Select | Delete |
-|---|---:|---|---|---|
-| `videos` | No | authenticated + `owner = auth.uid()` | authenticated + `owner = auth.uid()` | authenticated + `owner = auth.uid()` |
-| `video-thumbnails` | Yes | authenticated + `owner = auth.uid()` | public | authenticated + `owner = auth.uid()` |
-
 ### Edge Functions (request flow)
 
 ```mermaid
