@@ -43,14 +43,9 @@ Form Factor is an iOS-first fitness and health app built with Expo and Supabase.
 ## Backend (Supabase)
 
 ```mermaid
----
-title: Backend Architecture (Supabase)
-accTitle: Backend Architecture Diagram
-accDescr: Expo app uses Supabase Auth, Postgres (RLS), Storage, and Edge Functions (coach/notify) plus OpenAI and Expo Push.
----
 flowchart TD
-  App[Expo App<br/>(iOS/Web)] -->|OAuth / email| Auth[Supabase Auth]
-  App -->|JWT| DB[(Postgres<br/>RLS)]
+  App[Expo App (iOS/Web)] -->|OAuth / email| Auth[Supabase Auth]
+  App -->|JWT| DB[(Postgres RLS)]
   App -->|Upload + Signed URLs| Storage[Supabase Storage]
 
   App -->|functions.invoke('coach')| Coach[Edge Function: coach]
@@ -113,13 +108,6 @@ erDiagram
   SESSION_METRICS { uuid id PK  text session_id }
   POSE_SAMPLES { uuid id PK  text session_id }
 ```
-
-### Storage buckets (policies)
-
-| Bucket | Public read | Insert | Select | Delete |
-|---|---:|---|---|---|
-| `videos` | No | authenticated + `owner = auth.uid()` | authenticated + `owner = auth.uid()` | authenticated + `owner = auth.uid()` |
-| `video-thumbnails` | Yes | authenticated + `owner = auth.uid()` | public | authenticated + `owner = auth.uid()` |
 
 ### Edge Functions (request flow)
 
