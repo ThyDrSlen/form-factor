@@ -149,6 +149,10 @@ export default function ScanARKitScreen() {
   const DEV = __DEV__;
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const topBarHeight = 44;
+  const topBarPadding = 8;
+  const topBarOffset = insets.top + topBarPadding;
+  const topBarBottom = topBarOffset + topBarHeight;
   // ARKit body tracking supports back camera only; remove VisionCamera preview dependency.
   const cameraPosition = 'back' as const;
   const ensureMediaLibraryPermission = useCallback(async () => {
@@ -195,6 +199,8 @@ export default function ScanARKitScreen() {
   const [gestureRecordingEnabled, setGestureRecordingEnabled] = useState(true);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [isSettingsVisible, setIsSettingsVisible] = useState(false);
+  const [showDebugStats, setShowDebugStats] = useState(false);
   const [savingRecording, setSavingRecording] = useState(false);
   const recordingStopInFlightRef = React.useRef(false);
   const [smoothedPose2DJoints, setSmoothedPose2DJoints] = useState<Joint2D[] | null>(null);
@@ -888,6 +894,16 @@ export default function ScanARKitScreen() {
       watchInstalled &&
       watchReachable;
     const watchReady = watchPaired && watchInstalled;
+    const handleWatchMirrorToggle = useCallback(
+      (value: boolean) => {
+        if (!watchReady) {
+          Alert.alert('Watch not ready', 'Pair your Apple Watch and install the watch app first.');
+          return;
+        }
+        setWatchMirrorEnabled(value);
+      },
+      [watchReady]
+    );
 
     const captureAndSendWatchMirror = useCallback(async () => {
       if (watchMirrorInFlightRef.current) {
@@ -1438,19 +1454,67 @@ export default function ScanARKitScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header Controls (Absolute) */}
-      <TouchableOpacity 
-        style={[styles.closeButton, { top: insets.top + 8 }]} 
-        onPress={() => router.back()}
-      >
-        <Ionicons name="close" size={28} color="#F5F7FF" />
-      </TouchableOpacity>
-      
-      <TouchableOpacity 
-        style={[styles.infoButton, { top: insets.top + 8 }]}
-      >
-        <Ionicons name="information-circle-outline" size={24} color="#9AACD1" />
-      </TouchableOpacity>
+      <View style={[styles.topBar, { paddingTop: topBarOffset }]}>
+        <View style={styles.topBarContent}>
+          <TouchableOpacity
+            style={styles.topBarButton}
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Close scan"
+          >
+            <Ionicons name="close" size={24} color="#F5F7FF" />
+          </TouchableOpacity>
+
+          <View style={styles.topBarCenter}>
+            {/* Mode Selector (Dropdown) */}
+            <View style={styles.workoutSelectorContainer}>
+              <TouchableOpacity
+                style={styles.workoutSelectorButton}
+                onPress={() => setIsDropdownOpen(!isDropdownOpen)}
+              >
+                <Ionicons
+                  name={(activeWorkoutDef.ui?.iconName ?? 'barbell-outline') as any}
+                  size={16}
+                  color="#F5F7FF"
+                />
+                <Text style={styles.workoutSelectorText}>
+                  {activeWorkoutDef.displayName}
+                </Text>
+                <Ionicons name="chevron-down" size={16} color="#F5F7FF" />
+              </TouchableOpacity>
+
+              {isDropdownOpen && (
+                <View style={styles.dropdownMenu}>
+                  {getWorkoutIds()
+                    .map((mode) => (
+                      <TouchableOpacity
+                        key={mode}
+                        style={styles.dropdownItem}
+                        onPress={() => {
+                          setDetectionMode(mode);
+                          setIsDropdownOpen(false);
+                        }}
+                      >
+                        <Text style={styles.dropdownItemText}>
+                          {getWorkoutByMode(mode).displayName}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                </View>
+              )}
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.topBarButton}
+            onPress={() => setIsSettingsVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Open settings"
+          >
+            <Ionicons name="settings-outline" size={20} color="#F5F7FF" />
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {/* Tracking view */}
       <View style={styles.trackingContainer}>
@@ -1466,44 +1530,6 @@ export default function ScanARKitScreen() {
           />
         )}
 
-        {/* Mode Selector (Dropdown) */}
-        <View style={[styles.workoutSelectorContainer, { top: insets.top + 8 }]}>
-          <TouchableOpacity
-            style={styles.workoutSelectorButton}
-            onPress={() => setIsDropdownOpen(!isDropdownOpen)}
-          >
-	            <Ionicons 
-	              name={(activeWorkoutDef.ui?.iconName ?? 'barbell-outline') as any} 
-	              size={16} 
-	              color="#F5F7FF" 
-	            />
-            <Text style={styles.workoutSelectorText}>
-              {activeWorkoutDef.displayName}
-            </Text>
-            <Ionicons name="chevron-down" size={16} color="#F5F7FF" />
-          </TouchableOpacity>
-          
-          {isDropdownOpen && (
-            <View style={styles.dropdownMenu}>
-              {getWorkoutIds()
-                .map((mode) => (
-                  <TouchableOpacity
-                    key={mode}
-                    style={styles.dropdownItem}
-                    onPress={() => {
-                      setDetectionMode(mode);
-                      setIsDropdownOpen(false);
-                    }}
-                  >
-                    <Text style={styles.dropdownItemText}>
-                      {getWorkoutByMode(mode).displayName}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-            </View>
-          )}
-        </View>
-        
         {/* Overlay guides */}
         <View
           style={[styles.overlay, { zIndex: 100 }]}
@@ -1513,7 +1539,7 @@ export default function ScanARKitScreen() {
         >
 
           {!showTelemetry && (
-            <Animated.View style={[styles.topGuide, { top: insets.top + 60, opacity: textOpacity }]}>
+            <Animated.View style={[styles.topGuide, { top: topBarBottom + 16, opacity: textOpacity }]}>
               <Text style={styles.guideText}>
                 {isTracking ? 'Tracking Active' : 'Press Start to Begin'}
               </Text>
@@ -1639,7 +1665,7 @@ export default function ScanARKitScreen() {
 
 	        {/* Workout telemetry display */}
 	        {showTelemetry && (
-	          <View style={[styles.anglesDisplay, { top: insets.top + 54 }]}>
+          <View style={[styles.anglesDisplay, { top: topBarBottom + 8 }]}>
 	            <Text style={styles.anglesTitle}>{telemetryTitle}</Text>
 	            <View style={styles.anglesGrid}>
               <View style={styles.angleItem}>
@@ -1674,92 +1700,8 @@ export default function ScanARKitScreen() {
         )}
       </View>
 
-      {Platform.OS === 'ios' && (
-        <TouchableOpacity
-          style={[
-            styles.watchMirrorButton,
-            { top: insets.top + 96 },
-            watchMirrorEnabled && styles.watchMirrorButtonActive,
-            !watchReady && styles.watchMirrorButtonDisabled,
-          ]}
-          onPress={() => {
-            if (!watchReady) {
-              Alert.alert('Watch not ready', 'Pair your Apple Watch and install the watch app first.');
-              return;
-            }
-            setWatchMirrorEnabled((value) => !value);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={watchMirrorEnabled ? 'Disable watch mirror' : 'Enable watch mirror'}
-        >
-          <Ionicons
-            name={watchMirrorEnabled ? 'watch' : 'watch-outline'}
-            size={20}
-            color={watchMirrorEnabled ? '#0B1F3A' : '#F5F7FF'}
-          />
-        </TouchableOpacity>
-      )}
-
-      {/* Audio feedback toggle */}
-      <TouchableOpacity
-        style={[
-          styles.audioToggleButton,
-          { top: insets.top + 96 },
-          audioFeedbackEnabled && styles.audioToggleButtonActive
-        ]}
-        onPress={() => setAudioFeedbackEnabled((value) => !value)}
-        accessibilityRole="button"
-        accessibilityLabel={audioFeedbackEnabled ? 'Disable audio cues' : 'Enable audio cues'}
-      >
-        <Ionicons
-          name={audioFeedbackEnabled ? 'volume-high' : 'volume-mute'}
-          size={22}
-          color={audioFeedbackEnabled ? '#0B1F3A' : '#F5F7FF'}
-        />
-      </TouchableOpacity>
-
       {/* Controls */}
-      <View style={[styles.controls, { bottom: insets.bottom + 30 }]}>
-        <View style={styles.gestureToggleRow}>
-          <Text style={styles.gestureToggleLabel}>Auto-record gesture</Text>
-          <Switch
-            value={gestureRecordingEnabled}
-            onValueChange={setGestureRecordingEnabled}
-          />
-        </View>
-        <View style={styles.lockControls}>
-          <View style={styles.lockToggleRow}>
-            <Text style={styles.lockLabel}>Lock subject</Text>
-            <Switch value={subjectLockEnabled} onValueChange={setSubjectLockEnabled} />
-          </View>
-          <TouchableOpacity style={styles.lockButton} onPress={handleReacquireSubject}>
-            <Text style={styles.lockButtonText}>Reacquire</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.qualitySelector}>
-          <Text style={styles.qualityLabel}>Quality</Text>
-          <View style={styles.qualityButtons}>
-            {(Object.keys(QUALITY_LABELS) as RecordingQuality[]).map((quality) => {
-              const isActive = recordingQuality === quality;
-              return (
-                <TouchableOpacity
-                  key={quality}
-                  style={[
-                    styles.qualityButton,
-                    isActive && styles.qualityButtonActive,
-                    (isRecording || isFinalizingRecording) && styles.qualityButtonDisabled,
-                  ]}
-                  onPress={() => updateRecordingQuality(quality)}
-                  disabled={isRecording || isFinalizingRecording}
-                >
-                  <Text style={[styles.qualityButtonText, isActive && styles.qualityButtonTextActive]}>
-                    {QUALITY_LABELS[quality]}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
+      <View style={[styles.controls, { bottom: insets.bottom + 24 }]}>
         {isTracking && (
           <TouchableOpacity
             style={[
@@ -1805,17 +1747,131 @@ export default function ScanARKitScreen() {
       </View>
 
       {/* Status badge */}
-      <View style={[styles.statusBadge, { top: insets.top + 54 }]}>
-        <View style={[styles.statusDot, isTracking && styles.statusDotActive]} />
-        <View>
-          <Text style={styles.statusText}>
-            {isTracking ? 'Tracking' : 'Inactive'} • {pose?.joints.length || 0} joints • {fps} FPS
-          </Text>
-          <Text style={styles.statusSubtext}>
-            {Platform.OS === 'ios' ? 'GPU: Metal' : Platform.OS === 'android' ? 'GPU: OpenGL/Vulkan' : 'GPU: WebGL'}
-          </Text>
+      {showDebugStats && (
+        <View style={[styles.statusBadge, { top: topBarBottom + 8 }]}>
+          <View style={[styles.statusDot, isTracking && styles.statusDotActive]} />
+          <View>
+            <Text style={styles.statusText}>
+              {isTracking ? 'Tracking' : 'Inactive'} • {pose?.joints.length || 0} joints • {fps} FPS
+            </Text>
+            <Text style={styles.statusSubtext}>
+              {Platform.OS === 'ios' ? 'GPU: Metal' : Platform.OS === 'android' ? 'GPU: OpenGL/Vulkan' : 'GPU: WebGL'}
+            </Text>
+          </View>
         </View>
-      </View>
+      )}
+
+      <Modal
+        visible={isSettingsVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsSettingsVisible(false)}
+      >
+        <View style={styles.settingsOverlay}>
+          <TouchableOpacity
+            style={styles.settingsBackdrop}
+            activeOpacity={1}
+            onPress={() => setIsSettingsVisible(false)}
+          />
+          <View style={[styles.settingsSheet, { paddingBottom: insets.bottom + 24 }]}>
+            <View style={styles.settingsHeader}>
+              <Text style={styles.settingsTitle}>Settings</Text>
+              <TouchableOpacity
+                style={styles.settingsCloseButton}
+                onPress={() => setIsSettingsVisible(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close settings"
+              >
+                <Ionicons name="close" size={20} color="#F5F7FF" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.settingsSection}>
+              <View style={styles.settingsRow}>
+                <Text style={styles.settingsLabel}>Audio feedback</Text>
+                <Switch value={audioFeedbackEnabled} onValueChange={setAudioFeedbackEnabled} />
+              </View>
+
+              {Platform.OS === 'ios' && (
+                <View style={styles.settingsRow}>
+                  <View style={styles.settingsLabelGroup}>
+                    <Text style={styles.settingsLabel}>Watch mirroring</Text>
+                    <Text style={styles.settingsHint}>
+                      {watchReady ? 'Mirror to Apple Watch' : 'Pair watch to enable'}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={watchMirrorEnabled}
+                    onValueChange={handleWatchMirrorToggle}
+                    disabled={!watchReady}
+                  />
+                </View>
+              )}
+            </View>
+
+            <View style={styles.settingsDivider} />
+
+            <View style={styles.settingsSection}>
+              <View style={styles.settingsRow}>
+                <Text style={styles.settingsLabel}>Subject lock</Text>
+                <Switch value={subjectLockEnabled} onValueChange={setSubjectLockEnabled} />
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.settingsButton,
+                  !subjectLockEnabled && styles.settingsButtonDisabled,
+                ]}
+                onPress={handleReacquireSubject}
+                disabled={!subjectLockEnabled}
+              >
+                <Text style={styles.settingsButtonText}>Reacquire subject</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.settingsDivider} />
+
+            <View style={styles.settingsSection}>
+              <View style={styles.settingsRow}>
+                <Text style={styles.settingsLabel}>Gesture recording</Text>
+                <Switch value={gestureRecordingEnabled} onValueChange={setGestureRecordingEnabled} />
+              </View>
+              <View style={styles.settingsRow}>
+                <Text style={styles.settingsLabel}>Quality</Text>
+                <View style={styles.qualityButtons}>
+                  {(Object.keys(QUALITY_LABELS) as RecordingQuality[]).map((quality) => {
+                    const isActive = recordingQuality === quality;
+                    return (
+                      <TouchableOpacity
+                        key={quality}
+                        style={[
+                          styles.qualityButton,
+                          isActive && styles.qualityButtonActive,
+                          (isRecording || isFinalizingRecording) && styles.qualityButtonDisabled,
+                        ]}
+                        onPress={() => updateRecordingQuality(quality)}
+                        disabled={isRecording || isFinalizingRecording}
+                      >
+                        <Text style={[styles.qualityButtonText, isActive && styles.qualityButtonTextActive]}>
+                          {QUALITY_LABELS[quality]}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.settingsDivider} />
+
+            <View style={styles.settingsSection}>
+              <View style={styles.settingsRow}>
+                <Text style={styles.settingsLabel}>Debug stats</Text>
+                <Switch value={showDebugStats} onValueChange={setShowDebugStats} />
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={isPreviewVisible}
