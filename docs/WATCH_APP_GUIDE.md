@@ -1,13 +1,23 @@
 # Apple Watch Companion App Setup Guide
 
-To control the Form Factor recording and tracking from your Apple Watch, you need to add a Watch App target to your iOS project. Since this requires Xcode configuration that cannot be fully automated, please follow these steps.
+To control the Form Factor recording and tracking from your Apple Watch, the Watch App target is generated via `@bacons/apple-targets` during prebuild. Do not create the target manually in Xcode—`expo prebuild` will overwrite manual changes inside `ios/`.
 
 ## Prerequisites
 
 1.  Ensure you have run `bun install`.
-2.  Ensure you have run `bun run ios` at least once to generate the `ios/` folder.
+2.  Run `npx expo prebuild -p ios --clean` after changing watch targets or native config (you can still use `bun run ios` to generate `ios/`).
 
-## Step 1: Add Watch App Target in Xcode
+## Step 1: Watch Target Configuration
+
+1.  Target config lives in `targets/watch-app/expo-target.config.js`.
+2.  Watch sources live in the repo under:
+    *   `targets/watch-app/FormFactorWatchApp.swift`
+    *   `targets/watch-app/ContentView.swift`
+    *   `targets/watch-app/WatchSessionManager.swift`
+3.  Watch assets live under `targets/watch-app/Assets.xcassets`.
+4.  `targets/watch-app/Info.plist` defines `WKCompanionAppBundleIdentifier` and must stay aligned with `com.slenthekid.formfactoreas`.
+
+## Step 2: Sync in Xcode
 
 1.  Open the workspace in Xcode:
     ```bash
@@ -15,40 +25,10 @@ To control the Form Factor recording and tracking from your Apple Watch, you nee
     # OR
     open ios/formfactoreas.xcworkspace
     ```
-2.  Go to **File > New > Target...**
-3.  Select **watchOS** tab and choose **App**. Click **Next**.
-4.  **Product Name**: `FormFactorWatch`
-5.  **Bundle Identifier**: It should automatically be `com.slenthekid.formfactoreas.watchkitapp`.
-6.  **Interface**: `SwiftUI`
-7.  **Life Cycle**: `SwiftUI App`
-8.  **Language**: `Swift`
-9.  **Project**: `formfactoreas`
-10. **Embed in Application**: `formfactoreas`
-11. Click **Finish**.
-12. If asked to "Activate" the scheme, click **Activate**.
+2.  Confirm the `Form Factor Watch Watch App` target exists after prebuild.
+3.  In **Signing & Capabilities**, verify **HealthKit** and **Background Modes > Remote notifications** are enabled (HealthKit is set via the target entitlements).
 
-## Step 2: Replace Source Code
-
-1.  In Xcode's Project Navigator (left sidebar), find the `Form Factor Watch Watch App` folder.
-2.  Delete the default files if they exist.
-3.  The watch app sources now live in the repo under:
-    *   `ios/Form Factor Watch Watch App/FormFactorWatchApp.swift`
-    *   `ios/Form Factor Watch Watch App/ContentView.swift`
-    *   `ios/Form Factor Watch Watch App/WatchSessionManager.swift`
-4.  If Xcode doesn't pick them up automatically, drag those files into the watch app group and ensure the **"Form Factor Watch Watch App"** target is checked.
-
-## Step 3: Configure Info.plist and Capabilities
-
-1.  In Xcode, select the `FormFactorWatch Watch App` target.
-2.  Go to the **Info** tab.
-3.  Ensure `WKCompanionAppBundleIdentifier` is set to `com.slenthekid.formfactoreas` (or `.dev` if running in dev mode).
-4.  Go to the **Signing & Capabilities** tab.
-5.  Click **+ Capability** and add **HealthKit**.
-    *   This is required to keep the app alive during workouts.
-6.  Also add **Background Modes** and check:
-    *   **Remote notifications**
-
-## Step 4: Run
+## Step 3: Run
 
 1.  Select the `FormFactorWatch Watch App` scheme in the top toolbar.
 2.  Select a Simulator pair (e.g., iPhone 15 Pro + Apple Watch Series 9).
@@ -68,7 +48,7 @@ WATCH_BUNDLE_ID=com.slenthekid.formfactoreas.watchkitapp bun run watch:install
 
 For physical devices, installing the iOS app on the paired iPhone will also install the watch app.
 
-## Step 5: Camera Mirror Preview (Low FPS)
+## Step 4: Camera Mirror Preview (Low FPS)
 
 The watch app supports a lightweight camera mirror by streaming snapshots from the iPhone, and also mirrors live tracking state (reps / phase / cues + key metrics).
 
