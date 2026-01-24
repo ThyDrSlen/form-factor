@@ -47,6 +47,7 @@ const baseConfig = {
   plugins: [
     'expo-router',
     'expo-web-browser',
+    '@bacons/apple-targets',
     './plugins/withARKitBodyTracker.js',
     'expo-font',
     './plugins/withBuildSettings.js',
@@ -100,7 +101,6 @@ const baseConfig = {
       NSPhotoLibraryUsageDescription: 'Allow access to your photo library to save workout recordings.',
       NSPhotoLibraryAddUsageDescription: 'Allow Form Factor to save workout recordings to your camera roll.',
       NSLocationWhenInUseUsageDescription: 'This app does not use your location, but it is required by Apple Health for workout routes.',
-      WKCompanionAppBundleIdentifier: 'com.slenthekid.formfactoreas',
       ITSAppUsesNonExemptEncryption: false,
       ...(ENABLE_LOCAL_DEBUG_LOGGING
         ? {
