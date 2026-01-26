@@ -4,9 +4,9 @@
 <dict>
   <key>CFBundleDisplayName</key>
   <string>Form Factor</string>
+  <key>WKApplication</key>
+  <true/>
   <key>WKCompanionAppBundleIdentifier</key>
   <string>com.slenthekid.formfactoreas</string>
-  <key>WKWatchKitApp</key>
-  <true/>
 </dict>
 </plist>
