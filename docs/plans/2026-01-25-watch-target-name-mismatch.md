@@ -64,3 +64,59 @@ Expected: No errors.
 git add tests/unit/targets/watch-target-config.test.ts targets/watch-app/expo-target.config.js
 git commit -m "fix(watch-app): align watch target name with Xcode"
 ```
+
+### Task 3: Patch apple-targets to use display name for EAS credentials
+
+**Files:**
+- Modify: `node_modules/@bacons/apple-targets/build/with-widget.js`
+- Create: `patches/@bacons+apple-targets+3.0.7.patch`
+- Create: `tests/unit/targets/apple-targets-eas-target-name.test.ts`
+
+**Step 1: Write the failing test**
+
+```ts
+const fs = require('fs');
+const path = require('path');
+
+describe('apple-targets EAS target name', () => {
+  it('uses the display name for targetName', () => {
+    const filePath = path.join(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      'node_modules',
+      '@bacons',
+      'apple-targets',
+      'build',
+      'with-widget.js',
+    );
+
+    const content = fs.readFileSync(filePath, 'utf8');
+
+    expect(content).toContain('targetName: targetDisplayName');
+  });
+});
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `bun run test tests/unit/targets/apple-targets-eas-target-name.test.ts`
+
+Expected: FAIL with `Expected substring: "targetName: targetDisplayName"`.
+
+**Step 3: Patch the plugin**
+
+```js
+targetName: targetDisplayName,
+```
+
+**Step 4: Generate patch-package patch**
+
+Create `patches/@bacons+apple-targets+3.0.7.patch` to capture the change.
+
+**Step 5: Run test to verify it passes**
+
+Run: `bun run test tests/unit/targets/apple-targets-eas-target-name.test.ts`
+
+Expected: PASS.
