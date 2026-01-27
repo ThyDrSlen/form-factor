@@ -1,6 +1,6 @@
 module.exports = {
   type: 'watch',
-  name: 'FormFactorWatchApp',
+  name: 'Form Factor Watch Watch App',
   displayName: 'Form Factor',
   bundleIdentifier: 'com.slenthekid.formfactoreas.watchkitapp',
   entitlements: {
