@@ -1,0 +1,13 @@
+diff --git a/node_modules/@bacons/apple-targets/build/with-widget.js b/node_modules/@bacons/apple-targets/build/with-widget.js
+index 8653c31..e34b0c9 100644
+--- a/node_modules/@bacons/apple-targets/build/with-widget.js
++++ b/node_modules/@bacons/apple-targets/build/with-widget.js
+@@ -239,7 +239,7 @@ const withWidget = (config, props) => {
+         props.type === "clip",
+     });
+     config = (0, with_eas_credentials_1.withEASTargets)(config, {
+-        targetName: productName,
++        targetName: targetDisplayName,
+         bundleIdentifier: bundleId,
+         entitlements: entitlementsJson,
+     });
