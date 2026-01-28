@@ -14,9 +14,9 @@ const USE_NEW_ARCH = readEnvFlag(process.env.EXPO_USE_NEW_ARCH, true);
 const ENABLE_LOCAL_DEBUG_LOGGING = readEnvFlag(process.env.EXPO_PUBLIC_DEBUG_LOGGING, false);
 
 const getUniqueIdentifier = () => {
-  if (IS_DEV) return 'com.slenthekid.formfactoreas.dev';
-  if (IS_PREVIEW) return 'com.slenthekid.formfactoreas.preview';
-  return 'com.slenthekid.formfactoreas';
+  if (IS_DEV) return 'com.slenthekid.form-factor-eas.dev';
+  if (IS_PREVIEW) return 'com.slenthekid.form-factor-eas.preview';
+  return 'com.slenthekid.form-factor-eas';
 };
 
 const getAppName = () => {
@@ -88,7 +88,7 @@ const baseConfig = {
     ],
   },
   ios: {
-    bundleIdentifier: 'com.slenthekid.formfactoreas',
+    bundleIdentifier: 'com.slenthekid.form-factor-eas',
     supportsTablet: true,
     icon: './assets/images/ff-logo.png',
     // buildNumber is managed remotely via appVersionSource: "remote" in eas.json
