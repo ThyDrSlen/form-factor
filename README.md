@@ -13,7 +13,7 @@ Form Factor is an iOS-first fitness and health app built with Expo and Supabase.
 ## Status and roadmap
 - Implemented: offline foods/workouts, HealthKit summaries/trends, video upload + feed, AI coach, push notification plumbing, Playwright auth flow, Jest unit scaffolding.
 - In progress: ARKit body-tracking polish and metrics upload, broader E2E coverage, telemetry/error-handling hardening.
-- Planned: Android support, richer social/feed interactions, ML recommendations, production push campaigns.
+- Planned: Richer social/feed interactions, ML recommendations, production push campaigns.
 
 ## Repository layout
 - `app/`: Expo Router screens (`(auth)`, `(tabs)`, `(modals)`); ARKit scan and dashboard live here.
