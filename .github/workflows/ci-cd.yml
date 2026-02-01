@@ -270,6 +270,26 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
+      - name: Write App Store Connect API key
+        run: |
+          mkdir -p .eas
+          python3 - <<'PY'
+          import base64
+          import os
+          import pathlib
+          import sys
+
+          encoded = os.environ.get("ASC_API_KEY_P8_BASE64")
+          if not encoded:
+              print("ASC_API_KEY_P8_BASE64 is not set", file=sys.stderr)
+              sys.exit(1)
+
+          pathlib.Path(".eas/asc-api-key.p8").write_bytes(base64.b64decode(encoded))
+          PY
+          chmod 600 .eas/asc-api-key.p8
+        env:
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+
       - name: Build and submit iOS production
         run: eas build --platform ios --profile production --auto-submit --non-interactive
 
