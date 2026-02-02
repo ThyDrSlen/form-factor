@@ -3,7 +3,6 @@
 Form Factor is an iOS-first fitness and health app built with Expo and Supabase. It gives real-time form cues from the phone camera—counting reps, flagging issues (e.g., swing on pull-ups, squat depth), and auto-logging sets—to improve outcomes and reduce injury. It also delivers fast offline workout/food logging, HealthKit-powered trends, video and form capture, and an experimental ARKit body-tracking flow. Web is mostly display-first; Android is planned.
 
 ## What it does
-- Auth: Google/Apple OAuth and email/password via Supabase Auth with password reset, session restore, and optional mock user for dev.
 - Tracking: Offline-first foods and workouts using SQLite with sync queue, realtime backfill, conflict handling, and soft delete to Supabase.
 - Health: HealthKit permissions, summaries (steps, HR, weight), trend analysis, and historical bulk sync to Supabase; watch connectivity helpers included.
 - Form & media: ARKit body-tracking tab (pull-up/push-up rep detection, speech cues, Vision Camera overlay), video capture/upload to Supabase Storage, and a feed with signed URLs plus comments.
@@ -13,7 +12,7 @@ Form Factor is an iOS-first fitness and health app built with Expo and Supabase.
 ## Status and roadmap
 - Implemented: offline foods/workouts, HealthKit summaries/trends, video upload + feed, AI coach, push notification plumbing, Playwright auth flow, Jest unit scaffolding.
 - In progress: ARKit body-tracking polish and metrics upload, broader E2E coverage, telemetry/error-handling hardening.
-- Planned: Android support, richer social/feed interactions, ML recommendations, production push campaigns.
+- Planned: Richer social/feed interactions, ML recommendations, production push campaigns.
 
 ## Repository layout
 - `app/`: Expo Router screens (`(auth)`, `(tabs)`, `(modals)`); ARKit scan and dashboard live here.
@@ -91,44 +90,3 @@ sequenceDiagram
 - HealthKit sync/trends: `docs/HEALTHKIT_SYNC_AND_TRENDS_GUIDE.md` and `docs/HEALTHKIT_SYNC_QUICK_START.md`.
 - Platform-specific/native tips: `docs/PLATFORM_SPECIFIC_CODE_GUIDE.md`, `docs/WATCH_APP_GUIDE.md`.
 - CI/CD and releases: `docs/CI-CD.md`, `docs/TESTFLIGHT_WORKFLOW.md`, `docs/TESTFLIGHT_RELEASE.md`.
-
-## Backstage Developer Portal (POC)
-
-A local Backstage instance provides:
-- **Catalog**: Browse Form Factor components (app, backend, edge functions, native modules)
-- **TechDocs**: Read internal docs rendered from `docs/` folder
-- **Scaffolder**: Create new Supabase edge functions from a template
-- **CI/CD**: View GitHub Actions workflow status per entity
-
-### Running Locally
-
-1. Set up Backstage app (one-time):
-   ```bash
-   cd ~/Projects
-   npx @backstage/create-app@latest --path backstage-form-factor
-   ```
-   Follow the configuration steps in `backstage/CONFIG.md`.
-
-2. Set up GitHub token:
-   ```bash
-   export GITHUB_TOKEN=ghp_xxxxx  # PAT with repo scope
-   ```
-
-3. Start Backstage:
-   ```bash
-   cd ~/Projects/backstage-form-factor
-   yarn dev
-   ```
-
-4. Open http://localhost:3000
-
-### What This Demonstrates
-
-| Feature | Location | What You See |
-|---------|----------|--------------|
-| Catalog | /catalog | 5 entities with dependencies visualized |
-| TechDocs | /docs/default/component/form-factor-app | Rendered ARKit, HealthKit guides |
-| Scaffolder | /create | "Create Supabase Edge Function" template |
-| CI/CD | /catalog/default/component/form-factor-app/ci-cd | GitHub Actions runs |
-
-Form Factor stays iOS-first with web as read-only dashboards; Android and richer social features come after MVP stability.
