@@ -44,6 +44,7 @@
   },
   "resolutions": {
     "framer-motion": "^12.18.1",
+    "expo-font": "14.0.11",
     "expo-file-system": "19.0.16",
     "expo-web-browser": "15.0.8",
     "expo-constants": "18.0.13",
@@ -104,7 +105,7 @@
     "expo-media-library": "~18.2.1",
     "expo-network": "^8.0.8",
     "expo-notifications": "~0.32.16",
-    "expo-router": "~6.0.22",
+    "expo-router": "~6.0.23",
     "expo-speech": "^14.0.8",
     "expo-sqlite": "^16.0.10",
     "expo-status-bar": "~3.0.9",
@@ -151,7 +152,7 @@
     "expo-module-scripts": "^5.0.8",
     "hono": "4.11.4",
     "husky": "^9.1.7",
-    "jest-expo": "^54.0.16",
+    "jest-expo": "~54.0.17",
     "knip": "^5.82.1",
     "patch-package": "^8.0.1",
     "react-test-renderer": "19.2.3"
