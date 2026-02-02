@@ -36,4 +36,8 @@ describe('watch target config', () => {
     expect(infoPlist).toContain('<key>NSHealthShareUsageDescription</key>');
     expect(infoPlist).toContain('<key>NSHealthUpdateUsageDescription</key>');
   });
+
+  it('sets an explicit watchOS deployment target', () => {
+    expect(config.deploymentTarget).toBe('10.0');
+  });
 });
