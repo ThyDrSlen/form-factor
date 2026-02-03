@@ -7,6 +7,10 @@
   <key>WKApplication</key>
   <true/>
   <key>WKCompanionAppBundleIdentifier</key>
-  <string>com.slenthekid.formfactoreas</string>
+  <string>com.slenthekid.form-factor-eas</string>
+  <key>NSHealthShareUsageDescription</key>
+  <string>This app reads steps, heart rate (resting and variability), VO2 Max, sleep, respiratory rate, walking HR, cardio metrics, and sex/birth year to tailor recovery and training insights.</string>
+  <key>NSHealthUpdateUsageDescription</key>
+  <string>This app writes workout data to record your activity.</string>
 </dict>
 </plist>
