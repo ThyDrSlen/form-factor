@@ -149,3 +149,6 @@ supabase/.temp/
 
 # Scripts logs
 scripts/*.csv
+
+# EAS local credentials (generated in CI)
+credentials.json
