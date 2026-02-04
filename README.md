@@ -20,7 +20,6 @@ Form Factor is an iOS-first fitness and health app built with Expo and Supabase.
 - `modules/arkit-body-tracker/`: custom native module for ARKit.
 - `supabase/`: migrations and Edge Functions (`coach`, `notify`), plus storage bucket policies.
 - `scripts/`: env/setup helpers, native build utilities, and repair scripts (UUID fixes, pose plugin, etc.).
-- Tooling configs (Babel, Metro, Tailwind, ESLint, Playwright, custom `tslib` shim) live in `etc/`; root stubs re-export them.
 
 ## Getting started (local)
 1) Install deps: `bun install`.  
