@@ -121,6 +121,7 @@ jobs:
         with:
           expo-version: latest
           eas-version: latest
+          packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Verify EAS configuration (iOS only)
@@ -167,6 +168,7 @@ jobs:
         with:
           expo-version: latest
           eas-version: latest
+          packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Setup Supabase CLI
@@ -253,6 +255,7 @@ jobs:
         with:
           expo-version: latest
           eas-version: latest
+          packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Setup Supabase CLI
