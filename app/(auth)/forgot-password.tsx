@@ -2,27 +2,85 @@ import { View, StyleSheet, ScrollView, KeyboardAvoidingView, TouchableOpacity } 
 import { Text, TextInput, Button } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import * as Linking from 'expo-linking';
 import { useState } from 'react';
 import { errorWithTs } from '@/lib/logger';
 import { getPlatformValue } from '@/lib/platform-utils';
+import { supabase } from '@/lib/supabase';
+import { createError, logError, mapToUserMessage } from '@/lib/services/ErrorHandler';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const router = useRouter();
+
+  const mapResetErrorMessage = (error: unknown): string => {
+    const status = typeof error === 'object' && error !== null && 'status' in error
+      ? Number((error as { status?: unknown }).status)
+      : undefined;
+    const rawMessage = error instanceof Error
+      ? error.message
+      : typeof error === 'object' && error !== null && 'message' in error
+        ? String((error as { message?: unknown }).message ?? 'Failed to send reset email')
+        : 'Failed to send reset email';
+    const message = rawMessage.toLowerCase();
+
+    if (status === 429) {
+      return 'Too many reset attempts. Please wait a minute and try again.';
+    }
+
+    if (status && status >= 500) {
+      return 'Reset service is temporarily unavailable. Please try again shortly.';
+    }
+
+    if (message.includes('network') || message.includes('fetch')) {
+      return mapToUserMessage(
+        createError('network', 'RESET_PASSWORD_NETWORK_ERROR', rawMessage, {
+          retryable: true,
+          severity: 'warning',
+          details: error,
+        })
+      );
+    }
+
+    if (message.includes('invalid') || message.includes('email')) {
+      return 'Please enter a valid email address.';
+    }
+
+    return mapToUserMessage(
+      createError('auth', 'RESET_PASSWORD_FAILED', rawMessage, {
+        retryable: true,
+        severity: 'error',
+        details: error,
+      })
+    );
+  };
 
   const handleResetPassword = async () => {
     try {
       setLoading(true);
-      // TODO: Implement password reset logic
-      // This is where you would call your auth provider's password reset function
-      // For now, we'll just simulate a successful response
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      setErrorMessage(null);
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: Linking.createURL('/reset-password'),
+      });
+
+      if (error) {
+        throw error;
+      }
+
       setEmailSent(true);
     } catch (error) {
       errorWithTs('Password reset error:', error);
-      // Handle error (show error message to user)
+      const appError = createError('auth', 'RESET_PASSWORD_FAILED', 'Failed to send reset email', {
+        retryable: true,
+        severity: 'error',
+        details: error,
+      });
+      logError(appError, { feature: 'auth', location: 'forgot-password' });
+      setErrorMessage(mapResetErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -32,7 +90,7 @@ export default function ForgotPasswordScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.inner}>
-          <Text variant="headlineMedium" style={styles.title}>Check Your Email</Text>
+          <Text testID="forgot-password-success-message" variant="headlineMedium" style={styles.title}>Check Your Email</Text>
           <Text style={styles.message}>
             We&apos;ve sent password reset instructions to {email}. Please check your email and follow the instructions to reset your password.
           </Text>
@@ -66,6 +124,7 @@ export default function ForgotPasswordScreen() {
             
             <View style={styles.form}>
               <TextInput
+                testID="forgot-password-email-input"
                 label="Email"
                 value={email}
                 onChangeText={setEmail}
@@ -77,6 +136,7 @@ export default function ForgotPasswordScreen() {
               />
               
               <Button 
+                testID="forgot-password-submit-button"
                 mode="contained" 
                 onPress={handleResetPassword}
                 loading={loading}
@@ -85,6 +145,12 @@ export default function ForgotPasswordScreen() {
               >
                 Send Reset Link
               </Button>
+
+              {errorMessage ? (
+                <Text testID="forgot-password-error-message" style={styles.errorText}>
+                  {errorMessage}
+                </Text>
+              ) : null}
               
               <View style={styles.linksContainer}>
                 <TouchableOpacity 
@@ -156,5 +222,10 @@ const styles = StyleSheet.create({
     marginBottom: 32,
     color: '#9AACD1',
     lineHeight: 22,
+  },
+  errorText: {
+    color: '#ff7b7b',
+    marginTop: 12,
+    textAlign: 'center',
   },
 });
