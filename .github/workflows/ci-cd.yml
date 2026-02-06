@@ -293,6 +293,28 @@ jobs:
       - name: Build and submit iOS production
         run: eas build --platform ios --profile production --auto-submit --non-interactive
 
+      - name: Ensure hermesc is available
+        run: |
+          set -euo pipefail
+          HERMESC_SRC="$(find node_modules/hermes-compiler -type f -name hermesc 2>/dev/null | head -n 1 || true)"
+          if [ -z "$HERMESC_SRC" ]; then
+            echo "hermesc not found under node_modules/hermes-compiler"
+            ls -la node_modules/hermes-compiler/hermesc || true
+            exit 1
+          fi
+          if [[ "$HERMESC_SRC" == *linux* ]]; then
+            HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/linux64-bin"
+          else
+            if [ -d "node_modules/react-native/sdks/hermesc/macos-bin" ]; then
+              HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/macos-bin"
+            else
+              HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/osx-bin"
+            fi
+          fi
+          mkdir -p "$HERMESC_DEST_DIR"
+          ln -sf "$PWD/$HERMESC_SRC" "$HERMESC_DEST_DIR/hermesc"
+          chmod +x "$HERMESC_DEST_DIR/hermesc"
+
       - name: Deploy OTA update
         run: |
           eas update --branch production --message "Production deployment from ${{ github.sha }}"
