@@ -60,7 +60,7 @@ jobs:
         run: bun run lint
 
       - name: Run unit tests
-        run: bun run test -- --passWithNoTests
+        run: bun run test -- --coverage --coverageReporters=text-summary
 
       - name: Check for unused dependencies
         run: |
