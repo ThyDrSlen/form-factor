@@ -211,7 +211,7 @@ jobs:
 
       - name: Deploy OTA update
         run: |
-          eas update --branch staging --message "Staging deployment from ${{ github.sha }}"
+          eas update --branch staging --platform ios --message "Staging deployment from ${{ github.sha }}"
 
   # Job 5: Production Deployment
   deploy-production:
@@ -317,7 +317,7 @@ jobs:
 
       - name: Deploy OTA update
         run: |
-          eas update --branch production --message "Production deployment from ${{ github.sha }}"
+          eas update --branch production --platform ios --message "Production deployment from ${{ github.sha }}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
