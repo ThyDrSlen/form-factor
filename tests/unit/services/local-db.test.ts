@@ -62,37 +62,16 @@ describe('LocalDatabase', () => {
         closeAsync: mockCloseAsync,
       };
 
-      // Fail twice, then succeed - need to reset initPromise between attempts
+      // ensureInitialized retries internally: fail twice, then recover.
       mockOpenDatabaseAsync
         .mockRejectedValueOnce(new Error('Database locked'))
-        .mockResolvedValueOnce(mockDb);
-
-      // First attempt fails
-      const result1 = await (localDB as any).ensureInitialized();
-      expect(result1.ok).toBe(false);
-
-      // Reset state for retry
-      (localDB as any).db = null;
-      (localDB as any).initPromise = null;
-
-      mockOpenDatabaseAsync
         .mockRejectedValueOnce(new Error('Database busy'))
         .mockResolvedValueOnce(mockDb);
 
-      // Second attempt fails
-      const result2 = await (localDB as any).ensureInitialized();
-      expect(result2.ok).toBe(false);
-
-      // Reset state for final success
-      (localDB as any).db = null;
-      (localDB as any).initPromise = null;
-
-      mockOpenDatabaseAsync.mockResolvedValueOnce(mockDb);
-
-      // Third attempt succeeds
-      const result3 = await (localDB as any).ensureInitialized();
-      expect(result3.ok).toBe(true);
-      expect(result3.data).toBe(mockDb);
+      const result = await (localDB as any).ensureInitialized();
+      expect(result.ok).toBe(true);
+      expect(result.data).toBe(mockDb);
+      expect(mockOpenDatabaseAsync).toHaveBeenCalledTimes(3);
     });
 
     it('should return typed error after max retries exceeded', async () => {
