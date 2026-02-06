@@ -50,7 +50,7 @@
       "ios": {
         "buildConfiguration": "Release",
         "image": "macos-sequoia-15.5-xcode-26.0",
-        "credentialsSource": "local"
+        "credentialsSource": "remote"
       },
       "env": {
         "APP_VARIANT": "production",
