@@ -11,10 +11,6 @@ const DEFAULT_SIGNED_URL_SECONDS = 60 * 60 * 24; // 24 hours
 const DEFAULT_MAX_UPLOAD_BYTES = 250 * 1024 * 1024; // 250MB
 const DEFAULT_MAX_THUMBNAIL_BYTES = 80 * 1024 * 1024; // 80MB
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || Constants.expoConfig?.extra?.supabaseUrl;
-const SUPABASE_ANON_KEY =
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || Constants.expoConfig?.extra?.supabaseAnonKey;
-
 export type VideoRecord = {
   id: string;
   user_id: string;
@@ -49,17 +45,22 @@ async function ensureUser() {
 }
 
 function getSupabaseUrl() {
-  if (!SUPABASE_URL) {
+  const constantsAny = Constants as any;
+  const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl || constantsAny.default?.expoConfig?.extra?.supabaseUrl;
+  if (!supabaseUrl) {
     throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL. Check your environment config.');
   }
-  return SUPABASE_URL;
+  return supabaseUrl;
 }
 
 function getSupabaseAnonKey() {
-  if (!SUPABASE_ANON_KEY) {
+  const constantsAny = Constants as any;
+  const supabaseAnonKey =
+    Constants.expoConfig?.extra?.supabaseAnonKey || constantsAny.default?.expoConfig?.extra?.supabaseAnonKey;
+  if (!supabaseAnonKey) {
     throw new Error('Missing EXPO_PUBLIC_SUPABASE_ANON_KEY. Check your environment config.');
   }
-  return SUPABASE_ANON_KEY;
+  return supabaseAnonKey;
 }
 
 function getFileExtension(uri: string) {
@@ -175,6 +176,10 @@ export async function uploadWorkoutVideo(opts: {
     usePrivateThumbnail = false,
     metrics,
   } = opts;
+
+  // Validate env before auth/upload calls so failures are explicit and actionable.
+  getSupabaseUrl();
+  getSupabaseAnonKey();
 
   const user = await ensureUser();
   const fileInfo = await FileSystem.getInfoAsync(fileUri);
