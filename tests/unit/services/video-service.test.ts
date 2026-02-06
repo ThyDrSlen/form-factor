@@ -1,8 +1,6 @@
-import {
-  uploadWorkoutVideo,
-  getSignedVideoUrl,
-  listVideos,
-} from '../../../lib/services/video-service';
+import Constants from 'expo-constants';
+import { uploadWorkoutVideo } from '../../../lib/services/video-service';
+import { supabase } from '@/lib/supabase';
 
 const mockUploadAsync = jest.fn();
 const mockGetInfoAsync = jest.fn();
@@ -11,46 +9,94 @@ const mockGetThumbnailAsync = jest.fn();
 jest.mock('expo-file-system/legacy', () => ({
   uploadAsync: (...args: any[]) => mockUploadAsync(...args),
   getInfoAsync: (...args: any[]) => mockGetInfoAsync(...args),
+  FileSystemUploadType: {
+    BINARY_CONTENT: 'binary-content',
+  },
 }));
 
 jest.mock('expo-video-thumbnails', () => ({
   getThumbnailAsync: (...args: any[]) => mockGetThumbnailAsync(...args),
 }));
 
-// Setup Supabase mock inline to avoid hoisting issues
-const mockSupabaseAuth = {
-  getUser: jest.fn(),
-  getSession: jest.fn(),
+jest.mock('@/lib/supabase', () => {
+  const auth = {
+    getUser: jest.fn(),
+    getSession: jest.fn(),
+  };
+  return {
+    supabase: {
+      auth,
+      storage: {
+        from: jest.fn(),
+      },
+      from: jest.fn(),
+    },
+  };
+});
+
+const mockSupabase = supabase as any;
+const mockSupabaseAuth = mockSupabase.auth as {
+  getUser: jest.Mock;
+  getSession: jest.Mock;
 };
 
-jest.mock('@/lib/supabase', () => ({
-  supabase: {
-    auth: mockSupabaseAuth,
-    storage: {
-      from: jest.fn(() => ({
-        createSignedUrl: jest.fn().mockResolvedValue({ data: { signedUrl: 'https://test.com/video.mp4' } }),
-        remove: jest.fn().mockResolvedValue({ error: null }),
-      })),
-    },
-    from: jest.fn(() => ({
-      select: jest.fn().mockReturnThis(),
-      insert: jest.fn().mockReturnThis(),
-      delete: jest.fn().mockReturnThis(),
-      eq: jest.fn().mockReturnThis(),
-      order: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      maybeSingle: jest.fn().mockResolvedValue({ data: null }),
-      single: jest.fn().mockResolvedValue({ data: { id: 'test-video-id' } }),
-    })),
-  },
-}));
+const getExpoExtras = () => {
+  const constantsAny = Constants as any;
+  return [constantsAny.expoConfig?.extra, constantsAny.default?.expoConfig?.extra].filter(Boolean);
+};
+
+const setSupabaseConfig = (url: string | undefined, anonKey: string | undefined) => {
+  getExpoExtras().forEach((extra) => {
+    extra.supabaseUrl = url;
+    extra.supabaseAnonKey = anonKey;
+  });
+};
+
+const clearSupabaseConfigKey = (key: 'supabaseUrl' | 'supabaseAnonKey') => {
+  getExpoExtras().forEach((extra) => {
+    delete extra[key];
+  });
+};
+
+const configureSupabaseMocks = () => {
+  mockSupabase.storage.from.mockImplementation(() => ({
+    createSignedUrl: jest.fn().mockResolvedValue({ data: { signedUrl: 'https://test.com/video.mp4' }, error: null }),
+    remove: jest.fn().mockResolvedValue({ error: null }),
+  }));
+
+  mockSupabase.from.mockImplementation(() => ({
+    select: jest.fn().mockReturnThis(),
+    insert: jest.fn().mockReturnThis(),
+    delete: jest.fn().mockReturnThis(),
+    eq: jest.fn().mockReturnThis(),
+    order: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+    single: jest.fn().mockResolvedValue({
+      data: {
+        id: 'test-video-id',
+        user_id: 'test-user-id',
+        duration_seconds: 30,
+        exercise: 'Push-ups',
+      },
+      error: null,
+    }),
+  }));
+};
 
 describe('video-service env validation', () => {
   const originalEnv = process.env;
+  const firstExtra = getExpoExtras()[0] ?? {};
+  const originalExtra = { ...firstExtra };
 
   beforeEach(() => {
     jest.clearAllMocks();
     process.env = { ...originalEnv };
+    setSupabaseConfig(
+      originalExtra.supabaseUrl ?? 'https://test.supabase.co',
+      originalExtra.supabaseAnonKey ?? 'test-anon-key'
+    );
+    configureSupabaseMocks();
     mockSupabaseAuth.getUser.mockResolvedValue({
       data: { user: { id: 'test-user-id' } },
       error: null,
@@ -63,10 +109,11 @@ describe('video-service env validation', () => {
 
   afterEach(() => {
     process.env = originalEnv;
+    setSupabaseConfig(originalExtra.supabaseUrl, originalExtra.supabaseAnonKey);
   });
 
   it('fails fast with clear error when SUPABASE_URL is missing', async () => {
-    delete (process.env as any).EXPO_PUBLIC_SUPABASE_URL;
+    clearSupabaseConfigKey('supabaseUrl');
 
     mockGetInfoAsync.mockResolvedValue({
       exists: true,
@@ -81,7 +128,7 @@ describe('video-service env validation', () => {
   });
 
   it('fails fast with clear error when SUPABASE_ANON_KEY is missing', async () => {
-    delete (process.env as any).EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    clearSupabaseConfigKey('supabaseAnonKey');
 
     mockGetInfoAsync.mockResolvedValue({
       exists: true,
@@ -153,8 +200,16 @@ describe('video-service env validation', () => {
 });
 
 describe('video-service success paths', () => {
+  const firstExtra = getExpoExtras()[0] ?? {};
+  const originalExtra = { ...firstExtra };
+
   beforeEach(() => {
     jest.clearAllMocks();
+    setSupabaseConfig(
+      originalExtra.supabaseUrl ?? 'https://test.supabase.co',
+      originalExtra.supabaseAnonKey ?? 'test-anon-key'
+    );
+    configureSupabaseMocks();
     mockSupabaseAuth.getUser.mockResolvedValue({
       data: { user: { id: 'test-user-id' } },
       error: null,

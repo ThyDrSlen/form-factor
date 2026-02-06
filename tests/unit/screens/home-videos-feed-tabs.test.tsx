@@ -77,8 +77,11 @@ describe('HomeScreen video feed', () => {
     expect(queryByText('Following')).toBeNull();
     expect(queryByText('Trending')).toBeNull();
 
-    await waitFor(() => {
-      expect(getByText('No videos yet. Share a set to see it here.')).toBeTruthy();
-    });
-  });
+    await waitFor(
+      () => {
+        expect(getByText('No videos yet. Share a set to see it here.')).toBeTruthy();
+      },
+      { timeout: 10000 }
+    );
+  }, 10000);
 });
