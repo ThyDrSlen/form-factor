@@ -59,6 +59,11 @@ export default function ForgotPasswordScreen() {
   };
 
   const handleResetPassword = async () => {
+    if (!email.trim() || !email.includes('@')) {
+      setErrorMessage('Please enter a valid email address.');
+      return;
+    }
+
     try {
       setLoading(true);
       setErrorMessage(null);
@@ -94,9 +99,9 @@ export default function ForgotPasswordScreen() {
           <Text style={styles.message}>
             We&apos;ve sent password reset instructions to {email}. Please check your email and follow the instructions to reset your password.
           </Text>
-          <Button 
-            mode="contained" 
-            onPress={() => router.push('/auth/sign-in')}
+          <Button
+            mode="contained"
+            onPress={() => router.push('/sign-in')}
             style={styles.button}
           >
             Back to Sign In
@@ -108,11 +113,11 @@ export default function ForgotPasswordScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={getPlatformValue({ ios: 'padding', default: 'height' })}
         style={styles.keyboardAvoidingView}
       >
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={styles.scrollViewContent}
           keyboardShouldPersistTaps="handled"
         >
@@ -121,7 +126,7 @@ export default function ForgotPasswordScreen() {
             <Text variant="bodyMedium" style={styles.subtitle}>
               Enter your email address and we&apos;ll send you a link to reset your password.
             </Text>
-            
+
             <View style={styles.form}>
               <TextInput
                 testID="forgot-password-email-input"
@@ -134,10 +139,10 @@ export default function ForgotPasswordScreen() {
                 style={styles.input}
                 mode="outlined"
               />
-              
-              <Button 
+
+              <Button
                 testID="forgot-password-submit-button"
-                mode="contained" 
+                mode="contained"
                 onPress={handleResetPassword}
                 loading={loading}
                 disabled={!email || loading}
@@ -151,10 +156,10 @@ export default function ForgotPasswordScreen() {
                   {errorMessage}
                 </Text>
               ) : null}
-              
+
               <View style={styles.linksContainer}>
-                <TouchableOpacity 
-                  onPress={() => router.push('/auth/sign-in')}
+                <TouchableOpacity
+                  onPress={() => router.push('/sign-in')}
                 >
                   <Text style={styles.link}>
                     Back to Sign In

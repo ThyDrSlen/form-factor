@@ -1,6 +1,7 @@
 import { OAuthHandler } from '@/lib/services/OAuthHandler';
 import { createError, mapToUserMessage, logError } from '@/lib/services/ErrorHandler';
 import { AuthError, Session, User } from '@supabase/supabase-js';
+import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { SessionManager } from '@/lib/services/SessionManager';
@@ -455,8 +456,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('[Auth] Attempting to sign in with email:', email);
       
       // Check if Supabase client is properly configured
-      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || Constants.expoConfig?.extra?.supabaseUrl;
+      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || Constants.expoConfig?.extra?.supabaseAnonKey;
       
       if (!supabaseUrl || !supabaseKey) {
         console.error('[Auth] Missing Supabase environment variables');
