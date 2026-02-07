@@ -28,6 +28,7 @@ import {
 } from '@/lib/services/healthkit/health-bulk-sync';
 import { localDB } from '@/lib/services/database/local-db';
 import { syncService } from '@/lib/services/database/sync-service';
+import { createError, logError } from '@/lib/services/ErrorHandler';
 import { useAuth } from './AuthContext';
 import { useWorkouts } from './WorkoutsContext';
 import { useNetwork } from './NetworkContext';
@@ -99,6 +100,24 @@ const DEFAULT_PERMISSIONS: HealthKitPermissions = {
   write: ['workouts'],
 };
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function reportHealthKitError(code: string, message: string, details: unknown): void {
+  logError(
+    createError('unknown', code, message, {
+      details,
+      severity: 'warning',
+      retryable: false,
+    }),
+    {
+      feature: 'app',
+      location: 'contexts/HealthKitContext',
+    }
+  );
+}
+
 export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { isWorkoutInProgress } = useWorkouts();
@@ -164,8 +183,9 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
       const st = await getPermissionStatusAsync(DEFAULT_PERMISSIONS);
       console.log('[HealthKitContext] refresh: auth status =', st);
       setStatus(st);
-    } catch (e: any) {
-      setError(e?.message ?? 'Failed to query HealthKit');
+    } catch (error: unknown) {
+      reportHealthKitError('HEALTHKIT_REFRESH_FAILED', 'Failed to query HealthKit availability', error);
+      setError(getErrorMessage(error, 'Failed to query HealthKit'));
     } finally {
       setIsLoading(false);
     }
@@ -371,9 +391,10 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         setDistanceSwimmingHistory([]);
         setDataSource('none');
         setLastUpdatedAt(null);
-      } catch (e: any) {
+      } catch (error: unknown) {
         // Non-fatal; keep UI graceful
-        setError((prev) => prev ?? e?.message ?? 'Failed to read HealthKit metrics');
+        reportHealthKitError('HEALTHKIT_METRICS_LOAD_FAILED', 'Failed to read HealthKit metrics', error);
+        setError((prev) => prev ?? getErrorMessage(error, 'Failed to read HealthKit metrics'));
       }
     }
 
@@ -414,8 +435,13 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
       console.log('[HealthKitContext] requestPermissions: status =', st);
       setStatus(st);
       setIsAvailable(st.isAvailable);
-    } catch (e: any) {
-      setError(e?.message ?? 'Failed to request HealthKit permissions');
+    } catch (error: unknown) {
+      reportHealthKitError(
+        'HEALTHKIT_PERMISSION_REQUEST_FAILED',
+        'Failed to request HealthKit permissions',
+        error
+      );
+      setError(getErrorMessage(error, 'Failed to request HealthKit permissions'));
     } finally {
       setIsLoading(false);
     }
@@ -424,13 +450,21 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const enableHighFrequency = useCallback(() => {
     highFrequencyRef.current = true;
     // take effect immediately
-    try { rescheduleRef.current?.(); } catch {}
+    try {
+      rescheduleRef.current?.();
+    } catch (error) {
+      reportHealthKitError('HEALTHKIT_RESCHEDULE_FAILED', 'Failed to enable high-frequency polling', error);
+    }
   }, []);
 
   const disableHighFrequency = useCallback(() => {
     highFrequencyRef.current = false;
     // take effect immediately
-    try { rescheduleRef.current?.(); } catch {}
+    try {
+      rescheduleRef.current?.();
+    } catch (error) {
+      reportHealthKitError('HEALTHKIT_RESCHEDULE_FAILED', 'Failed to disable high-frequency polling', error);
+    }
   }, []);
 
   // Auto-request Health permissions on iOS once, so users aren't stuck until they tap a button.
@@ -490,7 +524,11 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         
         // Refresh the metrics after sync
         setTimeout(() => {
-          try { rescheduleRef.current?.(); } catch {}
+          try {
+            rescheduleRef.current?.();
+          } catch (error) {
+            reportHealthKitError('HEALTHKIT_RESCHEDULE_AFTER_SYNC_FAILED', 'Failed to reschedule metrics after sync', error);
+          }
         }, 1000);
       } else {
         console.warn('[HealthKitContext] Bulk sync completed with errors', result);

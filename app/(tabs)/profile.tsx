@@ -11,8 +11,8 @@ import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { deleteVideo, getVideoById, listVideos, toggleVideoLike, VideoWithUrls } from '@/lib/services/video-service';
 import { router } from 'expo-router';
 import Constants from 'expo-constants';
-import { syncService } from '@/lib/services/database/sync-service';
-import { localDB } from '@/lib/services/database/local-db';
+import { syncService, type SyncStatus } from '@/lib/services/database/sync-service';
+import { localDB, type SyncQueueItem } from '@/lib/services/database/local-db';
 import { fixInvalidUUIDs } from '@/scripts/fix-invalid-uuids';
 import { useDebugInfo } from '@/hooks/use-debug-info';
 import {
@@ -34,6 +34,15 @@ type FeedVideoPlayerProps = {
   overlaySummary: string;
   overlayTime: string;
 };
+
+type MenuIconName = React.ComponentProps<typeof Ionicons>['name'];
+
+interface MenuItemProps {
+  icon: MenuIconName;
+  title: string;
+  onPress: () => void;
+  danger?: boolean;
+}
 
 const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: FeedVideoPlayerProps) => {
   const [posterVisible, setPosterVisible] = useState(Boolean(thumbnailUrl));
@@ -211,6 +220,7 @@ export default function ProfileScreen() {
   const [hasFetchedOnce, setHasFetchedOnce] = useState(false);
   const [likedVideos, setLikedVideos] = useState<Record<string, boolean>>({});
   const { debugInfo, loading: debugLoading, refresh: refreshDebugInfo } = useDebugInfo();
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => syncService.getSyncStatus());
   const [isSavingGoals, setIsSavingGoals] = useState(false);
   const [calories, setCalories] = useState('');
   const [protein, setProtein] = useState('');
@@ -243,6 +253,16 @@ export default function ProfileScreen() {
       loadVideos();
     }
   }, [hasFetchedOnce, loadVideos, loadingVideos]);
+
+  useEffect(() => {
+    const unsubscribe = syncService.onSyncStatusChange((nextStatus) => {
+      setSyncStatus(nextStatus);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const unsubscribe = subscribeToCommentEvents((event) => {
@@ -558,7 +578,7 @@ export default function ProfileScreen() {
         return;
       }
       
-      const queueDetails = queue.map((item: any, idx: number) => 
+      const queueDetails = queue.map((item: SyncQueueItem, idx: number) => 
         `${idx + 1}. ${item.table_name} ${item.operation} (retries: ${item.retry_count})`
       ).join('\n');
       
@@ -700,7 +720,7 @@ Generated: ${new Date().toISOString()}
     }
   };
 
-  const MenuItem = ({ icon, title, onPress, danger = false }: any) => (
+  const MenuItem = ({ icon, title, onPress, danger = false }: MenuItemProps) => (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
       <LinearGradient
         colors={danger ? ['rgba(255, 59, 48, 0.1)', 'rgba(255, 59, 48, 0.05)'] : ['rgba(76, 140, 255, 0.05)', 'rgba(76, 140, 255, 0.02)']}
@@ -809,6 +829,16 @@ Generated: ${new Date().toISOString()}
                 <Ionicons name="refresh" size={16} color="#4C8CFF" />
                 <Text style={styles.refreshText}>Refresh</Text>
               </TouchableOpacity>
+              <Text
+                style={{
+                  marginTop: 10,
+                  color: syncStatus.state === 'error' ? '#FF6B6B' : '#9AACD1',
+                  fontSize: 12,
+                }}
+              >
+                {`Sync: ${syncStatus.state.toUpperCase()} • Queue: ${syncStatus.queueSize}`}
+                {syncStatus.lastError ? ` • ${syncStatus.lastError}` : ''}
+              </Text>
             </LinearGradient>
           )}
           

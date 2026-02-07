@@ -362,14 +362,24 @@ export default function HomeScreen() {
   }, []);
 
   const coachContext = useMemo(
-    () => ({
-      profile: {
-        id: user?.id,
-        name: (user?.user_metadata as any)?.full_name || user?.user_metadata?.name || null,
-        email: user?.email ?? null,
-      },
-      focus: 'fitness_coach',
-    }),
+    () => {
+      const metadata =
+        user?.user_metadata && typeof user.user_metadata === 'object'
+          ? (user.user_metadata as Record<string, unknown>)
+          : null;
+      const fullName =
+        (metadata && typeof metadata.full_name === 'string' ? metadata.full_name : null) ??
+        (metadata && typeof metadata.name === 'string' ? metadata.name : null);
+
+      return {
+        profile: {
+          id: user?.id,
+          name: fullName,
+          email: user?.email ?? null,
+        },
+        focus: 'fitness_coach',
+      };
+    },
     [user]
   );
 
@@ -398,7 +408,7 @@ export default function HomeScreen() {
       coachListRef.current?.scrollToEnd({ animated: true });
     } catch (err) {
       const appErr = err as AppError | null;
-      const hasDomain = appErr && (appErr as any).domain;
+      const hasDomain = Boolean(appErr && typeof appErr === 'object' && 'domain' in appErr);
       const fallback = 'Unable to reach the coach. Please try again.';
       setCoachError(hasDomain ? mapToUserMessage(appErr as AppError) : fallback);
     } finally {
