@@ -11,14 +11,21 @@
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		4E6EE1C5967EFB875411B8F2 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 516D41C5FA611A9C1968ECCB /* PrivacyInfo.xcprivacy */; };
 		781FB12A73F5C5E1DF311BEE /* libPods-formfactoreas.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E61449B41BFF986A144582AD /* libPods-formfactoreas.a */; };
+		96034806B63D478CA52D4CD4 /* Form Factor Watch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = E34BD3242EFE33C300DAB2CF /* Form Factor Watch Watch App.app */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		D05B03EC15F9099CDBA535CE /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AAE5FE0FDA1F83C12C9576D /* ExpoModulesProvider.swift */; };
 		DDD1303D5EDE538A1D05A8C9 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 516D41C5FA611A9C1968ECCB /* PrivacyInfo.xcprivacy */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
-		96034806B63D478CA52D4CD4 /* Form Factor Watch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = E34BD3242EFE33C300DAB2CF /* Form Factor Watch Watch App.app */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		B737ADD4F36D41D5B91D2446 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E34BD3232EFE33C200DAB2CF;
+			remoteInfo = "Form Factor Watch Watch App";
+		};
 		E34BD3312EFE33C400DAB2CF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
@@ -27,13 +34,6 @@
 			remoteInfo = "Form Factor Watch Watch App";
 		};
 		E34BD33B2EFE33C400DAB2CF /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = E34BD3232EFE33C200DAB2CF;
-			remoteInfo = "Form Factor Watch Watch App";
-		};
-		B737ADD4F36D41D5B91D2446 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
 			proxyType = 1;
@@ -617,7 +617,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.slenthekid.formfactoreas;
+				PRODUCT_BUNDLE_IDENTIFIER = com.slenthekid.form-factor-eas;
 				PRODUCT_NAME = formfactoreas;
 				SWIFT_OBJC_BRIDGING_HEADER = "formfactoreas/formfactoreas-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -653,7 +653,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.slenthekid.formfactoreas;
+				PRODUCT_BUNDLE_IDENTIFIER = com.slenthekid.form-factor-eas;
 				PRODUCT_NAME = formfactoreas;
 				STRIP_INSTALLED_PRODUCT = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "formfactoreas/formfactoreas-Bridging-Header.h";
@@ -713,10 +713,9 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
-				LD_RUNPATH_SEARCH_PATHS = (
-					/usr/lib/swift,
-					"$(inherited)",
+					LD_RUNPATH_SEARCH_PATHS = (
+						/usr/lib/swift,
+						"$(inherited)",
 				);
 				LIBRARY_SEARCH_PATHS = "$(SDKROOT)/usr/lib/swift\"$(inherited)\"";
 				MTL_ENABLE_DEBUG_INFO = YES;
@@ -774,10 +773,9 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
-				LD_RUNPATH_SEARCH_PATHS = (
-					/usr/lib/swift,
-					"$(inherited)",
+					LD_RUNPATH_SEARCH_PATHS = (
+						/usr/lib/swift,
+						"$(inherited)",
 				);
 				LIBRARY_SEARCH_PATHS = "$(SDKROOT)/usr/lib/swift\"$(inherited)\"";
 				MTL_ENABLE_DEBUG_INFO = NO;
@@ -787,23 +785,23 @@
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				STRIP_INSTALLED_PRODUCT = YES;
-				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				USE_HERMES = true;
-				VALIDATE_PRODUCT = YES;
-				VALID_ARCHS = arm64;
+					SWIFT_ENABLE_EXPLICIT_MODULES = NO;
+					TARGETED_DEVICE_FAMILY = "1,2";
+					USE_HERMES = true;
+					VALIDATE_PRODUCT = YES;
+				};
+				name = Release;
 			};
-			name = Release;
-		};
 		E34BD3422EFE33C400DAB2CF /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+					ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+					ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+					"ARCHS[sdk=watchos*]" = "arm64 arm64_32";
+					CLANG_ANALYZER_NONNULL = YES;
+					CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+					CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
 				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
@@ -817,7 +815,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Form Factor Watch";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.slenthekid.formfactoreas;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.slenthekid.form-factor-eas;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -827,7 +825,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.slenthekid.formfactoreas.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.slenthekid.form-factor-eas.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -837,22 +835,23 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 26.1;
+					SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+					SWIFT_VERSION = 5.0;
+					TARGETED_DEVICE_FAMILY = 4;
+					WATCHOS_DEPLOYMENT_TARGET = 10.0;
+				};
+				name = Debug;
 			};
-			name = Debug;
-		};
 		E34BD3432EFE33C400DAB2CF /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+					ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+					ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+					"ARCHS[sdk=watchos*]" = "arm64 arm64_32";
+					CLANG_ANALYZER_NONNULL = YES;
+					CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+					CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
 				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
@@ -867,7 +866,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Form Factor Watch";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.slenthekid.formfactoreas;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.slenthekid.form-factor-eas;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -876,7 +875,7 @@
 				MARKETING_VERSION = 1.0;
 				MTL_FAST_MATH = YES;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.slenthekid.formfactoreas.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.slenthekid.form-factor-eas.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -885,13 +884,13 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 26.1;
+					SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+					SWIFT_VERSION = 5.0;
+					TARGETED_DEVICE_FAMILY = 4;
+					WATCHOS_DEPLOYMENT_TARGET = 10.0;
+				};
+				name = Release;
 			};
-			name = Release;
-		};
 		E34BD3442EFE33C400DAB2CF /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -924,13 +923,13 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Form Factor Watch Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Form Factor Watch Watch App";
-				WATCHOS_DEPLOYMENT_TARGET = 26.1;
+					SWIFT_VERSION = 5.0;
+					TARGETED_DEVICE_FAMILY = 4;
+					TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Form Factor Watch Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Form Factor Watch Watch App";
+					WATCHOS_DEPLOYMENT_TARGET = 10.0;
+				};
+				name = Debug;
 			};
-			name = Debug;
-		};
 		E34BD3452EFE33C400DAB2CF /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -962,13 +961,13 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Form Factor Watch Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Form Factor Watch Watch App";
-				WATCHOS_DEPLOYMENT_TARGET = 26.1;
+					SWIFT_VERSION = 5.0;
+					TARGETED_DEVICE_FAMILY = 4;
+					TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Form Factor Watch Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Form Factor Watch Watch App";
+					WATCHOS_DEPLOYMENT_TARGET = 10.0;
+				};
+				name = Release;
 			};
-			name = Release;
-		};
 		E34BD3462EFE33C400DAB2CF /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1000,13 +999,13 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				TEST_TARGET_NAME = "Form Factor Watch Watch App";
-				WATCHOS_DEPLOYMENT_TARGET = 26.1;
+					SWIFT_VERSION = 5.0;
+					TARGETED_DEVICE_FAMILY = 4;
+					TEST_TARGET_NAME = "Form Factor Watch Watch App";
+					WATCHOS_DEPLOYMENT_TARGET = 10.0;
+				};
+				name = Debug;
 			};
-			name = Debug;
-		};
 		E34BD3472EFE33C400DAB2CF /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1037,13 +1036,13 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				TEST_TARGET_NAME = "Form Factor Watch Watch App";
-				WATCHOS_DEPLOYMENT_TARGET = 26.1;
+					SWIFT_VERSION = 5.0;
+					TARGETED_DEVICE_FAMILY = 4;
+					TEST_TARGET_NAME = "Form Factor Watch Watch App";
+					WATCHOS_DEPLOYMENT_TARGET = 10.0;
+				};
+				name = Release;
 			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */

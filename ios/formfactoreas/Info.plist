@@ -30,7 +30,7 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>formfactoreas</string>
-          <string>com.slenthekid.formfactoreas</string>
+          <string>com.slenthekid.form-factor-eas</string>
         </array>
       </dict>
     </array>
@@ -102,6 +102,6 @@
     <key>UIViewControllerBasedStatusBarAppearance</key>
     <false/>
     <key>WKCompanionAppBundleIdentifier</key>
-    <string>com.slenthekid.formfactoreas</string>
+    <string>com.slenthekid.form-factor-eas</string>
   </dict>
 </plist>
