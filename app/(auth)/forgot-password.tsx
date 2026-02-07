@@ -5,24 +5,31 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { errorWithTs } from '@/lib/logger';
 import { getPlatformValue } from '@/lib/platform-utils';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const router = useRouter();
+  const { resetPassword } = useAuth();
 
   const handleResetPassword = async () => {
+    if (!email.trim() || !email.includes('@')) {
+      setErrorMessage('Please enter a valid email address.');
+      return;
+    }
+
     try {
       setLoading(true);
-      // TODO: Implement password reset logic
-      // This is where you would call your auth provider's password reset function
-      // For now, we'll just simulate a successful response
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      setErrorMessage('');
+      const { error } = await resetPassword(email.trim());
+      if (error) throw error;
       setEmailSent(true);
     } catch (error) {
       errorWithTs('Password reset error:', error);
-      // Handle error (show error message to user)
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to send reset email. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -38,7 +45,7 @@ export default function ForgotPasswordScreen() {
           </Text>
           <Button 
             mode="contained" 
-            onPress={() => router.push('/auth/sign-in')}
+            onPress={() => router.push('/sign-in')}
             style={styles.button}
           >
             Back to Sign In
@@ -65,6 +72,9 @@ export default function ForgotPasswordScreen() {
             </Text>
             
             <View style={styles.form}>
+              {!!errorMessage && (
+                <Text style={styles.errorText}>{errorMessage}</Text>
+              )}
               <TextInput
                 label="Email"
                 value={email}
@@ -88,7 +98,7 @@ export default function ForgotPasswordScreen() {
               
               <View style={styles.linksContainer}>
                 <TouchableOpacity 
-                  onPress={() => router.push('/auth/sign-in')}
+                  onPress={() => router.push('/sign-in')}
                 >
                   <Text style={styles.link}>
                     Back to Sign In
@@ -156,5 +166,10 @@ const styles = StyleSheet.create({
     marginBottom: 32,
     color: '#9AACD1',
     lineHeight: 22,
+  },
+  errorText: {
+    color: '#FCA5A5',
+    marginBottom: 12,
+    textAlign: 'center',
   },
 });

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Image, KeyboardAvoidingView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
@@ -11,6 +12,7 @@ type FormData = {
 };
 
 export default function SignInScreen() {
+  const router = useRouter();
   const [isSignUp, setIsSignUp] = useState(false);
   const [isMagicLink, setIsMagicLink] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -99,7 +101,9 @@ export default function SignInScreen() {
           setErrorMessage(getErrorMessage(error));
           return;
         }
-        Alert.alert('Success', 'Check your email to confirm your account!');
+        setIsSignUp(false);
+        setFormData((prev) => ({ ...prev, password: '' }));
+        Alert.alert('Success', 'Check your email to confirm your account, then sign in.');
       } else {
         const { error } = await signInWithEmail(formData.email, formData.password);
         if (error) {
@@ -211,6 +215,21 @@ export default function SignInScreen() {
               />
             </View>
 
+            {isSignUp && !isMagicLink && (
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Full Name"
+                  placeholderTextColor="#6781A6"
+                  value={formData.fullName}
+                  onChangeText={(text) => setFormData((prev) => ({ ...prev, fullName: text }))}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  editable={!isSigningIn}
+                />
+              </View>
+            )}
+
             {!isMagicLink && (
               <>
                 <View style={styles.inputContainer}>
@@ -231,7 +250,7 @@ export default function SignInScreen() {
                   disabled={isSigningIn}
                 >
                   <Text style={styles.buttonText}>
-                    {isSigningIn ? 'Logging In...' : 'Log In'}
+                    {isSigningIn ? (isSignUp ? 'Creating Account...' : 'Logging In...') : (isSignUp ? 'Create Account' : 'Log In')}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -245,19 +264,21 @@ export default function SignInScreen() {
               </View>
             )}
 
-            <TouchableOpacity
-              style={styles.magicLinkToggle}
-              onPress={() => {
-                setIsMagicLink(!isMagicLink);
-                setErrorMessage('');
-                setMagicLinkSent(false);
-              }}
-              disabled={isSigningIn}
-            >
-              <Text style={styles.magicLinkToggleText}>
-                {isMagicLink ? 'Use password sign in' : 'Send magic link instead'}
-              </Text>
-            </TouchableOpacity>
+            {!isSignUp && (
+              <TouchableOpacity
+                style={styles.magicLinkToggle}
+                onPress={() => {
+                  setIsMagicLink(!isMagicLink);
+                  setErrorMessage('');
+                  setMagicLinkSent(false);
+                }}
+                disabled={isSigningIn}
+              >
+                <Text style={styles.magicLinkToggleText}>
+                  {isMagicLink ? 'Use password sign in' : 'Send magic link instead'}
+                </Text>
+              </TouchableOpacity>
+            )}
 
             {isMagicLink && (
               <TouchableOpacity
@@ -273,14 +294,31 @@ export default function SignInScreen() {
 
             <View style={styles.signUpContainer}>
               <Text style={styles.signUpText}>
-                Don&apos;t have an account?{' '}
+                {isSignUp ? 'Already have an account? ' : 'Don&apos;t have an account? '}
               </Text>
-              <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)} disabled={isSigningIn}>
+              <TouchableOpacity
+                onPress={() => {
+                  setIsSignUp((prev) => !prev);
+                  setIsMagicLink(false);
+                  setMagicLinkSent(false);
+                  setErrorMessage('');
+                  clearError();
+                }}
+                disabled={isSigningIn}
+              >
                 <Text style={styles.signUpLink}>
-                  Sign up
+                  {isSignUp ? 'Sign in' : 'Sign up'}
                 </Text>
               </TouchableOpacity>
             </View>
+
+            {!isSignUp && !isMagicLink && (
+              <View style={styles.signUpContainer}>
+                <TouchableOpacity onPress={() => router.push('/forgot-password')} disabled={isSigningIn}>
+                  <Text style={styles.signUpLink}>Forgot password?</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Social login buttons */}
             <TouchableOpacity
