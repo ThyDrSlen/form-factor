@@ -51,6 +51,20 @@ export interface LocalNutritionGoals {
   updated_at: string;
 }
 
+export type SyncTableName = 'foods' | 'workouts' | 'health_metrics' | 'nutrition_goals';
+export type SyncOperation = 'upsert' | 'delete';
+
+export interface SyncQueueItem {
+  id: number;
+  table_name: SyncTableName;
+  operation: SyncOperation;
+  record_id: string;
+  data: string | null;
+  created_at: string;
+  retry_count: number;
+  next_retry_at: string | null;
+}
+
 class LocalDatabase {
   public db: SQLite.SQLiteDatabase | null = null;
   private initPromise: Promise<void> | null = null;
@@ -149,9 +163,19 @@ class LocalDatabase {
         record_id TEXT NOT NULL,
         data TEXT,
         created_at TEXT NOT NULL,
-        retry_count INTEGER DEFAULT 0
+        retry_count INTEGER DEFAULT 0,
+        next_retry_at TEXT
       );
     `);
+
+    try {
+      await this.db.execAsync('ALTER TABLE sync_queue ADD COLUMN next_retry_at TEXT;');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('duplicate column name')) {
+        errorWithTs('[LocalDB] Failed to ensure sync_queue.next_retry_at column:', error);
+      }
+    }
 
     // Create indexes for better query performance
     await this.db.execAsync(`
@@ -569,19 +593,27 @@ class LocalDatabase {
   }
 
   // Sync queue operations
-  async addToSyncQueue(tableName: string, operation: string, recordId: string, data?: any): Promise<void> {
+  async addToSyncQueue(
+    tableName: SyncTableName,
+    operation: SyncOperation,
+    recordId: string,
+    data?: unknown
+  ): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
+    const nowIso = new Date().toISOString();
 
     await this.db.runAsync(
-      'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at) VALUES (?, ?, ?, ?, ?)',
-      [tableName, operation, recordId, JSON.stringify(data || {}), new Date().toISOString()]
+      'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [tableName, operation, recordId, JSON.stringify(data || {}), nowIso, nowIso]
     );
   }
 
-  async getSyncQueue(): Promise<any[]> {
+  async getSyncQueue(): Promise<SyncQueueItem[]> {
     if (!this.db) throw new Error('Database not initialized');
 
-    return await this.db.getAllAsync('SELECT * FROM sync_queue ORDER BY created_at ASC');
+    return await this.db.getAllAsync<SyncQueueItem>(
+      'SELECT * FROM sync_queue ORDER BY COALESCE(next_retry_at, created_at) ASC, id ASC'
+    );
   }
 
   async removeSyncQueueItem(id: number): Promise<void> {
@@ -590,10 +622,22 @@ class LocalDatabase {
     await this.db.runAsync('DELETE FROM sync_queue WHERE id = ?', [id]);
   }
 
-  async incrementSyncQueueRetry(id: number): Promise<void> {
+  async incrementSyncQueueRetry(id: number, nextRetryAt: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    await this.db.runAsync('UPDATE sync_queue SET retry_count = retry_count + 1 WHERE id = ?', [id]);
+    await this.db.runAsync(
+      'UPDATE sync_queue SET retry_count = retry_count + 1, next_retry_at = ? WHERE id = ?',
+      [nextRetryAt, id]
+    );
+  }
+
+  async countSyncQueueItems(): Promise<number> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const rows = await this.db.getAllAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM sync_queue'
+    );
+    return rows[0]?.count ?? 0;
   }
 
   // Cleanup operations
@@ -637,4 +681,3 @@ class LocalDatabase {
 
 // Export singleton instance
 export const localDB = new LocalDatabase();
-

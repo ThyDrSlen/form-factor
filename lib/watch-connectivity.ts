@@ -1,20 +1,30 @@
 const noop = () => {};
 
 // Fallback stub. iOS implementation lives in `lib/watch-connectivity.ios.ts`.
-let latestWatchContext: Record<string, any> = {};
-
-export const watchEvents = {
-  addListener: (_event: string, _cb: (message: any) => void) => noop,
-  on: (_event: string, _cb: (message: any) => void) => noop,
+type WatchEventName = 'message' | 'reachability' | 'paired' | 'installed';
+type WatchMessage = Record<string, unknown>;
+type WatchContext = Record<string, unknown>;
+type WatchEventPayloadMap = {
+  message: WatchMessage;
+  reachability: boolean;
+  paired: boolean;
+  installed: boolean;
 };
 
-export const sendMessage = (_message: any) => {};
+let latestWatchContext: WatchContext = {};
 
-export const updateApplicationContext = (context: any) => {
+export const watchEvents = {
+  addListener: <K extends WatchEventName>(_event: K, _cb: (message: WatchEventPayloadMap[K]) => void) => noop,
+  on: <K extends WatchEventName>(_event: K, _cb: (message: WatchEventPayloadMap[K]) => void) => noop,
+};
+
+export const sendMessage = (_message: WatchMessage) => {};
+
+export const updateApplicationContext = (context: WatchContext) => {
   latestWatchContext = context ?? {};
 };
 
-export function updateWatchContext(patch: Record<string, any>) {
+export function updateWatchContext(patch: Record<string, unknown | null | undefined>) {
   for (const [key, value] of Object.entries(patch ?? {})) {
     if (value === null) {
       delete latestWatchContext[key];

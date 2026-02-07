@@ -7,6 +7,17 @@ export interface HealthMetricPoint {
 
 export type BiologicalSex = 'female' | 'male' | 'other' | 'unknown';
 
+interface HealthKitQuantity {
+  value?: unknown;
+}
+
+interface HealthKitSample {
+  value?: unknown;
+  quantity?: unknown | HealthKitQuantity;
+  startDate?: string;
+  endDate?: string;
+}
+
 export function parseNumeric(value: unknown): number | null {
   // Treat null/undefined as missing data instead of coercing to 0.
   if (value == null) {
@@ -17,11 +28,16 @@ export function parseNumeric(value: unknown): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
-function extractSampleValue(sample: any): number | null {
+function extractSampleValue(sample: HealthKitSample | null | undefined): number | null {
   if (!sample) return null;
   const direct = parseNumeric(sample.value);
   if (direct != null) return direct;
-  const quantityValue = parseNumeric(sample.quantity?.value);
+
+  const quantityObject =
+    sample.quantity && typeof sample.quantity === 'object'
+      ? (sample.quantity as { value?: unknown })
+      : undefined;
+  const quantityValue = parseNumeric(quantityObject?.value);
   if (quantityValue != null) return quantityValue;
   return parseNumeric(sample.quantity);
 }
@@ -94,7 +110,7 @@ function buildRangeOptions(days: number) {
 }
 
 function aggregateDaily(
-  results: any[],
+  results: HealthKitSample[],
   aggregate: 'sum' | 'average',
   defaultValue: number | null = null
 ): HealthMetricPoint[] {
@@ -285,7 +301,7 @@ export async function getStepCountForTodayAsync(): Promise<number> {
     if (!Array.isArray(results)) {
       return 0;
     }
-    return results.reduce((sum: number, row: any) => {
+    return results.reduce((sum: number, row: HealthKitSample) => {
       const value = extractSampleValue(row) ?? 0;
       return sum + value;
     }, 0);
@@ -313,7 +329,7 @@ export async function getStepHistoryAsync(days = 7): Promise<HealthMetricPoint[]
     }
 
     const mapped = results
-      .map((row: any) => {
+      .map((row: HealthKitSample) => {
         const value = extractSampleValue(row) ?? 0;
         const date = normalizeDay(row?.startDate ?? row?.endDate);
         return date ? { date, value } : null;
@@ -393,7 +409,7 @@ export async function getWeightHistoryAsync(days = 7): Promise<HealthMetricPoint
     }
 
     const latestPerDay = new Map<number, number>();
-    results.forEach((item: any) => {
+    results.forEach((item: HealthKitSample) => {
       const date = normalizeDay(item?.startDate ?? item?.endDate);
       if (date == null) return;
       const value = extractSampleValue(item);
