@@ -26,7 +26,7 @@ const getAndroidPackage = () => {
 };
 
 const getAppName = () => {
-  return 'formfactoreas';
+  return 'Form Factor';
 };
 
 const getScheme = () => {
@@ -203,6 +203,7 @@ module.exports = function ({ config }) {
       bundleIdentifier: getUniqueIdentifier(),
       infoPlist: {
         ...mergedConfig.ios?.infoPlist,
+        CFBundleName: 'Form Factor',
         CFBundleDisplayName: 'Form Factor',
       },
     },
