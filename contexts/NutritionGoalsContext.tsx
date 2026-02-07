@@ -19,7 +19,7 @@ interface NutritionGoalsContextValue {
   goals: NutritionGoals | null;
   loading: boolean;
   isSyncing: boolean;
-  saveGoals: (goals: Omit<NutritionGoals, 'id' | 'user_id' | 'updated_at'>) => Promise<{ error?: any }>;
+  saveGoals: (goals: Omit<NutritionGoals, 'id' | 'user_id' | 'updated_at'>) => Promise<{ error?: Error }>;
   refreshGoals: () => Promise<void>;
 }
 
@@ -114,7 +114,7 @@ export const NutritionGoalsProvider = ({ children }: { children: ReactNode }) =>
       return { error: undefined };
     } catch (error) {
       console.error('[NutritionGoals] Error saving goals:', error);
-      return { error };
+      return { error: error instanceof Error ? error : new Error('Failed to save nutrition goals') };
     } finally {
       setIsSyncing(false);
     }

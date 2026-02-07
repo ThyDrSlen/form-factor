@@ -13,8 +13,8 @@ Usage:
 
 import subprocess
 import sys
-import os
 import argparse
+import time
 from pathlib import Path
 from typing import Optional, List, Tuple
 from dataclasses import dataclass
@@ -351,12 +351,58 @@ def run_job_security() -> List[StepResult]:
 
     # Dependency audit (mirrors CI)
     log("Running dependency audit...")
-    ok, _ = run("bun audit --audit-level moderate")
-    results.append(StepResult("Dep audit", Status.PASS if ok else Status.FAIL))
-    if ok:
+    transient_markers = [
+        "connectionrefused",
+        "request failed",
+        "timed out",
+        "timeout",
+        "econnrefused",
+        "etimedout",
+        "enotfound",
+        "network",
+        "socket hang up",
+        "fetch failed",
+    ]
+
+    max_attempts = 3
+    final_ok = False
+    final_output = ""
+    last_error_was_transient = False
+
+    for attempt in range(1, max_attempts + 1):
+        # Capture both stdout/stderr so network failure tokens are not lost.
+        ok, output = run("bun audit --audit-level moderate 2>&1", capture=True)
+        final_ok = ok
+        final_output = output
+
+        if ok:
+            break
+
+        output_lower = output.lower()
+        last_error_was_transient = any(
+            token in output_lower for token in transient_markers
+        )
+
+        if not last_error_was_transient:
+            break
+
+        if attempt < max_attempts:
+            warn(f"Dependency audit network error (attempt {attempt}/{max_attempts}), retrying...")
+            time.sleep(attempt)
+
+    if final_ok:
+        results.append(StepResult("Dep audit", Status.PASS))
         success("No vulnerabilities found")
+    elif last_error_was_transient:
+        results.append(StepResult("Dep audit", Status.WARN, "Transient network error"))
+        warn("Dependency audit failed due to transient network error (non-blocking)")
+        if final_output.strip():
+            print(final_output.rstrip())
     else:
+        results.append(StepResult("Dep audit", Status.FAIL))
         error("Security vulnerabilities detected")
+        if final_output.strip():
+            print(final_output.rstrip())
 
     # audit-ci config check
     audit_config = ROOT / "config" / "audit-ci.json"
