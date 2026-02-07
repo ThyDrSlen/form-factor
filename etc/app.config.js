@@ -19,6 +19,12 @@ const getUniqueIdentifier = () => {
   return 'com.slenthekid.form-factor-eas';
 };
 
+const getAndroidPackage = () => {
+  if (IS_DEV) return 'com.slenthekid.formfactoreas.dev';
+  if (IS_PREVIEW) return 'com.slenthekid.formfactoreas.preview';
+  return 'com.slenthekid.formfactoreas';
+};
+
 const getAppName = () => {
   return 'formfactoreas';
 };
@@ -202,7 +208,7 @@ module.exports = function ({ config }) {
     },
     android: {
       ...mergedConfig.android,
-      package: getUniqueIdentifier(),
+      package: getAndroidPackage(),
     },
     extra: {
       ...mergedConfig.extra,
