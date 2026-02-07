@@ -53,14 +53,18 @@ export interface LocalNutritionGoals {
   updated_at: string;
 }
 
+export type SyncTableName = 'foods' | 'workouts' | 'health_metrics' | 'nutrition_goals';
+export type SyncOperation = 'upsert' | 'delete';
+
 export interface SyncQueueItem {
   id: number;
-  table_name: string;
-  operation: string;
+  table_name: SyncTableName;
+  operation: SyncOperation;
   record_id: string;
   data: string | null;
   created_at: string;
   retry_count: number;
+  next_retry_at: string | null;
 }
 
 class LocalDatabase {
@@ -370,27 +374,34 @@ class LocalDatabase {
 
   // Sync queue operations
   async addToSyncQueue(
-    tableName: string,
-    operation: string,
+    tableName: SyncTableName,
+    operation: SyncOperation,
     recordId: string,
-    data: any
+    data?: unknown
   ): Promise<void> {
     const queue = this.getData<SyncQueueItem>(this.getStorageKey('sync_queue'));
     const maxId = queue.reduce((max, item) => Math.max(max, item.id), 0);
+    const nowIso = new Date().toISOString();
     queue.push({
       id: maxId + 1,
       table_name: tableName,
       operation,
       record_id: recordId,
-      data: JSON.stringify(data),
-      created_at: new Date().toISOString(),
+      data: JSON.stringify(data ?? {}),
+      created_at: nowIso,
       retry_count: 0,
+      next_retry_at: nowIso,
     });
     this.setData(this.getStorageKey('sync_queue'), queue);
   }
 
   async getSyncQueue(): Promise<SyncQueueItem[]> {
-    return this.getData<SyncQueueItem>(this.getStorageKey('sync_queue'));
+    return this.getData<SyncQueueItem>(this.getStorageKey('sync_queue')).sort((a, b) => {
+      const aNext = new Date(a.next_retry_at ?? a.created_at).getTime();
+      const bNext = new Date(b.next_retry_at ?? b.created_at).getTime();
+      if (aNext !== bNext) return aNext - bNext;
+      return a.id - b.id;
+    });
   }
 
   async removeSyncQueueItem(id: number): Promise<void> {
@@ -402,11 +413,12 @@ class LocalDatabase {
     this.setData(this.getStorageKey('sync_queue'), []);
   }
 
-  async incrementSyncQueueRetry(id: number): Promise<void> {
+  async incrementSyncQueueRetry(id: number, nextRetryAt: string): Promise<void> {
     const queue = this.getData<SyncQueueItem>(this.getStorageKey('sync_queue'));
     const item = queue.find(i => i.id === id);
     if (item) {
       item.retry_count++;
+      item.next_retry_at = nextRetryAt;
       this.setData(this.getStorageKey('sync_queue'), queue);
     }
   }
@@ -450,4 +462,3 @@ class LocalDatabase {
 
 // Export singleton instance
 export const localDB = new LocalDatabase();
-

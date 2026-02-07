@@ -27,17 +27,16 @@ export default function AboutModal() {
   const appVersion = Constants.expoConfig?.version || '1.0.0';
   const buildNumber = Constants.expoConfig?.ios?.buildNumber || '1';
 
-  const handleHardwareBackPress = () => {
-    safeBack();
-    return true;
-  };
-
   React.useEffect(() => {
     if (BackHandler.addEventListener) {
+      const handleHardwareBackPress = () => {
+        safeBack();
+        return true;
+      };
       const subscription = BackHandler.addEventListener('hardwareBackPress', handleHardwareBackPress);
       return () => subscription.remove();
     }
-  }, [handleHardwareBackPress]);
+  }, [safeBack]);
 
   const handleTermsOfService = () => {
     Linking.openURL('https://formfactor.app/terms');

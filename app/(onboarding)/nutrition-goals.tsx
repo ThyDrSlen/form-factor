@@ -54,7 +54,7 @@ export default function NutritionGoalsScreen() {
 
       showToast('Nutrition goals saved successfully! 🎯', { type: 'success' });
       safeBack();
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to save goals. Please try again.');
     }
   };
@@ -79,7 +79,7 @@ export default function NutritionGoalsScreen() {
       }
 
       safeBack();
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to save goals. Please try again.');
     }
   };
