@@ -67,9 +67,9 @@ file_size_limit = "50MiB"
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "http://localhost:3000"
+site_url = "formfactoreas://callback"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://localhost:3000"]
+additional_redirect_urls = ["formfactoreas://callback", "http://localhost:3000", "https://localhost:3000"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604800 (1 week).
 jwt_expiry = 3600
 # If disabled, the refresh token will never expire.
@@ -171,8 +171,8 @@ redirect_uri = ""
 url = ""
 
 [auth.external.google]
-enabled = false
-client_id = ""
+enabled = true
+client_id = "833444812597-hcsqs4ajifi60mqdfss845nl2ep5r6uv.apps.googleusercontent.com"
 secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
 redirect_uri = ""
 url = ""
