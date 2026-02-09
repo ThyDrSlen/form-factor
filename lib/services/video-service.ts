@@ -20,6 +20,9 @@ export type VideoRecord = {
   exercise: string | null;
   metrics?: Record<string, any> | null;
   created_at: string;
+  username?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
   like_count?: number | null;
   comment_count?: number | null;
 };
@@ -35,6 +38,28 @@ export type CommentRecord = {
 export type VideoWithUrls = VideoRecord & {
   signedUrl?: string;
   thumbnailUrl?: string | null;
+};
+
+type CountAggregateRow = { count: number | null };
+
+type ProfileSummary = {
+  user_id: string;
+  username: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+};
+
+type VideoRowWithCounts = {
+  id: string;
+  user_id: string;
+  path: string;
+  thumbnail_path: string | null;
+  duration_seconds: number | null;
+  exercise: string | null;
+  metrics: Record<string, any> | null;
+  created_at: string;
+  video_likes?: CountAggregateRow[] | null;
+  video_comments?: CountAggregateRow[] | null;
 };
 
 async function ensureUser() {
@@ -107,33 +132,102 @@ async function uploadFileToStorage(opts: {
   }
 }
 
-async function getVideoCount(table: 'video_likes' | 'video_comments', videoId: string) {
+function clampLimit(limit: number) {
+  if (!Number.isFinite(limit) || limit <= 0) return 20;
+  return Math.min(50, Math.max(1, Math.floor(limit)));
+}
+
+function extractAggregateCount(rows: CountAggregateRow[] | null | undefined) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const value = rows[0]?.count;
+  return typeof value === 'number' ? value : null;
+}
+
+async function getProfilesByUserIds(userIds: string[]) {
+  const ids = Array.from(new Set(userIds.filter(Boolean)));
+  if (ids.length === 0) return new Map<string, ProfileSummary>();
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('user_id, username, display_name, avatar_url')
+    .in('user_id', ids);
+
+  if (error) throw error;
+
+  return new Map((data || []).map((profile) => [profile.user_id, profile as ProfileSummary]));
+}
+
+async function getSocialFeedUserIds(currentUserId: string) {
+  const { data, error } = await supabase
+    .from('follows')
+    .select('following_id')
+    .eq('follower_id', currentUserId)
+    .eq('status', 'accepted');
+
+  if (error) throw error;
+
+  return Array.from(new Set([currentUserId, ...(data || []).map((row) => row.following_id as string)]));
+}
+
+async function safeGetSignedVideoUrl(path: string, videoId: string, expiresInSeconds = DEFAULT_SIGNED_URL_SECONDS) {
   try {
-    const { count, error } = await supabase
-      .from(table)
-      .select('id', { count: 'exact', head: true })
-      .eq('video_id', videoId);
-    if (error) {
-      if (__DEV__) {
-        warnWithTs(`[video-service] Failed to fetch ${table} count`, error);
-      }
-      return null;
-    }
-    return typeof count === 'number' ? count : null;
+    return await getSignedVideoUrl(path, expiresInSeconds);
   } catch (error) {
     if (__DEV__) {
-      warnWithTs(`[video-service] Failed to fetch ${table} count`, error);
+      warnWithTs(`[video-service] Failed to sign video URL for ${videoId}`, error);
+    }
+    return undefined;
+  }
+}
+
+async function safeGetSignedThumbnailUrl(
+  path: string | null,
+  videoId: string,
+  expiresInSeconds = DEFAULT_SIGNED_URL_SECONDS,
+) {
+  if (!path) return null;
+  try {
+    return await getSignedThumbnailUrl(path, expiresInSeconds);
+  } catch (error) {
+    if (__DEV__) {
+      warnWithTs(`[video-service] Failed to sign thumbnail URL for ${videoId}`, error);
     }
     return null;
   }
 }
 
-async function getVideoCounts(videoId: string) {
-  const [likeCount, commentCount] = await Promise.all([
-    getVideoCount('video_likes', videoId),
-    getVideoCount('video_comments', videoId),
-  ]);
-  return { likeCount, commentCount };
+async function enrichVideoRows(rows: VideoRowWithCounts[]): Promise<VideoWithUrls[]> {
+  if (rows.length === 0) return [];
+
+  const profilesById = await getProfilesByUserIds(rows.map((row) => row.user_id));
+
+  return Promise.all(
+    rows.map(async (row) => {
+      const profile = profilesById.get(row.user_id) ?? null;
+      const [signedUrl, thumbnailUrl] = await Promise.all([
+        safeGetSignedVideoUrl(row.path, row.id),
+        safeGetSignedThumbnailUrl(row.thumbnail_path, row.id),
+      ]);
+
+      return {
+        id: row.id,
+        user_id: row.user_id,
+        path: row.path,
+        thumbnail_path: row.thumbnail_path,
+        duration_seconds: row.duration_seconds,
+        exercise: row.exercise,
+        metrics: row.metrics,
+        created_at: row.created_at,
+        like_count: extractAggregateCount(row.video_likes),
+        comment_count: extractAggregateCount(row.video_comments),
+        username: profile?.username ?? null,
+        display_name: profile?.display_name ?? null,
+        avatar_url: profile?.avatar_url ?? null,
+        signedUrl,
+        thumbnailUrl,
+      };
+    }),
+  );
 }
 
 export async function getSignedVideoUrl(path: string, expiresInSeconds = DEFAULT_SIGNED_URL_SECONDS) {
@@ -249,16 +343,25 @@ export async function uploadWorkoutVideo(opts: {
   return data as VideoRecord;
 }
 
-export async function listVideos(limit = 20, opts?: { onlyMine?: boolean }) {
-  const onlyMine = opts?.onlyMine ?? true;
-  const userId = onlyMine ? (await ensureUser()).id : null;
+export async function listVideos(limit = 20, opts?: { onlyMine?: boolean; socialFeed?: boolean }) {
+  const socialFeed = opts?.socialFeed ?? false;
+  const onlyMine = opts?.onlyMine ?? !socialFeed;
+  const boundedLimit = clampLimit(limit);
+  const userId = onlyMine || socialFeed ? (await ensureUser()).id : null;
   let query = supabase
     .from('videos')
-    .select('id, user_id, path, thumbnail_path, duration_seconds, exercise, metrics, created_at')
+    .select(
+      'id, user_id, path, thumbnail_path, duration_seconds, exercise, metrics, created_at, video_likes(count), video_comments(count)',
+    )
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .limit(boundedLimit);
 
-  if (userId) {
+  if (socialFeed && userId) {
+    const socialUserIds = await getSocialFeedUserIds(userId);
+    query = query.in('user_id', socialUserIds);
+  }
+
+  if (onlyMine && userId) {
     query = query.eq('user_id', userId);
   }
 
@@ -266,49 +369,24 @@ export async function listVideos(limit = 20, opts?: { onlyMine?: boolean }) {
 
   if (error) throw error;
 
-  const withUrls: VideoWithUrls[] = await Promise.all(
-    (data || []).map(async (video) => {
-      const [signedUrl, thumbnailUrl, counts] = await Promise.all([
-        getSignedVideoUrl(video.path),
-        video.thumbnail_path ? getSignedThumbnailUrl(video.thumbnail_path) : Promise.resolve(null),
-        getVideoCounts(video.id),
-      ]);
-      return {
-        ...(video as VideoRecord),
-        signedUrl,
-        thumbnailUrl,
-        like_count: counts.likeCount,
-        comment_count: counts.commentCount,
-      };
-    })
-  );
-
-  return withUrls;
+  return enrichVideoRows((data || []) as VideoRowWithCounts[]);
 }
 
 export async function getVideoById(videoId: string) {
   const { data, error } = await supabase
     .from('videos')
-    .select('id, user_id, path, thumbnail_path, duration_seconds, exercise, metrics, created_at')
+    .select(
+      'id, user_id, path, thumbnail_path, duration_seconds, exercise, metrics, created_at, video_likes(count), video_comments(count)',
+    )
     .eq('id', videoId)
     .maybeSingle();
 
   if (error) throw error;
   if (!data) throw new Error('Video not found');
 
-  const [signedUrl, thumbnailUrl, counts] = await Promise.all([
-    getSignedVideoUrl(data.path),
-    data.thumbnail_path ? getSignedThumbnailUrl(data.thumbnail_path) : Promise.resolve(null),
-    getVideoCounts(data.id),
-  ]);
-
-  return {
-    ...(data as VideoRecord),
-    signedUrl,
-    thumbnailUrl,
-    like_count: counts.likeCount,
-    comment_count: counts.commentCount,
-  } as VideoWithUrls;
+  const [video] = await enrichVideoRows([data as VideoRowWithCounts]);
+  if (!video) throw new Error('Video not found');
+  return video;
 }
 
 export async function fetchVideoComments(videoId: string) {
