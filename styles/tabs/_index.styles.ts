@@ -102,6 +102,36 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
+  inboxButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(76, 140, 255, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  inboxBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -8,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: '#FF6B6B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#050E1F',
+  },
+  inboxBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   newPostText: {
     color: '#DDE6FF',
     fontWeight: '600',
@@ -367,6 +397,11 @@ export const styles = StyleSheet.create({
   postAvatarText: {
     color: tabColors.textPrimary,
     fontWeight: '700',
+  },
+  postAvatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 21,
   },
   postAvatarStatus: {
     position: 'absolute',

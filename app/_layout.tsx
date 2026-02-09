@@ -11,6 +11,7 @@ import { WorkoutsProvider } from '../contexts/WorkoutsContext';
 import { HealthKitProvider } from '../contexts/HealthKitContext';
 import { UnitsProvider } from '../contexts/UnitsContext';
 import { NetworkProvider } from '../contexts/NetworkContext';
+import { SocialProvider } from '../contexts/SocialContext';
 import { useFonts, Lexend_400Regular, Lexend_500Medium, Lexend_700Bold } from '@expo-google-fonts/lexend';
 import { ToastProvider } from '../contexts/ToastContext';
 import { logWithTs, warnWithTs } from '@/lib/logger';
@@ -137,15 +138,17 @@ function RootLayoutNav() {
               <HealthKitProvider>
                 <WorkoutsProvider>
                   <NutritionGoalsProvider>
-                    <FoodProvider>
-                      {!fontsLoaded ? (
-                        <View style={styles.splash}>
-                          <ActivityIndicator color="#4C8CFF" />
-                        </View>
-                      ) : (
-                        <InitialLayout />
-                      )}
-                    </FoodProvider>
+                    <SocialProvider>
+                      <FoodProvider>
+                        {!fontsLoaded ? (
+                          <View style={styles.splash}>
+                            <ActivityIndicator color="#4C8CFF" />
+                          </View>
+                        ) : (
+                          <InitialLayout />
+                        )}
+                      </FoodProvider>
+                    </SocialProvider>
                   </NutritionGoalsProvider>
                 </WorkoutsProvider>
               </HealthKitProvider>

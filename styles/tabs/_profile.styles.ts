@@ -39,6 +39,12 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.md,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 40,
   },
   avatarText: {
     fontSize: 32,
@@ -53,6 +59,12 @@ export const styles = StyleSheet.create({
     marginBottom: 6,
     fontFamily: getFontFamily('bold'),
   },
+  usernameText: {
+    fontSize: 14,
+    color: tabColors.textSecondary,
+    marginBottom: spacing.xs,
+    fontFamily: getFontFamily('regular'),
+  },
   emailText: {
     fontSize: 18,
     fontWeight: '600',
@@ -63,6 +75,33 @@ export const styles = StyleSheet.create({
   memberSince: {
     fontSize: 14,
     color: tabColors.textSecondary,
+    fontFamily: getFontFamily('regular'),
+  },
+  socialCountsRow: {
+    flexDirection: 'row',
+    marginTop: spacing.md,
+    width: '100%',
+    gap: spacing.sm,
+  },
+  socialCountPill: {
+    flex: 1,
+    alignItems: 'center',
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: tabColors.border,
+    backgroundColor: 'rgba(76, 140, 255, 0.08)',
+    paddingVertical: spacing.sm,
+  },
+  socialCountValue: {
+    color: tabColors.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+    fontFamily: getFontFamily('bold'),
+  },
+  socialCountLabel: {
+    color: tabColors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
     fontFamily: getFontFamily('regular'),
   },
   section: {
@@ -273,6 +312,29 @@ export const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: spacing.sm + spacing.xs,
   },
+  privacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+    gap: spacing.md,
+  },
+  privacyRowTextWrap: {
+    flex: 1,
+  },
+  privacyRowTitle: {
+    color: tabColors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+    fontFamily: getFontFamily('medium'),
+  },
+  privacyRowSubtitle: {
+    marginTop: 3,
+    color: tabColors.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: getFontFamily('regular'),
+  },
   modalButton: {
     paddingVertical: spacing.sm + spacing.xs,
     paddingHorizontal: 18,
@@ -308,4 +370,3 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
 });
-
