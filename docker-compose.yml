@@ -1,0 +1,14 @@
+services:
+  e2e:
+    build:
+      context: .
+      dockerfile: Dockerfile.playwright
+    environment:
+      - BASE_URL=http://host.docker.internal:8081
+      - CI=true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./playwright-report:/app/playwright-report
+      - ./test-results:/app/test-results
+
