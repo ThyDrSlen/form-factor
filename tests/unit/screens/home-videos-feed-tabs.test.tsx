@@ -15,6 +15,10 @@ jest.mock('../../../contexts/ToastContext', () => ({
   useToast: () => ({ show: jest.fn() }),
 }));
 
+jest.mock('../../../contexts/SocialContext', () => ({
+  useSocial: () => ({ unreadSharesCount: 0 }),
+}));
+
 jest.mock('expo-router', () => ({
   useRouter: () => ({
     push: jest.fn(),

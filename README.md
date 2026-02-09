@@ -11,19 +11,20 @@ Form Factor is an iOS-first fitness and health app built with Expo and Supabase.
 
 ## Status and roadmap
 - Implemented: offline foods/workouts, HealthKit summaries/trends, video upload + feed, AI coach, push notification plumbing, Playwright auth flow, Jest unit scaffolding.
-- In progress: ARKit body-tracking polish and metrics upload, broader E2E coverage, telemetry/error-handling hardening.
+- In progress: ARKit body-tracking polish (see `docs/ARKIT_BODY_TRACKING_GUIDE.md`) and metrics upload, broader E2E coverage, telemetry/error-handling hardening.
 - Planned: Richer social/feed interactions, ML recommendations, production push campaigns.
 
 ## Repository layout
 - `app/`: Expo Router screens (`(auth)`, `(tabs)`, `(modals)`); ARKit scan and dashboard live here.
 - `components/`, `contexts/`, `hooks/`, `lib/`: shared UI, data, services (offline sync, healthkit, notifications, coach/video services).
 - `modules/arkit-body-tracker/`: custom native module for ARKit.
+- `backstage/`: POC for a developer portal (see `backstage/README.md`).
 - `supabase/`: migrations and Edge Functions (`coach`, `notify`), plus storage bucket policies.
-- `scripts/`: env/setup helpers, native build utilities, and repair scripts (UUID fixes, pose plugin, etc.).
+- `scripts/`: env/setup helpers (e.g., `preinstall-clean.js`), native build utilities, and repair scripts (UUID fixes, `ci_local.py`).
 
 ## Getting started (local)
 1) Install deps: `bun install`.  
-2) Copy env: `cp .env.example .env.local` (or `./scripts/setup-env.sh`) and fill `EXPO_PUBLIC_SUPABASE_URL/ANON_KEY`, `EXPO_PUBLIC_PUSH_PROJECT_ID`, `EXPO_TOKEN` for EAS builds, plus optional `EXPO_PUBLIC_COACH_FUNCTION` (defaults to `coach`).  
+2) Copy env: `cp .env.example .env.local` and fill `EXPO_PUBLIC_SUPABASE_URL/ANON_KEY`, `EXPO_PUBLIC_PUSH_PROJECT_ID`, `EXPO_TOKEN` for EAS builds, plus optional `EXPO_PUBLIC_COACH_FUNCTION` (defaults to `coach`).  
 3) Run Expo: `bun run start` (or `bun run start:devclient`). Platform targets: `bun run ios`, `bun run android`, `bun run web`.  
 4) Variants map to `APP_VARIANT` in `eas.json` (`development`, `preview`, `staging`, `production`).  
 5) Supabase CLI users: set `SUPABASE_*` values from `.env.example` before running migrations or Edge Functions locally.
