@@ -48,8 +48,15 @@ const applyBuildSettings = (xcodeProject, options = {}) => {
 
     const buildSettings = buildConfig.buildSettings;
     const configName = buildConfig.name;
+    const isTargetConfig = typeof buildSettings.PRODUCT_NAME === 'string';
     const sdkRoot = String(buildSettings.SDKROOT || '').toLowerCase();
     const isWatchOS = sdkRoot.includes('watchos');
+    const isWatchApp = isWatchOS && String(buildSettings.WRAPPER_EXTENSION || '') === 'app';
+
+    // Skip project-level configs; only mutate target configs.
+    if (!isTargetConfig) {
+      return;
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // COMMON SETTINGS (Both Debug and Release)
@@ -60,14 +67,18 @@ const applyBuildSettings = (xcodeProject, options = {}) => {
     delete buildSettings.ASSETCATALOG_FILTER_FOR_DEVICE_MODEL;
     delete buildSettings.ASSETCATALOG_FILTER_FOR_DEVICE_OS_VERSION;
 
-    // Ensure app supports target device family
-    buildSettings.TARGETED_DEVICE_FAMILY = `"${targetedDeviceFamily}"`;
-
-    // Set iOS deployment target
-    buildSettings.IPHONEOS_DEPLOYMENT_TARGET = iosDeploymentTarget;
+    // iOS-only defaults should not leak into watch targets.
+    if (!isWatchOS) {
+      buildSettings.TARGETED_DEVICE_FAMILY = `"${targetedDeviceFamily}"`;
+      buildSettings.IPHONEOS_DEPLOYMENT_TARGET = iosDeploymentTarget;
+    } else if (isWatchApp) {
+      // Explicitly include both required watchOS architectures for uploads.
+      buildSettings['ARCHS[sdk=watchos*]'] = '"arm64 arm64_32"';
+    }
 
     // Disable bitcode (deprecated in Xcode 14+)
     buildSettings.ENABLE_BITCODE = enableBitcode;
+    delete buildSettings.VALID_ARCHS;
 
     // ═══════════════════════════════════════════════════════════════════
     // DEBUG-SPECIFIC SETTINGS
@@ -91,12 +102,6 @@ const applyBuildSettings = (xcodeProject, options = {}) => {
 
       // Include dSYM for crash symbolication
       buildSettings.DEBUG_INFORMATION_FORMAT = '"dwarf-with-dsym"';
-
-      if (isWatchOS) {
-        buildSettings.VALID_ARCHS = '"arm64_32 arm64"';
-      } else if (!buildSettings.VALID_ARCHS || !buildSettings.VALID_ARCHS.includes('arm64')) {
-        buildSettings.VALID_ARCHS = '"arm64"';
-      }
 
       // Strip debug symbols for smaller binary
       buildSettings.STRIP_INSTALLED_PRODUCT = 'YES';

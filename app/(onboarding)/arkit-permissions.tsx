@@ -80,7 +80,7 @@ export default function ARKitPermissionsScreen() {
     if (permission?.granted) {
       router.replace('/(onboarding)/arkit-usage');
     }
-  }, [fadeAnim, slideAnim, permission?.granted]);
+  }, [fadeAnim, slideAnim, permission?.granted, router]);
 
   const handleRequestPermission = async () => {
     if (isRequesting) return;
@@ -110,7 +110,7 @@ export default function ARKitPermissionsScreen() {
           ]
         );
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to request camera permission. Please try again.');
     } finally {
       setIsRequesting(false);

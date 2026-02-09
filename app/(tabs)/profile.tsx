@@ -12,8 +12,8 @@ import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { deleteVideo, getVideoById, listVideos, toggleVideoLike, VideoWithUrls } from '@/lib/services/video-service';
 import { router } from 'expo-router';
 import Constants from 'expo-constants';
-import { syncService } from '@/lib/services/database/sync-service';
-import { localDB } from '@/lib/services/database/local-db';
+import { syncService, type SyncStatus } from '@/lib/services/database/sync-service';
+import { localDB, type SyncQueueItem } from '@/lib/services/database/local-db';
 import { fixInvalidUUIDs } from '@/scripts/fix-invalid-uuids';
 import { useDebugInfo } from '@/hooks/use-debug-info';
 import {
@@ -51,20 +51,6 @@ interface MenuItemProps {
   onPress: () => void;
   danger?: boolean;
 }
-
-type DebugSyncStatus = {
-  state: 'idle' | 'syncing' | 'error';
-  queueSize: number;
-  lastError: string | null;
-};
-
-type SyncQueueItem = {
-  id: number;
-  table_name: string;
-  operation: string;
-  retry_count: number;
-};
-
 const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: FeedVideoPlayerProps) => {
   const [posterVisible, setPosterVisible] = useState(Boolean(thumbnailUrl));
   const [isPlaying, setIsPlaying] = useState(false);
@@ -245,11 +231,7 @@ export default function ProfileScreen() {
   const [hasFetchedOnce, setHasFetchedOnce] = useState(false);
   const [likedVideos, setLikedVideos] = useState<Record<string, boolean>>({});
   const { debugInfo, loading: debugLoading, refresh: refreshDebugInfo } = useDebugInfo();
-  const [syncStatus, setSyncStatus] = useState<DebugSyncStatus>({
-    state: 'idle',
-    queueSize: 0,
-    lastError: null,
-  });
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => syncService.getSyncStatus());
   const [isSavingGoals, setIsSavingGoals] = useState(false);
   const [calories, setCalories] = useState('');
   const [protein, setProtein] = useState('');
@@ -307,34 +289,11 @@ export default function ProfileScreen() {
   }, [loadSocialData]);
 
   useEffect(() => {
-    let isMounted = true;
-
-    const refreshSyncStatus = async (state: DebugSyncStatus['state'] = 'idle', lastError: string | null = null) => {
-      try {
-        const queue = await localDB.getSyncQueue();
-        if (!isMounted) return;
-        setSyncStatus({
-          state,
-          queueSize: queue.length,
-          lastError,
-        });
-      } catch (error) {
-        if (!isMounted) return;
-        setSyncStatus({
-          state: 'error',
-          queueSize: 0,
-          lastError: error instanceof Error ? error.message : 'Failed to read sync status',
-        });
-      }
-    };
-
-    void refreshSyncStatus();
-    const unsubscribe = syncService.onSyncComplete(() => {
-      void refreshSyncStatus('idle');
+    const unsubscribe = syncService.onSyncStatusChange((nextStatus) => {
+      setSyncStatus(nextStatus);
     });
 
     return () => {
-      isMounted = false;
       unsubscribe();
     };
   }, []);
@@ -619,19 +578,31 @@ export default function ProfileScreen() {
 
   const handleForceSync = async () => {
     setIsSyncing(true);
-    setSyncStatus((prev) => ({ ...prev, state: 'syncing', lastError: null }));
+    setSyncStatus((prev) => ({
+      ...prev,
+      state: 'syncing',
+      lastError: null,
+      lastErrorAt: null,
+    }));
     try {
       await syncService.fullSync();
       await refreshDebugInfo();
       const queue = await localDB.getSyncQueue();
-      setSyncStatus({ state: 'idle', queueSize: queue.length, lastError: null });
+      setSyncStatus((prev) => ({
+        ...prev,
+        state: 'idle',
+        queueSize: queue.length,
+        lastError: null,
+        lastErrorAt: null,
+      }));
       Alert.alert('✅ Sync Complete', 'All data has been synchronized');
     } catch (error) {
-      setSyncStatus({
+      setSyncStatus((prev) => ({
+        ...prev,
         state: 'error',
-        queueSize: syncStatus.queueSize,
         lastError: error instanceof Error ? error.message : 'Sync failed',
-      });
+        lastErrorAt: new Date().toISOString(),
+      }));
       Alert.alert('Error', 'Failed to sync data');
     } finally {
       setIsSyncing(false);

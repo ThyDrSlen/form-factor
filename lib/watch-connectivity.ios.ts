@@ -1,15 +1,23 @@
 import { requireNativeModule } from 'expo-modules-core';
 import { warnWithTs } from '@/lib/logger';
-import { sanitizeForNative } from '@/lib/watch-connectivity/payload';
+import { NativeSerializable, sanitizeForNative } from '@/lib/watch-connectivity/payload';
 
 type WatchEventName = 'message' | 'reachability' | 'paired' | 'installed';
+type WatchMessage = Record<string, unknown>;
+type WatchContext = Record<string, unknown>;
+type WatchEventPayloadMap = {
+  message: WatchMessage;
+  reachability: boolean;
+  paired: boolean;
+  installed: boolean;
+};
 
 type NativeSubscription = { remove?: () => void } | undefined | null;
 
 type NativeModuleShape = {
-  addListener?: (eventName: string, listener: (payload: any) => void) => NativeSubscription;
-  sendMessage?: (payload: Record<string, any>) => void;
-  updateApplicationContext?: (context: Record<string, any>) => void;
+  addListener?: (eventName: string, listener: (payload: unknown) => void) => NativeSubscription;
+  sendMessage?: (payload: Record<string, NativeSerializable>) => void;
+  updateApplicationContext?: (context: Record<string, NativeSerializable>) => void;
   getReachability?: () => Promise<boolean>;
   getIsPaired?: () => Promise<boolean>;
   getIsWatchAppInstalled?: () => Promise<boolean>;
@@ -31,37 +39,64 @@ try {
 }
 
 export const watchEvents = {
-  addListener: (event: WatchEventName, cb: (arg: any) => void) => {
+  addListener: <K extends WatchEventName>(event: K, cb: (arg: WatchEventPayloadMap[K]) => void) => {
     const nativeEventName = EVENT_MAP[event];
-    const sub = Native?.addListener?.(nativeEventName, (payload: any) => {
-      if (event === 'message') return cb(payload ?? {});
-      if (event === 'reachability') return cb(!!payload?.reachable);
-      if (event === 'paired') return cb(!!payload?.paired);
-      if (event === 'installed') return cb(!!payload?.installed);
-      return cb(payload);
+    const sub = Native?.addListener?.(nativeEventName, (payload: unknown) => {
+      if (event === 'message') {
+        const message = payload && typeof payload === 'object' ? (payload as WatchMessage) : {};
+        cb(message as WatchEventPayloadMap[K]);
+        return;
+      }
+      if (event === 'reachability') {
+        const reachable = Boolean(
+          payload && typeof payload === 'object' && 'reachable' in payload
+            ? (payload as { reachable?: unknown }).reachable
+            : false
+        );
+        cb(reachable as WatchEventPayloadMap[K]);
+        return;
+      }
+      if (event === 'paired') {
+        const paired = Boolean(
+          payload && typeof payload === 'object' && 'paired' in payload
+            ? (payload as { paired?: unknown }).paired
+            : false
+        );
+        cb(paired as WatchEventPayloadMap[K]);
+        return;
+      }
+      if (event === 'installed') {
+        const installed = Boolean(
+          payload && typeof payload === 'object' && 'installed' in payload
+            ? (payload as { installed?: unknown }).installed
+            : false
+        );
+        cb(installed as WatchEventPayloadMap[K]);
+      }
     });
     return () => sub?.remove?.();
   },
-  on: (event: WatchEventName, cb: (arg: any) => void) => {
-    return (watchEvents as any).addListener(event, cb);
+  on: <K extends WatchEventName>(event: K, cb: (arg: WatchEventPayloadMap[K]) => void) => {
+    return watchEvents.addListener(event, cb);
   },
 };
 
-export const sendMessage = (message: any) => {
+export const sendMessage = (message: WatchMessage) => {
   const payload = sanitizeForNative(message);
-  if (!payload || !Native?.sendMessage) return;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !Native?.sendMessage) return;
   Native.sendMessage(payload);
 };
 
-export const updateApplicationContext = (context: any) => {
+export const updateApplicationContext = (context: WatchContext) => {
   if (!Native?.updateApplicationContext) return;
   const payload = sanitizeForNative(context) ?? {};
+  if (typeof payload !== 'object' || Array.isArray(payload)) return;
   Native.updateApplicationContext(payload);
 };
 
-let latestWatchContext: Record<string, any> = {};
+let latestWatchContext: WatchContext = {};
 
-export function updateWatchContext(patch: Record<string, any>) {
+export function updateWatchContext(patch: Record<string, unknown | null | undefined>) {
   for (const [key, value] of Object.entries(patch ?? {})) {
     if (value === null) {
       delete latestWatchContext[key];

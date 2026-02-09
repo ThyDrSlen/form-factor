@@ -66,17 +66,16 @@ export default function HelpSupportModal() {
   const safeBack = useSafeBack(['/(tabs)/profile', '/profile'], { alwaysReplace: true });
   const [expandedFAQ, setExpandedFAQ] = useState<number | null>(0);
 
-  const handleHardwareBackPress = () => {
-    safeBack();
-    return true;
-  };
-
   React.useEffect(() => {
     if (BackHandler.addEventListener) {
+      const handleHardwareBackPress = () => {
+        safeBack();
+        return true;
+      };
       const subscription = BackHandler.addEventListener('hardwareBackPress', handleHardwareBackPress);
       return () => subscription.remove();
     }
-  }, [handleHardwareBackPress]);
+  }, [safeBack]);
 
   const handleContactSupport = () => {
     Linking.openURL('mailto:support@formfactor.app?subject=Form Factor Support Request');

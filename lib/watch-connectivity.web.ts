@@ -2,23 +2,33 @@ import { logWithTs } from '@/lib/logger';
 
 const noop = () => {};
 
-let latestWatchContext: Record<string, any> = {};
-
-export const watchEvents = {
-  addListener: (_event: string, _cb: (message: any) => void) => noop,
-  on: (_event: string, _cb: (message: any) => void) => noop,
+type WatchEventName = 'message' | 'reachability' | 'paired' | 'installed';
+type WatchMessage = Record<string, unknown>;
+type WatchContext = Record<string, unknown>;
+type WatchEventPayloadMap = {
+  message: WatchMessage;
+  reachability: boolean;
+  paired: boolean;
+  installed: boolean;
 };
 
-export const sendMessage = (message: any) => {
+let latestWatchContext: WatchContext = {};
+
+export const watchEvents = {
+  addListener: <K extends WatchEventName>(_event: K, _cb: (message: WatchEventPayloadMap[K]) => void) => noop,
+  on: <K extends WatchEventName>(_event: K, _cb: (message: WatchEventPayloadMap[K]) => void) => noop,
+};
+
+export const sendMessage = (message: WatchMessage) => {
   logWithTs('[WatchConnectivity Mock] sendMessage:', message);
 };
 
-export const updateApplicationContext = (context: any) => {
+export const updateApplicationContext = (context: WatchContext) => {
   latestWatchContext = context ?? {};
   logWithTs('[WatchConnectivity Mock] updateApplicationContext:', context);
 };
 
-export function updateWatchContext(patch: Record<string, any>) {
+export function updateWatchContext(patch: Record<string, unknown | null | undefined>) {
   for (const [key, value] of Object.entries(patch ?? {})) {
     if (value === null) {
       delete latestWatchContext[key];

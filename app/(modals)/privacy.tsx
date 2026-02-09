@@ -35,17 +35,16 @@ export default function PrivacySecurityModal() {
   const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
   const [loadingExport, setLoadingExport] = useState(false);
 
-  const handleHardwareBackPress = () => {
-    safeBack();
-    return true;
-  };
-
   React.useEffect(() => {
     if (BackHandler.addEventListener) {
+      const handleHardwareBackPress = () => {
+        safeBack();
+        return true;
+      };
       const subscription = BackHandler.addEventListener('hardwareBackPress', handleHardwareBackPress);
       return () => subscription.remove();
     }
-  }, [handleHardwareBackPress]);
+  }, [safeBack]);
 
   const handleExportData = async () => {
     if (!user?.id) {

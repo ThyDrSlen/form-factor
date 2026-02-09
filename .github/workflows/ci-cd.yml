@@ -60,7 +60,7 @@ jobs:
         run: bun run lint
 
       - name: Run unit tests
-        run: bun run test -- --passWithNoTests
+        run: bun run test -- --coverage --coverageReporters=text-summary
 
       - name: Check for unused dependencies
         run: |
@@ -121,6 +121,7 @@ jobs:
         with:
           expo-version: latest
           eas-version: latest
+          packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Verify EAS configuration (iOS only)
@@ -167,6 +168,7 @@ jobs:
         with:
           expo-version: latest
           eas-version: latest
+          packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Setup Supabase CLI
@@ -211,7 +213,7 @@ jobs:
 
       - name: Deploy OTA update
         run: |
-          eas update --branch staging --message "Staging deployment from ${{ github.sha }}"
+          eas update --branch staging --platform ios --message "Staging deployment from ${{ github.sha }}"
 
   # Job 5: Production Deployment
   deploy-production:
@@ -253,6 +255,7 @@ jobs:
         with:
           expo-version: latest
           eas-version: latest
+          packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Setup Supabase CLI
@@ -290,66 +293,34 @@ jobs:
         env:
           ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
 
-      - name: Write local iOS credentials
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import base64
-          import json
-          import os
-          import pathlib
-          import sys
-
-          required = [
-              "IOS_DIST_P12_BASE64",
-              "IOS_DIST_P12_PASSWORD",
-              "IOS_MAIN_PROFILE_BASE64",
-              "IOS_WATCH_PROFILE_BASE64",
-          ]
-          missing = [key for key in required if not os.environ.get(key)]
-          if missing:
-              print("Missing required iOS signing secrets: " + ", ".join(missing), file=sys.stderr)
-              sys.exit(1)
-
-          cert_dir = pathlib.Path("ios/certs")
-          cert_dir.mkdir(parents=True, exist_ok=True)
-          (cert_dir / "dist.p12").write_bytes(base64.b64decode(os.environ["IOS_DIST_P12_BASE64"]))
-          (cert_dir / "main.mobileprovision").write_bytes(base64.b64decode(os.environ["IOS_MAIN_PROFILE_BASE64"]))
-          (cert_dir / "watch.mobileprovision").write_bytes(base64.b64decode(os.environ["IOS_WATCH_PROFILE_BASE64"]))
-
-          credentials = {
-              "ios": {
-                  "formfactoreas": {
-                      "provisioningProfilePath": "ios/certs/main.mobileprovision",
-                      "distributionCertificate": {
-                          "path": "ios/certs/dist.p12",
-                          "password": os.environ["IOS_DIST_P12_PASSWORD"],
-                      },
-                  },
-                  "Form Factor Watch Watch App": {
-                      "provisioningProfilePath": "ios/certs/watch.mobileprovision",
-                      "distributionCertificate": {
-                          "path": "ios/certs/dist.p12",
-                          "password": os.environ["IOS_DIST_P12_PASSWORD"],
-                      },
-                  },
-              }
-          }
-          pathlib.Path("credentials.json").write_text(json.dumps(credentials, indent=2))
-          PY
-          chmod 600 ios/certs/dist.p12 ios/certs/main.mobileprovision ios/certs/watch.mobileprovision credentials.json
-        env:
-          IOS_DIST_P12_BASE64: ${{ secrets.IOS_DIST_P12_BASE64 }}
-          IOS_DIST_P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
-          IOS_MAIN_PROFILE_BASE64: ${{ secrets.IOS_MAIN_PROFILE_BASE64 }}
-          IOS_WATCH_PROFILE_BASE64: ${{ secrets.IOS_WATCH_PROFILE_BASE64 }}
-
       - name: Build and submit iOS production
         run: eas build --platform ios --profile production --auto-submit --non-interactive
 
+      - name: Ensure hermesc is available
+        run: |
+          set -euo pipefail
+          HERMESC_SRC="$(find node_modules/hermes-compiler -type f -name hermesc 2>/dev/null | head -n 1 || true)"
+          if [ -z "$HERMESC_SRC" ]; then
+            echo "hermesc not found under node_modules/hermes-compiler"
+            ls -la node_modules/hermes-compiler/hermesc || true
+            exit 1
+          fi
+          if [[ "$HERMESC_SRC" == *linux* ]]; then
+            HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/linux64-bin"
+          else
+            if [ -d "node_modules/react-native/sdks/hermesc/macos-bin" ]; then
+              HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/macos-bin"
+            else
+              HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/osx-bin"
+            fi
+          fi
+          mkdir -p "$HERMESC_DEST_DIR"
+          ln -sf "$PWD/$HERMESC_SRC" "$HERMESC_DEST_DIR/hermesc"
+          chmod +x "$HERMESC_DEST_DIR/hermesc"
+
       - name: Deploy OTA update
         run: |
-          eas update --branch production --message "Production deployment from ${{ github.sha }}"
+          eas update --branch production --platform ios --message "Production deployment from ${{ github.sha }}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
