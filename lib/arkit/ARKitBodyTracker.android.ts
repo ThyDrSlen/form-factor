@@ -40,6 +40,21 @@ export interface BodyPose2D {
   isTracking: boolean;
 }
 
+export interface MediaPipeLandmark2D {
+  x: number;
+  y: number;
+  visibility?: number;
+  presence?: number;
+}
+
+export interface MediaPipePose2D {
+  landmarks: MediaPipeLandmark2D[];
+  timestamp: number;
+  inferenceMs: number;
+  poseCount?: number;
+  modelVersion?: string;
+}
+
 export interface FrameSnapshot {
   frame: string;
   width?: number;
@@ -115,6 +130,22 @@ export class BodyTracker {
   }
 
   static async getCurrentFrameSnapshot(_options?: { maxWidth?: number; quality?: number }): Promise<FrameSnapshot | null> {
+    return null;
+  }
+
+  static async configureMediaPipeShadow(_options?: {
+    modelPath?: string;
+    modelName?: string;
+    modelVersion?: string;
+    numPoses?: number;
+    minPoseDetectionConfidence?: number;
+    minPosePresenceConfidence?: number;
+    minTrackingConfidence?: number;
+  }): Promise<boolean> {
+    return false;
+  }
+
+  static async getCurrentMediaPipePose2D(): Promise<MediaPipePose2D | null> {
     return null;
   }
 
