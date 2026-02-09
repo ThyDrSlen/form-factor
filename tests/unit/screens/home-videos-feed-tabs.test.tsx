@@ -11,6 +11,10 @@ jest.mock('../../../contexts/ToastContext', () => ({
   useToast: () => ({ show: jest.fn() }),
 }));
 
+jest.mock('../../../contexts/SocialContext', () => ({
+  useSocial: () => ({ unreadSharesCount: 0 }),
+}));
+
 jest.mock('expo-router', () => ({
   useRouter: () => ({
     push: jest.fn(),
@@ -72,14 +76,14 @@ describe('HomeScreen video feed', () => {
   it('does not render Following/Trending tabs', async () => {
     const { getByText, queryByText } = render(<HomeScreen />);
 
-    fireEvent.press(getByText('Videos'));
+    fireEvent.press(getByText('Feed'));
 
     expect(queryByText('Following')).toBeNull();
     expect(queryByText('Trending')).toBeNull();
 
     await waitFor(
       () => {
-        expect(getByText('No videos yet. Share a set to see it here.')).toBeTruthy();
+        expect(getByText('No posts in your social feed yet.')).toBeTruthy();
       },
       { timeout: 10000 }
     );
