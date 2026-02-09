@@ -283,6 +283,16 @@ export interface SessionMetricsPayload {
   avgFps?: number | null;
   minFps?: number | null;
   avgLatencyMs?: number | null;
+
+  // Shadow comparison metrics
+  shadowEnabled?: boolean;
+  shadowProvider?: string;
+  shadowModelVersion?: string;
+  shadowFramesCompared?: number | null;
+  shadowMeanAbsDelta?: number | null;
+  shadowP95AbsDelta?: number | null;
+  shadowMaxAbsDelta?: number | null;
+  shadowCoverageRatio?: number | null;
   
   // Cue stats
   cuesTotal?: number | null;

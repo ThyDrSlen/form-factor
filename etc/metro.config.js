@@ -11,10 +11,10 @@ const config = (() => {
   cfg.resolver = {
     ...resolver,
     sourceExts: [...resolver.sourceExts, 'mjs', 'cjs'],
+    assetExts: [...resolver.assetExts, 'task'],
   };
 
   return cfg;
 })();
 
 module.exports = withNativeWind(config, { input: './app/global.css' });
-

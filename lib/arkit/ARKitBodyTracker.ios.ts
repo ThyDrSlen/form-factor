@@ -55,6 +55,21 @@ export interface BodyPose2D {
   isTracking: boolean;
 }
 
+export interface MediaPipeLandmark2D {
+  x: number;
+  y: number;
+  visibility?: number;
+  presence?: number;
+}
+
+export interface MediaPipePose2D {
+  landmarks: MediaPipeLandmark2D[];
+  timestamp: number;
+  inferenceMs: number;
+  poseCount?: number;
+  modelVersion?: string;
+}
+
 export interface FrameSnapshot {
   frame: string;
   width?: number;
@@ -235,6 +250,43 @@ export class BodyTracker {
       return await ARKitBodyTracker.getCurrentFrameSnapshot(options ?? {});
     } catch (err) {
       warnWithTs('[BodyTracker] getCurrentFrameSnapshot() failed', err);
+      return null;
+    }
+  }
+
+  static async configureMediaPipeShadow(options?: {
+    modelPath?: string;
+    modelName?: string;
+    modelVersion?: string;
+    numPoses?: number;
+    minPoseDetectionConfidence?: number;
+    minPosePresenceConfidence?: number;
+    minTrackingConfidence?: number;
+  }): Promise<boolean> {
+    if (!ARKitBodyTracker || typeof ARKitBodyTracker.configureMediaPipeShadow !== 'function') {
+      return false;
+    }
+    try {
+      const configured: boolean | null | undefined = await ARKitBodyTracker.configureMediaPipeShadow(options ?? {});
+      return !!configured;
+    } catch (err) {
+      warnWithTs('[BodyTracker] configureMediaPipeShadow() failed', err);
+      return false;
+    }
+  }
+
+  static async getCurrentMediaPipePose2D(): Promise<MediaPipePose2D | null> {
+    if (!ARKitBodyTracker || typeof ARKitBodyTracker.getCurrentMediaPipePose2D !== 'function') {
+      return null;
+    }
+    try {
+      const payload: MediaPipePose2D | null | undefined = await ARKitBodyTracker.getCurrentMediaPipePose2D();
+      if (!payload || !Array.isArray(payload.landmarks)) {
+        return null;
+      }
+      return payload;
+    } catch (err) {
+      warnWithTs('[BodyTracker] getCurrentMediaPipePose2D() failed', err);
       return null;
     }
   }
