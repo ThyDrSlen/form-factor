@@ -22,6 +22,7 @@ Pod::Spec.new do |s|
   }
 
   s.dependency 'ExpoModulesCore'
+  s.dependency 'MediaPipeTasksVision'
 
   # iOS frameworks required for ARKit body tracking
   s.frameworks = 'ARKit', 'RealityKit', 'AVFoundation', 'UIKit'

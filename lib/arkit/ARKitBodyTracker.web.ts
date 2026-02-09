@@ -28,6 +28,34 @@ export interface BodyPose {
   estimatedHeight?: number;
 }
 
+export interface Joint2D {
+  name: string;
+  x: number;
+  y: number;
+  isTracked: boolean;
+}
+
+export interface BodyPose2D {
+  joints: Joint2D[];
+  timestamp: number;
+  isTracking: boolean;
+}
+
+export interface MediaPipeLandmark2D {
+  x: number;
+  y: number;
+  visibility?: number;
+  presence?: number;
+}
+
+export interface MediaPipePose2D {
+  landmarks: MediaPipeLandmark2D[];
+  timestamp: number;
+  inferenceMs: number;
+  poseCount?: number;
+  modelVersion?: string;
+}
+
 export interface FrameSnapshot {
   frame: string;
   width?: number;
@@ -126,6 +154,22 @@ export class BodyTracker {
     return null;
   }
 
+  static async configureMediaPipeShadow(_options?: {
+    modelPath?: string;
+    modelName?: string;
+    modelVersion?: string;
+    numPoses?: number;
+    minPoseDetectionConfidence?: number;
+    minPosePresenceConfidence?: number;
+    minTrackingConfidence?: number;
+  }): Promise<boolean> {
+    return false;
+  }
+
+  static async getCurrentMediaPipePose2D(): Promise<MediaPipePose2D | null> {
+    return null;
+  }
+
   /**
    * Calculate angle between three joints (in degrees)
    * Returns 0 on web
@@ -199,6 +243,7 @@ export class BodyTracker {
 export function useBodyTracking(fps: number = 30) {
   return {
     pose: null as BodyPose | null,
+    pose2D: null as BodyPose2D | null,
     isSupported: false,
     isTracking: false,
     startTracking: async () => {

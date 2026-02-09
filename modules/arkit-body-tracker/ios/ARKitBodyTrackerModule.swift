@@ -6,6 +6,9 @@ import AVFoundation
 import CoreImage
 import ImageIO
 import QuartzCore
+#if canImport(MediaPipeTasksVision)
+import MediaPipeTasksVision
+#endif
 
 // Represents a 3D joint with position and tracking state
 public struct Joint3D: Record {
@@ -127,6 +130,11 @@ public class ARKitBodyTrackerModule: Module {
   fileprivate var lockedBodyAnchorLastSeenTs: TimeInterval = 0
   fileprivate var lockedMissingCount = 0
   fileprivate let subjectLockTimeout: TimeInterval = 4.0
+  fileprivate(set) var mediaPipeModelVersion = "mediapipe-pose-landmarker@0.1.0"
+#if canImport(MediaPipeTasksVision)
+  fileprivate var mediaPipePoseLandmarker: PoseLandmarker?
+  fileprivate var mediaPipeModelPath: String?
+#endif
 
   fileprivate func computePose2DJoints(
     frame: ARFrame,
@@ -242,6 +250,142 @@ public class ARKitBodyTrackerModule: Module {
       "mirrored": false
     ]
   }
+
+  private func resolveMediaPipeModelPath(explicitModelPath: String?, modelName: String?) -> String? {
+    if let explicitModelPath {
+      let trimmed = explicitModelPath.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty {
+        let normalizedPath: String
+        if trimmed.hasPrefix("file://"), let fileUrl = URL(string: trimmed), fileUrl.isFileURL {
+          normalizedPath = fileUrl.path
+        } else {
+          normalizedPath = trimmed
+        }
+
+        if FileManager.default.fileExists(atPath: normalizedPath) {
+          return normalizedPath
+        }
+      }
+    }
+
+    let candidates = [
+      modelName,
+      "pose_landmarker_lite",
+      "pose_landmarker_full",
+      "pose_landmarker_heavy"
+    ].compactMap { name -> String? in
+      guard let name, !name.isEmpty else { return nil }
+      return name
+    }
+
+    for candidate in candidates {
+      if let bundledPath = Bundle.main.path(forResource: candidate, ofType: "task") {
+        return bundledPath
+      }
+    }
+
+    return nil
+  }
+
+#if canImport(MediaPipeTasksVision)
+  private func configureMediaPipePoseLandmarker(options: [String: Any]?) -> Bool {
+    let explicitModelPath = options?["modelPath"] as? String
+    let modelName = options?["modelName"] as? String
+    let modelVersion = (options?["modelVersion"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let minPoseDetectionConfidence = Float(options?["minPoseDetectionConfidence"] as? Double ?? 0.5)
+    let minPosePresenceConfidence = Float(options?["minPosePresenceConfidence"] as? Double ?? 0.5)
+    let minTrackingConfidence = Float(options?["minTrackingConfidence"] as? Double ?? 0.5)
+    let numPoses = max(1, options?["numPoses"] as? Int ?? 1)
+
+    guard let resolvedModelPath = resolveMediaPipeModelPath(explicitModelPath: explicitModelPath, modelName: modelName) else {
+      print("[ARKit][MediaPipe] Model file not found. Expected explicit modelPath or bundled *.task model.")
+      mediaPipePoseLandmarker = nil
+      mediaPipeModelPath = nil
+      return false
+    }
+
+    do {
+      let poseLandmarkerOptions = PoseLandmarkerOptions()
+      poseLandmarkerOptions.runningMode = .image
+      poseLandmarkerOptions.numPoses = numPoses
+      poseLandmarkerOptions.minPoseDetectionConfidence = minPoseDetectionConfidence
+      poseLandmarkerOptions.minPosePresenceConfidence = minPosePresenceConfidence
+      poseLandmarkerOptions.minTrackingConfidence = minTrackingConfidence
+      poseLandmarkerOptions.baseOptions.modelAssetPath = resolvedModelPath
+
+      mediaPipePoseLandmarker = try PoseLandmarker(options: poseLandmarkerOptions)
+      mediaPipeModelPath = resolvedModelPath
+      if let modelVersion, !modelVersion.isEmpty {
+        mediaPipeModelVersion = modelVersion
+      }
+
+      print("[ARKit][MediaPipe] Pose landmarker configured with model: \(resolvedModelPath)")
+      return true
+    } catch {
+      print("[ARKit][MediaPipe] Failed to initialize PoseLandmarker: \(error.localizedDescription)")
+      mediaPipePoseLandmarker = nil
+      mediaPipeModelPath = nil
+      return false
+    }
+  }
+
+  private func currentMediaPipePose2DPayload() -> [String: Any]? {
+    guard let poseLandmarker = mediaPipePoseLandmarker else {
+      return nil
+    }
+
+    let activeSession = arSession ?? ARKitBodyTrackerModule.sharedARView?.session
+    guard let frame = activeSession?.currentFrame else {
+      return nil
+    }
+
+    let ciImage = CIImage(cvPixelBuffer: frame.capturedImage)
+    let oriented = ciImage.oriented(imageOrientation(for: ARKitBodyTrackerModule.sharedARView))
+    guard let cgImage = ciContext.createCGImage(oriented, from: oriented.extent) else {
+      return nil
+    }
+
+    let uiImage = UIImage(cgImage: cgImage)
+    guard let image = try? MPImage(uiImage: uiImage) else {
+      return nil
+    }
+
+    let started = CACurrentMediaTime()
+    do {
+      let result = try poseLandmarker.detect(image: image)
+      guard let firstPoseLandmarks = result.landmarks.first,
+            !firstPoseLandmarks.isEmpty else {
+        return nil
+      }
+
+      let inferenceMs = (CACurrentMediaTime() - started) * 1000
+      let serialized = firstPoseLandmarks.map { landmark -> [String: Any] in
+        var payload: [String: Any] = [
+          "x": Double(landmark.x),
+          "y": Double(landmark.y)
+        ]
+        if let visibility = landmark.visibility {
+          payload["visibility"] = Double(visibility)
+        }
+        if let presence = landmark.presence {
+          payload["presence"] = Double(presence)
+        }
+        return payload
+      }
+
+      return [
+        "landmarks": serialized,
+        "timestamp": frame.timestamp,
+        "inferenceMs": inferenceMs,
+        "poseCount": result.landmarks.count,
+        "modelVersion": mediaPipeModelVersion,
+      ]
+    } catch {
+      print("[ARKit][MediaPipe] detect failed: \(error.localizedDescription)")
+      return nil
+    }
+  }
+#endif
 
   private func projectJointPoint(
     _ worldPoint: SIMD3<Float>,
@@ -442,6 +586,45 @@ public class ARKitBodyTrackerModule: Module {
       }
       semaphore.wait()
       return diagnostics
+    }
+
+    AsyncFunction("configureMediaPipeShadow") { (options: [String: Any]?, promise: Promise) in
+      let configureBlock = {
+#if canImport(MediaPipeTasksVision)
+        let configured = self.configureMediaPipePoseLandmarker(options: options)
+        promise.resolve(configured)
+#else
+        print("[ARKit][MediaPipe] MediaPipeTasksVision is unavailable in this build")
+        promise.resolve(false)
+#endif
+      }
+
+      if Thread.isMainThread {
+        configureBlock()
+      } else {
+        DispatchQueue.main.async {
+          configureBlock()
+        }
+      }
+    }
+
+    AsyncFunction("getCurrentMediaPipePose2D") { (promise: Promise) in
+      let detectionBlock = {
+#if canImport(MediaPipeTasksVision)
+        let payload = self.currentMediaPipePose2DPayload()
+        promise.resolve(payload)
+#else
+        promise.resolve(nil)
+#endif
+      }
+
+      if Thread.isMainThread {
+        detectionBlock()
+      } else {
+        DispatchQueue.main.async {
+          detectionBlock()
+        }
+      }
     }
     
     Function("setSubjectLockEnabled") { (enabled: Bool) in

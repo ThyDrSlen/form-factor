@@ -31,6 +31,17 @@ export interface PoseSample {
   inferenceMs?: number;
   lightingScore?: number;
   cameraPose?: [number, number, number, number, number, number];
+
+  // Shadow-provider comparison fields
+  shadowProvider?: 'mediapipe' | 'mediapipe_proxy';
+  shadowModelVersion?: string;
+  shadowAngles?: Partial<JointAngles>;
+  shadowAngleDelta?: Partial<JointAngles>;
+  shadowMeanAbsDelta?: number;
+  shadowP95AbsDelta?: number;
+  shadowInferenceMs?: number;
+  shadowComparedJoints?: number;
+  shadowCoverageRatio?: number;
 }
 
 interface QueuedPoseSample extends PoseSample {
@@ -109,6 +120,18 @@ async function flushBuffer(): Promise<void> {
         inference_ms: sample.inferenceMs ?? null,
         lighting_score: sample.lightingScore ?? null,
         camera_pose: sample.cameraPose ?? null,
+
+        // Shadow-provider comparison
+        shadow_provider: sample.shadowProvider ?? null,
+        shadow_model_version: sample.shadowModelVersion ?? null,
+        shadow_angles: sample.shadowAngles ?? null,
+        shadow_angle_delta: sample.shadowAngleDelta ?? null,
+        shadow_mean_abs_delta: sample.shadowMeanAbsDelta ?? null,
+        shadow_p95_abs_delta: sample.shadowP95AbsDelta ?? null,
+        shadow_inference_ms: sample.shadowInferenceMs ?? null,
+        shadow_compared_joints: sample.shadowComparedJoints ?? null,
+        shadow_coverage_ratio: sample.shadowCoverageRatio ?? null,
+
         // Versioning
         model_version: sample.modelVersion,
         cue_config_version: sample.cueConfigVersion,

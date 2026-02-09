@@ -22,6 +22,7 @@ import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Asset } from 'expo-asset';
 import {
   watchEvents,
   sendMessage,
@@ -34,7 +35,7 @@ import { buildWatchTrackingPayload } from '@/lib/watch-connectivity/tracking-pay
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
-import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D } from '@/lib/arkit/ARKitBodyTracker';
+import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type MediaPipePose2D } from '@/lib/arkit/ARKitBodyTracker';
 import { useSpeechFeedback } from '@/hooks/use-speech-feedback';
 import { generateSessionId, logCueEvent, upsertSessionMetrics } from '@/lib/services/cue-logger';
 import { logPoseSample, flushPoseBuffer, resetFrameCounter } from '@/lib/services/pose-logger';
@@ -45,6 +46,28 @@ import {
   markCuesDisabled,
   getSessionQuality,
 } from '@/lib/services/telemetry-context';
+import { buildArkitCanonicalFrame } from '@/lib/pose/adapters/arkit-workout-adapter';
+import {
+  buildMediaPipeShadowFrameFromArkit2D,
+  MEDIAPIPE_SHADOW_PROXY_VERSION,
+} from '@/lib/pose/adapters/mediapipe-shadow-proxy';
+import {
+  buildMediaPipeShadowFrameFromLandmarks,
+  MEDIAPIPE_POSE_LANDMARKER_VERSION,
+} from '@/lib/pose/adapters/mediapipe-workout-adapter';
+import {
+  accumulateShadowStats,
+  compareJointAngles,
+  createShadowStatsAccumulator,
+  finalizeShadowStats,
+} from '@/lib/pose/shadow-metrics';
+import {
+  bumpShadowProviderCount,
+  createShadowProviderCounts,
+  selectShadowProvider,
+  summarizeShadowProvider,
+  type ShadowProvider,
+} from '@/lib/pose/shadow-provider';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
 import {
   DEFAULT_DETECTION_MODE,
@@ -91,6 +114,9 @@ const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 const WATCH_MIRROR_INTERVAL_MS = 750;
 const WATCH_MIRROR_AR_QUALITY = 0.25;
 const WATCH_MIRROR_MAX_WIDTH = 320;
+const MEDIAPIPE_SHADOW_POLL_INTERVAL_MS = 100;
+const MEDIAPIPE_MAX_TIMESTAMP_SKEW_SEC = 0.4;
+const MEDIAPIPE_LITE_MODEL_ASSET = require('../../assets/models/pose_landmarker_lite.task');
 const QUALITY_STORAGE_KEY = 'ff.recordingQuality';
 const QUALITY_LABELS: Record<RecordingQuality, string> = {
   low: 'Low',
@@ -224,6 +250,17 @@ export default function ScanARKitScreen() {
   const watchMirrorInFlightRef = React.useRef(false);
   const watchTrackingPublishAtRef = React.useRef(0);
   const watchTrackingSignatureRef = React.useRef<string | null>(null);
+  const [shadowModeEnabled, setShadowModeEnabled] = useState(true);
+  const shadowModeEnabledRef = React.useRef(true);
+  const shadowStatsRef = React.useRef(createShadowStatsAccumulator());
+  const [shadowProviderRuntime, setShadowProviderRuntime] = useState<ShadowProvider>('mediapipe_proxy');
+  const shadowProviderRuntimeRef = React.useRef<ShadowProvider>('mediapipe_proxy');
+  const shadowProviderCountsRef = React.useRef(createShadowProviderCounts());
+  const mediaPipePoseRef = React.useRef<MediaPipePose2D | null>(null);
+  const mediaPipeModelVersionRef = React.useRef<string>(MEDIAPIPE_POSE_LANDMARKER_VERSION);
+  const [mediaPipeModelPath, setMediaPipeModelPath] = useState<string | null>(null);
+  const mediaPipePollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const mediaPipePollInFlightRef = React.useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -241,8 +278,170 @@ export default function ScanARKitScreen() {
   }, []);
 
   useEffect(() => {
+    shadowModeEnabledRef.current = shadowModeEnabled;
+  }, [shadowModeEnabled]);
+
+  useEffect(() => {
+    shadowProviderRuntimeRef.current = shadowProviderRuntime;
+  }, [shadowProviderRuntime]);
+
+  useEffect(() => {
     BodyTracker.setSubjectLockEnabled(subjectLockEnabled);
   }, [subjectLockEnabled]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (Platform.OS !== 'ios') {
+      setMediaPipeModelPath(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const loadBundledModelPath = async () => {
+      try {
+        const modelAsset = Asset.fromModule(MEDIAPIPE_LITE_MODEL_ASSET);
+        await modelAsset.downloadAsync();
+
+        if (cancelled) {
+          return;
+        }
+
+        const resolvedPath = modelAsset.localUri ?? modelAsset.uri ?? null;
+        setMediaPipeModelPath(resolvedPath);
+
+        if (DEV && resolvedPath) {
+          logWithTs('[ScanARKit] MediaPipe model resolved', resolvedPath);
+        }
+      } catch (error) {
+        if (!cancelled && DEV) {
+          warnWithTs('[ScanARKit] Failed to resolve bundled MediaPipe model asset', error);
+        }
+        if (!cancelled) {
+          setMediaPipeModelPath(null);
+        }
+      }
+    };
+
+    void loadBundledModelPath();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [DEV]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (Platform.OS !== 'ios' || !shadowModeEnabled || !isTracking) {
+      setShadowProviderRuntime('mediapipe_proxy');
+      mediaPipePoseRef.current = null;
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const configure = async () => {
+      const configured = await BodyTracker.configureMediaPipeShadow({
+        modelPath: mediaPipeModelPath ?? undefined,
+        modelName: 'pose_landmarker_lite',
+        modelVersion: MEDIAPIPE_POSE_LANDMARKER_VERSION,
+        numPoses: 1,
+        minPoseDetectionConfidence: 0.5,
+        minPosePresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      });
+
+      if (cancelled) {
+        return;
+      }
+
+      if (configured) {
+        setShadowProviderRuntime('mediapipe');
+        if (DEV) {
+          logWithTs('[ScanARKit] MediaPipe shadow configured');
+        }
+      } else {
+        setShadowProviderRuntime('mediapipe_proxy');
+        mediaPipePoseRef.current = null;
+        if (DEV) {
+          warnWithTs('[ScanARKit] MediaPipe shadow unavailable, falling back to proxy provider');
+        }
+      }
+    };
+
+    configure().catch((error) => {
+      if (!cancelled && DEV) {
+        warnWithTs('[ScanARKit] Failed to configure MediaPipe shadow', error);
+      }
+      if (!cancelled) {
+        setShadowProviderRuntime('mediapipe_proxy');
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [DEV, isTracking, mediaPipeModelPath, shadowModeEnabled]);
+
+  useEffect(() => {
+    const shouldPollMediaPipe =
+      Platform.OS === 'ios' &&
+      isTracking &&
+      shadowModeEnabled &&
+      shadowProviderRuntime === 'mediapipe';
+
+    if (!shouldPollMediaPipe) {
+      if (mediaPipePollTimerRef.current) {
+        clearInterval(mediaPipePollTimerRef.current);
+        mediaPipePollTimerRef.current = null;
+      }
+      mediaPipePollInFlightRef.current = false;
+      mediaPipePoseRef.current = null;
+      return;
+    }
+
+    let active = true;
+
+    const poll = async () => {
+      if (!active || mediaPipePollInFlightRef.current) {
+        return;
+      }
+
+      mediaPipePollInFlightRef.current = true;
+      try {
+        const payload = await BodyTracker.getCurrentMediaPipePose2D();
+        if (!active || !payload || payload.landmarks.length === 0) {
+          return;
+        }
+        mediaPipePoseRef.current = payload;
+        if (payload.modelVersion) {
+          mediaPipeModelVersionRef.current = payload.modelVersion;
+        }
+      } catch (error) {
+        if (DEV) {
+          warnWithTs('[ScanARKit] MediaPipe shadow poll failed', error);
+        }
+      } finally {
+        mediaPipePollInFlightRef.current = false;
+      }
+    };
+
+    void poll();
+    mediaPipePollTimerRef.current = setInterval(() => {
+      void poll();
+    }, MEDIAPIPE_SHADOW_POLL_INTERVAL_MS);
+
+    return () => {
+      active = false;
+      if (mediaPipePollTimerRef.current) {
+        clearInterval(mediaPipePollTimerRef.current);
+        mediaPipePollTimerRef.current = null;
+      }
+      mediaPipePollInFlightRef.current = false;
+    };
+  }, [DEV, isTracking, shadowModeEnabled, shadowProviderRuntime]);
 
   const updateRecordingQuality = useCallback(async (value: RecordingQuality) => {
     setRecordingQuality(value);
@@ -323,6 +522,9 @@ export default function ScanARKitScreen() {
       }
     });
     resetFrameCounter();
+    shadowStatsRef.current = createShadowStatsAccumulator();
+    shadowProviderCountsRef.current = createShadowProviderCounts();
+    mediaPipePoseRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -337,6 +539,15 @@ export default function ScanARKitScreen() {
       const avgFps = fpsStats.count > 0 ? fpsStats.sum / fpsStats.count : null;
       const minFps = fpsStats.count > 0 ? fpsStats.min : null;
       const quality = getSessionQuality();
+      const shadow = finalizeShadowStats(shadowStatsRef.current);
+      const shadowProvider = shadowModeEnabledRef.current
+        ? summarizeShadowProvider(shadowProviderCountsRef.current, shadowProviderRuntimeRef.current)
+        : undefined;
+      const shadowModelVersion = shadowModeEnabledRef.current
+        ? shadowProvider === 'mediapipe'
+          ? mediaPipeModelVersionRef.current
+          : MEDIAPIPE_SHADOW_PROXY_VERSION
+        : undefined;
 
       // Flush any remaining pose samples before session ends
       flushPoseBuffer().catch((error) => {
@@ -361,6 +572,16 @@ export default function ScanARKitScreen() {
         trackingResetCount: quality.trackingResetCount,
         userAbortedEarly: quality.userAbortedEarly,
         cuesDisabledMidSession: quality.cuesDisabledMidSession,
+
+        // Shadow-mode drift summary
+        shadowEnabled: shadowModeEnabledRef.current,
+        shadowProvider,
+        shadowModelVersion,
+        shadowFramesCompared: shadow.framesCompared,
+        shadowMeanAbsDelta: shadow.meanAbsDelta,
+        shadowP95AbsDelta: shadow.p95AbsDelta,
+        shadowMaxAbsDelta: shadow.maxAbsDelta,
+        shadowCoverageRatio: shadow.coverageRatio,
       });
     };
   }, []);
@@ -411,6 +632,9 @@ export default function ScanARKitScreen() {
     setRepCount(0);
     setActiveMetrics(null);
     repIndexTrackerRef.current.reset();
+    shadowStatsRef.current = createShadowStatsAccumulator();
+    shadowProviderCountsRef.current = createShadowProviderCounts();
+    mediaPipePoseRef.current = null;
     setWorkoutController(detectionMode);
   }, [detectionMode, setWorkoutController]);
 
@@ -567,10 +791,67 @@ export default function ScanARKitScreen() {
           setJointAngles(next);
         }
 
+        const jointsMap = new Map<string, { x: number; y: number; isTracked: boolean }>();
+        pose.joints.forEach((joint) => {
+          jointsMap.set(joint.name, { x: joint.x, y: joint.y, isTracked: joint.isTracked });
+        });
+
+        const canonicalFrame = buildArkitCanonicalFrame({
+          angles: next,
+          pose2D,
+          timestamp: pose.timestamp,
+        });
+
+        let shadowFrame = null;
+        if (shadowModeEnabledRef.current) {
+          const latestMediaPipePose = mediaPipePoseRef.current;
+          const selectedProvider = selectShadowProvider({
+            preferredProvider: shadowProviderRuntimeRef.current,
+            primaryTimestamp: pose.timestamp,
+            mediaPipeTimestamp: latestMediaPipePose?.timestamp,
+            maxTimestampSkewSec: MEDIAPIPE_MAX_TIMESTAMP_SKEW_SEC,
+          });
+
+          if (selectedProvider === 'mediapipe' && latestMediaPipePose?.landmarks?.length) {
+            shadowFrame = buildMediaPipeShadowFrameFromLandmarks({
+              primaryAngles: next,
+              landmarks: latestMediaPipePose.landmarks,
+              timestamp: pose.timestamp,
+              inferenceMs: latestMediaPipePose.inferenceMs,
+              modelVersion: latestMediaPipePose.modelVersion ?? mediaPipeModelVersionRef.current,
+            });
+            if (latestMediaPipePose.modelVersion) {
+              mediaPipeModelVersionRef.current = latestMediaPipePose.modelVersion;
+            }
+          } else {
+            shadowFrame = buildMediaPipeShadowFrameFromArkit2D({
+              primaryAngles: next,
+              arkitJointMap: canonicalFrame.joints,
+              timestamp: pose.timestamp,
+            });
+          }
+        }
+
+        const shadowComparison = shadowFrame
+          ? compareJointAngles(next, shadowFrame.angles, {
+              provider: shadowFrame.provider,
+              modelVersion: shadowFrame.modelVersion,
+              inferenceMs: shadowFrame.inferenceMs,
+              coverageRatio: shadowFrame.coverageRatio,
+            })
+          : null;
+
+        if (shadowComparison) {
+          accumulateShadowStats(shadowStatsRef.current, shadowComparison);
+          if (shadowFrame) {
+            bumpShadowProviderCount(shadowProviderCountsRef.current, shadowFrame.provider);
+          }
+        }
+
         // Log pose sample for ML modeling (only when tracking is active)
         if (next && isTracking) {
           const currentRepIndex = repIndexTrackerRef.current.current();
-          
+
           logPoseSample({
             sessionId: sessionIdRef.current,
             frameTimestamp: pose.timestamp,
@@ -579,17 +860,21 @@ export default function ScanARKitScreen() {
             repNumber: currentRepIndex,
             angles: next,
             fpsAtCapture: fps,
+            shadowProvider: shadowFrame?.provider,
+            shadowModelVersion: shadowFrame?.modelVersion,
+            shadowAngles: shadowComparison?.shadowAngles,
+            shadowAngleDelta: shadowComparison?.deltaByJoint,
+            shadowMeanAbsDelta: shadowComparison?.meanAbsDelta,
+            shadowP95AbsDelta: shadowComparison?.p95AbsDelta,
+            shadowInferenceMs: shadowComparison?.inferenceMs,
+            shadowComparedJoints: shadowComparison?.comparedJoints,
+            shadowCoverageRatio: shadowComparison?.coverageRatio,
           }).catch((error) => {
             if (__DEV__) {
               warnWithTs('[ScanARKit] Failed to log pose sample', error);
             }
           });
         }
-
-        const jointsMap = new Map<string, { x: number; y: number; isTracked: boolean }>();
-        pose.joints.forEach((joint) => {
-          jointsMap.set(joint.name, { x: joint.x, y: joint.y, isTracked: joint.isTracked });
-        });
 
         const metrics = activeWorkoutDef.calculateMetrics(next, jointsMap) as WorkoutMetrics;
         setActiveMetrics(metrics);
@@ -717,6 +1002,9 @@ export default function ScanARKitScreen() {
       setActiveMetrics(null);
 
       const startTime = Date.now();
+      shadowStatsRef.current = createShadowStatsAccumulator();
+      shadowProviderCountsRef.current = createShadowProviderCounts();
+      mediaPipePoseRef.current = null;
       await startNativeTracking();
       const elapsed = Date.now() - startTime;
       
@@ -787,6 +1075,10 @@ export default function ScanARKitScreen() {
       resetWorkoutController();
       setRepCount(0);
       setFps(0);
+      shadowStatsRef.current = createShadowStatsAccumulator();
+      shadowProviderCountsRef.current = createShadowProviderCounts();
+      mediaPipePoseRef.current = null;
+      setShadowProviderRuntime('mediapipe_proxy');
       
       if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
@@ -1790,6 +2082,14 @@ export default function ScanARKitScreen() {
               <View style={styles.settingsRow}>
                 <Text style={styles.settingsLabel}>Audio feedback</Text>
                 <Switch value={audioFeedbackEnabled} onValueChange={setAudioFeedbackEnabled} />
+              </View>
+
+              <View style={styles.settingsRow}>
+                <View style={styles.settingsLabelGroup}>
+                  <Text style={styles.settingsLabel}>MediaPipe shadow</Text>
+                  <Text style={styles.settingsHint}>Compare ARKit primary with shadow angles</Text>
+                </View>
+                <Switch value={shadowModeEnabled} onValueChange={setShadowModeEnabled} />
               </View>
 
               {Platform.OS === 'ios' && (

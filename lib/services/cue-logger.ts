@@ -103,7 +103,17 @@ export async function upsertSessionMetrics(metrics: SessionMetricsPayload): Prom
       avg_fps: metrics.avgFps,
       min_fps: metrics.minFps,
       avg_latency_ms: metrics.avgLatencyMs,
-      
+
+      // Shadow-mode metrics
+      shadow_enabled: metrics.shadowEnabled ?? null,
+      shadow_provider: metrics.shadowProvider ?? null,
+      shadow_model_version: metrics.shadowModelVersion ?? null,
+      shadow_frames_compared: metrics.shadowFramesCompared ?? null,
+      shadow_mean_abs_delta: metrics.shadowMeanAbsDelta ?? null,
+      shadow_p95_abs_delta: metrics.shadowP95AbsDelta ?? null,
+      shadow_max_abs_delta: metrics.shadowMaxAbsDelta ?? null,
+      shadow_coverage_ratio: metrics.shadowCoverageRatio ?? null,
+
       // Cue statistics
       cues_total: metrics.cuesTotal,
       cues_spoken: metrics.cuesSpoken,
