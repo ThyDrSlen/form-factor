@@ -20,6 +20,7 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useSocial } from '../../contexts/SocialContext';
 import { DashboardHealth } from '@/components';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import {
@@ -264,6 +265,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const tabBarHeight = useBottomTabBarHeight();
   const { show: showToast } = useToast();
+  const social = useSocial();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'videos' | 'coach'>('dashboard');
   const [videos, setVideos] = useState<VideoWithUrls[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
@@ -301,7 +303,7 @@ export default function HomeScreen() {
       setLoadingVideos(true);
     }
     try {
-      const fetched = await listVideos(15, { onlyMine: false });
+      const fetched = await listVideos(15, { socialFeed: true, onlyMine: false });
       setVideos(fetched);
       setHasFetchedOnce(true);
     } catch (error) {
@@ -362,14 +364,24 @@ export default function HomeScreen() {
   }, []);
 
   const coachContext = useMemo(
-    () => ({
-      profile: {
-        id: user?.id,
-        name: (user?.user_metadata as any)?.full_name || user?.user_metadata?.name || null,
-        email: user?.email ?? null,
-      },
-      focus: 'fitness_coach',
-    }),
+    () => {
+      const metadata =
+        user?.user_metadata && typeof user.user_metadata === 'object'
+          ? (user.user_metadata as Record<string, unknown>)
+          : null;
+      const fullName =
+        (metadata && typeof metadata.full_name === 'string' ? metadata.full_name : null) ??
+        (metadata && typeof metadata.name === 'string' ? metadata.name : null);
+
+      return {
+        profile: {
+          id: user?.id,
+          name: fullName,
+          email: user?.email ?? null,
+        },
+        focus: 'fitness_coach',
+      };
+    },
     [user]
   );
 
@@ -398,7 +410,7 @@ export default function HomeScreen() {
       coachListRef.current?.scrollToEnd({ animated: true });
     } catch (err) {
       const appErr = err as AppError | null;
-      const hasDomain = appErr && (appErr as any).domain;
+      const hasDomain = Boolean(appErr && typeof appErr === 'object' && 'domain' in appErr);
       const fallback = 'Unable to reach the coach. Please try again.';
       setCoachError(hasDomain ? mapToUserMessage(appErr as AppError) : fallback);
     } finally {
@@ -419,6 +431,13 @@ export default function HomeScreen() {
       warnWithTs('Share failed', error);
     }
   }, []);
+
+  const handleSendTo = useCallback(
+    (video: VideoWithUrls) => {
+      router.push(`/(modals)/share-video?videoId=${video.id}`);
+    },
+    [router],
+  );
 
   const handleUploadVideo = useCallback(async () => {
     try {
@@ -495,6 +514,7 @@ export default function HomeScreen() {
   const handlePostActions = useCallback(
     (video: VideoWithUrls, canDelete: boolean) => {
       const buttons = [
+        { text: 'Send to...', onPress: () => handleSendTo(video) },
         { text: 'Share', onPress: () => handleShare(video) },
         canDelete
           ? {
@@ -516,7 +536,7 @@ export default function HomeScreen() {
       ].filter(Boolean) as { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[];
       Alert.alert('Post actions', undefined, buttons);
     },
-    [handleDeleteVideo, handleShare]
+    [handleDeleteVideo, handleSendTo, handleShare]
   );
 
   const renderVideoCard = ({ item }: { item: VideoWithUrls }) => {
@@ -532,19 +552,35 @@ export default function HomeScreen() {
     const isLiked = likedVideos[item.id] === true;
 
     const canDelete = user?.id === item.user_id;
-    const displayName = canDelete ? getDisplayName() : 'FF Athlete';
+    const displayName = item.display_name || item.username || (canDelete ? getDisplayName() : 'FF Athlete');
+    const displayInitial = displayName.charAt(0).toUpperCase();
     return (
       <View style={styles.feedCard}>
         <View style={styles.postHeader}>
           <View style={styles.postHeaderLeft}>
-            <View style={styles.postAvatarWrap}>
+            <TouchableOpacity
+              style={styles.postAvatarWrap}
+              disabled={canDelete}
+              onPress={() => router.push(`/(modals)/user-profile?userId=${item.user_id}`)}
+              activeOpacity={0.8}
+            >
               <View style={styles.postAvatar}>
-                <Text style={styles.postAvatarText}>{displayName.charAt(0).toUpperCase()}</Text>
+                {item.avatar_url ? (
+                  <Image source={{ uri: item.avatar_url }} style={styles.postAvatarImage} />
+                ) : (
+                  <Text style={styles.postAvatarText}>{displayInitial}</Text>
+                )}
               </View>
               <View style={styles.postAvatarStatus} />
-            </View>
+            </TouchableOpacity>
             <View style={styles.postHeaderText}>
-              <Text style={styles.postName} numberOfLines={1}>{displayName}</Text>
+              <TouchableOpacity
+                disabled={canDelete}
+                onPress={() => router.push(`/(modals)/user-profile?userId=${item.user_id}`)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.postName} numberOfLines={1}>{displayName}</Text>
+              </TouchableOpacity>
               {metaLine ? (
                 <Text style={styles.postMeta} numberOfLines={1}>
                   {metaLine} • Workout share
@@ -716,7 +752,7 @@ export default function HomeScreen() {
           !loadingVideos && hasFetchedOnce ? (
             <View style={styles.feedEmpty}>
               <Ionicons name="videocam-off-outline" size={22} color="#9AACD1" />
-              <Text style={styles.feedMeta}>No videos yet. Share a set to see it here.</Text>
+              <Text style={styles.feedMeta}>No posts in your social feed yet.</Text>
               <TouchableOpacity style={styles.uploadButton} onPress={handleUploadVideo}>
                 <Text style={styles.uploadButtonText}>Upload Video</Text>
               </TouchableOpacity>
@@ -816,6 +852,16 @@ export default function HomeScreen() {
             <Text style={styles.feedTopTitle}>Feed</Text>
           </View>
           <View style={styles.feedTopActions}>
+            <TouchableOpacity style={styles.inboxButton} onPress={() => router.push('/(modals)/shared-inbox')}>
+              <Ionicons name="paper-plane-outline" size={18} color="#DDE6FF" />
+              {social.unreadSharesCount > 0 ? (
+                <View style={styles.inboxBadge}>
+                  <Text style={styles.inboxBadgeText}>
+                    {social.unreadSharesCount > 99 ? '99+' : String(social.unreadSharesCount)}
+                  </Text>
+                </View>
+              ) : null}
+            </TouchableOpacity>
             <TouchableOpacity style={styles.coachEmojiButton} onPress={() => setActiveTab('coach')}>
               <Text style={styles.coachEmojiText}>🧑‍🏫</Text>
             </TouchableOpacity>
@@ -853,7 +899,7 @@ export default function HomeScreen() {
           onPress={() => setActiveTab('videos')}
         >
           <Text style={[styles.tabText, activeTab === 'videos' && styles.tabTextActive]}>
-            Videos
+            Feed
           </Text>
         </TouchableOpacity>
       </View>

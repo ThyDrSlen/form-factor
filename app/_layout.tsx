@@ -11,9 +11,25 @@ import { WorkoutsProvider } from '../contexts/WorkoutsContext';
 import { HealthKitProvider } from '../contexts/HealthKitContext';
 import { UnitsProvider } from '../contexts/UnitsContext';
 import { NetworkProvider } from '../contexts/NetworkContext';
+import { SocialProvider } from '../contexts/SocialContext';
 import { useFonts, Lexend_400Regular, Lexend_500Medium, Lexend_700Bold } from '@expo-google-fonts/lexend';
 import { ToastProvider } from '../contexts/ToastContext';
 import { logWithTs, warnWithTs } from '@/lib/logger';
+import { createError, logError } from '@/lib/services/ErrorHandler';
+
+function reportIngestError(location: string, error: unknown): void {
+  logError(
+    createError('network', 'DEBUG_INGEST_FAILED', 'Failed to send local debug ingest event', {
+      details: { location, error },
+      severity: 'info',
+      retryable: true,
+    }),
+    {
+      feature: 'app',
+      location,
+    }
+  );
+}
 
 // #region agent log
 fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
@@ -28,7 +44,9 @@ fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
     data:{},
     timestamp:Date.now()
   })
-}).catch(()=>{});
+}).catch((error) => {
+  reportIngestError('app/_layout.tsx:module', error);
+});
 // #endregion
 
 // This layout wraps the entire app with providers
@@ -52,7 +70,9 @@ function RootLayoutNav() {
         data:{ fontsLoaded, alreadyApplied:fontStyleAppliedRef.current },
         timestamp:Date.now()
       })
-    }).catch(()=>{});
+    }).catch((error) => {
+      reportIngestError('app/_layout.tsx:useEffect fonts check', error);
+    });
     // #endregion
     if (fontsLoaded && RNText && !fontStyleAppliedRef.current) {
       fontStyleAppliedRef.current = true;
@@ -79,7 +99,9 @@ function RootLayoutNav() {
             data:{ mergedStyleLength:mergedStyle.length },
             timestamp:Date.now()
           })
-        }).catch(()=>{});
+        }).catch((error) => {
+          reportIngestError('app/_layout.tsx:font defaults applied', error);
+        });
         // #endregion
       } catch (e) {
         // Silently fail - font styling is not critical
@@ -99,7 +121,9 @@ function RootLayoutNav() {
             data:{ error: e instanceof Error ? e.message : String(e) },
             timestamp:Date.now()
           })
-        }).catch(()=>{});
+        }).catch((error) => {
+          reportIngestError('app/_layout.tsx:font defaults error', error);
+        });
         // #endregion
       }
     }
@@ -114,15 +138,17 @@ function RootLayoutNav() {
               <HealthKitProvider>
                 <WorkoutsProvider>
                   <NutritionGoalsProvider>
-                    <FoodProvider>
-                      {!fontsLoaded ? (
-                        <View style={styles.splash}>
-                          <ActivityIndicator color="#4C8CFF" />
-                        </View>
-                      ) : (
-                        <InitialLayout />
-                      )}
-                    </FoodProvider>
+                    <SocialProvider>
+                      <FoodProvider>
+                        {!fontsLoaded ? (
+                          <View style={styles.splash}>
+                            <ActivityIndicator color="#4C8CFF" />
+                          </View>
+                        ) : (
+                          <InitialLayout />
+                        )}
+                      </FoodProvider>
+                    </SocialProvider>
                   </NutritionGoalsProvider>
                 </WorkoutsProvider>
               </HealthKitProvider>

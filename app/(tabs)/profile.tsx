@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert, Share, Modal, TextInput, ActivityIndicator, Image } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert, Share, Modal, TextInput, ActivityIndicator, Image, Switch } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { useNutritionGoals } from '@/contexts/NutritionGoalsContext';
+import { useSocial } from '@/contexts/SocialContext';
 import { HealthTrendsView } from '@/components/dashboard-health/HealthTrendsView';
 import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { deleteVideo, getVideoById, listVideos, toggleVideoLike, VideoWithUrls } from '@/lib/services/video-service';
@@ -27,12 +28,41 @@ import {
 import { styles } from '../../styles/tabs/_profile.styles';
 import { styles as feedStyles } from '../../styles/tabs/_index.styles';
 import { subscribeToCommentEvents } from '@/lib/video-comments-events';
+import {
+  getFollowCounts,
+  getProfile as getSocialProfile,
+  updateProfile as updateSocialProfile,
+  type FollowCounts,
+  type ProfileRecord,
+} from '@/lib/services/social-service';
 
 type FeedVideoPlayerProps = {
   uri: string;
   thumbnailUrl?: string | null;
   overlaySummary: string;
   overlayTime: string;
+};
+
+type MenuIconName = React.ComponentProps<typeof Ionicons>['name'];
+
+interface MenuItemProps {
+  icon: MenuIconName;
+  title: string;
+  onPress: () => void;
+  danger?: boolean;
+}
+
+type DebugSyncStatus = {
+  state: 'idle' | 'syncing' | 'error';
+  queueSize: number;
+  lastError: string | null;
+};
+
+type SyncQueueItem = {
+  id: number;
+  table_name: string;
+  operation: string;
+  retry_count: number;
 };
 
 const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: FeedVideoPlayerProps) => {
@@ -195,28 +225,38 @@ const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: Fee
 };
 
 export default function ProfileScreen() {
-  const { user, signOut, updateProfile } = useAuth();
+  const { user, signOut, updateProfile: updateAuthProfile } = useAuth();
   const { show: showToast } = useToast();
   const { goals, saveGoals: saveNutritionGoals } = useNutritionGoals();
+  const social = useSocial();
   const [isFixing, setIsFixing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isEditProfileVisible, setIsEditProfileVisible] = useState(false);
   const [isEditGoalsVisible, setIsEditGoalsVisible] = useState(false);
   const [fullName, setFullName] = useState('');
+  const [profilePrivacy, setProfilePrivacy] = useState(false);
   const [isSavingName, setIsSavingName] = useState(false);
+  const [socialProfile, setSocialProfile] = useState<ProfileRecord | null>(null);
+  const [followCounts, setFollowCounts] = useState<FollowCounts>({ followers: 0, following: 0, pending_requests: 0 });
   const [videos, setVideos] = useState<VideoWithUrls[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [hasFetchedOnce, setHasFetchedOnce] = useState(false);
   const [likedVideos, setLikedVideos] = useState<Record<string, boolean>>({});
   const { debugInfo, loading: debugLoading, refresh: refreshDebugInfo } = useDebugInfo();
+  const [syncStatus, setSyncStatus] = useState<DebugSyncStatus>({
+    state: 'idle',
+    queueSize: 0,
+    lastError: null,
+  });
   const [isSavingGoals, setIsSavingGoals] = useState(false);
   const [calories, setCalories] = useState('');
   const [protein, setProtein] = useState('');
   const [carbs, setCarbs] = useState('');
   const [fat, setFat] = useState('');
-  const currentName = user?.user_metadata?.full_name || user?.user_metadata?.name || '';
+  const currentName = socialProfile?.display_name || user?.user_metadata?.full_name || user?.user_metadata?.name || '';
+  const currentUsername = socialProfile?.username || '';
   const memberSinceYear = user?.created_at ? new Date(user.created_at).getFullYear() : new Date().getFullYear();
   const displayName = currentName || user?.email?.split('@')[0] || 'User';
   const displayInitial = (displayName || 'U').charAt(0).toUpperCase();
@@ -238,11 +278,66 @@ export default function ProfileScreen() {
     }
   }, []);
 
+  const loadSocialData = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const [profile, counts] = await Promise.all([
+        getSocialProfile(user.id),
+        getFollowCounts(user.id),
+      ]);
+      setSocialProfile(profile);
+      setProfilePrivacy(Boolean(profile?.is_private));
+      setFollowCounts(counts);
+      await social.refreshPendingRequestCount();
+    } catch (error) {
+      if (__DEV__) {
+        warnWithTs('[Profile] Failed to load social profile data', error);
+      }
+    }
+  }, [social, user?.id]);
+
   useEffect(() => {
     if (!hasFetchedOnce && !loadingVideos) {
       loadVideos();
     }
   }, [hasFetchedOnce, loadVideos, loadingVideos]);
+
+  useEffect(() => {
+    void loadSocialData();
+  }, [loadSocialData]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const refreshSyncStatus = async (state: DebugSyncStatus['state'] = 'idle', lastError: string | null = null) => {
+      try {
+        const queue = await localDB.getSyncQueue();
+        if (!isMounted) return;
+        setSyncStatus({
+          state,
+          queueSize: queue.length,
+          lastError,
+        });
+      } catch (error) {
+        if (!isMounted) return;
+        setSyncStatus({
+          state: 'error',
+          queueSize: 0,
+          lastError: error instanceof Error ? error.message : 'Failed to read sync status',
+        });
+      }
+    };
+
+    void refreshSyncStatus();
+    const unsubscribe = syncService.onSyncComplete(() => {
+      void refreshSyncStatus('idle');
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const unsubscribe = subscribeToCommentEvents((event) => {
@@ -298,6 +393,10 @@ export default function ProfileScreen() {
     }
   }, []);
 
+  const handleSendTo = useCallback((video: VideoWithUrls) => {
+    router.push(`/(modals)/share-video?videoId=${video.id}`);
+  }, []);
+
   const handleDeleteVideo = useCallback(
     async (videoId: string) => {
       try {
@@ -315,6 +414,7 @@ export default function ProfileScreen() {
   const handlePostActions = useCallback(
     (video: VideoWithUrls, canDelete: boolean) => {
       const buttons = [
+        { text: 'Send to...', onPress: () => handleSendTo(video) },
         { text: 'Share', onPress: () => handleShare(video) },
         canDelete
           ? {
@@ -336,7 +436,7 @@ export default function ProfileScreen() {
       ].filter(Boolean) as { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[];
       Alert.alert('Post actions', undefined, buttons);
     },
-    [handleDeleteVideo, handleShare]
+    [handleDeleteVideo, handleSendTo, handleShare]
   );
 
   const handleToggleLike = useCallback(
@@ -373,6 +473,8 @@ export default function ProfileScreen() {
     const likeCount = typeof item.like_count === 'number' ? item.like_count : 0;
     const commentCount = typeof item.comment_count === 'number' ? item.comment_count : 0;
     const isLiked = likedVideos[item.id] === true;
+    const postDisplayName = item.display_name || item.username || displayName;
+    const postInitial = postDisplayName.charAt(0).toUpperCase();
 
     const canDelete = user?.id === item.user_id;
     return (
@@ -381,12 +483,16 @@ export default function ProfileScreen() {
           <View style={feedStyles.postHeaderLeft}>
             <View style={feedStyles.postAvatarWrap}>
               <View style={feedStyles.postAvatar}>
-                <Text style={feedStyles.postAvatarText}>{displayInitial}</Text>
+                {item.avatar_url ? (
+                  <Image source={{ uri: item.avatar_url }} style={feedStyles.postAvatarImage} />
+                ) : (
+                  <Text style={feedStyles.postAvatarText}>{postInitial}</Text>
+                )}
               </View>
               <View style={feedStyles.postAvatarStatus} />
             </View>
             <View style={feedStyles.postHeaderText}>
-              <Text style={feedStyles.postName} numberOfLines={1}>{displayName}</Text>
+              <Text style={feedStyles.postName} numberOfLines={1}>{postDisplayName}</Text>
               {metaLine ? (
                 <Text style={feedStyles.postMeta} numberOfLines={1}>
                   {metaLine} • Workout share
@@ -513,11 +619,19 @@ export default function ProfileScreen() {
 
   const handleForceSync = async () => {
     setIsSyncing(true);
+    setSyncStatus((prev) => ({ ...prev, state: 'syncing', lastError: null }));
     try {
       await syncService.fullSync();
       await refreshDebugInfo();
+      const queue = await localDB.getSyncQueue();
+      setSyncStatus({ state: 'idle', queueSize: queue.length, lastError: null });
       Alert.alert('✅ Sync Complete', 'All data has been synchronized');
-    } catch {
+    } catch (error) {
+      setSyncStatus({
+        state: 'error',
+        queueSize: syncStatus.queueSize,
+        lastError: error instanceof Error ? error.message : 'Sync failed',
+      });
       Alert.alert('Error', 'Failed to sync data');
     } finally {
       setIsSyncing(false);
@@ -558,7 +672,7 @@ export default function ProfileScreen() {
         return;
       }
       
-      const queueDetails = queue.map((item: any, idx: number) => 
+      const queueDetails = queue.map((item: SyncQueueItem, idx: number) => 
         `${idx + 1}. ${item.table_name} ${item.operation} (retries: ${item.retry_count})`
       ).join('\n');
       
@@ -614,7 +728,17 @@ Generated: ${new Date().toISOString()}
 
   const handleOpenEditProfile = () => {
     setFullName(currentName);
+    setProfilePrivacy(Boolean(socialProfile?.is_private));
     setIsEditProfileVisible(true);
+  };
+
+  const handleOpenFollowers = (tab: 'followers' | 'following') => {
+    if (!user?.id) return;
+    router.push(`/(modals)/followers?userId=${user.id}&tab=${tab}`);
+  };
+
+  const handleOpenFollowRequests = () => {
+    router.push('/(modals)/follow-requests');
   };
 
   const handleOpenNotifications = () => {
@@ -635,18 +759,20 @@ Generated: ${new Date().toISOString()}
 
   const handleSaveProfile = async () => {
     const trimmedName = fullName.trim();
-    if (!trimmedName) {
-      Alert.alert('Name required', 'Please enter your full name.');
-      return;
-    }
+    const resolvedName = trimmedName || currentName || user?.email?.split('@')[0] || 'User';
 
     try {
       setIsSavingName(true);
-      const { error } = await updateProfile({ fullName: trimmedName });
-      if (error) {
-        Alert.alert('Error', error.message || 'Could not update profile.');
+      const [{ error: authError }, updatedSocialProfile] = await Promise.all([
+        updateAuthProfile({ fullName: resolvedName }),
+        updateSocialProfile({ display_name: resolvedName, is_private: profilePrivacy }),
+      ]);
+      if (authError) {
+        Alert.alert('Error', authError.message || 'Could not update profile.');
         return;
       }
+      setSocialProfile(updatedSocialProfile);
+      setProfilePrivacy(Boolean(updatedSocialProfile.is_private));
       setIsEditProfileVisible(false);
       Alert.alert('Profile updated', 'Your name has been saved.');
     } catch (error) {
@@ -700,7 +826,7 @@ Generated: ${new Date().toISOString()}
     }
   };
 
-  const MenuItem = ({ icon, title, onPress, danger = false }: any) => (
+  const MenuItem = ({ icon, title, onPress, danger = false }: MenuItemProps) => (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
       <LinearGradient
         colors={danger ? ['rgba(255, 59, 48, 0.1)', 'rgba(255, 59, 48, 0.05)'] : ['rgba(76, 140, 255, 0.05)', 'rgba(76, 140, 255, 0.02)']}
@@ -727,13 +853,28 @@ Generated: ${new Date().toISOString()}
         style={styles.headerCard}
       >
         <View style={styles.avatarContainer}>
-          <Text style={styles.avatarText}>
-            {displayInitial}
-          </Text>
+          {socialProfile?.avatar_url ? (
+            <Image source={{ uri: socialProfile.avatar_url }} style={styles.avatarImage} />
+          ) : (
+            <Text style={styles.avatarText}>
+              {displayInitial}
+            </Text>
+          )}
         </View>
         <Text style={styles.nameText}>{displayName}</Text>
+        {currentUsername ? <Text style={styles.usernameText}>@{currentUsername}</Text> : null}
         <Text style={styles.emailText}>{user?.email || 'Not signed in'}</Text>
         <Text style={styles.memberSince}>Member since {memberSinceYear}</Text>
+        <View style={styles.socialCountsRow}>
+          <TouchableOpacity style={styles.socialCountPill} onPress={() => handleOpenFollowers('followers')}>
+            <Text style={styles.socialCountValue}>{followCounts.followers}</Text>
+            <Text style={styles.socialCountLabel}>Followers</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.socialCountPill} onPress={() => handleOpenFollowers('following')}>
+            <Text style={styles.socialCountValue}>{followCounts.following}</Text>
+            <Text style={styles.socialCountLabel}>Following</Text>
+          </TouchableOpacity>
+        </View>
       </LinearGradient>
 
       <View style={styles.section}>
@@ -809,6 +950,16 @@ Generated: ${new Date().toISOString()}
                 <Ionicons name="refresh" size={16} color="#4C8CFF" />
                 <Text style={styles.refreshText}>Refresh</Text>
               </TouchableOpacity>
+              <Text
+                style={{
+                  marginTop: 10,
+                  color: syncStatus.state === 'error' ? '#FF6B6B' : '#9AACD1',
+                  fontSize: 12,
+                }}
+              >
+                {`Sync: ${syncStatus.state.toUpperCase()} • Queue: ${syncStatus.queueSize}`}
+                {syncStatus.lastError ? ` • ${syncStatus.lastError}` : ''}
+              </Text>
             </LinearGradient>
           )}
           
@@ -892,6 +1043,13 @@ Generated: ${new Date().toISOString()}
         <Text style={styles.sectionTitle}>Account</Text>
         <View style={styles.menuGroup}>
           <MenuItem icon="person-outline" title="Edit Profile" onPress={handleOpenEditProfile} />
+          {socialProfile?.is_private ? (
+            <MenuItem
+              icon="person-add-outline"
+              title={`Follow Requests${social.pendingRequestCount > 0 ? ` (${social.pendingRequestCount})` : ''}`}
+              onPress={handleOpenFollowRequests}
+            />
+          ) : null}
           <MenuItem icon="nutrition-outline" title="Nutrition Goals" onPress={handleOpenEditGoals} />
           <MenuItem icon="notifications-outline" title="Notifications" onPress={handleOpenNotifications} />
           <MenuItem icon="lock-closed-outline" title="Privacy & Security" onPress={handleOpenPrivacy} />
@@ -936,6 +1094,21 @@ Generated: ${new Date().toISOString()}
               autoCorrect={false}
               editable={!isSavingName}
             />
+            <View style={styles.privacyRow}>
+              <View style={styles.privacyRowTextWrap}>
+                <Text style={styles.privacyRowTitle}>Private account</Text>
+                <Text style={styles.privacyRowSubtitle}>
+                  Only accepted followers can view your videos.
+                </Text>
+              </View>
+              <Switch
+                value={profilePrivacy}
+                onValueChange={setProfilePrivacy}
+                disabled={isSavingName}
+                thumbColor={profilePrivacy ? '#FFFFFF' : '#CBD7F5'}
+                trackColor={{ false: '#223859', true: '#4C8CFF' }}
+              />
+            </View>
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonSecondary]}
