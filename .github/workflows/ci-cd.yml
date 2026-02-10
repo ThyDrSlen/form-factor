@@ -110,6 +110,8 @@ jobs:
         run: bun run test:e2e
         env:
           CI: true
+          EXPO_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: sbp_ci_placeholder
 
       - name: Upload test results
         if: always()
