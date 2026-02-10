@@ -46,14 +46,15 @@ export interface PullUpMetrics extends WorkoutMetrics {
 export const PULLUP_THRESHOLDS = {
   /** Full arm extension (dead hang) */
   hang: 150,
+  // Increased for hysteresis - prevents bounce between hang and pull
   /** Arms start engaging (beginning pull) */
-  engage: 135,
+  engage: 140,
   /** Top of movement (chin over bar) */
   top: 85,
   /** Arms releasing back to hang */
-  release: 145,
+  release: 140,
   /** Shoulder elevation warning threshold */
-  shoulderElevation: 115,
+  shoulderElevation: 120,
 } as const;
 
 // =============================================================================
@@ -162,10 +163,11 @@ const phases: PhaseDefinition<PullUpPhase>[] = [
 // Rep Boundary
 // =============================================================================
 
+// Increased debounce - reduces double-counting on fast bounces
 const repBoundary: RepBoundary<PullUpPhase> = {
   startPhase: 'pull',
   endPhase: 'top',
-  minDurationMs: 400, // Debounce to prevent double-counting
+  minDurationMs: 500,
 };
 
 // =============================================================================
