@@ -712,8 +712,34 @@ describe('AuthContext', () => {
       });
 
       await waitFor(() => {
+        expect(mockSyncService.cleanupRealtimeSync).toHaveBeenCalled();
         expect(mockLocalDB.clearAllData).toHaveBeenCalled();
       });
+    });
+
+    it('should not clear local data when the same user signs in again', async () => {
+      mockSessionManager.getStoredSession.mockResolvedValue(mockSession);
+      mockSessionManager.isSessionValid.mockReturnValue(true);
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+        expect(result.current.user).toEqual(mockUser);
+      });
+
+      expect(authStateChangeCallback).not.toBeNull();
+
+      await act(async () => {
+        authStateChangeCallback!('SIGNED_IN', { ...mockSession, user: { ...mockUser } });
+      });
+
+      await waitFor(() => {
+        expect(result.current.user).toEqual(mockUser);
+      });
+
+      expect(mockSyncService.cleanupRealtimeSync).not.toHaveBeenCalled();
+      expect(mockLocalDB.clearAllData).not.toHaveBeenCalled();
     });
   });
 });
