@@ -10,10 +10,28 @@ fi
 echo "🚀 Running full CI checks before push..."
 python3 scripts/ci_local.py --quick
 
-# Run an iOS "preview" build locally (no EAS cloud build credits).
-# Skip with: CI_LOCAL_SKIP_EAS_PREVIEW_LOCAL=1 git push
+# EAS local iOS preview build policy:
+# - Feature branches: skip by default (credential/signing mismatch should not block pushes)
+# - main/develop: run by default
+# - Override on any branch: CI_LOCAL_RUN_EAS_PREVIEW_LOCAL=1
+# - Force skip on any branch: CI_LOCAL_SKIP_EAS_PREVIEW_LOCAL=1
+branch_name="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+run_eas_preview_local="0"
+
+case "$branch_name" in
+  main|master|develop)
+    run_eas_preview_local="1"
+    ;;
+esac
+
+if [ "${CI_LOCAL_RUN_EAS_PREVIEW_LOCAL:-}" = "1" ]; then
+  run_eas_preview_local="1"
+fi
+
 if [ "${CI_LOCAL_SKIP_EAS_PREVIEW_LOCAL:-}" = "1" ]; then
   echo "⏭️  Skipping EAS local iOS preview build (CI_LOCAL_SKIP_EAS_PREVIEW_LOCAL=1)"
+elif [ "$run_eas_preview_local" != "1" ]; then
+  echo "⏭️  Skipping EAS local iOS preview build on branch '$branch_name' (set CI_LOCAL_RUN_EAS_PREVIEW_LOCAL=1 to enable)"
 elif [ "$(uname -s)" != "Darwin" ]; then
   echo "⚠️  Skipping EAS local iOS preview build (requires macOS)"
 else

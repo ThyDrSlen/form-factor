@@ -1,5 +1,7 @@
 # Form Factor 💪
 
+[![CI/CD Pipeline](https://github.com/slenthekid/form-factor-eas/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/slenthekid/form-factor-eas/actions/workflows/ci-cd.yml)
+
 Form Factor is an iOS-first fitness and health app built with Expo and Supabase. It gives real-time form cues from the phone camera—counting reps, flagging issues (e.g., swing on pull-ups, squat depth), and auto-logging sets—to improve outcomes and reduce injury. It also delivers fast offline workout/food logging, HealthKit-powered trends, video and form capture, and an experimental ARKit body-tracking flow. Web is mostly display-first.
 
 ## What it does
@@ -31,13 +33,17 @@ Form Factor is an iOS-first fitness and health app built with Expo and Supabase.
 
 ## EAS Build Policy
 - `eas build` does **not** run for pull requests; paid builds happen on `main` after merge (and on `develop` if you keep staging deploys automatic).
-- Every PR must pass the Husky `pre-push` hook locally (runs `python3 scripts/ci_local.py --quick`, then a local iOS preview build).
+- Husky `pre-push` always runs `python3 scripts/ci_local.py --quick`. Local iOS preview builds run by default on `main`/`develop`, and can be enabled on feature branches with `CI_LOCAL_RUN_EAS_PREVIEW_LOCAL=1`.
 - You can run `bun run ci:push` anytime to reproduce the hook, or `bun run preview:local:submit` to build locally and upload/submit the same `.ipa`.
 
 ## Testing and QA
 - Lint/types: `bun run lint`, `bun run check:types`, `bun run check:dead-code`.
 - Unit: `bun run test` (Jest + Testing Library).
-- E2E (web target): `bunx playwright test` (uses Expo web via `etc/playwright.config.ts`).
+- E2E (web target): `bun run test:e2e` (Playwright + Bun).
+- E2E in Docker: `bun run test:e2e:docker` (containerized testing).
+- E2E with UI: `bun run test:e2e:ui` (interactive debugging).
+
+See [TESTING.md](TESTING.md) for detailed testing documentation.
 
 ## Backend (Supabase)
 
