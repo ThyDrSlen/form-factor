@@ -17,6 +17,29 @@ import type { WorkoutDefinition, WorkoutMetrics } from '@/lib/types/workout-defi
 import { getWorkoutById, type DetectionMode } from '@/lib/workouts';
 import { calculateFqi, extractRepFeatures, type RepAngles } from '@/lib/services/fqi-calculator';
 import { logRep } from '@/lib/services/rep-logger';
+import { computeAdaptivePhaseHoldMs, computeAdaptiveRepDurationMs } from '@/lib/services/workout-runtime';
+import { selectShadowProvider } from '@/lib/pose/shadow-provider';
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function scoreFromShadowDelta(shadowMeanAbsDelta?: number | null): number | undefined {
+  if (typeof shadowMeanAbsDelta !== 'number' || !Number.isFinite(shadowMeanAbsDelta)) {
+    return undefined;
+  }
+
+  return clamp(1 - shadowMeanAbsDelta / 28, 0.2, 1);
+}
+
+function combineTrackingQuality(input?: number, shadowMeanAbsDelta?: number | null): number | undefined {
+  const base = typeof input === 'number' && Number.isFinite(input) ? clamp(input, 0, 1) : undefined;
+  const shadowScore = scoreFromShadowDelta(shadowMeanAbsDelta);
+
+  if (base === undefined) return shadowScore;
+  if (shadowScore === undefined) return base;
+  return Math.min(base, shadowScore);
+}
 
 // =============================================================================
 // Types
@@ -67,7 +90,11 @@ export interface UseWorkoutControllerReturn<TPhase extends string = string> {
   /** Current workout state */
   state: WorkoutControllerState<TPhase>;
   /** Process a new frame of joint angles */
-  processFrame: (angles: JointAngles, joints?: Map<string, { x: number; y: number; isTracked: boolean }>) => void;
+  processFrame: (
+    angles: JointAngles,
+    joints?: Map<string, { x: number; y: number; isTracked: boolean }>,
+    context?: { trackingQuality?: number; shadowMeanAbsDelta?: number | null }
+  ) => void;
   /** Reset the workout state */
   reset: (options?: ResetWorkoutOptions) => void;
   /** Change the active workout */
@@ -107,6 +134,10 @@ export function useWorkoutController<TPhase extends string = string>(
   const phaseRef = useRef<TPhase>(state.phase);
   const repCountRef = useRef<number>(0);
   const lastRepTimestampRef = useRef<number>(0);
+  const recentRepDurationsRef = useRef<number[]>([]);
+  const pendingPhaseRef = useRef<TPhase | null>(null);
+  const pendingPhaseSinceRef = useRef<number>(0);
+  const isInActiveRepRef = useRef<boolean>(false);
 
   // Rep tracking data
   const repTrackingRef = useRef<RepTrackingData>({
@@ -194,6 +225,21 @@ export function useWorkoutController<TPhase extends string = string>(
       const fqiResult = calculateFqi(repAngles, durationMs, repNumber, workoutDef);
       const features = extractRepFeatures(repAngles, durationMs);
 
+      callbacks?.onRepComplete?.(repNumber, fqiResult.score, fqiResult.detectedFaults);
+
+      repTrackingRef.current = {
+        startTs: 0,
+        startAngles: null,
+        minAngles: null,
+        maxAngles: null,
+        cues: [],
+      };
+
+      recentRepDurationsRef.current.push(durationMs);
+      if (recentRepDurationsRef.current.length > 6) {
+        recentRepDurationsRef.current.shift();
+      }
+
       // Log the rep
       try {
         await logRep({
@@ -213,23 +259,11 @@ export function useWorkoutController<TPhase extends string = string>(
             `[WorkoutController] Rep ${repNumber} logged: FQI=${fqiResult.score}, faults=${fqiResult.detectedFaults.join(',')}`
           );
         }
-
-        // Notify callback
-        callbacks?.onRepComplete?.(repNumber, fqiResult.score, fqiResult.detectedFaults);
       } catch (error) {
         if (__DEV__) {
           errorWithTs('[WorkoutController] Failed to log rep', error);
         }
       }
-
-      // Reset tracking state
-      repTrackingRef.current = {
-        startTs: 0,
-        startAngles: null,
-        minAngles: null,
-        maxAngles: null,
-        cues: [],
-      };
     },
     [sessionId, callbacks]
   );
@@ -239,7 +273,11 @@ export function useWorkoutController<TPhase extends string = string>(
   // =============================================================================
 
   const processFrame = useCallback(
-    (angles: JointAngles, joints?: Map<string, { x: number; y: number; isTracked: boolean }>) => {
+    (
+      angles: JointAngles,
+      joints?: Map<string, { x: number; y: number; isTracked: boolean }>,
+      context?: { trackingQuality?: number; shadowMeanAbsDelta?: number | null }
+    ) => {
       const workoutDef = workoutDefRef.current;
       if (!workoutDef) return;
 
@@ -248,7 +286,44 @@ export function useWorkoutController<TPhase extends string = string>(
 
       // Get next phase using the workout's state machine
       const currentPhase = phaseRef.current as string;
-      const nextPhase = workoutDef.getNextPhase(currentPhase, angles, metrics) as TPhase;
+      const candidatePhase = workoutDef.getNextPhase(currentPhase, angles, metrics) as TPhase;
+      const now = Date.now();
+
+      const shadowSelection = (context as any)?.shadowProviderSelection;
+      if (
+        shadowSelection &&
+        (shadowSelection.preferredProvider === 'mediapipe' || shadowSelection.preferredProvider === 'mediapipe_proxy') &&
+        typeof shadowSelection.primaryTimestamp === 'number' &&
+        Number.isFinite(shadowSelection.primaryTimestamp)
+      ) {
+        selectShadowProvider({
+          preferredProvider: shadowSelection.preferredProvider,
+          primaryTimestamp: shadowSelection.primaryTimestamp,
+          mediaPipeTimestamp: shadowSelection.mediaPipeTimestamp,
+          maxTimestampSkewSec: shadowSelection.maxTimestampSkewSec,
+          isInActiveRep: isInActiveRepRef.current,
+        });
+      }
+
+      const phaseHoldMs = computeAdaptivePhaseHoldMs({
+        trackingQuality: context?.trackingQuality,
+        shadowMeanAbsDelta: context?.shadowMeanAbsDelta,
+      });
+
+      let nextPhase = phaseRef.current;
+      if (candidatePhase !== phaseRef.current) {
+        if (pendingPhaseRef.current !== candidatePhase) {
+          pendingPhaseRef.current = candidatePhase;
+          pendingPhaseSinceRef.current = now;
+        } else if (now - pendingPhaseSinceRef.current >= phaseHoldMs) {
+          nextPhase = candidatePhase;
+          pendingPhaseRef.current = null;
+          pendingPhaseSinceRef.current = 0;
+        }
+      } else {
+        pendingPhaseRef.current = null;
+        pendingPhaseSinceRef.current = 0;
+      }
 
       // Check for phase transition
       if (nextPhase !== currentPhase) {
@@ -260,18 +335,29 @@ export function useWorkoutController<TPhase extends string = string>(
 
         // Check if this transition starts a rep
         if (nextPhase === workoutDef.repBoundary.startPhase) {
+          isInActiveRepRef.current = true;
           startRepTracking(angles);
+        }
+
+        if (nextPhase === workoutDef.initialPhase && prevPhase !== workoutDef.initialPhase) {
+          isInActiveRepRef.current = false;
         }
 
         // Check if this transition completes a rep
         if (nextPhase === workoutDef.repBoundary.endPhase && prevPhase !== workoutDef.initialPhase) {
           const now = Date.now();
-          const minDuration = workoutDef.repBoundary.minDurationMs;
+          const minDuration = computeAdaptiveRepDurationMs({
+            baseMinDurationMs: workoutDef.repBoundary.minDurationMs,
+            recentRepDurationsMs: recentRepDurationsRef.current,
+            trackingQuality: combineTrackingQuality(context?.trackingQuality, context?.shadowMeanAbsDelta),
+          });
 
           if (now - lastRepTimestampRef.current > minDuration) {
             lastRepTimestampRef.current = now;
             repCountRef.current += 1;
             const newRepCount = repCountRef.current;
+
+            isInActiveRepRef.current = false;
 
             // Haptic feedback
             if (enableHaptics && Platform.OS === 'ios') {
@@ -323,6 +409,10 @@ export function useWorkoutController<TPhase extends string = string>(
 
     phaseRef.current = initialPhase;
     repCountRef.current = nextRepCount;
+    pendingPhaseRef.current = null;
+    pendingPhaseSinceRef.current = 0;
+    recentRepDurationsRef.current = [];
+    isInActiveRepRef.current = false;
     if (!preserveRepCount) {
       lastRepTimestampRef.current = 0;
     }
