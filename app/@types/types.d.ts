@@ -7,6 +7,7 @@ declare module 'expo-router' {
       | '/(auth)/sign-in'
       | '/(auth)/sign-up'
       | '/(auth)/forgot-password'
+      | '/reset-password'
       | `/${string}`;
   }
 
@@ -16,6 +17,7 @@ declare module 'expo-router' {
       | '/(auth)/sign-in'
       | '/(auth)/sign-up'
       | '/(auth)/forgot-password'
+      | '/reset-password'
       | `/${string}`) => void;
     back: () => void;
     replace: (path: string) => void;

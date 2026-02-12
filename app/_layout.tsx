@@ -171,7 +171,7 @@ function InitialLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const inModalsGroup = pathname.startsWith('/(modals)');
-  const publicRoutes = ['/landing'];
+  const publicRoutes = ['/landing', '/reset-password'];
   const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
   const isWebRootLanding = Platform.OS === 'web' && pathname === '/';
 
