@@ -7,8 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,11 +18,59 @@ env:
   BUN_VERSION: '1.2.22'
 
 jobs:
+  changes:
+    name: Changed Paths
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.filter.outputs.docs_only }}
+      app_code: ${{ steps.filter.outputs.app_code }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          filters: |
+            docs_only:
+              - 'README.md'
+              - 'docs/**'
+              - '**/*.md'
+            app_code:
+              - 'app/**'
+              - 'components/**'
+              - 'contexts/**'
+              - 'hooks/**'
+              - 'lib/**'
+              - '.github/workflows/**'
+              - 'scripts/**'
+              - 'package.json'
+              - 'bun.lock'
+
+  policy:
+    name: Workflow Policy Guardrails
+    runs-on: ubuntu-latest
+    needs: changes
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Run CI policy check
+        run: bun run ci:policy
+
   # credit savings: no EAS builds on PR; rely on local pre-push + CI quality checks
   # Job 1: Code Quality & Testing
   quality:
     name: Code Quality & Testing
     runs-on: ubuntu-latest
+    needs: [changes, policy]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -43,12 +90,7 @@ jobs:
             ${{ runner.os }}-bun-cache-v3-
 
       - name: Clean patched packages (prevent patch-package conflicts)
-        run: |
-          # Remove packages that have patches to ensure clean application
-          rm -rf node_modules/expo node_modules/expo-av node_modules/expo-modules-core \
-                 node_modules/react-native-gesture-handler node_modules/react-native-reanimated \
-                 node_modules/react-native-vision-camera node_modules/react-native-worklets-core \
-                 node_modules/react-native-worklets 2>/dev/null || true
+        run: bash scripts/ci/clean_patched_packages.sh
 
       - name: Install dependencies
         run: bun install --frozen-lockfile --backend=copyfile
@@ -74,7 +116,8 @@ jobs:
   e2e-tests:
     name: E2E Tests
     runs-on: ubuntu-latest
-    needs: quality
+    if: ${{ needs.changes.outputs.docs_only != 'true' }}
+    needs: [changes, quality]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -93,12 +136,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-cache-v3-
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
       - name: Clean patched packages (prevent patch-package conflicts)
-        run: |
-          rm -rf node_modules/expo node_modules/expo-av node_modules/expo-modules-core \
-                 node_modules/react-native-gesture-handler node_modules/react-native-reanimated \
-                 node_modules/react-native-vision-camera node_modules/react-native-worklets-core \
-                 node_modules/react-native-worklets 2>/dev/null || true
+        run: bash scripts/ci/clean_patched_packages.sh
 
       - name: Install dependencies
         run: bun install --frozen-lockfile --backend=copyfile
@@ -127,7 +174,8 @@ jobs:
   build-check:
     name: Build Verification
     runs-on: ubuntu-latest
-    needs: [quality, e2e-tests]
+    if: ${{ needs.changes.outputs.docs_only != 'true' }}
+    needs: [changes, quality, e2e-tests]
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
     steps:
@@ -149,11 +197,7 @@ jobs:
             ${{ runner.os }}-bun-cache-v3-
 
       - name: Clean patched packages (prevent patch-package conflicts)
-        run: |
-          rm -rf node_modules/expo node_modules/expo-av node_modules/expo-modules-core \
-                 node_modules/react-native-gesture-handler node_modules/react-native-reanimated \
-                 node_modules/react-native-vision-camera node_modules/react-native-worklets-core \
-                 node_modules/react-native-worklets 2>/dev/null || true
+        run: bash scripts/ci/clean_patched_packages.sh
 
       - name: Install dependencies
         run: bun install --frozen-lockfile --backend=copyfile
@@ -172,8 +216,8 @@ jobs:
         if: ${{ steps.expo_token.outputs.missing == 'false' }}
         uses: expo/expo-github-action@v8
         with:
-          expo-version: latest
-          eas-version: latest
+          expo-version: 54.0.30
+          eas-version: 16.18.1
           packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
 
@@ -185,8 +229,11 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     runs-on: macos-latest
-    needs: [quality, build-check]
+    needs: [quality, build-check, security]
     if: github.ref == 'refs/heads/develop'
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
     environment: staging
     steps:
       - name: Checkout code
@@ -207,11 +254,14 @@ jobs:
             ${{ runner.os }}-bun-cache-v3-
 
       - name: Clean patched packages (prevent patch-package conflicts)
-        run: |
-          rm -rf node_modules/expo node_modules/expo-av node_modules/expo-modules-core \
-                 node_modules/react-native-gesture-handler node_modules/react-native-reanimated \
-                 node_modules/react-native-vision-camera node_modules/react-native-worklets-core \
-                 node_modules/react-native-worklets 2>/dev/null || true
+        run: bash scripts/ci/clean_patched_packages.sh
+
+      - name: Deploy preflight
+        run: python3 scripts/ci/deploy_preflight.py --env staging --ref "${GITHUB_REF}"
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_STAGING_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
 
       - name: Install dependencies
         run: bun install --frozen-lockfile --backend=copyfile
@@ -219,15 +269,15 @@ jobs:
       - name: Setup Expo
         uses: expo/expo-github-action@v8
         with:
-          expo-version: latest
-          eas-version: latest
+          expo-version: 54.0.30
+          eas-version: 16.18.1
           packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.50.0
 
       - name: Link Supabase project
         run: supabase link --project-ref ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
@@ -272,8 +322,13 @@ jobs:
   deploy-production:
     name: Deploy to Production
     runs-on: macos-latest
-    needs: [quality, build-check]
+    needs: [quality, build-check, security]
     if: github.ref == 'refs/heads/main'
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: write
     environment: production
     steps:
       - name: Checkout code
@@ -294,11 +349,15 @@ jobs:
             ${{ runner.os }}-bun-cache-v3-
 
       - name: Clean patched packages (prevent patch-package conflicts)
-        run: |
-          rm -rf node_modules/expo node_modules/expo-av node_modules/expo-modules-core \
-                 node_modules/react-native-gesture-handler node_modules/react-native-reanimated \
-                 node_modules/react-native-vision-camera node_modules/react-native-worklets-core \
-                 node_modules/react-native-worklets 2>/dev/null || true
+        run: bash scripts/ci/clean_patched_packages.sh
+
+      - name: Deploy preflight
+        run: python3 scripts/ci/deploy_preflight.py --env production --ref "${GITHUB_REF}"
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PRODUCTION_PROJECT_REF: ${{ secrets.SUPABASE_PRODUCTION_PROJECT_REF }}
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
 
       - name: Install dependencies
         run: bun install --frozen-lockfile --backend=copyfile
@@ -306,15 +365,15 @@ jobs:
       - name: Setup Expo
         uses: expo/expo-github-action@v8
         with:
-          expo-version: latest
-          eas-version: latest
+          expo-version: 54.0.30
+          eas-version: 16.18.1
           packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.50.0
 
       - name: Link Supabase project
         run: supabase link --project-ref ${{ secrets.SUPABASE_PRODUCTION_PROJECT_REF }}
@@ -404,7 +463,8 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-    needs: quality
+    if: ${{ needs.changes.outputs.docs_only != 'true' }}
+    needs: [changes, quality]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -415,26 +475,32 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Clean patched packages (prevent patch-package conflicts)
-        run: |
-          rm -rf node_modules/expo node_modules/expo-av node_modules/expo-modules-core \
-                 node_modules/react-native-gesture-handler node_modules/react-native-reanimated \
-                 node_modules/react-native-vision-camera node_modules/react-native-worklets-core \
-                 node_modules/react-native-worklets 2>/dev/null || true
+        run: bash scripts/ci/clean_patched_packages.sh
 
       - name: Install dependencies
         run: bun install --frozen-lockfile --backend=copyfile
 
       - name: Run security audit
         run: |
-          # Bun doesn't have native audit, use npm audit on package-lock
-          npm audit --audit-level=moderate || true
+          set -euo pipefail
+          attempts=0
+          until [ "$attempts" -ge 3 ]; do
+            attempts=$((attempts + 1))
+            if npm audit --audit-level=moderate; then
+              exit 0
+            fi
+            if [ "$attempts" -lt 3 ]; then
+              sleep "$attempts"
+            fi
+          done
+          exit 1
 
       - name: Run audit-ci
         run: |
-          npx audit-ci --config config/audit-ci.json || true
+          npx audit-ci --config config/audit-ci.json
 
       - name: Check for secrets
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@v3.90.1
         with:
           scan: git
           since_commit: ${{ github.event.before || github.sha }}
