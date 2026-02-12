@@ -20,6 +20,8 @@
     "ci:push": "python3 scripts/ci_local.py --quick",
     "ci:full": "python3 scripts/ci_local.py",
     "ci:local": "bun run lint && bun run check:types",
+    "ci:policy": "python3 scripts/ci/policy_check.py",
+    "ci:deploy-preflight": "python3 scripts/ci/deploy_preflight.py",
     "kill": "lsof -ti :8081 | xargs kill -9 && lsof -ti :8082 | xargs kill -9 && lsof -ti :8083 | xargs kill -9 && lsof -ti :8084 | xargs kill -9 && lsof -ti :8085 | xargs kill -9",
     "fix:ios": "./scripts/fix-ios-build.sh",
     "screenshot": "./scripts/capture-device-screen.sh",
