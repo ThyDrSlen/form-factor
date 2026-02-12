@@ -68,6 +68,7 @@ import {
   summarizeShadowProvider,
   type ShadowProvider,
 } from '@/lib/pose/shadow-provider';
+import { createRealtimeFormEngineState, processRealtimeAngles } from '@/lib/pose/realtime-form-engine';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
 import {
   DEFAULT_DETECTION_MODE,
@@ -116,6 +117,7 @@ const WATCH_MIRROR_AR_QUALITY = 0.25;
 const WATCH_MIRROR_MAX_WIDTH = 320;
 const MEDIAPIPE_SHADOW_POLL_INTERVAL_MS = 100;
 const MEDIAPIPE_MAX_TIMESTAMP_SKEW_SEC = 0.4;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const MEDIAPIPE_LITE_MODEL_ASSET = require('../../assets/models/pose_landmarker_lite.task');
 const QUALITY_STORAGE_KEY = 'ff.recordingQuality';
 const QUALITY_LABELS: Record<RecordingQuality, string> = {
@@ -207,7 +209,7 @@ export default function ScanARKitScreen() {
   const [fps, setFps] = useState(0);
   const textOpacity = React.useRef(new Animated.Value(1)).current;
   const frameStatsRef = React.useRef({ lastTimestamp: 0, frameCount: 0 });
-  const smoothedAnglesRef = React.useRef<JointAngles | null>(null);
+  const realtimeFormEngineRef = React.useRef(createRealtimeFormEngineState());
   const jointAnglesStateRef = React.useRef<JointAngles | null>(null);
   const [repCount, setRepCount] = useState(0);
   const [detectionMode, setDetectionMode] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
@@ -258,6 +260,7 @@ export default function ScanARKitScreen() {
   const shadowProviderCountsRef = React.useRef(createShadowProviderCounts());
   const mediaPipePoseRef = React.useRef<MediaPipePose2D | null>(null);
   const mediaPipeModelVersionRef = React.useRef<string>(MEDIAPIPE_POSE_LANDMARKER_VERSION);
+  const lastShadowMeanAbsDeltaRef = React.useRef<number | null>(null);
   const [mediaPipeModelPath, setMediaPipeModelPath] = useState<string | null>(null);
   const mediaPipePollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const mediaPipePollInFlightRef = React.useRef(false);
@@ -525,6 +528,8 @@ export default function ScanARKitScreen() {
     shadowStatsRef.current = createShadowStatsAccumulator();
     shadowProviderCountsRef.current = createShadowProviderCounts();
     mediaPipePoseRef.current = null;
+    realtimeFormEngineRef.current = createRealtimeFormEngineState();
+    lastShadowMeanAbsDeltaRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -635,6 +640,8 @@ export default function ScanARKitScreen() {
     shadowStatsRef.current = createShadowStatsAccumulator();
     shadowProviderCountsRef.current = createShadowProviderCounts();
     mediaPipePoseRef.current = null;
+    realtimeFormEngineRef.current = createRealtimeFormEngineState();
+    lastShadowMeanAbsDeltaRef.current = null;
     setWorkoutController(detectionMode);
   }, [detectionMode, setWorkoutController]);
 
@@ -688,7 +695,8 @@ export default function ScanARKitScreen() {
       frameStatsRef.current = { lastTimestamp: 0, frameCount: 0 };
       setJointAngles(null);
       jointAnglesStateRef.current = null;
-      smoothedAnglesRef.current = null;
+      realtimeFormEngineRef.current = createRealtimeFormEngineState();
+      lastShadowMeanAbsDeltaRef.current = null;
       setFps(0);
       setSmoothedPose2DJoints(null);
       smoothedPose2DRef.current = null;
@@ -743,39 +751,30 @@ export default function ScanARKitScreen() {
         leftShoulder: !!(neck?.isTracked && ls?.isTracked && le?.isTracked),
         rightShoulder: !!(neck?.isTracked && rs?.isTracked && re?.isTracked),
       } as const;
-      const prev = smoothedAnglesRef.current;
-      let next: JointAngles | null = null;
-      if (angles) {
-        if (prev) {
-          const a = 0.2;
-          next = {
-            leftKnee: valid.leftKnee ? a * angles.leftKnee + (1 - a) * prev.leftKnee : prev.leftKnee,
-            rightKnee: valid.rightKnee ? a * angles.rightKnee + (1 - a) * prev.rightKnee : prev.rightKnee,
-            leftElbow: valid.leftElbow ? a * angles.leftElbow + (1 - a) * prev.leftElbow : prev.leftElbow,
-            rightElbow: valid.rightElbow ? a * angles.rightElbow + (1 - a) * prev.rightElbow : prev.rightElbow,
-            leftHip: valid.leftHip ? a * angles.leftHip + (1 - a) * prev.leftHip : prev.leftHip,
-            rightHip: valid.rightHip ? a * angles.rightHip + (1 - a) * prev.rightHip : prev.rightHip,
-            leftShoulder: valid.leftShoulder ? a * angles.leftShoulder + (1 - a) * prev.leftShoulder : prev.leftShoulder,
-            rightShoulder: valid.rightShoulder ? a * angles.rightShoulder + (1 - a) * prev.rightShoulder : prev.rightShoulder,
-          };
-        } else {
-          next = angles;
-        }
-      } else {
-        next = prev;
-      }
+      const smoothingResult =
+        angles
+          ? processRealtimeAngles({
+              state: realtimeFormEngineRef.current,
+              angles,
+              valid,
+              timestampSec: pose.timestamp,
+              shadowMeanAbsDelta: lastShadowMeanAbsDeltaRef.current,
+            })
+          : null;
+      const next: JointAngles | null = smoothingResult?.angles ?? realtimeFormEngineRef.current.smoothed;
 
       if (shouldLog && next && DEV) {
         logWithTs('[ScanARKit] 📐 Joint angles:', {
           leftKnee: next.leftKnee.toFixed(1),
           rightKnee: next.rightKnee.toFixed(1),
           leftElbow: next.leftElbow.toFixed(1),
-          rightElbow: next.rightElbow.toFixed(1)
+          rightElbow: next.rightElbow.toFixed(1),
+          smoothingAlpha: smoothingResult?.alpha?.toFixed(2) ?? null,
+          trackingQuality: smoothingResult?.trackingQuality?.toFixed(2) ?? null,
         });
       }
       
       if (next) {
-        smoothedAnglesRef.current = next;
         const existingAngles = jointAnglesStateRef.current;
         const angleDrift =
           !existingAngles ||
@@ -805,12 +804,13 @@ export default function ScanARKitScreen() {
         let shadowFrame = null;
         if (shadowModeEnabledRef.current) {
           const latestMediaPipePose = mediaPipePoseRef.current;
-          const selectedProvider = selectShadowProvider({
-            preferredProvider: shadowProviderRuntimeRef.current,
-            primaryTimestamp: pose.timestamp,
-            mediaPipeTimestamp: latestMediaPipePose?.timestamp,
-            maxTimestampSkewSec: MEDIAPIPE_MAX_TIMESTAMP_SKEW_SEC,
-          });
+           const selectedProvider = selectShadowProvider({
+             preferredProvider: shadowProviderRuntimeRef.current,
+             primaryTimestamp: pose.timestamp,
+             mediaPipeTimestamp: latestMediaPipePose?.timestamp,
+             maxTimestampSkewSec: MEDIAPIPE_MAX_TIMESTAMP_SKEW_SEC,
+             isInActiveRep: repIndexTrackerRef.current.current() !== null,
+           });
 
           if (selectedProvider === 'mediapipe' && latestMediaPipePose?.landmarks?.length) {
             shadowFrame = buildMediaPipeShadowFrameFromLandmarks({
@@ -843,9 +843,12 @@ export default function ScanARKitScreen() {
 
         if (shadowComparison) {
           accumulateShadowStats(shadowStatsRef.current, shadowComparison);
+          lastShadowMeanAbsDeltaRef.current = shadowComparison.meanAbsDelta;
           if (shadowFrame) {
             bumpShadowProviderCount(shadowProviderCountsRef.current, shadowFrame.provider);
           }
+        } else {
+          lastShadowMeanAbsDeltaRef.current = null;
         }
 
         // Log pose sample for ML modeling (only when tracking is active)
@@ -878,7 +881,10 @@ export default function ScanARKitScreen() {
 
         const metrics = activeWorkoutDef.calculateMetrics(next, jointsMap) as WorkoutMetrics;
         setActiveMetrics(metrics);
-        processWorkoutFrame(next, jointsMap);
+        processWorkoutFrame(next, jointsMap, {
+          trackingQuality: smoothingResult?.trackingQuality,
+          shadowMeanAbsDelta: shadowComparison?.meanAbsDelta,
+        });
       } else {
         repIndexTrackerRef.current.reset();
         resetWorkoutController({ preserveRepCount: true });
@@ -1005,6 +1011,8 @@ export default function ScanARKitScreen() {
       shadowStatsRef.current = createShadowStatsAccumulator();
       shadowProviderCountsRef.current = createShadowProviderCounts();
       mediaPipePoseRef.current = null;
+      realtimeFormEngineRef.current = createRealtimeFormEngineState();
+      lastShadowMeanAbsDeltaRef.current = null;
       await startNativeTracking();
       const elapsed = Date.now() - startTime;
       
@@ -1075,6 +1083,8 @@ export default function ScanARKitScreen() {
       resetWorkoutController();
       setRepCount(0);
       setFps(0);
+      realtimeFormEngineRef.current = createRealtimeFormEngineState();
+      lastShadowMeanAbsDeltaRef.current = null;
       shadowStatsRef.current = createShadowStatsAccumulator();
       shadowProviderCountsRef.current = createShadowProviderCounts();
       mediaPipePoseRef.current = null;
@@ -1102,6 +1112,11 @@ export default function ScanARKitScreen() {
     const { width, height } = event.nativeEvent.layout;
     overlayLayout.current = { width, height };
   }, []);
+
+  const openWorkoutInsights = useCallback(() => {
+    const sessionId = encodeURIComponent(sessionIdRef.current);
+    router.push(`/(modals)/workout-insights?sessionId=${sessionId}`);
+  }, [router]);
 
   // Fade out text after 5 seconds
   useEffect(() => {
@@ -1797,14 +1812,24 @@ export default function ScanARKitScreen() {
             </View>
           </View>
 
-          <TouchableOpacity
-            style={styles.topBarButton}
-            onPress={() => setIsSettingsVisible(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Open settings"
-          >
-            <Ionicons name="settings-outline" size={20} color="#F5F7FF" />
-          </TouchableOpacity>
+          <View style={styles.topBarActions}>
+            <TouchableOpacity
+              style={styles.topBarButton}
+              onPress={openWorkoutInsights}
+              accessibilityRole="button"
+              accessibilityLabel="Open workout insights"
+            >
+              <Ionicons name="analytics-outline" size={18} color="#F5F7FF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.topBarButton}
+              onPress={() => setIsSettingsVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Open settings"
+            >
+              <Ionicons name="settings-outline" size={20} color="#F5F7FF" />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 

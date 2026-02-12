@@ -45,6 +45,11 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: scanPalette.border,
   },
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   trackingContainer: {
     flex: 1,
     backgroundColor: scanPalette.neutral,
