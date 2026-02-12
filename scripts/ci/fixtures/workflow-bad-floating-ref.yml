@@ -1,0 +1,11 @@
+name: Bad Floating Ref Fixture
+
+permissions:
+  contents: read
+
+jobs:
+  bad:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: trufflesecurity/trufflehog@main

@@ -33,6 +33,7 @@ Form Factor is an iOS-first fitness and health app built with Expo and Supabase.
 
 ## EAS Build Policy
 - `eas build` does **not** run for pull requests; paid builds happen on `main` after merge (and on `develop` if you keep staging deploys automatic).
+- Deploy jobs are gated by workflow policy checks, blocking security checks, and deploy preflight validation.
 - Husky `pre-push` always runs `python3 scripts/ci_local.py --quick`. Local iOS preview builds run by default on `main`/`develop`, and can be enabled on feature branches with `CI_LOCAL_RUN_EAS_PREVIEW_LOCAL=1`.
 - You can run `bun run ci:push` anytime to reproduce the hook, or `bun run preview:local:submit` to build locally and upload/submit the same `.ipa`.
 

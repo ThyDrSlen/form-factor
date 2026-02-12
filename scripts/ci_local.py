@@ -188,6 +188,14 @@ def run_job_quality() -> List[StepResult]:
         return results
     success("Dependencies installed")
 
+    log("Running workflow policy checks...")
+    ok, _ = run("bun run ci:policy")
+    results.append(StepResult("CI policy", Status.PASS if ok else Status.FAIL))
+    if ok:
+        success("Workflow policy checks passed")
+    else:
+        error("Workflow policy violations found")
+
     # TypeScript type checking
     log("TypeScript type checking...")
     ok, _ = run("bun run tsc --noEmit")
@@ -270,6 +278,50 @@ def run_job_build_check() -> List[StepResult]:
         success("EAS configuration valid")
     else:
         warn("EAS config check had issues (may still work in CI)")
+
+    return results
+
+
+def run_job_deploy_preflight() -> List[StepResult]:
+    log_job(25, "Deploy Preflight")
+    results = []
+
+    env_prefix = (
+        "EXPO_TOKEN=dummy "
+        "SUPABASE_ACCESS_TOKEN=dummy "
+        "SUPABASE_STAGING_PROJECT_REF=dummy "
+        "SUPABASE_PRODUCTION_PROJECT_REF=dummy "
+        "ASC_API_KEY_P8_BASE64=dummy "
+    )
+
+    log("Running staging preflight (expected pass)...")
+    ok, _ = run(
+        env_prefix
+        + "python3 scripts/ci/deploy_preflight.py --env staging --ref refs/heads/develop",
+        capture=True,
+    )
+    results.append(StepResult("Preflight staging", Status.PASS if ok else Status.FAIL))
+
+    log("Running production preflight (expected pass)...")
+    ok, _ = run(
+        env_prefix
+        + "python3 scripts/ci/deploy_preflight.py --env production --ref refs/heads/main",
+        capture=True,
+    )
+    results.append(
+        StepResult("Preflight production", Status.PASS if ok else Status.FAIL)
+    )
+
+    log("Running production preflight on wrong ref (expected fail)...")
+    ok, _ = run(
+        env_prefix
+        + "python3 scripts/ci/deploy_preflight.py --env production --ref refs/heads/feature",
+        capture=True,
+        check=False,
+    )
+    results.append(
+        StepResult("Preflight wrong-ref fail", Status.PASS if not ok else Status.FAIL)
+    )
 
     return results
 
@@ -387,7 +439,9 @@ def run_job_security() -> List[StepResult]:
             break
 
         if attempt < max_attempts:
-            warn(f"Dependency audit network error (attempt {attempt}/{max_attempts}), retrying...")
+            warn(
+                f"Dependency audit network error (attempt {attempt}/{max_attempts}), retrying..."
+            )
             time.sleep(attempt)
 
     if final_ok:
@@ -414,8 +468,10 @@ def run_job_security() -> List[StepResult]:
     if audit_config.exists():
         if any(lockfile.exists() for lockfile in lockfiles):
             log("Running audit-ci...")
-            ok, _ = run(f"bunx audit-ci --config {audit_config} || true")
-            results.append(StepResult("audit-ci", Status.PASS if ok else Status.WARN))
+            ok, _ = run(f"bunx audit-ci --config {audit_config}")
+            results.append(StepResult("audit-ci", Status.PASS if ok else Status.FAIL))
+            if not ok:
+                error("audit-ci failed")
         else:
             warn("audit-ci skipped (no npm/yarn/pnpm lockfile; bun.lock detected)")
             results.append(
@@ -530,6 +586,8 @@ Examples:
 
     # Job 2: Build check
     all_results.extend(run_job_build_check())
+
+    all_results.extend(run_job_deploy_preflight())
 
     # Job 3: Prebuild & Native build
     if not args.quick and not args.skip_prebuild:
