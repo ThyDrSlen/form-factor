@@ -14,6 +14,7 @@ Add e2e specs as `tests/e2e/<feature>.flow.spec.ts`, mirroring the user journey 
 
 ## Commit & Pull Request Guidelines
 The git log follows conventional commits (`feat:`, `build:`, `docs:`); keep subjects scoped and mention impacted platforms when helpful. Summarize behavior changes in the PR description, link the relevant issue, and attach screenshots or recordings for UI work. List manual verification steps, call out migrations or config updates, and update the relevant doc in `docs/` whenever setup instructions shift.
+Git remote note: this repo uses the `form-factor` remote instead of `origin` (`git@github.com:ThyDrSlen/form-factor.git` for fetch/push), so use `git push -u form-factor <branch>` and target that remote in CLI workflows.
 
 ## Security & Configuration Tips
 Never commit `.env` files or Supabase keys—load them via Expo secrets or CI. `eas.json` defines `development`, `preview`, `staging`, and `production` profiles, so confirm the target before running `eas build`. Device overrides live in `app.config.ts`, and config-only tooling lives under `config/`.
