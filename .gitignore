@@ -124,6 +124,7 @@ test-results/
 .bun/
 .cargo/
 .worktrees/
+.sisyphus/
 Library/
 **/Library/**
 
