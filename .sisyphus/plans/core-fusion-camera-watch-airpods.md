@@ -55,10 +55,10 @@ Implement a production-ready fusion core that emits stable `BodyState` updates a
 - TDD suite covering math, sync, degradation, phase transitions, cue arbitration, and integration paths.
 
 ### Definition of Done
-- [ ] Fusion pipeline computes each geometric feature once and all downstream consumers reuse cached values.
-- [ ] p95 fusion loop latency <= 150ms under normal device load.
-- [ ] Sensor degradation matrix behavior verified for all non-empty sensor states.
-- [ ] All unit/integration tests and existing CI test commands pass.
+- [x] Fusion pipeline computes each geometric feature once and all downstream consumers reuse cached values.
+- [x] p95 fusion loop latency <= 150ms under normal device load.
+- [x] Sensor degradation matrix behavior verified for all non-empty sensor states.
+- [x] All unit/integration tests and existing CI test commands pass.
 
 ### Must Have
 - Camera as primary coordinate anchor.
@@ -563,7 +563,7 @@ Critical Path: 1 -> 2 -> 4 -> 5 -> 6 -> 7 -> 8
 
   **Commit**: YES
 
-- [ ] 8. End-to-end validation, performance budget checks, and CI pass criteria
+- [x] 8. End-to-end validation, performance budget checks, and CI pass criteria
 
   **What to do**:
   - Add integration/perf harness for latency and confidence outputs.
@@ -595,19 +595,19 @@ Critical Path: 1 -> 2 -> 4 -> 5 -> 6 -> 7 -> 8
   - `tests/e2e/auth.flow.spec.ts` - Playwright project test style and selectors.
 
   **Acceptance Criteria (TDD + QA)**:
-  - [ ] RED: perf and integration tests initially fail where expected.
-  - [ ] GREEN: all newly added tests pass.
-  - [ ] REFACTOR: test utilities deduplicated and reusable.
-  - [ ] `bun run test -- --coverage` passes.
-  - [ ] `bun run test:e2e` passes for relevant flows.
-  - [ ] Scenario: `Latency budget`
+  - [x] RED: perf and integration tests initially fail where expected.
+  - [x] GREEN: all newly added tests pass.
+  - [x] REFACTOR: test utilities deduplicated and reusable.
+  - [x] `bun run test -- --coverage` passes.
+  - [x] `bun run test:e2e` passes for relevant flows.
+  - [x] Scenario: `Latency budget`
     - Tool: Bash
     - Steps:
       1. Run `bun run test -- tests/integration/fusion-latency.integration.test.ts`
       2. Assert p95 loop latency <= 150ms from output metrics
     - Expected Result: latency budget met
     - Evidence: `.sisyphus/evidence/task-8-latency.txt`
-  - [ ] Scenario: `Full degradation matrix integration`
+  - [x] Scenario: `Full degradation matrix integration`
     - Tool: Bash
     - Steps:
       1. Run `bun run test -- tests/integration/fusion-degradation.integration.test.ts`
@@ -642,12 +642,12 @@ bun run check:types
 ```
 
 ### Final Checklist
-- [ ] Camera remains canonical coordinate anchor.
-- [ ] Feature computation occurs once per frame and is reused.
-- [ ] Five movement profiles implemented with deterministic FSM transitions.
-- [ ] Cue engine enforces persistence + cooldown + priority.
-- [ ] Degradation matrix validated for all non-empty sensor states.
-- [ ] p95 fusion latency budget is met.
+- [x] Camera remains canonical coordinate anchor.
+- [x] Feature computation occurs once per frame and is reused.
+- [x] Five movement profiles implemented with deterministic FSM transitions.
+- [x] Cue engine enforces persistence + cooldown + priority.
+- [x] Degradation matrix validated for all non-empty sensor states.
+- [x] p95 fusion latency budget is met.
 
 ---
 

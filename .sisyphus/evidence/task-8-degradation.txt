@@ -1,3 +1,6 @@
+Command: bun run test -- tests/integration/fusion-degradation.integration.test.ts
+Date: 2026-02-13
+---
 $ jest tests/integration/fusion-degradation.integration.test.ts
 watchman warning:  Recrawled this watch 21 times, most recently because:
 MustScanSubDirs UserDroppedTo resolve, please review the information on
