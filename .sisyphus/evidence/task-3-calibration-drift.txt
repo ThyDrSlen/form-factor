@@ -1,0 +1,19 @@
+$ jest tests/unit/fusion/calibration.test.ts "--testNamePattern=drift trigger"
+watchman warning:  Recrawled this watch 21 times, most recently because:
+MustScanSubDirs UserDroppedTo resolve, please review the information on
+https://facebook.github.io/watchman/docs/troubleshooting.html#recrawl
+To clear this warning, run:
+`watchman watch-del '/Users/slenthekid/Projects/form-factor-eas' ; watchman watch-project '/Users/slenthekid/Projects/form-factor-eas'`
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+PASS tests/unit/fusion/calibration.test.ts
+  fusion calibration
+    ✓ drift trigger marks recalibration required when drift exceeds threshold (1 ms)
+    ○ skipped success path produces confidence >= 0.85 for stable neutral samples
+    ○ skipped state transitions are explicit and deterministic
+
+Test Suites: 1 passed, 1 total
+Tests:       2 skipped, 1 passed, 3 total
+Snapshots:   0 total
+Time:        0.334 s, estimated 1 s
+Ran all test suites matching /tests\/unit\/fusion\/calibration.test.ts/i with tests matching "drift trigger".
