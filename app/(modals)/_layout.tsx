@@ -15,6 +15,7 @@ export default function ModalsLayout() {
       <Stack.Screen name="followers" options={{ presentation: 'modal' }} />
       <Stack.Screen name="follow-requests" options={{ presentation: 'modal' }} />
       <Stack.Screen name="user-profile" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="workout-insights" options={{ presentation: 'modal' }} />
     </Stack>
   );
 }

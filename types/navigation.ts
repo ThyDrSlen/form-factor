@@ -3,6 +3,7 @@ export type RootStackParamList = {
   '/(auth)/sign-in': undefined;
   '/(auth)/sign-up': undefined;
   '/(auth)/forgot-password': undefined;
+  '/reset-password': undefined;
   '/(tabs)': undefined;
   // Add other routes here as needed
 };
