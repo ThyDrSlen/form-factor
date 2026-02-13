@@ -1,0 +1,20 @@
+$ jest tests/unit/fusion/capabilities.test.ts "--testNamePattern=watch availability transitions"
+watchman warning:  Recrawled this watch 21 times, most recently because:
+MustScanSubDirs UserDroppedTo resolve, please review the information on
+https://facebook.github.io/watchman/docs/troubleshooting.html#recrawl
+To clear this warning, run:
+`watchman watch-del '/Users/slenthekid/Projects/form-factor-eas' ; watchman watch-project '/Users/slenthekid/Projects/form-factor-eas'`
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+PASS tests/unit/fusion/capabilities.test.ts
+  fusion capabilities
+    ✓ watch availability transitions through deterministic states (1 ms)
+    ○ skipped returns full mode when all required streams are ready
+    ○ skipped returns degraded mode when headphone motion is unavailable
+    ○ skipped returns unsupported mode when camera anchor is unavailable
+
+Test Suites: 1 passed, 1 total
+Tests:       3 skipped, 1 passed, 4 total
+Snapshots:   0 total
+Time:        0.324 s, estimated 1 s
+Ran all test suites matching /tests\/unit\/fusion\/capabilities.test.ts/i with tests matching "watch availability transitions".

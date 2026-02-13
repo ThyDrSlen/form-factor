@@ -13,6 +13,10 @@ export type WatchTrackingPayload = {
     reps: number;
     primaryCue: string | null;
     metrics: Record<string, number | null>;
+    fusion?: {
+      confidence: number;
+      degradedMode: boolean;
+    };
   };
 };
 
@@ -24,6 +28,10 @@ export function buildWatchTrackingPayload(args: {
   reps: number;
   primaryCue: string | null;
   metrics: Record<string, number | null>;
+  fusion?: {
+    confidence: number;
+    degradedMode: boolean;
+  };
 }): WatchTrackingPayload {
   return {
     v: 1,
@@ -38,6 +46,7 @@ export function buildWatchTrackingPayload(args: {
       reps: args.reps,
       primaryCue: args.primaryCue,
       metrics: args.metrics,
+      fusion: args.fusion,
     },
   };
 }

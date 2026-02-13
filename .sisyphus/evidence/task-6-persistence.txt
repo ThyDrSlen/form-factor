@@ -1,0 +1,20 @@
+$ jest tests/unit/fusion/cue-engine.test.ts "--testNamePattern=persistence"
+watchman warning:  Recrawled this watch 21 times, most recently because:
+MustScanSubDirs UserDroppedTo resolve, please review the information on
+https://facebook.github.io/watchman/docs/troubleshooting.html#recrawl
+To clear this warning, run:
+`watchman watch-del '/Users/slenthekid/Projects/form-factor-eas' ; watchman watch-project '/Users/slenthekid/Projects/form-factor-eas'`
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+PASS tests/unit/fusion/cue-engine.test.ts
+  cue engine
+    ✓ persistence: does not emit before violation window elapses (1 ms)
+    ○ skipped cooldown: repeated violation emits once within cooldown interval
+    ○ skipped priority arbitration: emits only highest-priority active violation
+    ○ skipped priority arbitration tie-break: higher delta wins when priority equal
+
+Test Suites: 1 passed, 1 total
+Tests:       3 skipped, 1 passed, 4 total
+Snapshots:   0 total
+Time:        0.57 s, estimated 1 s
+Ran all test suites matching /tests\/unit\/fusion\/cue-engine.test.ts/i with tests matching "persistence".

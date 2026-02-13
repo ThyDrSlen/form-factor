@@ -1,0 +1,18 @@
+$ jest tests/unit/fusion/engine.test.ts "--testNamePattern=low camera confidence"
+watchman warning:  Recrawled this watch 21 times, most recently because:
+MustScanSubDirs UserDroppedTo resolve, please review the information on
+https://facebook.github.io/watchman/docs/troubleshooting.html#recrawl
+To clear this warning, run:
+`watchman watch-del '/Users/slenthekid/Projects/form-factor-eas' ; watchman watch-project '/Users/slenthekid/Projects/form-factor-eas'`
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+PASS tests/unit/fusion/engine.test.ts
+  fusion engine
+    ✓ low camera confidence transitions to degraded mode (1 ms)
+    ○ skipped compute once: does_not_recompute_angles_for_cue_pass
+
+Test Suites: 1 passed, 1 total
+Tests:       1 skipped, 1 passed, 2 total
+Snapshots:   0 total
+Time:        0.324 s, estimated 1 s
+Ran all test suites matching /tests\/unit\/fusion\/engine.test.ts/i with tests matching "low camera confidence".

@@ -1,0 +1,17 @@
+$ jest tests/unit/fusion/runtime-integration.test.ts
+watchman warning:  Recrawled this watch 21 times, most recently because:
+MustScanSubDirs UserDroppedTo resolve, please review the information on
+https://facebook.github.io/watchman/docs/troubleshooting.html#recrawl
+To clear this warning, run:
+`watchman watch-del '/Users/slenthekid/Projects/form-factor-eas' ; watchman watch-project '/Users/slenthekid/Projects/form-factor-eas'`
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+PASS tests/unit/fusion/runtime-integration.test.ts
+  fusion runtime integration
+    ✓ publishes_tracking_payload_with_confidence (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        0.683 s, estimated 2 s
+Ran all test suites matching /tests\/unit\/fusion\/runtime-integration.test.ts/i.
