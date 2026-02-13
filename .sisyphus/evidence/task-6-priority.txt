@@ -1,0 +1,20 @@
+$ jest tests/unit/fusion/cue-engine.test.ts "--testNamePattern=priority arbitration"
+watchman warning:  Recrawled this watch 21 times, most recently because:
+MustScanSubDirs UserDroppedTo resolve, please review the information on
+https://facebook.github.io/watchman/docs/troubleshooting.html#recrawl
+To clear this warning, run:
+`watchman watch-del '/Users/slenthekid/Projects/form-factor-eas' ; watchman watch-project '/Users/slenthekid/Projects/form-factor-eas'`
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+PASS tests/unit/fusion/cue-engine.test.ts
+  cue engine
+    ✓ priority arbitration: emits only highest-priority active violation (1 ms)
+    ✓ priority arbitration tie-break: higher delta wins when priority equal
+    ○ skipped persistence: does not emit before violation window elapses
+    ○ skipped cooldown: repeated violation emits once within cooldown interval
+
+Test Suites: 1 passed, 1 total
+Tests:       2 skipped, 2 passed, 4 total
+Snapshots:   0 total
+Time:        0.443 s, estimated 2 s
+Ran all test suites matching /tests\/unit\/fusion\/cue-engine.test.ts/i with tests matching "priority arbitration".
