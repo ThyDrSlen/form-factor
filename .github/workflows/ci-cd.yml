@@ -216,7 +216,7 @@ jobs:
         if: ${{ steps.expo_token.outputs.missing == 'false' }}
         uses: expo/expo-github-action@v8
         with:
-          expo-version: 54.0.30
+          expo-version: 6.3.12
           eas-version: 16.18.1
           packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
@@ -269,7 +269,7 @@ jobs:
       - name: Setup Expo
         uses: expo/expo-github-action@v8
         with:
-          expo-version: 54.0.30
+          expo-version: 6.3.12
           eas-version: 16.18.1
           packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
@@ -365,7 +365,7 @@ jobs:
       - name: Setup Expo
         uses: expo/expo-github-action@v8
         with:
-          expo-version: 54.0.30
+          expo-version: 6.3.12
           eas-version: 16.18.1
           packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
@@ -486,7 +486,7 @@ jobs:
           attempts=0
           until [ "$attempts" -ge 3 ]; do
             attempts=$((attempts + 1))
-            if npm audit --audit-level=moderate; then
+            if bun audit --audit-level=moderate; then
               exit 0
             fi
             if [ "$attempts" -lt 3 ]; then
@@ -497,7 +497,15 @@ jobs:
 
       - name: Run audit-ci
         run: |
-          npx audit-ci --config config/audit-ci.json
+          set -euo pipefail
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ] || [ -f yarn.lock ] || [ -f pnpm-lock.yaml ]; then
+            npx audit-ci --config config/audit-ci.json
+          elif [ -f bun.lock ] || [ -f bun.lockb ]; then
+            echo "Skipping audit-ci (unsupported for Bun lockfiles); relying on bun audit"
+          else
+            echo "No supported lockfile found for dependency audit" >&2
+            exit 1
+          fi
 
       - name: Check for secrets
         uses: trufflesecurity/trufflehog@v3.90.1
