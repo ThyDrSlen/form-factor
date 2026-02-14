@@ -44,6 +44,9 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:docker": "docker-compose up --build e2e",
     "test:e2e:report": "playwright show-report",
+    "fixtures:pullup:prepare": "bun scripts/prepare-pullup-fixtures.ts",
+    "eval:pullup-tracking": "bun scripts/eval-pullup-tracking.ts",
+    "baseline:pullup-tracking": "bun scripts/baseline-pullup-tracking.ts",
     "prepare": "husky",
     "postinstall": "patch-package"
   },

@@ -7,29 +7,31 @@ Form Factor is an iOS-first fitness and health app built with Expo and Supabase.
 ## What it does
 - Tracking: Offline-first foods and workouts using SQLite with sync queue, realtime backfill, conflict handling, and soft delete to Supabase.
 - Health: HealthKit permissions, summaries (steps, HR, weight), trend analysis, and historical bulk sync to Supabase; watch connectivity helpers included.
-- Form & media: ARKit body-tracking tab (pull-up/push-up rep detection, speech cues, Vision Camera overlay), video capture/upload to Supabase Storage, and a feed with signed URLs plus comments.
+- Form & media: ARKit body-tracking tab (pull-up/push-up rep detection, speech cues, Vision Camera overlay), Fusion Engine (combines camera, watch, and audio data), video capture/upload to Supabase Storage, and a feed with signed URLs plus comments.
 - Coach & notifications: AI coach backed by Supabase Edge Function `coach` (OpenAI), push token registration and preferences, and Edge Function `notify` for Expo push delivery.
 - UI/Navigation: Expo Router tabs, NativeWind/Tailwind styling, React Native Paper components; web target is read-only with Playwright smoke coverage.
 
 ## Status and roadmap
-- Implemented: offline foods/workouts, HealthKit summaries/trends, video upload + feed, AI coach, push notification plumbing, Playwright auth flow, Jest unit scaffolding.
+- Implemented: offline foods/workouts, HealthKit summaries/trends, video upload + feed, AI coach, push notification plumbing, Playwright auth flow, Jest unit scaffolding, Fusion Engine (v1).
 - In progress: ARKit body-tracking polish (see `docs/ARKIT_BODY_TRACKING_GUIDE.md`) and metrics upload, broader E2E coverage, telemetry/error-handling hardening.
 - Planned: Richer social/feed interactions, ML recommendations, production push campaigns.
 
 ## Repository layout
 - `app/`: Expo Router screens (`(auth)`, `(tabs)`, `(modals)`); ARKit scan and dashboard live here.
 - `components/`, `contexts/`, `hooks/`, `lib/`: shared UI, data, services (offline sync, healthkit, notifications, coach/video services).
+- `lib/fusion/`: **Fusion Engine** core logic (sensor fusion, degradation modes).
 - `modules/arkit-body-tracker/`: custom native module for ARKit.
 - `backstage/`: POC for a developer portal (see `backstage/README.md`).
 - `supabase/`: migrations and Edge Functions (`coach`, `notify`), plus storage bucket policies.
 - `scripts/`: env/setup helpers (e.g., `preinstall-clean.js`), native build utilities, and repair scripts (UUID fixes, `ci_local.py`).
 
-## Getting started (local)
-1) Install deps: `bun install`.  
-2) Copy env: `cp .env.example .env.local` and fill `EXPO_PUBLIC_SUPABASE_URL/ANON_KEY`, `EXPO_PUBLIC_PUSH_PROJECT_ID`, `EXPO_TOKEN` for EAS builds, plus optional `EXPO_PUBLIC_COACH_FUNCTION` (defaults to `coach`).  
-3) Run Expo: `bun run start` (or `bun run start:devclient`). Platform targets: `bun run ios`, `bun run android`, `bun run web`.  
-4) Variants map to `APP_VARIANT` in `eas.json` (`development`, `preview`, `staging`, `production`).  
-5) Supabase CLI users: set `SUPABASE_*` values from `.env.example` before running migrations or Edge Functions locally.
+## Quick Start
+
+For a detailed setup guide, see [docs/DEVELOPER_ONBOARDING.md](docs/DEVELOPER_ONBOARDING.md).
+
+1.  **Install**: `bun install`
+2.  **Env**: `cp .env.example .env.local` (fill in Supabase/Expo keys)
+3.  **Run**: `bun run ios` (Simulator) or `bun run ios:device` (Physical Device)
 
 ## EAS Build Policy
 - `eas build` does **not** run for pull requests; paid builds happen on `main` after merge (and on `develop` if you keep staging deploys automatic).
@@ -92,6 +94,7 @@ sequenceDiagram
 - Edge function code: `supabase/functions/coach/index.ts`, `supabase/functions/notify/index.ts`
 
 ## Documentation
+- **Start Here**: `docs/DEVELOPER_ONBOARDING.md`.
 - Repo standards and commands: `docs/AGENTS.md`.
 - ARKit: `docs/ARKIT_BODY_TRACKING_GUIDE.md`.
 - HealthKit sync/trends: `docs/HEALTHKIT_SYNC_AND_TRENDS_GUIDE.md` and `docs/HEALTHKIT_SYNC_QUICK_START.md`.

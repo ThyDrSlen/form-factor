@@ -294,7 +294,7 @@ export default function SignInScreen() {
 
             <View style={styles.signUpContainer}>
               <Text style={styles.signUpText}>
-                {isSignUp ? 'Already have an account? ' : 'Don&apos;t have an account? '}
+                {isSignUp ? 'Already have an account? ' : 'Don\'t have an account? '}
               </Text>
               <TouchableOpacity
                 onPress={() => {

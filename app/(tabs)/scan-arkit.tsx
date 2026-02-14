@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { Svg, Circle, Line } from 'react-native-svg';
 import { VideoView, useVideoPlayer } from 'expo-video';
@@ -69,6 +69,15 @@ import {
   type ShadowProvider,
 } from '@/lib/pose/shadow-provider';
 import { createRealtimeFormEngineState, processRealtimeAngles } from '@/lib/pose/realtime-form-engine';
+import {
+  createTrackingQualityPipelineState,
+  HIDE_N_FRAMES,
+  processTrackingQualityAngles,
+  readUseNewTrackingPipelineFlag,
+  SHOW_N_FRAMES,
+  type PullupScoringResult,
+} from '@/lib/tracking-quality';
+import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
 import {
   DEFAULT_DETECTION_MODE,
@@ -80,7 +89,14 @@ import {
 import type { WorkoutMetrics } from '@/lib/types/workout-definitions';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
 import { buildVideoMetricsForClip, type RecordingQuality } from '@/lib/services/video-metrics';
+import type { PullupFixtureFrame } from '@/lib/debug/pullup-fixture-corpus';
+import cameraFacingFixture from '@/tests/fixtures/pullup-tracking/camera-facing.json';
+import backTurnedFixture from '@/tests/fixtures/pullup-tracking/back-turned.json';
+import occlusionBriefFixture from '@/tests/fixtures/pullup-tracking/occlusion-brief.json';
+import occlusionLongFixture from '@/tests/fixtures/pullup-tracking/occlusion-long.json';
+import bounceNoiseFixture from '@/tests/fixtures/pullup-tracking/bounce-noise.json';
 import { styles } from '../../styles/tabs/_scan-arkit.styles';
+import { spacing } from '../../styles/tabs/_theme-constants';
 
 // Phase and detection mode types are now imported from lib/workouts
 type BaseUploadMetrics = Record<string, unknown> & {
@@ -117,6 +133,16 @@ const WATCH_MIRROR_AR_QUALITY = 0.25;
 const WATCH_MIRROR_MAX_WIDTH = 320;
 const MEDIAPIPE_SHADOW_POLL_INTERVAL_MS = 100;
 const MEDIAPIPE_MAX_TIMESTAMP_SKEW_SEC = 0.4;
+const PARTIAL_TRACKING_BADGE_MIN_VISIBLE_MS = 900;
+const PARTIAL_TRACKING_BADGE_HIDE_DELAY_MS = 350;
+const FIXTURE_PLAYBACK_DEFAULT = 'camera-facing';
+const FIXTURE_PLAYBACK_TRACES: Record<string, PullupFixtureFrame[]> = {
+  'camera-facing': cameraFacingFixture as PullupFixtureFrame[],
+  'back-turned': backTurnedFixture as PullupFixtureFrame[],
+  'occlusion-brief': occlusionBriefFixture as PullupFixtureFrame[],
+  'occlusion-long': occlusionLongFixture as PullupFixtureFrame[],
+  'bounce-noise': bounceNoiseFixture as PullupFixtureFrame[],
+};
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const MEDIAPIPE_LITE_MODEL_ASSET = require('../../assets/models/pose_landmarker_lite.task');
 const QUALITY_STORAGE_KEY = 'ff.recordingQuality';
@@ -126,7 +152,86 @@ const QUALITY_LABELS: Record<RecordingQuality, string> = {
   high: 'High',
 };
 
+type BaselineLatencyBucket = 'lt4' | 'lt8' | 'lt16' | 'gte16';
+
+type BaselineDebugMetrics = {
+  cueFlipCount: number;
+  cueSamples: number;
+  lastCue: string | null;
+  latencyBuckets: Record<BaselineLatencyBucket, number>;
+  frameLatencyTotalMs: number;
+  frameLatencyCount: number;
+};
+
+type PullupComponentIndicator = {
+  key: PullupScoringResult['missing_components'][number];
+  label: string;
+};
+
+const PULLUP_COMPONENT_INDICATORS: PullupComponentIndicator[] = [
+  { key: 'rom_score', label: 'ROM' },
+  { key: 'symmetry_score', label: 'SYM' },
+  { key: 'tempo_score', label: 'TMP' },
+  { key: 'torso_stability_score', label: 'TOR' },
+];
+
+const createBaselineDebugMetrics = (): BaselineDebugMetrics => ({
+  cueFlipCount: 0,
+  cueSamples: 0,
+  lastCue: null,
+  latencyBuckets: {
+    lt4: 0,
+    lt8: 0,
+    lt16: 0,
+    gte16: 0,
+  },
+  frameLatencyTotalMs: 0,
+  frameLatencyCount: 0,
+});
+
+const nowMs = (): number => {
+  const perfNow = globalThis.performance?.now;
+  if (typeof perfNow === 'function') {
+    return perfNow.call(globalThis.performance);
+  }
+  return Date.now();
+};
+
 // Metrics types are now imported from workout definitions (PullUpMetrics, PushUpMetrics)
+
+// Explicit alias map for skeleton overlay joint lookup.
+// Keys are lowercased display names used in drawLine(); values are ordered
+// fallback aliases (also lowercased) matching native ARKit joint names.
+const SKELETON_JOINT_ALIASES: Record<string, string[]> = {
+  root: ['root', 'hips_joint'],
+  hips_joint: ['hips_joint', 'root'],
+  spine_1_joint: ['spine_1_joint'],
+  spine_2_joint: ['spine_2_joint'],
+  spine_3_joint: ['spine_3_joint'],
+  spine_4_joint: ['spine_4_joint', 'spine_3_joint'],
+  spine_5_joint: ['spine_5_joint'],
+  spine_6_joint: ['spine_6_joint'],
+  spine_7_joint: ['spine_7_joint'],
+  neck_1_joint: ['neck_1_joint', 'neck_2_joint', 'neck_3_joint', 'neck_4_joint'],
+  neck_2_joint: ['neck_2_joint', 'neck_1_joint'],
+  neck_3_joint: ['neck_3_joint'],
+  neck_4_joint: ['neck_4_joint'],
+  head_joint: ['head_joint'],
+  left_shoulder_1_joint: ['left_shoulder_1_joint'],
+  left_arm_joint: ['left_arm_joint'],
+  left_forearm_joint: ['left_forearm_joint'],
+  left_hand_joint: ['left_hand_joint'],
+  right_shoulder_1_joint: ['right_shoulder_1_joint'],
+  right_arm_joint: ['right_arm_joint'],
+  right_forearm_joint: ['right_forearm_joint'],
+  right_hand_joint: ['right_hand_joint'],
+  left_upleg_joint: ['left_upleg_joint'],
+  left_leg_joint: ['left_leg_joint'],
+  left_foot_joint: ['left_foot_joint'],
+  right_upleg_joint: ['right_upleg_joint'],
+  right_leg_joint: ['right_leg_joint'],
+  right_foot_joint: ['right_foot_joint'],
+};
 
 let ARKitView: any = View;
 if (Platform.OS === 'ios') {
@@ -156,19 +261,39 @@ const formatMetricValue = (format: 'deg' | 'percent', value: number | null): str
   return `${value.toFixed(1)}°`;
 };
 
+const formatDuration = (startIso: string | null | undefined, endIso: string | null | undefined): string => {
+  if (!startIso || !endIso) return '--';
+  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return '--';
+  const totalSec = Math.round(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}m ${sec.toString().padStart(2, '0')}s`;
+};
+
 const PreviewPlayer = ({ uri }: { uri: string }) => {
   const player = useVideoPlayer(uri, (instance) => {
     instance.loop = false;
+    instance.play();
   });
+
+  useEffect(() => {
+    return () => {
+      try {
+        player.release();
+      } catch {
+        // Player may already be released
+      }
+    };
+  }, [player]);
 
   return (
     <VideoView
       player={player}
       style={styles.previewVideo}
-      contentFit="contain"
+      contentFit="cover"
       nativeControls
-      fullscreenOptions={{ enable: true }}
-      allowsPictureInPicture
     />
   );
 };
@@ -176,6 +301,11 @@ const PreviewPlayer = ({ uri }: { uri: string }) => {
 export default function ScanARKitScreen() {
   const DEV = __DEV__;
   const router = useRouter();
+  const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string }>();
+  const fixturePlaybackRequested = params.fixturePlayback === '1';
+  const fixtureName = typeof params.fixture === 'string' ? params.fixture : FIXTURE_PLAYBACK_DEFAULT;
+  const fixtureFrames = fixturePlaybackRequested ? FIXTURE_PLAYBACK_TRACES[fixtureName] ?? null : null;
+  const fixturePlaybackEnabled = fixturePlaybackRequested && !!fixtureFrames;
   const insets = useSafeAreaInsets();
   const topBarHeight = 44;
   const topBarPadding = 8;
@@ -203,13 +333,22 @@ export default function ScanARKitScreen() {
     isTracking,
     startTracking: startNativeTracking,
     stopTracking: stopNativeTracking,
-  } = useBodyTracking(30);
+  } = useBodyTracking(60);
   const [supportStatus, setSupportStatus] = useState<'unknown' | 'supported' | 'unsupported'>('unknown');
   const [jointAngles, setJointAngles] = useState<JointAngles | null>(null);
   const [fps, setFps] = useState(0);
   const textOpacity = React.useRef(new Animated.Value(1)).current;
   const frameStatsRef = React.useRef({ lastTimestamp: 0, frameCount: 0 });
-  const realtimeFormEngineRef = React.useRef(createRealtimeFormEngineState());
+  const useNewTrackingPipeline = useMemo(() => readUseNewTrackingPipelineFlag(), []);
+  const createRealtimeEngineState = useMemo(
+    () => (useNewTrackingPipeline ? createTrackingQualityPipelineState : createRealtimeFormEngineState),
+    [useNewTrackingPipeline]
+  );
+  const processRealtimeEngineAngles = useMemo(
+    () => (useNewTrackingPipeline ? processTrackingQualityAngles : processRealtimeAngles),
+    [useNewTrackingPipeline]
+  );
+  const realtimeFormEngineRef = React.useRef(createRealtimeEngineState());
   const jointAnglesStateRef = React.useRef<JointAngles | null>(null);
   const [repCount, setRepCount] = useState(0);
   const [detectionMode, setDetectionMode] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
@@ -229,12 +368,23 @@ export default function ScanARKitScreen() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [showDebugStats, setShowDebugStats] = useState(false);
+  const [fixturePlaybackFramesProcessed, setFixturePlaybackFramesProcessed] = useState(0);
+  const [latestPullupScoring, setLatestPullupScoring] = useState<PullupScoringResult | null>(null);
+  const [showPartialTrackingBadge, setShowPartialTrackingBadge] = useState(false);
+  const baselineDebugEnabled = DEV && showDebugStats;
+  const baselineDebugEnabledRef = React.useRef(baselineDebugEnabled);
+  const baselineDebugMetricsRef = React.useRef<BaselineDebugMetrics>(createBaselineDebugMetrics());
   const [savingRecording, setSavingRecording] = useState(false);
   const recordingStopInFlightRef = React.useRef(false);
   const [smoothedPose2DJoints, setSmoothedPose2DJoints] = useState<Joint2D[] | null>(null);
   const smoothedPose2DRef = React.useRef<Joint2D[] | null>(null);
   const pose2DCacheRef = React.useRef<Record<string, { x: number; y: number }>>({});
   const lastSpokenCueRef = React.useRef<{ cue: string; timestamp: number } | null>(null);
+  const cueHysteresisControllerRef = React.useRef(
+    new CueHysteresisController<string>({ showFrames: SHOW_N_FRAMES, hideFrames: HIDE_N_FRAMES })
+  );
+  const cueHysteresisLastTickRef = React.useRef<string | null>(null);
+  const stablePrimaryCueRef = React.useRef<string | null>(null);
   const gestureHoldStartRef = React.useRef<number | null>(null);
   const lastGestureTriggerRef = React.useRef(0);
   const overlayLayout = React.useRef<{ width: number; height: number } | null>(null);
@@ -264,6 +414,54 @@ export default function ScanARKitScreen() {
   const [mediaPipeModelPath, setMediaPipeModelPath] = useState<string | null>(null);
   const mediaPipePollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const mediaPipePollInFlightRef = React.useRef(false);
+  const partialTrackingHideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const partialTrackingVisibleUntilMsRef = React.useRef(0);
+
+  const resetBaselineDebugMetrics = useCallback(() => {
+    baselineDebugMetricsRef.current = createBaselineDebugMetrics();
+  }, []);
+
+  const resetCueHysteresis = useCallback(() => {
+    cueHysteresisControllerRef.current.resetAll();
+    cueHysteresisLastTickRef.current = null;
+    stablePrimaryCueRef.current = null;
+  }, []);
+
+  const updatePartialTrackingBadgeVisibility = useCallback((visibilityBadge: PullupScoringResult['visibility_badge']) => {
+    if (partialTrackingHideTimerRef.current) {
+      clearTimeout(partialTrackingHideTimerRef.current);
+      partialTrackingHideTimerRef.current = null;
+    }
+
+    const now = Date.now();
+    if (visibilityBadge === 'partial') {
+      partialTrackingVisibleUntilMsRef.current = now + PARTIAL_TRACKING_BADGE_MIN_VISIBLE_MS;
+      setShowPartialTrackingBadge(true);
+      return;
+    }
+
+    const hideInMs = Math.max(0, partialTrackingVisibleUntilMsRef.current - now) + PARTIAL_TRACKING_BADGE_HIDE_DELAY_MS;
+    partialTrackingHideTimerRef.current = setTimeout(() => {
+      setShowPartialTrackingBadge(false);
+      partialTrackingHideTimerRef.current = null;
+    }, hideInMs);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (partialTrackingHideTimerRef.current) {
+        clearTimeout(partialTrackingHideTimerRef.current);
+        partialTrackingHideTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    baselineDebugEnabledRef.current = baselineDebugEnabled;
+    if (!baselineDebugEnabled) {
+      resetBaselineDebugMetrics();
+    }
+  }, [baselineDebugEnabled, resetBaselineDebugMetrics]);
 
   useEffect(() => {
     let isMounted = true;
@@ -528,8 +726,9 @@ export default function ScanARKitScreen() {
     shadowStatsRef.current = createShadowStatsAccumulator();
     shadowProviderCountsRef.current = createShadowProviderCounts();
     mediaPipePoseRef.current = null;
-    realtimeFormEngineRef.current = createRealtimeFormEngineState();
+    realtimeFormEngineRef.current = createRealtimeEngineState();
     lastShadowMeanAbsDeltaRef.current = null;
+    resetBaselineDebugMetrics();
   }, []);
 
   useEffect(() => {
@@ -615,7 +814,11 @@ export default function ScanARKitScreen() {
         recordingFqiScoresRef.current.push(fqi);
       }
     },
-  }), [activeWorkoutDef, repCount, transitionPhase]);
+    onPullupScoring: (_repNumber: number, scoring: PullupScoringResult) => {
+      setLatestPullupScoring(scoring);
+      updatePartialTrackingBadgeVisibility(scoring.visibility_badge);
+    },
+  }), [activeWorkoutDef, repCount, transitionPhase, updatePartialTrackingBadgeVisibility]);
 
   const workoutController = useWorkoutController(detectionMode, {
     sessionId: sessionIdRef.current,
@@ -640,15 +843,24 @@ export default function ScanARKitScreen() {
     shadowStatsRef.current = createShadowStatsAccumulator();
     shadowProviderCountsRef.current = createShadowProviderCounts();
     mediaPipePoseRef.current = null;
-    realtimeFormEngineRef.current = createRealtimeFormEngineState();
+    realtimeFormEngineRef.current = createRealtimeEngineState();
     lastShadowMeanAbsDeltaRef.current = null;
+    resetBaselineDebugMetrics();
     setWorkoutController(detectionMode);
-  }, [detectionMode, setWorkoutController]);
+  }, [detectionMode, resetBaselineDebugMetrics, setWorkoutController]);
 
   useEffect(() => {
     if (DEV) {
       logWithTs('[ScanARKit] Component mounted - Platform:', Platform.OS);
       logWithTs('[ScanARKit] nativeSupported value:', nativeSupported);
+    }
+
+    if (fixturePlaybackRequested) {
+      if (!fixturePlaybackEnabled) {
+        warnWithTs('[ScanARKit] Fixture playback requested with unknown fixture name', fixtureName);
+      }
+      setSupportStatus('supported');
+      return;
     }
     
     if (Platform.OS === 'web') {
@@ -664,7 +876,17 @@ export default function ScanARKitScreen() {
       setSupportStatus('unsupported');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nativeSupported]);
+  }, [nativeSupported, fixturePlaybackRequested, fixturePlaybackEnabled, fixtureName, DEV]);
+
+  useEffect(() => {
+    setLatestPullupScoring(null);
+    setShowPartialTrackingBadge(false);
+    partialTrackingVisibleUntilMsRef.current = 0;
+    if (partialTrackingHideTimerRef.current) {
+      clearTimeout(partialTrackingHideTimerRef.current);
+      partialTrackingHideTimerRef.current = null;
+    }
+  }, [detectionMode]);
 
   // Auto-start tracking when supported
   useEffect(() => {
@@ -677,15 +899,113 @@ export default function ScanARKitScreen() {
       });
     }
     
+    if (fixturePlaybackEnabled) {
+      return;
+    }
+
     if (supportStatus === 'supported' && !isTracking && cameraPosition === 'back') {
       if (DEV) logWithTs('[ScanARKit] ✅ Auto-starting tracking...');
       startTracking();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supportStatus, isTracking, cameraPosition]);
+  }, [supportStatus, isTracking, cameraPosition, fixturePlaybackEnabled]);
+
+  useEffect(() => {
+    if (!fixturePlaybackEnabled || !fixtureFrames || fixtureFrames.length === 0) {
+      setFixturePlaybackFramesProcessed(0);
+      return;
+    }
+
+    if (detectionMode !== 'pullup') {
+      setDetectionMode('pullup');
+    }
+
+    const firstFrame = fixtureFrames[0];
+    const nextInitialPhase = getWorkoutByMode('pullup').initialPhase;
+    activePhaseRef.current = nextInitialPhase;
+    transitionPhase(nextInitialPhase);
+    repIndexTrackerRef.current.reset();
+    resetWorkoutController();
+    setRepCount(0);
+    setActiveMetrics(null);
+    setFps(30);
+    setFixturePlaybackFramesProcessed(0);
+    setJointAngles(firstFrame?.angles ?? null);
+    resetBaselineDebugMetrics();
+    resetCueHysteresis();
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const processFrameAt = (index: number) => {
+      if (cancelled) return;
+      const frame = fixtureFrames[index];
+      if (!frame) {
+        if (DEV) {
+          logWithTs('[ScanARKit] Fixture playback completed', {
+            fixture: fixtureName,
+            framesProcessed: fixtureFrames.length,
+            expectedRepCount: fixtureFrames[0]?.expected.repCount,
+          });
+        }
+        return;
+      }
+
+      const joints = frame.joints
+        ? new Map(
+            Object.entries(frame.joints).map(([key, value]) => [
+              key,
+              { x: value.x, y: value.y, isTracked: value.isTracked },
+            ]),
+          )
+        : undefined;
+
+      lastPoseTimestampRef.current = frame.timestampSec;
+      jointAnglesStateRef.current = frame.angles;
+      setJointAngles(frame.angles);
+      const metrics = getWorkoutByMode('pullup').calculateMetrics(frame.angles, joints) as WorkoutMetrics;
+      setActiveMetrics(metrics);
+      processWorkoutFrame(frame.angles, joints, {
+        trackingQuality: 1,
+        shadowMeanAbsDelta: 0,
+      });
+      setFixturePlaybackFramesProcessed(index + 1);
+
+      const next = fixtureFrames[index + 1];
+      if (!next) {
+        return;
+      }
+
+      const deltaMs = Math.max(1, Math.round((next.timestampSec - frame.timestampSec) * 1000));
+      timeoutId = setTimeout(() => {
+        processFrameAt(index + 1);
+      }, deltaMs);
+    };
+
+    processFrameAt(0);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [
+    fixturePlaybackEnabled,
+    fixtureFrames,
+    fixtureName,
+    detectionMode,
+    transitionPhase,
+    resetWorkoutController,
+    processWorkoutFrame,
+    DEV,
+    resetBaselineDebugMetrics,
+    resetCueHysteresis,
+  ]);
 
   // Debug pose updates (throttled logging)
   useEffect(() => {
+    const frameProcessStartMs = baselineDebugEnabledRef.current ? nowMs() : null;
     if (!pose) {
       if (DEV) logWithTs('[ScanARKit] ℹ️ No pose data');
       // Track pose lost if we were previously tracking
@@ -695,7 +1015,7 @@ export default function ScanARKitScreen() {
       frameStatsRef.current = { lastTimestamp: 0, frameCount: 0 };
       setJointAngles(null);
       jointAnglesStateRef.current = null;
-      realtimeFormEngineRef.current = createRealtimeFormEngineState();
+      realtimeFormEngineRef.current = createRealtimeEngineState();
       lastShadowMeanAbsDeltaRef.current = null;
       setFps(0);
       setSmoothedPose2DJoints(null);
@@ -707,6 +1027,7 @@ export default function ScanARKitScreen() {
       transitionPhase(nextInitialPhase);
       repIndexTrackerRef.current.reset();
       resetWorkoutController({ preserveRepCount: true });
+      resetCueHysteresis();
       return;
     }
 
@@ -753,7 +1074,7 @@ export default function ScanARKitScreen() {
       } as const;
       const smoothingResult =
         angles
-          ? processRealtimeAngles({
+          ? processRealtimeEngineAngles({
               state: realtimeFormEngineRef.current,
               angles,
               valid,
@@ -894,6 +1215,22 @@ export default function ScanARKitScreen() {
       }
     } catch (error) {
       errorWithTs('[ScanARKit] ❌ Error calculating angles:', error);
+    } finally {
+      if (frameProcessStartMs !== null) {
+        const elapsedMs = Math.max(0, nowMs() - frameProcessStartMs);
+        const baselineMetrics = baselineDebugMetricsRef.current;
+        baselineMetrics.frameLatencyCount += 1;
+        baselineMetrics.frameLatencyTotalMs += elapsedMs;
+        if (elapsedMs < 4) {
+          baselineMetrics.latencyBuckets.lt4 += 1;
+        } else if (elapsedMs < 8) {
+          baselineMetrics.latencyBuckets.lt8 += 1;
+        } else if (elapsedMs < 16) {
+          baselineMetrics.latencyBuckets.lt16 += 1;
+        } else {
+          baselineMetrics.latencyBuckets.gte16 += 1;
+        }
+      }
     }
 
     frameStatsRef.current.frameCount += 1;
@@ -919,7 +1256,7 @@ export default function ScanARKitScreen() {
     }
     // DEV is a stable constant; avoid dependency churn in hot loop
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pose, transitionPhase, detectionMode, activeWorkoutDef, processWorkoutFrame, resetWorkoutController]);
+  }, [pose, transitionPhase, detectionMode, activeWorkoutDef, processWorkoutFrame, resetWorkoutController, resetCueHysteresis]);
 
   // Debug pose2D updates
   useEffect(() => {
@@ -941,7 +1278,7 @@ export default function ScanARKitScreen() {
       return;
     }
 
-    const alpha = 0.35;
+    const alpha = 0.55;
     const cache = pose2DCacheRef.current;
     const joints = pose2D.joints;
     const nextJoints = joints.map((joint) => {
@@ -974,8 +1311,8 @@ export default function ScanARKitScreen() {
         if (prev.name !== joint.name) return true;
         if (joint.isTracked !== prev.isTracked) return true;
         return (
-          Math.abs(prev.x - joint.x) > 0.002 ||
-          Math.abs(prev.y - joint.y) > 0.002
+          Math.abs(prev.x - joint.x) > 0.001 ||
+          Math.abs(prev.y - joint.y) > 0.001
         );
       });
 
@@ -1006,12 +1343,14 @@ export default function ScanARKitScreen() {
       resetWorkoutController();
       setRepCount(0);
       setActiveMetrics(null);
+      resetBaselineDebugMetrics();
+      resetCueHysteresis();
 
       const startTime = Date.now();
       shadowStatsRef.current = createShadowStatsAccumulator();
       shadowProviderCountsRef.current = createShadowProviderCounts();
       mediaPipePoseRef.current = null;
-      realtimeFormEngineRef.current = createRealtimeFormEngineState();
+      realtimeFormEngineRef.current = createRealtimeEngineState();
       lastShadowMeanAbsDeltaRef.current = null;
       await startNativeTracking();
       const elapsed = Date.now() - startTime;
@@ -1031,7 +1370,16 @@ export default function ScanARKitScreen() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startNativeTracking, transitionPhase, cameraPosition, logWithTs, detectionMode, resetWorkoutController]);
+  }, [
+    startNativeTracking,
+    transitionPhase,
+    cameraPosition,
+    logWithTs,
+    detectionMode,
+    resetWorkoutController,
+    resetBaselineDebugMetrics,
+    resetCueHysteresis,
+  ]);
 
   const stopRecordingCore = useCallback(async () => {
     if (!isRecording || recordingStopInFlightRef.current) {
@@ -1083,12 +1431,14 @@ export default function ScanARKitScreen() {
       resetWorkoutController();
       setRepCount(0);
       setFps(0);
-      realtimeFormEngineRef.current = createRealtimeFormEngineState();
+      realtimeFormEngineRef.current = createRealtimeEngineState();
       lastShadowMeanAbsDeltaRef.current = null;
       shadowStatsRef.current = createShadowStatsAccumulator();
       shadowProviderCountsRef.current = createShadowProviderCounts();
       mediaPipePoseRef.current = null;
       setShadowProviderRuntime('mediapipe_proxy');
+      resetBaselineDebugMetrics();
+      resetCueHysteresis();
       
       if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
@@ -1099,7 +1449,17 @@ export default function ScanARKitScreen() {
       errorWithTs('[ScanARKit] ❌ Error stopping tracking:', error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stopNativeTracking, transitionPhase, isRecording, stopRecordingCore, logWithTs, detectionMode, resetWorkoutController]);
+  }, [
+    stopNativeTracking,
+    transitionPhase,
+    isRecording,
+    stopRecordingCore,
+    logWithTs,
+    detectionMode,
+    resetWorkoutController,
+    resetBaselineDebugMetrics,
+    resetCueHysteresis,
+  ]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -1111,6 +1471,9 @@ export default function ScanARKitScreen() {
   const handleOverlayLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     overlayLayout.current = { width, height };
+    if (__DEV__) {
+      logWithTs(`[ScanARKit] Overlay layout: ${width.toFixed(1)}x${height.toFixed(1)} (compare with native ARView bounds)`);
+    }
   }, []);
 
   const openWorkoutInsights = useCallback(() => {
@@ -1164,7 +1527,32 @@ export default function ScanARKitScreen() {
 	  }, [jointAngles, activeMetrics, activePhase, activeWorkoutDef]);
 
 	    const feedback = analyzeForm();
-	    const primaryCue = feedback?.[0];
+	    const orderedActiveCues = feedback?.filter((cue): cue is string => !!cue) ?? [];
+	    const primaryCue = useMemo(() => {
+	      if (!isTracking) {
+	        return null;
+	      }
+
+	      const frameTick = pose
+	        ? `pose:${pose.timestamp}`
+	        : fixturePlaybackEnabled
+	          ? `fixture:${fixturePlaybackFramesProcessed}`
+	          : null;
+	      if (frameTick === null) {
+	        return stablePrimaryCueRef.current;
+	      }
+
+	      if (cueHysteresisLastTickRef.current !== frameTick) {
+	        cueHysteresisLastTickRef.current = frameTick;
+	        const previousStableCue = stablePrimaryCueRef.current;
+	        stablePrimaryCueRef.current = cueHysteresisControllerRef.current.nextStableCueFromOrderedActive({
+	          orderedActiveCues,
+	          previousStableCue,
+	        });
+	      }
+
+	      return stablePrimaryCueRef.current;
+	    }, [isTracking, pose?.timestamp, fixturePlaybackEnabled, fixturePlaybackFramesProcessed, orderedActiveCues]);
 	    const latestMetricsForUpload = useMemo<BaseUploadMetrics>(
 	      () => ({
 	        mode: detectionMode,
@@ -1174,20 +1562,37 @@ export default function ScanARKitScreen() {
 	      [activeWorkoutDef, activeMetrics, detectionMode, repCount]
 	    );
 
-    useEffect(() => {
-      if (!primaryCue || !audioFeedbackEnabled) {
-        return;
-      }
-      const now = Date.now();
-      const last = lastSpokenCueRef.current;
-      if (last && last.cue === primaryCue && now - last.timestamp < 5000) {
-        return;
-      }
-      lastSpokenCueRef.current = { cue: primaryCue, timestamp: now };
-      speakCue(primaryCue);
+  useEffect(() => {
+    if (!primaryCue || !audioFeedbackEnabled) {
+      return;
+    }
+    const now = Date.now();
+    const last = lastSpokenCueRef.current;
+    if (last && last.cue === primaryCue && now - last.timestamp < 5000) {
+      return;
+    }
+    lastSpokenCueRef.current = { cue: primaryCue, timestamp: now };
+    speakCue(primaryCue);
 
-      addWorkoutRepCue(primaryCue);
-    }, [primaryCue, audioFeedbackEnabled, speakCue, addWorkoutRepCue]);
+    addWorkoutRepCue(primaryCue);
+  }, [primaryCue, audioFeedbackEnabled, speakCue, addWorkoutRepCue]);
+
+  useEffect(() => {
+    if (!baselineDebugEnabledRef.current) {
+      return;
+    }
+    const metrics = baselineDebugMetricsRef.current;
+    if (!primaryCue) {
+      metrics.lastCue = null;
+      return;
+    }
+
+    metrics.cueSamples += 1;
+    if (metrics.lastCue && metrics.lastCue !== primaryCue) {
+      metrics.cueFlipCount += 1;
+    }
+    metrics.lastCue = primaryCue;
+  }, [primaryCue]);
 
     const canMirrorFromArkit =
       Platform.OS === 'ios' &&
@@ -1462,6 +1867,10 @@ export default function ScanARKitScreen() {
         Alert.alert('Finish review', 'Save or discard the previous recording before starting a new one.');
         return;
       }
+      if (fixturePlaybackEnabled) {
+        Alert.alert('Fixture playback enabled', 'Disable fixturePlayback query param to record live tracking.');
+        return;
+      }
       if (!isTracking) {
         Alert.alert('Start tracking first', 'Begin tracking before recording your set.');
         return;
@@ -1717,7 +2126,7 @@ export default function ScanARKitScreen() {
   }
 
   const telemetryReps = repCount;
-  const showTelemetry = isTracking || telemetryReps > 0;
+  const showTelemetry = isTracking || fixturePlaybackEnabled || telemetryReps > 0;
 	  const telemetryTitle = `${activeWorkoutDef.displayName} Tracker`;
 	  const telemetryPhaseId = activePhase;
 	  const telemetryPhaseLabel =
@@ -1758,6 +2167,28 @@ export default function ScanARKitScreen() {
 	        ? formatMetricValue(previewSecondaryMetric.format, getMetricValue(previewMetrics, previewSecondaryMetric.key))
 	        : '--',
 	  };
+	  const previewFormScore = previewMetrics?.avgFqi != null ? `${Math.round(previewMetrics.avgFqi)}` : '--';
+	  const previewDuration = formatDuration(previewMetrics?.recordingStartAt, previewMetrics?.recordingEndAt);
+	  const previewQuality = previewMetrics?.recordingQuality ? QUALITY_LABELS[previewMetrics.recordingQuality] : '--';
+  const shouldShowPartialTrackingBadge =
+    detectionMode === 'pullup' &&
+    isTracking &&
+    showPartialTrackingBadge &&
+    latestPullupScoring?.visibility_badge === 'partial';
+  const missingComponentSet = new Set(latestPullupScoring?.missing_components ?? []);
+  const partialTrackingComponents = PULLUP_COMPONENT_INDICATORS.map((item) => ({
+    ...item,
+    missing: missingComponentSet.has(item.key),
+  }));
+  const baselineMetricsSnapshot = baselineDebugMetricsRef.current;
+  const debugCueFlipRate =
+    baselineMetricsSnapshot.cueSamples > 0
+      ? baselineMetricsSnapshot.cueFlipCount / baselineMetricsSnapshot.cueSamples
+      : 0;
+  const debugMeanFrameLatencyMs =
+    baselineMetricsSnapshot.frameLatencyCount > 0
+      ? baselineMetricsSnapshot.frameLatencyTotalMs / baselineMetricsSnapshot.frameLatencyCount
+      : 0;
 
   return (
     <View style={styles.container}>
@@ -1888,17 +2319,14 @@ export default function ScanARKitScreen() {
                 const findJoint2D = (name: string) => {
                   const lower = name.toLowerCase();
                   const direct = jointsByName.get(lower);
-                  if (direct && direct.isTracked) {
-                    return direct;
-                  }
-                  for (const joint of smoothedPose2DJoints) {
-                    const key = joint.name.toLowerCase();
-                    if (!joint.isTracked) continue;
-                    if (
-                      key.includes(lower) ||
-                      lower.includes(key.replace('_joint', ''))
-                    ) {
-                      return joint;
+                  if (direct?.isTracked) return direct;
+
+                  // Strict alias fallback -- no substring matching
+                  const aliases = SKELETON_JOINT_ALIASES[lower];
+                  if (aliases) {
+                    for (const alias of aliases) {
+                      const j = jointsByName.get(alias);
+                      if (j?.isTracked) return j;
                     }
                   }
                   return undefined;
@@ -2065,15 +2493,50 @@ export default function ScanARKitScreen() {
 
       {/* Status badge */}
       {showDebugStats && (
-        <View style={[styles.statusBadge, { top: topBarBottom + 8 }]}>
+        <View style={[styles.statusBadge, { top: topBarBottom + 8 }]}> 
           <View style={[styles.statusDot, isTracking && styles.statusDotActive]} />
           <View>
             <Text style={styles.statusText}>
-              {isTracking ? 'Tracking' : 'Inactive'} • {pose?.joints.length || 0} joints • {fps} FPS
+              {fixturePlaybackEnabled
+                ? `Fixture Playback (${fixtureName}) • ${fixturePlaybackFramesProcessed}/${fixtureFrames?.length ?? 0} frames`
+                : `${isTracking ? 'Tracking' : 'Inactive'} • ${pose?.joints.length || 0} joints • ${fps} FPS`}
             </Text>
             <Text style={styles.statusSubtext}>
               {Platform.OS === 'ios' ? 'GPU: Metal' : Platform.OS === 'android' ? 'GPU: OpenGL/Vulkan' : 'GPU: WebGL'}
             </Text>
+            {baselineDebugEnabled && (
+              <Text style={styles.statusSubtext}>
+                {`cueFlipRate=${(debugCueFlipRate * 100).toFixed(1)}% meanFrameLatency=${debugMeanFrameLatencyMs.toFixed(2)}ms buckets[<4:${baselineMetricsSnapshot.latencyBuckets.lt4} <8:${baselineMetricsSnapshot.latencyBuckets.lt8} <16:${baselineMetricsSnapshot.latencyBuckets.lt16} >=16:${baselineMetricsSnapshot.latencyBuckets.gte16}]`}
+              </Text>
+            )}
+          </View>
+        </View>
+      )}
+
+      {shouldShowPartialTrackingBadge && (
+        <View style={[styles.partialTrackingBadge, { top: topBarBottom + 8 }]}> 
+          <Text style={styles.partialTrackingBadgeText}>Partial tracking</Text>
+          <View style={styles.partialTrackingComponentRow}>
+            {partialTrackingComponents.map((component) => (
+              <View
+                key={component.key}
+                style={[
+                  styles.partialTrackingComponentPill,
+                  component.missing ? styles.partialTrackingComponentPillMissing : styles.partialTrackingComponentPillAvailable,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.partialTrackingComponentLabel,
+                    component.missing
+                      ? styles.partialTrackingComponentLabelMissing
+                      : styles.partialTrackingComponentLabelAvailable,
+                  ]}
+                >
+                  {component.label}
+                </Text>
+              </View>
+            ))}
           </View>
         </View>
       )}
@@ -2200,14 +2663,12 @@ export default function ScanARKitScreen() {
 
       <Modal
         visible={isPreviewVisible}
-        transparent
         animationType="slide"
         onRequestClose={handleDiscardRecording}
+        statusBarTranslucent
       >
-        <View style={styles.previewOverlay}>
-          <View style={[styles.previewSheet, { paddingBottom: insets.bottom + 24 }]}>
-            <View style={styles.previewHandle} />
-            <Text style={styles.previewTitle}>Review recording</Text>
+        <SafeAreaView style={styles.previewOverlay}>
+          <View style={styles.previewContent}>
             <View style={styles.previewVideoWrap}>
               {recordPreview?.uri ? (
                 <PreviewPlayer uri={recordPreview.uri} />
@@ -2216,49 +2677,72 @@ export default function ScanARKitScreen() {
                   <ActivityIndicator color="#FFFFFF" />
                 </View>
               )}
+              <TouchableOpacity
+                style={[styles.previewCloseButton, { top: insets.top + spacing.sm }]}
+                onPress={handleDiscardRecording}
+                disabled={uploading || savingRecording}
+              >
+                <Ionicons name="close" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
             </View>
-            <View style={styles.previewMetaRow}>
-              <View style={styles.previewMetaItem}>
-                <Text style={styles.previewMetaLabel}>Exercise</Text>
-                <Text style={styles.previewMetaValue}>{recordPreview?.exercise ?? '--'}</Text>
+
+            <View style={styles.previewHeader}>
+              <Text style={styles.previewTitle}>Review</Text>
+              <View style={styles.previewExerciseBadge}>
+                <Text style={styles.previewExerciseBadgeText}>{recordPreview?.exercise ?? '--'}</Text>
               </View>
-              <View style={styles.previewMetaItem}>
+            </View>
+
+            <View style={styles.previewMetricsGrid}>
+              <View style={styles.previewMetricCard}>
                 <Text style={styles.previewMetaLabel}>Reps</Text>
                 <Text style={styles.previewMetaValue}>{previewReps}</Text>
               </View>
-              <View style={styles.previewMetaItem}>
+              <View style={styles.previewMetricCard}>
+                <Text style={styles.previewMetaLabel}>Form Score</Text>
+                <Text style={styles.previewMetaValue}>{previewFormScore}</Text>
+              </View>
+              <View style={styles.previewMetricCard}>
+                <Text style={styles.previewMetaLabel}>Duration</Text>
+                <Text style={styles.previewMetaValue}>{previewDuration}</Text>
+              </View>
+              <View style={styles.previewMetricCard}>
+                <Text style={styles.previewMetaLabel}>{previewPrimaryLabel}</Text>
+                <Text style={styles.previewMetaValue}>{previewPrimaryDisplay}</Text>
+              </View>
+              {previewSecondary.label !== '--' && (
+                <View style={styles.previewMetricCard}>
+                  <Text style={styles.previewMetaLabel}>{previewSecondary.label}</Text>
+                  <Text style={styles.previewMetaValue}>{previewSecondary.display}</Text>
+                </View>
+              )}
+              <View style={styles.previewMetricCard}>
+                <Text style={styles.previewMetaLabel}>Quality</Text>
+                <Text style={styles.previewMetaValue}>{previewQuality}</Text>
+              </View>
+              <View style={styles.previewMetricCard}>
                 <Text style={styles.previewMetaLabel}>Size</Text>
                 <Text style={styles.previewMetaValue}>{formatBytes(recordPreview?.sizeBytes)}</Text>
               </View>
             </View>
-	            <View style={styles.previewMetaRow}>
-	              <View style={styles.previewMetaItem}>
-	                <Text style={styles.previewMetaLabel}>{previewPrimaryLabel}</Text>
-	                <Text style={styles.previewMetaValue}>{previewPrimaryDisplay}</Text>
-	              </View>
-              <View style={styles.previewMetaItem}>
-                <Text style={styles.previewMetaLabel}>{previewSecondary.label}</Text>
-                <Text style={styles.previewMetaValue}>{previewSecondary.display}</Text>
-              </View>
-              <View style={styles.previewMetaItem}>
-                <Text style={styles.previewMetaLabel}>Library</Text>
-                <Text style={styles.previewMetaValue}>
-                  {recordPreview?.savedToLibrary ? 'Saved' : 'Not saved'}
-                </Text>
-              </View>
-            </View>
+
             {previewError ? (
               <Text style={styles.previewErrorText}>{previewError}</Text>
             ) : null}
-            <View style={styles.previewActions}>
+
+            <View style={[styles.previewActions, { paddingBottom: insets.bottom + spacing.md }]}>
               <TouchableOpacity
-                style={[styles.previewButton, styles.previewButtonGhost]}
-                onPress={handleDiscardRecording}
+                style={[styles.previewButton, styles.previewButtonPrimary]}
+                onPress={handlePublishRecording}
                 disabled={uploading || savingRecording}
               >
-                <Text style={[styles.previewButtonText, styles.previewButtonTextGhost]}>
-                  Discard
-                </Text>
+                {uploading || savingRecording ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={[styles.previewButtonText, styles.previewButtonTextPrimary]}>
+                    Publish + Save
+                  </Text>
+                )}
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.previewButton, styles.previewButtonSecondary]}
@@ -2274,21 +2758,17 @@ export default function ScanARKitScreen() {
                 )}
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.previewButton, styles.previewButtonPrimary]}
-                onPress={handlePublishRecording}
+                style={[styles.previewButton, styles.previewButtonGhost]}
+                onPress={handleDiscardRecording}
                 disabled={uploading || savingRecording}
               >
-                {uploading || savingRecording ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={[styles.previewButtonText, styles.previewButtonTextPrimary]}>
-                    Publish + Save
-                  </Text>
-                )}
+                <Text style={[styles.previewButtonText, styles.previewButtonTextGhost]}>
+                  Discard
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
 </View>
   );
