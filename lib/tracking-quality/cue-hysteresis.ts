@@ -44,6 +44,20 @@ export class CueHysteresisController<K extends string = string> {
     return state ? { ...state } : null;
   }
 
+  stepActive(activeCues: Iterable<K>): void {
+    const activeSet = activeCues instanceof Set ? activeCues : new Set(activeCues);
+
+    for (const cue of activeSet) {
+      if (!this.runtime.has(cue)) {
+        this.runtime.set(cue, { active: false, showCount: 0, hideCount: 0 });
+      }
+    }
+
+    for (const [key, state] of this.runtime) {
+      this.apply(state, activeSet.has(key));
+    }
+  }
+
   stepSelected(rawCue: K | null): void {
     if (rawCue !== null && !this.runtime.has(rawCue)) {
       this.runtime.set(rawCue, { active: false, showCount: 0, hideCount: 0 });
@@ -51,23 +65,39 @@ export class CueHysteresisController<K extends string = string> {
 
     for (const [key, state] of this.runtime) {
       const isTrue = rawCue !== null && key === rawCue;
-      this.apply(key, state, isTrue);
+      this.apply(state, isTrue);
     }
   }
 
   nextStableSelectedCue(input: { rawCue: K | null; previousStableCue: K | null }): K | null {
     this.stepSelected(input.rawCue);
 
-    if (input.rawCue !== null && this.isActive(input.rawCue)) {
-      return input.rawCue;
-    }
     if (input.previousStableCue !== null && this.isActive(input.previousStableCue)) {
       return input.previousStableCue;
+    }
+    if (input.rawCue !== null && this.isActive(input.rawCue)) {
+      return input.rawCue;
     }
     return null;
   }
 
-  private apply(key: K, state: CueRuntimeState, isTrue: boolean): void {
+  nextStableCueFromOrderedActive(input: { orderedActiveCues: ReadonlyArray<K>; previousStableCue: K | null }): K | null {
+    this.stepActive(input.orderedActiveCues);
+
+    if (input.previousStableCue !== null && this.isActive(input.previousStableCue)) {
+      return input.previousStableCue;
+    }
+
+    for (const cue of input.orderedActiveCues) {
+      if (this.isActive(cue)) {
+        return cue;
+      }
+    }
+
+    return null;
+  }
+
+  private apply(state: CueRuntimeState, isTrue: boolean): void {
     if (state.active) {
       if (isTrue) {
         state.hideCount = 0;

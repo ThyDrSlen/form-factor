@@ -12,6 +12,8 @@ import {
   HOLD_FRAMES,
   HIDE_N_FRAMES,
   MAX_PX_PER_FRAME,
+  N_CONSEC_FRAMES,
+  REP_DETECTOR_THRESHOLDS,
   SHOW_N_FRAMES,
   TRACKING_QUALITY_CONFIG,
 } from './config';
@@ -98,6 +100,8 @@ export {
   HOLD_FRAMES,
   HIDE_N_FRAMES,
   MAX_PX_PER_FRAME,
+  N_CONSEC_FRAMES,
+  REP_DETECTOR_THRESHOLDS,
   SHOW_N_FRAMES,
   TRACKING_QUALITY_CONFIG,
 };
@@ -120,6 +124,7 @@ export type {
 } from './scoring';
 
 export type {
+  RepDetectorThresholds,
   TrackingConfidenceThresholds,
   TrackingConfidenceTier,
   TrackingPipelineFlags,

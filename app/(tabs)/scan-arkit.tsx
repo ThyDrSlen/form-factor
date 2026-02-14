@@ -71,9 +71,13 @@ import {
 import { createRealtimeFormEngineState, processRealtimeAngles } from '@/lib/pose/realtime-form-engine';
 import {
   createTrackingQualityPipelineState,
+  HIDE_N_FRAMES,
   processTrackingQualityAngles,
   readUseNewTrackingPipelineFlag,
+  SHOW_N_FRAMES,
+  type PullupScoringResult,
 } from '@/lib/tracking-quality';
+import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
 import {
   DEFAULT_DETECTION_MODE,
@@ -129,6 +133,8 @@ const WATCH_MIRROR_AR_QUALITY = 0.25;
 const WATCH_MIRROR_MAX_WIDTH = 320;
 const MEDIAPIPE_SHADOW_POLL_INTERVAL_MS = 100;
 const MEDIAPIPE_MAX_TIMESTAMP_SKEW_SEC = 0.4;
+const PARTIAL_TRACKING_BADGE_MIN_VISIBLE_MS = 900;
+const PARTIAL_TRACKING_BADGE_HIDE_DELAY_MS = 350;
 const FIXTURE_PLAYBACK_DEFAULT = 'camera-facing';
 const FIXTURE_PLAYBACK_TRACES: Record<string, PullupFixtureFrame[]> = {
   'camera-facing': cameraFacingFixture as PullupFixtureFrame[],
@@ -157,6 +163,18 @@ type BaselineDebugMetrics = {
   frameLatencyCount: number;
 };
 
+type PullupComponentIndicator = {
+  key: PullupScoringResult['missing_components'][number];
+  label: string;
+};
+
+const PULLUP_COMPONENT_INDICATORS: PullupComponentIndicator[] = [
+  { key: 'rom_score', label: 'ROM' },
+  { key: 'symmetry_score', label: 'SYM' },
+  { key: 'tempo_score', label: 'TMP' },
+  { key: 'torso_stability_score', label: 'TOR' },
+];
+
 const createBaselineDebugMetrics = (): BaselineDebugMetrics => ({
   cueFlipCount: 0,
   cueSamples: 0,
@@ -180,6 +198,40 @@ const nowMs = (): number => {
 };
 
 // Metrics types are now imported from workout definitions (PullUpMetrics, PushUpMetrics)
+
+// Explicit alias map for skeleton overlay joint lookup.
+// Keys are lowercased display names used in drawLine(); values are ordered
+// fallback aliases (also lowercased) matching native ARKit joint names.
+const SKELETON_JOINT_ALIASES: Record<string, string[]> = {
+  root: ['root', 'hips_joint'],
+  hips_joint: ['hips_joint', 'root'],
+  spine_1_joint: ['spine_1_joint'],
+  spine_2_joint: ['spine_2_joint'],
+  spine_3_joint: ['spine_3_joint'],
+  spine_4_joint: ['spine_4_joint', 'spine_3_joint'],
+  spine_5_joint: ['spine_5_joint'],
+  spine_6_joint: ['spine_6_joint'],
+  spine_7_joint: ['spine_7_joint'],
+  neck_1_joint: ['neck_1_joint', 'neck_2_joint', 'neck_3_joint', 'neck_4_joint'],
+  neck_2_joint: ['neck_2_joint', 'neck_1_joint'],
+  neck_3_joint: ['neck_3_joint'],
+  neck_4_joint: ['neck_4_joint'],
+  head_joint: ['head_joint'],
+  left_shoulder_1_joint: ['left_shoulder_1_joint'],
+  left_arm_joint: ['left_arm_joint'],
+  left_forearm_joint: ['left_forearm_joint'],
+  left_hand_joint: ['left_hand_joint'],
+  right_shoulder_1_joint: ['right_shoulder_1_joint'],
+  right_arm_joint: ['right_arm_joint'],
+  right_forearm_joint: ['right_forearm_joint'],
+  right_hand_joint: ['right_hand_joint'],
+  left_upleg_joint: ['left_upleg_joint'],
+  left_leg_joint: ['left_leg_joint'],
+  left_foot_joint: ['left_foot_joint'],
+  right_upleg_joint: ['right_upleg_joint'],
+  right_leg_joint: ['right_leg_joint'],
+  right_foot_joint: ['right_foot_joint'],
+};
 
 let ARKitView: any = View;
 if (Platform.OS === 'ios') {
@@ -317,6 +369,8 @@ export default function ScanARKitScreen() {
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [showDebugStats, setShowDebugStats] = useState(false);
   const [fixturePlaybackFramesProcessed, setFixturePlaybackFramesProcessed] = useState(0);
+  const [latestPullupScoring, setLatestPullupScoring] = useState<PullupScoringResult | null>(null);
+  const [showPartialTrackingBadge, setShowPartialTrackingBadge] = useState(false);
   const baselineDebugEnabled = DEV && showDebugStats;
   const baselineDebugEnabledRef = React.useRef(baselineDebugEnabled);
   const baselineDebugMetricsRef = React.useRef<BaselineDebugMetrics>(createBaselineDebugMetrics());
@@ -326,6 +380,11 @@ export default function ScanARKitScreen() {
   const smoothedPose2DRef = React.useRef<Joint2D[] | null>(null);
   const pose2DCacheRef = React.useRef<Record<string, { x: number; y: number }>>({});
   const lastSpokenCueRef = React.useRef<{ cue: string; timestamp: number } | null>(null);
+  const cueHysteresisControllerRef = React.useRef(
+    new CueHysteresisController<string>({ showFrames: SHOW_N_FRAMES, hideFrames: HIDE_N_FRAMES })
+  );
+  const cueHysteresisLastTickRef = React.useRef<string | null>(null);
+  const stablePrimaryCueRef = React.useRef<string | null>(null);
   const gestureHoldStartRef = React.useRef<number | null>(null);
   const lastGestureTriggerRef = React.useRef(0);
   const overlayLayout = React.useRef<{ width: number; height: number } | null>(null);
@@ -355,9 +414,46 @@ export default function ScanARKitScreen() {
   const [mediaPipeModelPath, setMediaPipeModelPath] = useState<string | null>(null);
   const mediaPipePollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const mediaPipePollInFlightRef = React.useRef(false);
+  const partialTrackingHideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const partialTrackingVisibleUntilMsRef = React.useRef(0);
 
   const resetBaselineDebugMetrics = useCallback(() => {
     baselineDebugMetricsRef.current = createBaselineDebugMetrics();
+  }, []);
+
+  const resetCueHysteresis = useCallback(() => {
+    cueHysteresisControllerRef.current.resetAll();
+    cueHysteresisLastTickRef.current = null;
+    stablePrimaryCueRef.current = null;
+  }, []);
+
+  const updatePartialTrackingBadgeVisibility = useCallback((visibilityBadge: PullupScoringResult['visibility_badge']) => {
+    if (partialTrackingHideTimerRef.current) {
+      clearTimeout(partialTrackingHideTimerRef.current);
+      partialTrackingHideTimerRef.current = null;
+    }
+
+    const now = Date.now();
+    if (visibilityBadge === 'partial') {
+      partialTrackingVisibleUntilMsRef.current = now + PARTIAL_TRACKING_BADGE_MIN_VISIBLE_MS;
+      setShowPartialTrackingBadge(true);
+      return;
+    }
+
+    const hideInMs = Math.max(0, partialTrackingVisibleUntilMsRef.current - now) + PARTIAL_TRACKING_BADGE_HIDE_DELAY_MS;
+    partialTrackingHideTimerRef.current = setTimeout(() => {
+      setShowPartialTrackingBadge(false);
+      partialTrackingHideTimerRef.current = null;
+    }, hideInMs);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (partialTrackingHideTimerRef.current) {
+        clearTimeout(partialTrackingHideTimerRef.current);
+        partialTrackingHideTimerRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -718,7 +814,11 @@ export default function ScanARKitScreen() {
         recordingFqiScoresRef.current.push(fqi);
       }
     },
-  }), [activeWorkoutDef, repCount, transitionPhase]);
+    onPullupScoring: (_repNumber: number, scoring: PullupScoringResult) => {
+      setLatestPullupScoring(scoring);
+      updatePartialTrackingBadgeVisibility(scoring.visibility_badge);
+    },
+  }), [activeWorkoutDef, repCount, transitionPhase, updatePartialTrackingBadgeVisibility]);
 
   const workoutController = useWorkoutController(detectionMode, {
     sessionId: sessionIdRef.current,
@@ -778,6 +878,16 @@ export default function ScanARKitScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nativeSupported, fixturePlaybackRequested, fixturePlaybackEnabled, fixtureName, DEV]);
 
+  useEffect(() => {
+    setLatestPullupScoring(null);
+    setShowPartialTrackingBadge(false);
+    partialTrackingVisibleUntilMsRef.current = 0;
+    if (partialTrackingHideTimerRef.current) {
+      clearTimeout(partialTrackingHideTimerRef.current);
+      partialTrackingHideTimerRef.current = null;
+    }
+  }, [detectionMode]);
+
   // Auto-start tracking when supported
   useEffect(() => {
     if (DEV) {
@@ -822,6 +932,7 @@ export default function ScanARKitScreen() {
     setFixturePlaybackFramesProcessed(0);
     setJointAngles(firstFrame?.angles ?? null);
     resetBaselineDebugMetrics();
+    resetCueHysteresis();
 
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
@@ -889,6 +1000,7 @@ export default function ScanARKitScreen() {
     processWorkoutFrame,
     DEV,
     resetBaselineDebugMetrics,
+    resetCueHysteresis,
   ]);
 
   // Debug pose updates (throttled logging)
@@ -915,6 +1027,7 @@ export default function ScanARKitScreen() {
       transitionPhase(nextInitialPhase);
       repIndexTrackerRef.current.reset();
       resetWorkoutController({ preserveRepCount: true });
+      resetCueHysteresis();
       return;
     }
 
@@ -1143,7 +1256,7 @@ export default function ScanARKitScreen() {
     }
     // DEV is a stable constant; avoid dependency churn in hot loop
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pose, transitionPhase, detectionMode, activeWorkoutDef, processWorkoutFrame, resetWorkoutController]);
+  }, [pose, transitionPhase, detectionMode, activeWorkoutDef, processWorkoutFrame, resetWorkoutController, resetCueHysteresis]);
 
   // Debug pose2D updates
   useEffect(() => {
@@ -1165,7 +1278,7 @@ export default function ScanARKitScreen() {
       return;
     }
 
-    const alpha = 0.35;
+    const alpha = 0.55;
     const cache = pose2DCacheRef.current;
     const joints = pose2D.joints;
     const nextJoints = joints.map((joint) => {
@@ -1198,8 +1311,8 @@ export default function ScanARKitScreen() {
         if (prev.name !== joint.name) return true;
         if (joint.isTracked !== prev.isTracked) return true;
         return (
-          Math.abs(prev.x - joint.x) > 0.002 ||
-          Math.abs(prev.y - joint.y) > 0.002
+          Math.abs(prev.x - joint.x) > 0.001 ||
+          Math.abs(prev.y - joint.y) > 0.001
         );
       });
 
@@ -1231,6 +1344,7 @@ export default function ScanARKitScreen() {
       setRepCount(0);
       setActiveMetrics(null);
       resetBaselineDebugMetrics();
+      resetCueHysteresis();
 
       const startTime = Date.now();
       shadowStatsRef.current = createShadowStatsAccumulator();
@@ -1264,6 +1378,7 @@ export default function ScanARKitScreen() {
     detectionMode,
     resetWorkoutController,
     resetBaselineDebugMetrics,
+    resetCueHysteresis,
   ]);
 
   const stopRecordingCore = useCallback(async () => {
@@ -1323,6 +1438,7 @@ export default function ScanARKitScreen() {
       mediaPipePoseRef.current = null;
       setShadowProviderRuntime('mediapipe_proxy');
       resetBaselineDebugMetrics();
+      resetCueHysteresis();
       
       if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
@@ -1342,6 +1458,7 @@ export default function ScanARKitScreen() {
     detectionMode,
     resetWorkoutController,
     resetBaselineDebugMetrics,
+    resetCueHysteresis,
   ]);
 
   // Cleanup on unmount
@@ -1354,6 +1471,9 @@ export default function ScanARKitScreen() {
   const handleOverlayLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     overlayLayout.current = { width, height };
+    if (__DEV__) {
+      logWithTs(`[ScanARKit] Overlay layout: ${width.toFixed(1)}x${height.toFixed(1)} (compare with native ARView bounds)`);
+    }
   }, []);
 
   const openWorkoutInsights = useCallback(() => {
@@ -1407,7 +1527,32 @@ export default function ScanARKitScreen() {
 	  }, [jointAngles, activeMetrics, activePhase, activeWorkoutDef]);
 
 	    const feedback = analyzeForm();
-	    const primaryCue = feedback?.[0];
+	    const orderedActiveCues = feedback?.filter((cue): cue is string => !!cue) ?? [];
+	    const primaryCue = useMemo(() => {
+	      if (!isTracking) {
+	        return null;
+	      }
+
+	      const frameTick = pose
+	        ? `pose:${pose.timestamp}`
+	        : fixturePlaybackEnabled
+	          ? `fixture:${fixturePlaybackFramesProcessed}`
+	          : null;
+	      if (frameTick === null) {
+	        return stablePrimaryCueRef.current;
+	      }
+
+	      if (cueHysteresisLastTickRef.current !== frameTick) {
+	        cueHysteresisLastTickRef.current = frameTick;
+	        const previousStableCue = stablePrimaryCueRef.current;
+	        stablePrimaryCueRef.current = cueHysteresisControllerRef.current.nextStableCueFromOrderedActive({
+	          orderedActiveCues,
+	          previousStableCue,
+	        });
+	      }
+
+	      return stablePrimaryCueRef.current;
+	    }, [isTracking, pose?.timestamp, fixturePlaybackEnabled, fixturePlaybackFramesProcessed, orderedActiveCues]);
 	    const latestMetricsForUpload = useMemo<BaseUploadMetrics>(
 	      () => ({
 	        mode: detectionMode,
@@ -2025,6 +2170,16 @@ export default function ScanARKitScreen() {
 	  const previewFormScore = previewMetrics?.avgFqi != null ? `${Math.round(previewMetrics.avgFqi)}` : '--';
 	  const previewDuration = formatDuration(previewMetrics?.recordingStartAt, previewMetrics?.recordingEndAt);
 	  const previewQuality = previewMetrics?.recordingQuality ? QUALITY_LABELS[previewMetrics.recordingQuality] : '--';
+  const shouldShowPartialTrackingBadge =
+    detectionMode === 'pullup' &&
+    isTracking &&
+    showPartialTrackingBadge &&
+    latestPullupScoring?.visibility_badge === 'partial';
+  const missingComponentSet = new Set(latestPullupScoring?.missing_components ?? []);
+  const partialTrackingComponents = PULLUP_COMPONENT_INDICATORS.map((item) => ({
+    ...item,
+    missing: missingComponentSet.has(item.key),
+  }));
   const baselineMetricsSnapshot = baselineDebugMetricsRef.current;
   const debugCueFlipRate =
     baselineMetricsSnapshot.cueSamples > 0
@@ -2164,17 +2319,14 @@ export default function ScanARKitScreen() {
                 const findJoint2D = (name: string) => {
                   const lower = name.toLowerCase();
                   const direct = jointsByName.get(lower);
-                  if (direct && direct.isTracked) {
-                    return direct;
-                  }
-                  for (const joint of smoothedPose2DJoints) {
-                    const key = joint.name.toLowerCase();
-                    if (!joint.isTracked) continue;
-                    if (
-                      key.includes(lower) ||
-                      lower.includes(key.replace('_joint', ''))
-                    ) {
-                      return joint;
+                  if (direct?.isTracked) return direct;
+
+                  // Strict alias fallback -- no substring matching
+                  const aliases = SKELETON_JOINT_ALIASES[lower];
+                  if (aliases) {
+                    for (const alias of aliases) {
+                      const j = jointsByName.get(alias);
+                      if (j?.isTracked) return j;
                     }
                   }
                   return undefined;
@@ -2341,7 +2493,7 @@ export default function ScanARKitScreen() {
 
       {/* Status badge */}
       {showDebugStats && (
-        <View style={[styles.statusBadge, { top: topBarBottom + 8 }]}>
+        <View style={[styles.statusBadge, { top: topBarBottom + 8 }]}> 
           <View style={[styles.statusDot, isTracking && styles.statusDotActive]} />
           <View>
             <Text style={styles.statusText}>
@@ -2357,6 +2509,34 @@ export default function ScanARKitScreen() {
                 {`cueFlipRate=${(debugCueFlipRate * 100).toFixed(1)}% meanFrameLatency=${debugMeanFrameLatencyMs.toFixed(2)}ms buckets[<4:${baselineMetricsSnapshot.latencyBuckets.lt4} <8:${baselineMetricsSnapshot.latencyBuckets.lt8} <16:${baselineMetricsSnapshot.latencyBuckets.lt16} >=16:${baselineMetricsSnapshot.latencyBuckets.gte16}]`}
               </Text>
             )}
+          </View>
+        </View>
+      )}
+
+      {shouldShowPartialTrackingBadge && (
+        <View style={[styles.partialTrackingBadge, { top: topBarBottom + 8 }]}> 
+          <Text style={styles.partialTrackingBadgeText}>Partial tracking</Text>
+          <View style={styles.partialTrackingComponentRow}>
+            {partialTrackingComponents.map((component) => (
+              <View
+                key={component.key}
+                style={[
+                  styles.partialTrackingComponentPill,
+                  component.missing ? styles.partialTrackingComponentPillMissing : styles.partialTrackingComponentPillAvailable,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.partialTrackingComponentLabel,
+                    component.missing
+                      ? styles.partialTrackingComponentLabelMissing
+                      : styles.partialTrackingComponentLabelAvailable,
+                  ]}
+                >
+                  {component.label}
+                </Text>
+              </View>
+            ))}
           </View>
         </View>
       )}

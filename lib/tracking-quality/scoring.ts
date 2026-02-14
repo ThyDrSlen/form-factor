@@ -152,6 +152,26 @@ function missingReasonForRequiredJoints(input: {
   return `Missing required joints at tier ${input.minVisibilityTier}: ${missing.join(', ')}`;
 }
 
+const PULLUP_TORSO_LEFT: RequiredJointSpec = [
+  'left_hip',
+  'left_hip_joint',
+  'left_hip_1_joint',
+  'left_upLeg',
+  'left_thigh',
+  'left_thigh_joint',
+  ...(PULLUP_CRITICAL_JOINTS[0] as string[]),
+];
+
+const PULLUP_TORSO_RIGHT: RequiredJointSpec = [
+  'right_hip',
+  'right_hip_joint',
+  'right_hip_1_joint',
+  'right_upLeg',
+  'right_thigh',
+  'right_thigh_joint',
+  ...(PULLUP_CRITICAL_JOINTS[1] as string[]),
+];
+
 const PULLUP_COMPONENT_DEFS: PullupComponentDefinition[] = [
   {
     key: 'rom_score',
@@ -174,7 +194,7 @@ const PULLUP_COMPONENT_DEFS: PullupComponentDefinition[] = [
   {
     key: 'torso_stability_score',
     weight: 0.15,
-    requiredJoints: [PULLUP_CRITICAL_JOINTS[0], PULLUP_CRITICAL_JOINTS[1]],
+    requiredJoints: [PULLUP_TORSO_LEFT, PULLUP_TORSO_RIGHT],
     minVisibilityTier: 'weak',
   },
 ];

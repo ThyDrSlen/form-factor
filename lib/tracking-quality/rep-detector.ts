@@ -1,6 +1,6 @@
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 
-import { CONFIDENCE_TIER_THRESHOLDS } from './config';
+import { CONFIDENCE_TIER_THRESHOLDS, N_CONSEC_FRAMES, REP_DETECTOR_THRESHOLDS } from './config';
 import type { RequiredJointSpec } from './visibility';
 import { areRequiredJointsVisible } from './visibility';
 
@@ -107,7 +107,8 @@ export class RepDetectorPullup {
   private pendingCount = 0;
 
   constructor(options?: RepDetectorPullupOptions) {
-    const nConsecFrames = typeof options?.nConsecFrames === 'number' ? Math.floor(options.nConsecFrames) : 3;
+    const nConsecFrames =
+      typeof options?.nConsecFrames === 'number' ? Math.floor(options.nConsecFrames) : N_CONSEC_FRAMES;
     const baselineAlpha = typeof options?.baselineAlpha === 'number' ? options.baselineAlpha : 0.08;
     this.options = {
       nConsecFrames: Math.max(1, nConsecFrames),
@@ -120,13 +121,19 @@ export class RepDetectorPullup {
       maxTopFrames: typeof options?.maxTopFrames === 'number' ? Math.max(1, Math.floor(options.maxTopFrames)) : 90,
       maxDescendingFrames:
         typeof options?.maxDescendingFrames === 'number' ? Math.max(1, Math.floor(options.maxDescendingFrames)) : 150,
-      liftStartDelta: typeof options?.liftStartDelta === 'number' ? options.liftStartDelta : 0.05,
-      liftTopDelta: typeof options?.liftTopDelta === 'number' ? options.liftTopDelta : 0.14,
-      liftTopExitDelta: typeof options?.liftTopExitDelta === 'number' ? options.liftTopExitDelta : 0.11,
-      liftBottomDelta: typeof options?.liftBottomDelta === 'number' ? options.liftBottomDelta : 0.03,
-      elbowEngageDeg: typeof options?.elbowEngageDeg === 'number' ? options.elbowEngageDeg : 140,
-      elbowTopDeg: typeof options?.elbowTopDeg === 'number' ? options.elbowTopDeg : 90,
-      elbowBottomDeg: typeof options?.elbowBottomDeg === 'number' ? options.elbowBottomDeg : 150,
+      liftStartDelta:
+        typeof options?.liftStartDelta === 'number' ? options.liftStartDelta : REP_DETECTOR_THRESHOLDS.liftStartDelta,
+      liftTopDelta:
+        typeof options?.liftTopDelta === 'number' ? options.liftTopDelta : REP_DETECTOR_THRESHOLDS.liftTopDelta,
+      liftTopExitDelta:
+        typeof options?.liftTopExitDelta === 'number' ? options.liftTopExitDelta : REP_DETECTOR_THRESHOLDS.liftTopExitDelta,
+      liftBottomDelta:
+        typeof options?.liftBottomDelta === 'number' ? options.liftBottomDelta : REP_DETECTOR_THRESHOLDS.liftBottomDelta,
+      elbowEngageDeg:
+        typeof options?.elbowEngageDeg === 'number' ? options.elbowEngageDeg : REP_DETECTOR_THRESHOLDS.elbowEngageDeg,
+      elbowTopDeg: typeof options?.elbowTopDeg === 'number' ? options.elbowTopDeg : REP_DETECTOR_THRESHOLDS.elbowTopDeg,
+      elbowBottomDeg:
+        typeof options?.elbowBottomDeg === 'number' ? options.elbowBottomDeg : REP_DETECTOR_THRESHOLDS.elbowBottomDeg,
       baselineAlpha: clamp01(baselineAlpha),
     };
   }
