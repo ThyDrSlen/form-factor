@@ -10,6 +10,13 @@ import {
   SyncTableName,
 } from './local-db';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
+import {
+  syncAllWorkoutTablesToSupabase,
+  downloadAllWorkoutTablesFromSupabase,
+  cleanupWorkoutSyncedDeletes,
+  WORKOUT_SYNC_CONFIGS,
+  handleGenericRealtimeChange,
+} from './generic-sync';
 
 type SyncCallback = () => void;
 type SyncStatusCallback = (status: SyncStatus) => void;
@@ -77,6 +84,7 @@ class SyncService {
   private workoutChannel: RealtimeChannel | null = null;
   private healthChannel: RealtimeChannel | null = null;
   private nutritionGoalsChannel: RealtimeChannel | null = null;
+  private workoutSessionChannels: RealtimeChannel[] = [];
   private isSyncing = false;
   private syncPromise: Promise<void> | null = null;
   private syncCallbacks: SyncCallback[] = [];
@@ -313,6 +321,35 @@ class SyncService {
       .subscribe((status, err) => {
         logChannelStatus('Nutrition goals', status, err ?? undefined);
       });
+
+    // Subscribe to workout session tables via generic sync adapter
+    for (const config of WORKOUT_SYNC_CONFIGS) {
+      const filterClause = config.userScoped ? `user_id=eq.${userId}` : undefined;
+      const channel = supabase
+        .channel(`${config.supabaseTable}_changes`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: config.supabaseTable,
+            ...(filterClause ? { filter: filterClause } : {}),
+          },
+          async (payload) => {
+            logWithTs(`[SyncService] Realtime ${config.supabaseTable} change:`, payload.eventType);
+            await handleGenericRealtimeChange(
+              config,
+              payload,
+              () => this.notifySyncComplete(),
+              (reason: string) => this.scheduleConflictReconcile(reason),
+            );
+          }
+        )
+        .subscribe((status, err) => {
+          logChannelStatus(config.supabaseTable, status, err ?? undefined);
+        });
+      this.workoutSessionChannels.push(channel);
+    }
   }
 
   // Handle realtime food changes from Supabase with conflict detection
@@ -538,6 +575,12 @@ class SyncService {
       await supabase.removeChannel(this.nutritionGoalsChannel);
       this.nutritionGoalsChannel = null;
     }
+
+    // Clean up workout session channels
+    for (const ch of this.workoutSessionChannels) {
+      await supabase.removeChannel(ch);
+    }
+    this.workoutSessionChannels = [];
   }
 
   // Sync local changes to Supabase
@@ -570,6 +613,9 @@ class SyncService {
       await this.syncHealthMetricsToSupabase();
 
       await this.syncNutritionGoalsToSupabase();
+
+      // Sync workout session tables via generic adapter
+      await syncAllWorkoutTablesToSupabase(user.id);
 
       // Process sync queue
       const queueHadErrors = await this.processSyncQueue();
@@ -1103,8 +1149,8 @@ class SyncService {
         }
       }
 
-      // Clean up deleted items that have been synced
-      await this.cleanupSyncedDeletes();
+      // Clean up deleted items that have been synced (foods)
+      await this.cleanupSyncedDeletesLegacy();
 
       // Download workouts
       const { data: workouts, error: workoutsError } = await supabase
@@ -1172,6 +1218,12 @@ class SyncService {
       }
 
       const { data: { user } } = await supabase.auth.getUser();
+      // Download workout session tables via generic adapter
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser) {
+        await downloadAllWorkoutTablesFromSupabase(currentUser.id);
+      }
+
       if (user) {
         const { data: nutritionGoals, error: nutritionGoalsError } = await supabase
           .from('nutrition_goals')
@@ -1215,10 +1267,11 @@ class SyncService {
     }
   }
 
-  // Clean up soft-deleted items that have been successfully synced
-  private async cleanupSyncedDeletes(): Promise<void> {
+  // Clean up soft-deleted items that have been successfully synced (legacy foods/workouts only)
+  private async cleanupSyncedDeletesLegacy(): Promise<void> {
     try {
       await localDB.cleanupSyncedDeletes();
+      await cleanupWorkoutSyncedDeletes();
       logWithTs('[SyncService] Cleaned up synced deleted items');
     } catch (error) {
       errorWithTs('[SyncService] Error cleaning up deleted items:', error);
