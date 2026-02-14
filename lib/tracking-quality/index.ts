@@ -104,6 +104,21 @@ export {
 
 export { clampVelocity, filterCoordinates, smoothAngleEMA, smoothCoordinateEMA } from './filters';
 
+export {
+  calculateComponentScores,
+  calculateOverallScore,
+  scorePullupWithComponentAvailability,
+} from './scoring';
+
+export type {
+  PullupComponentAvailability,
+  PullupComponentAvailabilityMap,
+  PullupScoreComponents,
+  PullupScoringInput,
+  PullupScoringResult,
+  VisibilityBadge,
+} from './scoring';
+
 export type {
   TrackingConfidenceThresholds,
   TrackingConfidenceTier,
