@@ -66,6 +66,8 @@ describe('cue hysteresis', () => {
     stable = controller.nextStableSelectedCue({ rawCue: 'B', previousStableCue: stable });
     expect(stable).toBe('A');
     stable = controller.nextStableSelectedCue({ rawCue: 'B', previousStableCue: stable });
+    expect(stable).toBe('A');
+    stable = controller.nextStableSelectedCue({ rawCue: 'B', previousStableCue: stable });
     expect(stable).toBe('B');
   });
 
@@ -87,6 +89,27 @@ describe('cue hysteresis', () => {
     const stableFlips = countFlips(stable);
     expect(rawFlips).toBeGreaterThan(0);
     expect(stableFlips).toBe(0);
+  });
+
+  test('nextStableCueFromOrderedActive resists priority reordering chatter', () => {
+    const controller = new CueHysteresisController({ showFrames: 2, hideFrames: 3 });
+
+    let stable: string | null = null;
+
+    stable = controller.nextStableCueFromOrderedActive({ orderedActiveCues: ['A', 'B'], previousStableCue: stable });
+    expect(stable).toBeNull();
+    stable = controller.nextStableCueFromOrderedActive({ orderedActiveCues: ['A', 'B'], previousStableCue: stable });
+    expect(stable).toBe('A');
+
+    stable = controller.nextStableCueFromOrderedActive({ orderedActiveCues: ['B', 'A'], previousStableCue: stable });
+    expect(stable).toBe('A');
+
+    stable = controller.nextStableCueFromOrderedActive({ orderedActiveCues: ['B'], previousStableCue: stable });
+    expect(stable).toBe('A');
+    stable = controller.nextStableCueFromOrderedActive({ orderedActiveCues: ['B'], previousStableCue: stable });
+    expect(stable).toBe('A');
+    stable = controller.nextStableCueFromOrderedActive({ orderedActiveCues: ['B'], previousStableCue: stable });
+    expect(stable).toBe('B');
   });
 
   test('throws on invalid configuration', () => {

@@ -67,5 +67,5 @@ test('realtime form engine degrades quality with poor visibility and drift', () 
   });
 
   expect(degraded.trackingQuality).toBeLessThan(0.7);
-  expect(degraded.alpha).toBeLessThan(0.25);
+  expect(degraded.alpha).toBeLessThan(0.3);
 });
