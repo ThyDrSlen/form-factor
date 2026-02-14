@@ -102,6 +102,8 @@ export {
   TRACKING_QUALITY_CONFIG,
 };
 
+export { clampVelocity, filterCoordinates, smoothAngleEMA, smoothCoordinateEMA } from './filters';
+
 export type {
   TrackingConfidenceThresholds,
   TrackingConfidenceTier,
