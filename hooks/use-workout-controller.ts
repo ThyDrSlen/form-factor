@@ -19,6 +19,7 @@ import { calculateFqi, extractRepFeatures, type RepAngles } from '@/lib/services
 import { logRep } from '@/lib/services/rep-logger';
 import { computeAdaptivePhaseHoldMs, computeAdaptiveRepDurationMs } from '@/lib/services/workout-runtime';
 import { selectShadowProvider } from '@/lib/pose/shadow-provider';
+import { scorePullupWithComponentAvailability, type PullupScoringResult } from '@/lib/tracking-quality/scoring';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -62,11 +63,13 @@ export interface RepTrackingData {
   minAngles: JointAngles | null;
   maxAngles: JointAngles | null;
   cues: Array<{ type: string; ts: string }>;
+  lastJoints: Map<string, { x: number; y: number; isTracked: boolean; confidence?: number }> | null;
 }
 
 export interface WorkoutControllerCallbacks {
   /** Called when a rep is completed */
   onRepComplete?: (repNumber: number, fqi: number, faults: string[]) => void;
+  onPullupScoring?: (repNumber: number, scoring: PullupScoringResult) => void;
   /** Called when phase changes */
   onPhaseChange?: (newPhase: string, prevPhase: string) => void;
   /** Called when a cue should be emitted */
@@ -92,7 +95,7 @@ export interface UseWorkoutControllerReturn<TPhase extends string = string> {
   /** Process a new frame of joint angles */
   processFrame: (
     angles: JointAngles,
-    joints?: Map<string, { x: number; y: number; isTracked: boolean }>,
+    joints?: Map<string, { x: number; y: number; isTracked: boolean; confidence?: number }>,
     context?: { trackingQuality?: number; shadowMeanAbsDelta?: number | null }
   ) => void;
   /** Reset the workout state */
@@ -146,6 +149,7 @@ export function useWorkoutController<TPhase extends string = string>(
     minAngles: null,
     maxAngles: null,
     cues: [],
+    lastJoints: null,
   });
 
   // =============================================================================
@@ -159,6 +163,7 @@ export function useWorkoutController<TPhase extends string = string>(
       minAngles: { ...angles },
       maxAngles: { ...angles },
       cues: [],
+      lastJoints: null,
     };
   }, []);
 
@@ -225,6 +230,46 @@ export function useWorkoutController<TPhase extends string = string>(
       const fqiResult = calculateFqi(repAngles, durationMs, repNumber, workoutDef);
       const features = extractRepFeatures(repAngles, durationMs);
 
+      if (exercise === 'pullup') {
+        try {
+          const scoring = scorePullupWithComponentAvailability({
+            repAngles: {
+              start: {
+                leftElbow: repAngles.start.leftElbow,
+                rightElbow: repAngles.start.rightElbow,
+                leftShoulder: repAngles.start.leftShoulder,
+                rightShoulder: repAngles.start.rightShoulder,
+              },
+              end: {
+                leftElbow: repAngles.end.leftElbow,
+                rightElbow: repAngles.end.rightElbow,
+                leftShoulder: repAngles.end.leftShoulder,
+                rightShoulder: repAngles.end.rightShoulder,
+              },
+              min: {
+                leftElbow: repAngles.min.leftElbow,
+                rightElbow: repAngles.min.rightElbow,
+                leftShoulder: repAngles.min.leftShoulder,
+                rightShoulder: repAngles.min.rightShoulder,
+              },
+              max: {
+                leftElbow: repAngles.max.leftElbow,
+                rightElbow: repAngles.max.rightElbow,
+                leftShoulder: repAngles.max.leftShoulder,
+                rightShoulder: repAngles.max.rightShoulder,
+              },
+            },
+            durationMs,
+            joints: tracking.lastJoints ?? undefined,
+          });
+          callbacks?.onPullupScoring?.(repNumber, scoring);
+        } catch (error) {
+          if (__DEV__) {
+            warnWithTs('[WorkoutController] Pullup component scoring failed', error);
+          }
+        }
+      }
+
       callbacks?.onRepComplete?.(repNumber, fqiResult.score, fqiResult.detectedFaults);
 
       repTrackingRef.current = {
@@ -233,6 +278,7 @@ export function useWorkoutController<TPhase extends string = string>(
         minAngles: null,
         maxAngles: null,
         cues: [],
+        lastJoints: null,
       };
 
       recentRepDurationsRef.current.push(durationMs);
@@ -275,7 +321,7 @@ export function useWorkoutController<TPhase extends string = string>(
   const processFrame = useCallback(
     (
       angles: JointAngles,
-      joints?: Map<string, { x: number; y: number; isTracked: boolean }>,
+      joints?: Map<string, { x: number; y: number; isTracked: boolean; confidence?: number }>,
       context?: { trackingQuality?: number; shadowMeanAbsDelta?: number | null }
     ) => {
       const workoutDef = workoutDefRef.current;
@@ -283,6 +329,10 @@ export function useWorkoutController<TPhase extends string = string>(
 
       // Calculate metrics using the workout's calculator
       const metrics = workoutDef.calculateMetrics(angles, joints);
+
+      if (repTrackingRef.current.startTs > 0) {
+        repTrackingRef.current.lastJoints = joints ? new Map(joints) : repTrackingRef.current.lastJoints;
+      }
 
       // Get next phase using the workout's state machine
       const currentPhase = phaseRef.current as string;
@@ -422,6 +472,7 @@ export function useWorkoutController<TPhase extends string = string>(
       minAngles: null,
       maxAngles: null,
       cues: [],
+      lastJoints: null,
     };
 
     setState({

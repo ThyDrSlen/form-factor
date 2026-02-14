@@ -37,7 +37,7 @@ function scoreFromShadowDelta(shadowMeanAbsDelta?: number | null): number {
 }
 
 function computeAlpha(shadowScore: number): number {
-  return clamp(0.14 + shadowScore * 0.2, 0.12, 0.34);
+  return clamp(0.22 + shadowScore * 0.28, 0.22, 0.50);
 }
 
 function maxDeltaForFrameMs(dtMs: number, trackingQuality: number): number {
@@ -73,7 +73,7 @@ export function processRealtimeAngles(input: {
     return { angles: input.state.smoothed, alpha, trackingQuality };
   }
 
-  const dtMs = clamp((input.timestampSec - input.state.lastTimestampSec) * 1000, 8, 160);
+  const dtMs = clamp((input.timestampSec - input.state.lastTimestampSec) * 1000, 4, 160);
   const maxDelta = maxDeltaForFrameMs(dtMs, trackingQuality);
 
   const next = { ...previous };

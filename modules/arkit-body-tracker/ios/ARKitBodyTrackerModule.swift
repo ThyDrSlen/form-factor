@@ -124,7 +124,7 @@ public class ARKitBodyTrackerModule: Module {
   fileprivate let videoRecorder = ARVideoRecorder()
   private let ciContext = CIContext(options: nil)
   fileprivate let sessionMaxDimension: CGFloat = 1920
-  fileprivate let sessionMaxFps: Int = 30
+  fileprivate let sessionMaxFps: Int = 60
   fileprivate var subjectLockEnabled = true
   fileprivate var lockedBodyAnchorId: UUID?
   fileprivate var lockedBodyAnchorLastSeenTs: TimeInterval = 0
