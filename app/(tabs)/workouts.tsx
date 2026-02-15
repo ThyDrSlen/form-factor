@@ -51,7 +51,13 @@ export default function WorkoutsScreen() {
 
   const handleAddPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    logWithTs('Navigating to add-workout modal from workouts tab');
+    logWithTs('Navigating to workout-session from workouts tab');
+    router.push('/(modals)/workout-session');
+  };
+
+  // Legacy add-workout modal - kept for compatibility, to be removed later
+  const handleQuickAddPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/(modals)/add-workout');
   };
 
@@ -233,7 +239,19 @@ export default function WorkoutsScreen() {
             style={styles.addFirstButton}
             onPress={handleAddPress}
           >
-            <Text style={styles.addFirstButtonText}>Add Workout</Text>
+            <Text style={styles.addFirstButtonText}>Start Session</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.addFirstButton, { marginTop: 12, backgroundColor: 'transparent', borderWidth: 1, borderColor: '#4C8CFF' }]}
+            onPress={() => router.push('/(modals)/templates')}
+          >
+            <Text style={[styles.addFirstButtonText, { color: '#4C8CFF' }]}>Templates</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.addFirstButton, { marginTop: 8, backgroundColor: 'transparent', borderWidth: 0 }]}
+            onPress={handleQuickAddPress}
+          >
+            <Text style={[styles.addFirstButtonText, { color: '#8E8E93', fontSize: 14 }]}>Quick Add (legacy)</Text>
           </TouchableOpacity>
         </ScrollView>
       ) : (

@@ -3,6 +3,7 @@ import { Slot, usePathname, useRouter, useSegments } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { ActivityIndicator, View, Text as RNText, StyleSheet, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import 'react-native-url-polyfill/auto';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { FoodProvider } from '../contexts/FoodContext';
@@ -131,31 +132,33 @@ function RootLayoutNav() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <ToastProvider>
-        <AuthProvider>
-          <NetworkProvider>
-            <UnitsProvider>
-              <HealthKitProvider>
-                <WorkoutsProvider>
-                  <NutritionGoalsProvider>
-                    <SocialProvider>
-                      <FoodProvider>
-                        {!fontsLoaded ? (
-                          <View style={styles.splash}>
-                            <ActivityIndicator color="#4C8CFF" />
-                          </View>
-                        ) : (
-                          <InitialLayout />
-                        )}
-                      </FoodProvider>
-                    </SocialProvider>
-                  </NutritionGoalsProvider>
-                </WorkoutsProvider>
-              </HealthKitProvider>
-            </UnitsProvider>
-          </NetworkProvider>
-        </AuthProvider>
-      </ToastProvider>
+      <BottomSheetModalProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <NetworkProvider>
+              <UnitsProvider>
+                <HealthKitProvider>
+                  <WorkoutsProvider>
+                    <NutritionGoalsProvider>
+                      <SocialProvider>
+                        <FoodProvider>
+                          {!fontsLoaded ? (
+                            <View style={styles.splash}>
+                              <ActivityIndicator color="#4C8CFF" />
+                            </View>
+                          ) : (
+                            <InitialLayout />
+                          )}
+                        </FoodProvider>
+                      </SocialProvider>
+                    </NutritionGoalsProvider>
+                  </WorkoutsProvider>
+                </HealthKitProvider>
+              </UnitsProvider>
+            </NetworkProvider>
+          </AuthProvider>
+        </ToastProvider>
+      </BottomSheetModalProvider>
     </GestureHandlerRootView>
   );
 }
