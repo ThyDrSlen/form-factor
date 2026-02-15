@@ -98,6 +98,8 @@ class LocalDatabase {
         this.db = await SQLite.openDatabaseAsync('formfactor.db');
         
         await this.createTables();
+        await this.seedLocalExercises();
+        await this.migrateLegacyWorkouts();
         logWithTs('[LocalDB] Database initialized successfully');
       } catch (error) {
         errorWithTs('[LocalDB] Failed to initialize database:', error);
@@ -238,6 +240,158 @@ class LocalDatabase {
       }
     }
 
+    // =========================================================================
+    // Workout Session System Tables
+    // =========================================================================
+
+    // Exercises reference table
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS exercises (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        category TEXT,
+        muscle_group TEXT,
+        is_compound INTEGER NOT NULL DEFAULT 0,
+        is_timed INTEGER NOT NULL DEFAULT 0,
+        is_system INTEGER NOT NULL DEFAULT 1,
+        created_by TEXT,
+        synced INTEGER DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT ''
+      );
+    `);
+
+    // Workout templates
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS workout_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        goal_profile TEXT NOT NULL DEFAULT 'hypertrophy',
+        is_public INTEGER NOT NULL DEFAULT 0,
+        share_slug TEXT,
+        synced INTEGER DEFAULT 0,
+        deleted INTEGER DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT ''
+      );
+    `);
+
+    // Workout template exercises
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS workout_template_exercises (
+        id TEXT PRIMARY KEY,
+        template_id TEXT NOT NULL,
+        exercise_id TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        notes TEXT,
+        default_rest_seconds INTEGER,
+        default_tempo TEXT,
+        synced INTEGER DEFAULT 0,
+        deleted INTEGER DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT ''
+      );
+    `);
+
+    // Workout template sets
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS workout_template_sets (
+        id TEXT PRIMARY KEY,
+        template_exercise_id TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        set_type TEXT NOT NULL DEFAULT 'normal',
+        target_reps INTEGER,
+        target_seconds INTEGER,
+        target_weight REAL,
+        target_rpe REAL,
+        rest_seconds_override INTEGER,
+        notes TEXT,
+        synced INTEGER DEFAULT 0,
+        deleted INTEGER DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT ''
+      );
+    `);
+
+    // Workout sessions
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS workout_sessions (
+        id TEXT PRIMARY KEY,
+        template_id TEXT,
+        name TEXT,
+        goal_profile TEXT NOT NULL DEFAULT 'hypertrophy',
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        timezone_offset_minutes INTEGER NOT NULL DEFAULT 0,
+        bodyweight_lb REAL,
+        notes TEXT,
+        synced INTEGER DEFAULT 0,
+        deleted INTEGER DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT ''
+      );
+    `);
+
+    // Workout session exercises
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS workout_session_exercises (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        exercise_id TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        notes TEXT,
+        synced INTEGER DEFAULT 0,
+        deleted INTEGER DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT ''
+      );
+    `);
+
+    // Workout session sets
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS workout_session_sets (
+        id TEXT PRIMARY KEY,
+        session_exercise_id TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        set_type TEXT NOT NULL DEFAULT 'normal',
+        planned_reps INTEGER,
+        planned_seconds INTEGER,
+        planned_weight REAL,
+        actual_reps INTEGER,
+        actual_seconds INTEGER,
+        actual_weight REAL,
+        started_at TEXT,
+        completed_at TEXT,
+        rest_target_seconds INTEGER,
+        rest_started_at TEXT,
+        rest_completed_at TEXT,
+        rest_skipped INTEGER NOT NULL DEFAULT 0,
+        tut_ms INTEGER,
+        tut_source TEXT NOT NULL DEFAULT 'unknown',
+        perceived_rpe REAL,
+        notes TEXT,
+        synced INTEGER DEFAULT 0,
+        deleted INTEGER DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT ''
+      );
+    `);
+
+    // Workout session events (append-only)
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS workout_session_events (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        type TEXT NOT NULL,
+        session_exercise_id TEXT,
+        session_set_id TEXT,
+        payload TEXT NOT NULL DEFAULT '{}',
+        synced INTEGER DEFAULT 0
+      );
+    `);
+
     // Create indexes for better query performance
     await this.db.execAsync(`
       CREATE INDEX IF NOT EXISTS idx_foods_date ON foods(date DESC);
@@ -247,9 +401,71 @@ class LocalDatabase {
       CREATE INDEX IF NOT EXISTS idx_health_metrics_user_date ON health_metrics(user_id, summary_date DESC);
       CREATE INDEX IF NOT EXISTS idx_health_metrics_synced ON health_metrics(synced);
       CREATE INDEX IF NOT EXISTS idx_nutrition_goals_user ON nutrition_goals(user_id);
+
+      CREATE INDEX IF NOT EXISTS idx_exercises_name ON exercises(name);
+      CREATE INDEX IF NOT EXISTS idx_exercises_category ON exercises(category);
+
+      CREATE INDEX IF NOT EXISTS idx_wt_synced ON workout_templates(synced);
+      CREATE INDEX IF NOT EXISTS idx_wte_template ON workout_template_exercises(template_id, sort_order);
+      CREATE INDEX IF NOT EXISTS idx_wts_exercise ON workout_template_sets(template_exercise_id, sort_order);
+
+      CREATE INDEX IF NOT EXISTS idx_ws_started ON workout_sessions(started_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_ws_synced ON workout_sessions(synced);
+      CREATE INDEX IF NOT EXISTS idx_wse_session ON workout_session_exercises(session_id, sort_order);
+      CREATE INDEX IF NOT EXISTS idx_wss_exercise ON workout_session_sets(session_exercise_id, sort_order);
+      CREATE INDEX IF NOT EXISTS idx_wse_events_session ON workout_session_events(session_id, created_at);
     `);
 
     logWithTs('[LocalDB] Tables created successfully');
+  }
+
+  // Seed exercises locally so the picker works before first sync
+  private async seedLocalExercises(): Promise<void> {
+    const db = this.db;
+    if (!db) return;
+
+    try {
+      const result = await db.getAllAsync<{ count: number }>('SELECT COUNT(*) as count FROM exercises');
+      if (result[0]?.count && result[0].count > 0) return; // already seeded or synced
+
+      const now = new Date().toISOString();
+      const seed: Array<[string, string, string, string, number, number]> = [
+        ['seed-bench-press', 'Bench Press', 'push', 'chest', 1, 0],
+        ['seed-back-squat', 'Back Squat', 'legs', 'quadriceps', 1, 0],
+        ['seed-deadlift', 'Deadlift', 'pull', 'posterior_chain', 1, 0],
+        ['seed-overhead-press', 'Overhead Press', 'push', 'shoulders', 1, 0],
+        ['seed-lat-pulldown', 'Lat Pulldown', 'pull', 'back', 1, 0],
+        ['seed-pull-up', 'Pull-Up', 'pull', 'back', 1, 0],
+        ['seed-push-up', 'Push-Up', 'push', 'chest', 1, 0],
+        ['seed-dumbbell-row', 'Dumbbell Row', 'pull', 'back', 1, 0],
+        ['seed-incline-bench', 'Incline Bench', 'push', 'chest', 1, 0],
+        ['seed-leg-press', 'Leg Press', 'legs', 'quadriceps', 1, 0],
+        ['seed-leg-curl', 'Leg Curl', 'legs', 'hamstrings', 0, 0],
+        ['seed-leg-extension', 'Leg Extension', 'legs', 'quadriceps', 0, 0],
+        ['seed-bicep-curl', 'Bicep Curl', 'pull', 'biceps', 0, 0],
+        ['seed-tricep-dip', 'Tricep Dip', 'push', 'triceps', 1, 0],
+        ['seed-plank', 'Plank', 'core', 'core', 0, 1],
+        ['seed-russian-twist', 'Russian Twist', 'core', 'core', 0, 0],
+        ['seed-mountain-climbers', 'Mountain Climbers', 'cardio', 'full_body', 0, 1],
+        ['seed-burpees', 'Burpees', 'cardio', 'full_body', 1, 0],
+        ['seed-jump-rope', 'Jump Rope', 'cardio', 'full_body', 0, 1],
+        ['seed-hiit-circuit', 'HIIT Circuit', 'cardio', 'full_body', 1, 1],
+        ['seed-romanian-deadlift', 'Romanian Deadlift', 'pull', 'hamstrings', 1, 0],
+        ['seed-dead-hang', 'Dead Hang', 'pull', 'grip', 0, 1],
+        ['seed-farmers-walk', 'Farmers Walk', 'full_body', 'grip', 1, 1],
+      ];
+
+      for (const [id, name, category, muscle_group, is_compound, is_timed] of seed) {
+        await db.runAsync(
+          `INSERT OR IGNORE INTO exercises (id, name, category, muscle_group, is_compound, is_timed, is_system, created_by, synced, updated_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, 1, NULL, 0, ?, ?)`,
+          [id, name, category, muscle_group, is_compound, is_timed, now, now],
+        );
+      }
+      logWithTs(`[LocalDB] Seeded ${seed.length} exercises`);
+    } catch (error) {
+      errorWithTs('[LocalDB] Exercise seed failed:', error);
+    }
   }
 
   // Food operations
@@ -725,6 +941,13 @@ class LocalDatabase {
 
     await this.db.runAsync('DELETE FROM foods WHERE deleted = 1 AND synced = 1');
     await this.db.runAsync('DELETE FROM workouts WHERE deleted = 1 AND synced = 1');
+    // Workout session tables
+    await this.db.runAsync('DELETE FROM workout_templates WHERE deleted = 1 AND synced = 1');
+    await this.db.runAsync('DELETE FROM workout_template_exercises WHERE deleted = 1 AND synced = 1');
+    await this.db.runAsync('DELETE FROM workout_template_sets WHERE deleted = 1 AND synced = 1');
+    await this.db.runAsync('DELETE FROM workout_sessions WHERE deleted = 1 AND synced = 1');
+    await this.db.runAsync('DELETE FROM workout_session_exercises WHERE deleted = 1 AND synced = 1');
+    await this.db.runAsync('DELETE FROM workout_session_sets WHERE deleted = 1 AND synced = 1');
   }
 
   async clearSyncQueue(): Promise<void> {
@@ -732,6 +955,80 @@ class LocalDatabase {
 
     await this.db.runAsync('DELETE FROM sync_queue');
     logWithTs('[LocalDB] Sync queue cleared');
+  }
+
+  // Migrate legacy workouts into session format (runs once)
+  async migrateLegacyWorkouts(): Promise<void> {
+    const db = this.db;
+    if (!db) return;
+
+    try {
+      // Check if migration was already done by looking for a marker
+      const marker = await db.getAllAsync<{ count: number }>(
+        "SELECT COUNT(*) as count FROM workout_sessions WHERE notes = '__legacy_migration__'"
+      );
+      if (marker[0]?.count > 0) return; // already migrated
+
+      const legacyWorkouts = await db.getAllAsync<LocalWorkout>(
+        'SELECT * FROM workouts WHERE deleted = 0'
+      );
+
+      if (legacyWorkouts.length === 0) return;
+
+      logWithTs(`[LocalDB] Migrating ${legacyWorkouts.length} legacy workouts to sessions...`);
+
+      for (const w of legacyWorkouts) {
+        const now = new Date().toISOString();
+        const sessionId = w.id; // reuse the old ID
+
+        // Find matching exercise
+        const exerciseRows = await db.getAllAsync<{ id: string }>(
+          'SELECT id FROM exercises WHERE lower(name) = lower(?) LIMIT 1',
+          [w.exercise]
+        );
+
+        if (exerciseRows.length === 0) {
+          // No matching exercise found, skip
+          continue;
+        }
+
+        const exerciseId = exerciseRows[0].id;
+
+        // Check if session already exists
+        const existing = await db.getAllAsync<{ id: string }>(
+          'SELECT id FROM workout_sessions WHERE id = ?',
+          [sessionId]
+        );
+        if (existing.length > 0) continue;
+
+        // Create session
+        await db.runAsync(
+          `INSERT INTO workout_sessions (id, template_id, name, goal_profile, started_at, ended_at, timezone_offset_minutes, bodyweight_lb, notes, synced, deleted, updated_at, created_at)
+           VALUES (?, NULL, ?, 'hypertrophy', ?, ?, 0, NULL, '__legacy_migration__', 0, 0, ?, ?)`,
+          [sessionId, w.exercise, w.date || now, w.date || now, now, now]
+        );
+
+        // Create session exercise
+        const seId = `${sessionId}_ex0`;
+        await db.runAsync(
+          `INSERT INTO workout_session_exercises (id, session_id, exercise_id, sort_order, notes, synced, deleted, updated_at, created_at)
+           VALUES (?, ?, ?, 0, NULL, 0, 0, ?, ?)`,
+          [seId, sessionId, exerciseId, now, now]
+        );
+
+        // Create session set
+        const ssId = `${sessionId}_set0`;
+        await db.runAsync(
+          `INSERT INTO workout_session_sets (id, session_exercise_id, sort_order, set_type, actual_reps, actual_weight, actual_seconds, completed_at, tut_source, synced, deleted, updated_at, created_at, rest_skipped)
+           VALUES (?, ?, 0, 'normal', ?, ?, ?, ?, 'unknown', 0, 0, ?, ?, 0)`,
+          [ssId, seId, w.reps ?? null, w.weight ?? null, w.duration ?? null, w.date || now, now, now]
+        );
+      }
+
+      logWithTs(`[LocalDB] Legacy workout migration complete`);
+    } catch (error) {
+      errorWithTs('[LocalDB] Legacy workout migration failed:', error);
+    }
   }
 
   // Database utilities
@@ -744,6 +1041,14 @@ class LocalDatabase {
       DELETE FROM health_metrics;
       DELETE FROM nutrition_goals;
       DELETE FROM sync_queue;
+      DELETE FROM exercises;
+      DELETE FROM workout_templates;
+      DELETE FROM workout_template_exercises;
+      DELETE FROM workout_template_sets;
+      DELETE FROM workout_sessions;
+      DELETE FROM workout_session_exercises;
+      DELETE FROM workout_session_sets;
+      DELETE FROM workout_session_events;
     `);
     logWithTs('[LocalDB] All data cleared');
   }

@@ -656,8 +656,8 @@ export default function HomeScreen() {
         <TouchableOpacity 
           style={styles.actionCardWrapper}
           onPress={() => {
-            logWithTs('Navigating to add-workout');
-            router.push('/(modals)/add-workout');
+            logWithTs('Navigating to workout-session');
+            router.push('/(modals)/workout-session');
           }}
         >
           <LinearGradient
