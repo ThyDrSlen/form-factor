@@ -30,7 +30,7 @@ import { localDB } from '@/lib/services/database/local-db';
 import { syncService } from '@/lib/services/database/sync-service';
 import { createError, logError } from '@/lib/services/ErrorHandler';
 import { useAuth } from './AuthContext';
-import { useWorkouts } from './WorkoutsContext';
+import { useSessionRunner } from '@/lib/stores/session-runner';
 import { useNetwork } from './NetworkContext';
 import { updateWatchContext } from '@/lib/watch-connectivity';
 
@@ -120,7 +120,7 @@ function reportHealthKitError(code: string, message: string, details: unknown): 
 
 export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const { isWorkoutInProgress } = useWorkouts();
+  const isWorkoutInProgress = useSessionRunner((s) => s.isWorkoutInProgress);
   const { isOnline } = useNetwork();
   const [isAvailable, setIsAvailable] = useState<boolean>(false);
   const [status, setStatus] = useState<HealthPermissionStatus | null>(null);
