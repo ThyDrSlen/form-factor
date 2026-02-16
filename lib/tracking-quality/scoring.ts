@@ -1,7 +1,6 @@
 import type { CanonicalJoint2D, CanonicalJointMap } from '@/lib/pose/types';
 import { CONFIDENCE_TIER_THRESHOLDS } from './config';
 import {
-  areRequiredJointsVisible,
   getVisibilityTier,
   type RequiredJointSpec,
   type VisibilityTier,
@@ -85,23 +84,27 @@ function getJointFrom(input: PullupScoringInput['joints'], key: string): Canonic
   return input[key];
 }
 
-function jointVisibilityScore(joint: CanonicalJoint2D | null | undefined): number {
+function jointVisibilityScore(joint: CanonicalJoint2D | null | undefined, durationMs: number): number {
   if (!joint || !joint.isTracked) return 0;
   if (typeof joint.confidence === 'number') return clamp01(joint.confidence);
-  return 1;
+  return durationMs <= 0 ? clamp01(CONFIDENCE_TIER_THRESHOLDS.low * 0.5) : 1;
 }
 
 function minConfidenceForTier(tier: Exclude<VisibilityTier, 'missing'>): number {
   return tier === 'trusted' ? CONFIDENCE_TIER_THRESHOLDS.medium : CONFIDENCE_TIER_THRESHOLDS.low;
 }
 
-function visibilityScoreForSpec(joints: PullupScoringInput['joints'], spec: RequiredJointSpec): number {
+function visibilityScoreForSpec(
+  joints: PullupScoringInput['joints'],
+  spec: RequiredJointSpec,
+  durationMs: number,
+): number {
   if (typeof spec === 'string') {
-    return jointVisibilityScore(getJointFrom(joints, spec));
+    return jointVisibilityScore(getJointFrom(joints, spec), durationMs);
   }
   let best = 0;
   for (const key of spec) {
-    best = Math.max(best, jointVisibilityScore(getJointFrom(joints, key)));
+    best = Math.max(best, jointVisibilityScore(getJointFrom(joints, key), durationMs));
   }
   return best;
 }
@@ -109,11 +112,12 @@ function visibilityScoreForSpec(joints: PullupScoringInput['joints'], spec: Requ
 function visibilityTierForRequiredJoints(
   joints: PullupScoringInput['joints'],
   required: RequiredJointSpec[],
+  durationMs: number,
 ): VisibilityTier {
   if (!joints) return 'missing';
   let worst = 1;
   for (const spec of required) {
-    worst = Math.min(worst, visibilityScoreForSpec(joints, spec));
+    worst = Math.min(worst, visibilityScoreForSpec(joints, spec, durationMs));
   }
   return getVisibilityTier(worst);
 }
@@ -133,16 +137,16 @@ function missingReasonForRequiredJoints(input: {
   for (const spec of input.required) {
     if (typeof spec === 'string') {
       const joint = getJointFrom(input.joints, spec);
-      if (jointVisibilityScore(joint) < minConfidence) {
-        missing.push(spec);
+        if (jointVisibilityScore(joint, Number.POSITIVE_INFINITY) < minConfidence) {
+          missing.push(spec);
+        }
+        continue;
       }
-      continue;
-    }
 
-    const best = visibilityScoreForSpec(input.joints, spec);
-    if (best < minConfidence) {
-      missing.push(`[${spec.join('|')}]`);
-    }
+      const best = visibilityScoreForSpec(input.joints, spec, Number.POSITIVE_INFINITY);
+      if (best < minConfidence) {
+        missing.push(`[${spec.join('|')}]`);
+      }
   }
 
   if (missing.length === 0) {
@@ -261,8 +265,10 @@ export function calculateComponentScores(input: PullupScoringInput): {
 
   for (const def of PULLUP_COMPONENT_DEFS) {
     const minConfidence = minConfidenceForTier(def.minVisibilityTier);
-    const isAvailable = areRequiredJointsVisible(input.joints ?? null, def.requiredJoints, minConfidence);
-    const visibilityTier = visibilityTierForRequiredJoints(input.joints ?? null, def.requiredJoints);
+    const isAvailable = def.requiredJoints.every(
+      (spec) => visibilityScoreForSpec(input.joints ?? null, spec, input.durationMs) >= minConfidence,
+    );
+    const visibilityTier = visibilityTierForRequiredJoints(input.joints ?? null, def.requiredJoints, input.durationMs);
 
     if (!isAvailable) {
       const reason = missingReasonForRequiredJoints({

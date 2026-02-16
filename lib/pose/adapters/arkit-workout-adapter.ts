@@ -71,16 +71,42 @@ export function buildCanonicalJointMapFromPose2D(pose2D: BodyPose2D | null): Can
     return map;
   }
 
-  for (const joint of pose2D.joints) {
+  const sortedJoints = [...pose2D.joints].sort((left, right) =>
+    normalizeName(left.name).localeCompare(normalizeName(right.name)),
+  );
+  const trackedNeckJoints: CanonicalJoint2D[] = [];
+
+  for (const joint of sortedJoints) {
     const point: CanonicalJoint2D = {
       x: joint.x,
       y: joint.y,
       isTracked: joint.isTracked,
     };
 
+    if (joint.isTracked && /^neck_[1-4]_joint$/i.test(joint.name)) {
+      trackedNeckJoints.push(point);
+    }
+
     for (const alias of aliasesForRawName(joint.name)) {
       setAlias(map, alias, point);
     }
+  }
+
+  if (trackedNeckJoints.length > 0) {
+    const averagedNeck = trackedNeckJoints.reduce(
+      (acc, joint) => {
+        acc.x += joint.x;
+        acc.y += joint.y;
+        return acc;
+      },
+      { x: 0, y: 0 },
+    );
+
+    map.set('neck', {
+      x: averagedNeck.x / trackedNeckJoints.length,
+      y: averagedNeck.y / trackedNeckJoints.length,
+      isTracked: true,
+    });
   }
 
   return map;

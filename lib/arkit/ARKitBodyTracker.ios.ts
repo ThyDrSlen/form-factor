@@ -323,9 +323,42 @@ export class BodyTracker {
    */
   static findJoint(pose: BodyPose, jointName: string): Joint3D | undefined {
     const normalizedName = jointName.toLowerCase();
-    return pose.joints.find((j) =>
-      j.name.toLowerCase().includes(normalizedName)
-    );
+
+    if (normalizedName === 'neck') {
+      const trackedNeckJoints = pose.joints.filter(
+        (joint) => /^neck_[1-4]_joint$/i.test(joint.name) && joint.isTracked,
+      );
+
+      if (trackedNeckJoints.length > 0) {
+        const averaged = trackedNeckJoints.reduce(
+          (acc, joint) => {
+            acc.x += joint.x;
+            acc.y += joint.y;
+            acc.z += joint.z;
+            return acc;
+          },
+          { x: 0, y: 0, z: 0 },
+        );
+
+        return {
+          name: 'neck',
+          x: averaged.x / trackedNeckJoints.length,
+          y: averaged.y / trackedNeckJoints.length,
+          z: averaged.z / trackedNeckJoints.length,
+          isTracked: true,
+        };
+      }
+    }
+
+    const exactMatch = pose.joints.find((joint) => {
+      const name = joint.name.toLowerCase();
+      return name === normalizedName || name === `${normalizedName}_joint`;
+    });
+    if (exactMatch) {
+      return exactMatch;
+    }
+
+    return pose.joints.find((joint) => joint.name.toLowerCase().includes(normalizedName));
   }
 
   /**
