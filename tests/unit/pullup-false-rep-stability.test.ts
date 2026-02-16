@@ -186,4 +186,41 @@ describe('pullup false-rep stability fixtures', () => {
     expect(result.current.state.phase).toBe('hang');
     expect(result.current.state.repCount).toBe(0);
   });
+
+  it('live partial status should emit pullup scoring before rep completion (RED)', () => {
+    const onPullupScoring = jest.fn();
+    const { result } = renderHook(() =>
+      useWorkoutController('pullup', {
+        sessionId: 'test-session',
+        enableHaptics: false,
+        callbacks: { onPullupScoring },
+      })
+    );
+
+    const ctx = stableContext();
+    const hang = PULLUP_THRESHOLDS.hang + 5;
+    const pull = PULLUP_THRESHOLDS.engage - 5;
+    const aboveTopThreshold = PULLUP_THRESHOLDS.top + 5;
+
+    let t = 40_000;
+    const holdMs = 45;
+
+    const frame = (tMs: number, elbow: number) => {
+      nowSpy.mockReturnValue(tMs);
+      act(() => result.current.processFrame(withElbows(elbow), undefined, ctx));
+    };
+
+    const hold = (tMs: number, elbow: number) => {
+      frame(tMs, elbow);
+      frame(tMs + holdMs, elbow);
+      return tMs + holdMs;
+    };
+
+    t = hold(t, hang);
+    t = hold(t, pull);
+    t = hold(t, aboveTopThreshold);
+
+    expect(result.current.state.repCount).toBe(0);
+    expect(onPullupScoring).toHaveBeenCalled();
+  });
 });

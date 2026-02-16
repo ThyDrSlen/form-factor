@@ -85,4 +85,21 @@ describe('pull-up tracking-quality component scoring', () => {
     expect(result.score_suppressed).toBe(false);
     expect(result.overall_score).not.toBeNull();
   });
+
+  test('live frame scoring should not treat missing confidence as fully visible (RED)', () => {
+    const joints: Record<string, CanonicalJoint2D | null> = {
+      left_shoulder: joint({ x: 0.1, y: 0.2, isTracked: true }),
+      right_shoulder: joint({ x: 0.9, y: 0.2, isTracked: true }),
+      left_elbow: joint({ x: 0.15, y: 0.35, isTracked: true }),
+      right_elbow: joint({ x: 0.85, y: 0.35, isTracked: true }),
+    };
+
+    const result = scorePullupWithComponentAvailability({
+      repAngles: baseAngles(),
+      durationMs: 0,
+      joints,
+    });
+
+    expect(result.visibility_badge).toBe('partial');
+  });
 });

@@ -74,6 +74,7 @@ import {
   HIDE_N_FRAMES,
   processTrackingQualityAngles,
   readUseNewTrackingPipelineFlag,
+  scorePullupWithComponentAvailability,
   SHOW_N_FRAMES,
   type PullupScoringResult,
 } from '@/lib/tracking-quality';
@@ -301,11 +302,12 @@ const PreviewPlayer = ({ uri }: { uri: string }) => {
 export default function ScanARKitScreen() {
   const DEV = __DEV__;
   const router = useRouter();
-  const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string }>();
+  const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string; trackingDebug?: string }>();
   const fixturePlaybackRequested = params.fixturePlayback === '1';
   const fixtureName = typeof params.fixture === 'string' ? params.fixture : FIXTURE_PLAYBACK_DEFAULT;
   const fixtureFrames = fixturePlaybackRequested ? FIXTURE_PLAYBACK_TRACES[fixtureName] ?? null : null;
   const fixturePlaybackEnabled = fixturePlaybackRequested && !!fixtureFrames;
+  const trackingDebugEnabled = DEV && params.trackingDebug === '1';
   const insets = useSafeAreaInsets();
   const topBarHeight = 44;
   const topBarPadding = 8;
@@ -370,6 +372,10 @@ export default function ScanARKitScreen() {
   const [showDebugStats, setShowDebugStats] = useState(false);
   const [fixturePlaybackFramesProcessed, setFixturePlaybackFramesProcessed] = useState(0);
   const [latestPullupScoring, setLatestPullupScoring] = useState<PullupScoringResult | null>(null);
+  const [livePullupPartialStatus, setLivePullupPartialStatus] = useState<
+    Pick<PullupScoringResult, 'visibility_badge' | 'missing_components'> | null
+  >(null);
+  const lastLivePartialBadgeRef = React.useRef<PullupScoringResult['visibility_badge'] | null>(null);
   const [showPartialTrackingBadge, setShowPartialTrackingBadge] = useState(false);
   const baselineDebugEnabled = DEV && showDebugStats;
   const baselineDebugEnabledRef = React.useRef(baselineDebugEnabled);
@@ -416,6 +422,16 @@ export default function ScanARKitScreen() {
   const mediaPipePollInFlightRef = React.useRef(false);
   const partialTrackingHideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const partialTrackingVisibleUntilMsRef = React.useRef(0);
+  const trackingDebugEnabledRef = React.useRef(trackingDebugEnabled);
+
+  useEffect(() => {
+    trackingDebugEnabledRef.current = trackingDebugEnabled;
+  }, [trackingDebugEnabled]);
+
+  const logTrackingDebug = useCallback((event: string, payload: Record<string, unknown>) => {
+    if (!trackingDebugEnabledRef.current) return;
+    logWithTs(`[ScanARKit][tracking-debug] ${event}`, payload);
+  }, []);
 
   const resetBaselineDebugMetrics = useCallback(() => {
     baselineDebugMetricsRef.current = createBaselineDebugMetrics();
@@ -427,13 +443,25 @@ export default function ScanARKitScreen() {
     stablePrimaryCueRef.current = null;
   }, []);
 
-  const updatePartialTrackingBadgeVisibility = useCallback((visibilityBadge: PullupScoringResult['visibility_badge']) => {
+  const updatePartialTrackingBadgeVisibility = useCallback((
+    visibilityBadge: PullupScoringResult['visibility_badge'],
+    source: 'frame-live' | 'onPullupScoring-rep-complete' | 'unknown' = 'unknown'
+  ) => {
     if (partialTrackingHideTimerRef.current) {
       clearTimeout(partialTrackingHideTimerRef.current);
       partialTrackingHideTimerRef.current = null;
     }
 
     const now = Date.now();
+    logTrackingDebug('partial-badge-update', {
+      ts: now,
+      source,
+      visibilityBadge,
+      fixturePlaybackEnabled,
+      repCount,
+      activePhase: activePhaseRef.current,
+    });
+
     if (visibilityBadge === 'partial') {
       partialTrackingVisibleUntilMsRef.current = now + PARTIAL_TRACKING_BADGE_MIN_VISIBLE_MS;
       setShowPartialTrackingBadge(true);
@@ -445,7 +473,7 @@ export default function ScanARKitScreen() {
       setShowPartialTrackingBadge(false);
       partialTrackingHideTimerRef.current = null;
     }, hideInMs);
-  }, []);
+  }, [fixturePlaybackEnabled, logTrackingDebug, repCount]);
 
   useEffect(() => {
     return () => {
@@ -814,9 +842,16 @@ export default function ScanARKitScreen() {
         recordingFqiScoresRef.current.push(fqi);
       }
     },
-    onPullupScoring: (_repNumber: number, scoring: PullupScoringResult) => {
+    onPullupScoring: (
+      _repNumber: number,
+      scoring: PullupScoringResult,
+      meta?: { source: 'frame' | 'rep-complete' }
+    ) => {
       setLatestPullupScoring(scoring);
-      updatePartialTrackingBadgeVisibility(scoring.visibility_badge);
+      updatePartialTrackingBadgeVisibility(
+        scoring.visibility_badge,
+        meta?.source === 'frame' ? 'frame-live' : 'onPullupScoring-rep-complete'
+      );
     },
   }), [activeWorkoutDef, repCount, transitionPhase, updatePartialTrackingBadgeVisibility]);
 
@@ -839,6 +874,8 @@ export default function ScanARKitScreen() {
     setActivePhase(nextInitialPhase);
     setRepCount(0);
     setActiveMetrics(null);
+    setLivePullupPartialStatus(null);
+    lastLivePartialBadgeRef.current = null;
     repIndexTrackerRef.current.reset();
     shadowStatsRef.current = createShadowStatsAccumulator();
     shadowProviderCountsRef.current = createShadowProviderCounts();
@@ -1022,6 +1059,8 @@ export default function ScanARKitScreen() {
       smoothedPose2DRef.current = null;
       pose2DCacheRef.current = {};
       setActiveMetrics(null);
+      setLivePullupPartialStatus(null);
+      lastLivePartialBadgeRef.current = null;
       const nextInitialPhase = getWorkoutByMode(detectionMode).initialPhase;
       activePhaseRef.current = nextInitialPhase;
       transitionPhase(nextInitialPhase);
@@ -1047,7 +1086,33 @@ export default function ScanARKitScreen() {
 
     try {
       const angles = BodyTracker.calculateAllAngles(pose);
-      const get = (n: string) => BodyTracker.findJoint(pose, n);
+      const jointLookupDebug: Record<string, unknown> = {};
+      const get = (n: string) => {
+        const selected = BodyTracker.findJoint(pose, n);
+        if (trackingDebugEnabledRef.current) {
+          const normalized = n.toLowerCase();
+          const candidates = pose.joints
+            .filter((joint) => joint.name.toLowerCase().includes(normalized))
+            .map((joint) => ({
+              name: joint.name,
+              isTracked: joint.isTracked,
+              x: Number(joint.x.toFixed(4)),
+              y: Number(joint.y.toFixed(4)),
+            }));
+          jointLookupDebug[n] = {
+            candidates,
+            selected: selected
+              ? {
+                  name: selected.name,
+                  isTracked: selected.isTracked,
+                  x: Number(selected.x.toFixed(4)),
+                  y: Number(selected.y.toFixed(4)),
+                }
+              : null,
+          };
+        }
+        return selected;
+      };
       const lh = get('left_upLeg');
       const lk = get('left_leg');
       const la = get('left_foot');
@@ -1072,6 +1137,24 @@ export default function ScanARKitScreen() {
         leftShoulder: !!(neck?.isTracked && ls?.isTracked && le?.isTracked),
         rightShoulder: !!(neck?.isTracked && rs?.isTracked && re?.isTracked),
       } as const;
+      if (trackingDebugEnabledRef.current) {
+        logTrackingDebug('joint-lookup-and-visibility', {
+          ts: Date.now(),
+          frameSource: fixturePlaybackEnabled ? 'fixture' : 'live',
+          poseTimestamp: pose.timestamp,
+          jointLookup: jointLookupDebug,
+          valid,
+          confidence: {
+            neck: neck?.isTracked ?? false,
+            leftShoulder: ls?.isTracked ?? false,
+            rightShoulder: rs?.isTracked ?? false,
+            leftForearm: le?.isTracked ?? false,
+            rightForearm: re?.isTracked ?? false,
+            leftHand: lw?.isTracked ?? false,
+            rightHand: rw?.isTracked ?? false,
+          },
+        });
+      }
       const smoothingResult =
         angles
           ? processRealtimeEngineAngles({
@@ -1130,6 +1213,14 @@ export default function ScanARKitScreen() {
              primaryTimestamp: pose.timestamp,
              mediaPipeTimestamp: latestMediaPipePose?.timestamp,
              maxTimestampSkewSec: MEDIAPIPE_MAX_TIMESTAMP_SKEW_SEC,
+             isInActiveRep: repIndexTrackerRef.current.current() !== null,
+           });
+           logTrackingDebug('shadow-provider-selection', {
+             ts: Date.now(),
+             primaryTimestamp: pose.timestamp,
+             mediaPipeTimestamp: latestMediaPipePose?.timestamp ?? null,
+             selectedProvider,
+             preferredProvider: shadowProviderRuntimeRef.current,
              isInActiveRep: repIndexTrackerRef.current.current() !== null,
            });
 
@@ -1202,6 +1293,54 @@ export default function ScanARKitScreen() {
 
         const metrics = activeWorkoutDef.calculateMetrics(next, jointsMap) as WorkoutMetrics;
         setActiveMetrics(metrics);
+
+        const shouldComputeLivePartial = detectionMode === 'pullup' && (isTracking || fixturePlaybackEnabled);
+        if (shouldComputeLivePartial) {
+          const livePartialScoring = scorePullupWithComponentAvailability({
+            repAngles: {
+              start: {
+                leftElbow: next.leftElbow,
+                rightElbow: next.rightElbow,
+                leftShoulder: next.leftShoulder,
+                rightShoulder: next.rightShoulder,
+              },
+              end: {
+                leftElbow: next.leftElbow,
+                rightElbow: next.rightElbow,
+                leftShoulder: next.leftShoulder,
+                rightShoulder: next.rightShoulder,
+              },
+              min: {
+                leftElbow: next.leftElbow,
+                rightElbow: next.rightElbow,
+                leftShoulder: next.leftShoulder,
+                rightShoulder: next.rightShoulder,
+              },
+              max: {
+                leftElbow: next.leftElbow,
+                rightElbow: next.rightElbow,
+                leftShoulder: next.leftShoulder,
+                rightShoulder: next.rightShoulder,
+              },
+            },
+            durationMs: 1000,
+            joints: canonicalFrame.joints,
+          });
+
+          setLivePullupPartialStatus({
+            visibility_badge: livePartialScoring.visibility_badge,
+            missing_components: livePartialScoring.missing_components,
+          });
+
+          if (lastLivePartialBadgeRef.current !== livePartialScoring.visibility_badge) {
+            lastLivePartialBadgeRef.current = livePartialScoring.visibility_badge;
+            updatePartialTrackingBadgeVisibility(livePartialScoring.visibility_badge, 'frame-live');
+          }
+        } else {
+          setLivePullupPartialStatus(null);
+          lastLivePartialBadgeRef.current = null;
+        }
+
         processWorkoutFrame(next, jointsMap, {
           trackingQuality: smoothingResult?.trackingQuality,
           shadowMeanAbsDelta: shadowComparison?.meanAbsDelta,
@@ -1210,6 +1349,8 @@ export default function ScanARKitScreen() {
         repIndexTrackerRef.current.reset();
         resetWorkoutController({ preserveRepCount: true });
         setActiveMetrics(null);
+        setLivePullupPartialStatus(null);
+        lastLivePartialBadgeRef.current = null;
         activePhaseRef.current = activeWorkoutDef.initialPhase;
         transitionPhase(activeWorkoutDef.initialPhase);
       }
@@ -1632,6 +1773,11 @@ export default function ScanARKitScreen() {
         let mirrored: boolean | undefined;
 
         if (!canMirrorFromArkit) {
+          logTrackingDebug('watch-mirror-branch', {
+            ts: Date.now(),
+            canMirrorFromArkit: false,
+            cameraPosition,
+          });
           return;
         }
 
@@ -1649,8 +1795,23 @@ export default function ScanARKitScreen() {
         mirrored = arkitSnapshot.mirrored;
 
         if (!base64) {
+          logTrackingDebug('watch-mirror-branch', {
+            ts: Date.now(),
+            canMirrorFromArkit: true,
+            hasFrame: false,
+            cameraPosition,
+          });
           return;
         }
+
+        logTrackingDebug('watch-mirror-orientation', {
+          ts: Date.now(),
+          canMirrorFromArkit: true,
+          hasFrame: true,
+          orientation: orientation ?? null,
+          mirrored: mirrored ?? null,
+          cameraPosition,
+        });
 
         sendMessage({
           type: 'mirror',
@@ -2170,12 +2331,16 @@ export default function ScanARKitScreen() {
 	  const previewFormScore = previewMetrics?.avgFqi != null ? `${Math.round(previewMetrics.avgFqi)}` : '--';
 	  const previewDuration = formatDuration(previewMetrics?.recordingStartAt, previewMetrics?.recordingEndAt);
 	  const previewQuality = previewMetrics?.recordingQuality ? QUALITY_LABELS[previewMetrics.recordingQuality] : '--';
+  const effectivePartialStatus =
+    isTracking || fixturePlaybackEnabled
+      ? livePullupPartialStatus ?? latestPullupScoring
+      : latestPullupScoring;
   const shouldShowPartialTrackingBadge =
     detectionMode === 'pullup' &&
-    isTracking &&
+    (isTracking || fixturePlaybackEnabled) &&
     showPartialTrackingBadge &&
-    latestPullupScoring?.visibility_badge === 'partial';
-  const missingComponentSet = new Set(latestPullupScoring?.missing_components ?? []);
+    effectivePartialStatus?.visibility_badge === 'partial';
+  const missingComponentSet = new Set(effectivePartialStatus?.missing_components ?? []);
   const partialTrackingComponents = PULLUP_COMPONENT_INDICATORS.map((item) => ({
     ...item,
     missing: missingComponentSet.has(item.key),
