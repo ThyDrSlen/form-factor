@@ -19,7 +19,11 @@ import { calculateFqi, extractRepFeatures, type RepAngles } from '@/lib/services
 import { logRep } from '@/lib/services/rep-logger';
 import { computeAdaptivePhaseHoldMs, computeAdaptiveRepDurationMs } from '@/lib/services/workout-runtime';
 import { selectShadowProvider } from '@/lib/pose/shadow-provider';
-import { scorePullupWithComponentAvailability, type PullupScoringResult } from '@/lib/tracking-quality/scoring';
+import {
+  scorePullupWithComponentAvailability,
+  type PullupScoringInput,
+  type PullupScoringResult,
+} from '@/lib/tracking-quality/scoring';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -69,11 +73,44 @@ export interface RepTrackingData {
 export interface WorkoutControllerCallbacks {
   /** Called when a rep is completed */
   onRepComplete?: (repNumber: number, fqi: number, faults: string[]) => void;
-  onPullupScoring?: (repNumber: number, scoring: PullupScoringResult) => void;
+  onPullupScoring?: (
+    repNumber: number,
+    scoring: PullupScoringResult,
+    meta?: { source: 'frame' | 'rep-complete' }
+  ) => void;
   /** Called when phase changes */
   onPhaseChange?: (newPhase: string, prevPhase: string) => void;
   /** Called when a cue should be emitted */
   onCue?: (cue: string, type: 'static' | 'dynamic') => void;
+}
+
+function buildSingleFrameRepAngles(angles: JointAngles): PullupScoringInput['repAngles'] {
+  return {
+    start: {
+      leftElbow: angles.leftElbow,
+      rightElbow: angles.rightElbow,
+      leftShoulder: angles.leftShoulder,
+      rightShoulder: angles.rightShoulder,
+    },
+    end: {
+      leftElbow: angles.leftElbow,
+      rightElbow: angles.rightElbow,
+      leftShoulder: angles.leftShoulder,
+      rightShoulder: angles.rightShoulder,
+    },
+    min: {
+      leftElbow: angles.leftElbow,
+      rightElbow: angles.rightElbow,
+      leftShoulder: angles.leftShoulder,
+      rightShoulder: angles.rightShoulder,
+    },
+    max: {
+      leftElbow: angles.leftElbow,
+      rightElbow: angles.rightElbow,
+      leftShoulder: angles.leftShoulder,
+      rightShoulder: angles.rightShoulder,
+    },
+  };
 }
 
 export interface UseWorkoutControllerOptions {
@@ -262,7 +299,7 @@ export function useWorkoutController<TPhase extends string = string>(
             durationMs,
             joints: tracking.lastJoints ?? undefined,
           });
-          callbacks?.onPullupScoring?.(repNumber, scoring);
+          callbacks?.onPullupScoring?.(repNumber, scoring, { source: 'rep-complete' });
         } catch (error) {
           if (__DEV__) {
             warnWithTs('[WorkoutController] Pullup component scoring failed', error);
@@ -314,6 +351,32 @@ export function useWorkoutController<TPhase extends string = string>(
     [sessionId, callbacks]
   );
 
+  const emitFramePullupScoring = useCallback(
+    (
+      repNumber: number,
+      angles: JointAngles,
+      joints?: Map<string, { x: number; y: number; isTracked: boolean; confidence?: number }>,
+    ) => {
+      if (!callbacks?.onPullupScoring) {
+        return;
+      }
+
+      try {
+        const scoring = scorePullupWithComponentAvailability({
+          repAngles: buildSingleFrameRepAngles(angles),
+          durationMs: 0,
+          joints: joints ?? undefined,
+        });
+        callbacks.onPullupScoring(repNumber, scoring, { source: 'frame' });
+      } catch (error) {
+        if (__DEV__) {
+          warnWithTs('[WorkoutController] Frame pullup scoring failed', error);
+        }
+      }
+    },
+    [callbacks],
+  );
+
   // =============================================================================
   // Phase Transition Logic
   // =============================================================================
@@ -329,6 +392,10 @@ export function useWorkoutController<TPhase extends string = string>(
 
       // Calculate metrics using the workout's calculator
       const metrics = workoutDef.calculateMetrics(angles, joints);
+
+      if (workoutDef.id === 'pullup') {
+        emitFramePullupScoring(repCountRef.current, angles, joints);
+      }
 
       if (repTrackingRef.current.startTs > 0) {
         repTrackingRef.current.lastJoints = joints ? new Map(joints) : repTrackingRef.current.lastJoints;
@@ -444,7 +511,7 @@ export function useWorkoutController<TPhase extends string = string>(
         // This is handled by the component using this hook
       }
     },
-    [callbacks, enableHaptics, startRepTracking, updateRepAngles, completeRepTracking]
+    [callbacks, enableHaptics, startRepTracking, updateRepAngles, completeRepTracking, emitFramePullupScoring]
   );
 
   // =============================================================================
