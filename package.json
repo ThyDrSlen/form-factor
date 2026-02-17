@@ -48,7 +48,7 @@
     "eval:pullup-tracking": "bun scripts/eval-pullup-tracking.ts",
     "baseline:pullup-tracking": "bun scripts/baseline-pullup-tracking.ts",
     "prepare": "husky",
-    "postinstall": "patch-package"
+    "postinstall": "command -v patch-package >/dev/null 2>&1 && patch-package || true"
   },
   "resolutions": {
     "framer-motion": "^12.18.1",
