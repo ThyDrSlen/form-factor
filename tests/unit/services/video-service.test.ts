@@ -244,4 +244,35 @@ describe('video-service success paths', () => {
       exercise: 'Push-ups',
     });
   });
+
+  it('marks auto analysis uploads as analysis_only', async () => {
+    let insertedPayload: Record<string, unknown> | null = null;
+    mockSupabase.from.mockImplementation(() => {
+      const chain: Record<string, any> = {
+        select: jest.fn(() => chain),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            id: 'analysis-video-id',
+            user_id: 'test-user-id',
+            duration_seconds: null,
+            exercise: 'Pull-up',
+          },
+          error: null,
+        }),
+      };
+      chain.insert = jest.fn((payload) => {
+        insertedPayload = payload;
+        return chain;
+      });
+      return chain;
+    });
+
+    await uploadWorkoutVideo({
+      fileUri: 'file://analysis.mp4',
+      exercise: 'Pull-up',
+      analysisOnly: true,
+    });
+
+    expect((insertedPayload as any)?.analysis_only).toBe(true);
+  });
 });
