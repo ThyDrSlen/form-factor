@@ -1,0 +1,13 @@
+diff --git a/node_modules/test-exclude/index.js b/node_modules/test-exclude/index.js
+--- a/node_modules/test-exclude/index.js
++++ b/node_modules/test-exclude/index.js
+@@ -96,7 +96,8 @@ class TestExclude {
+         }
+ 
+         const dot = { dot: true };
+-        const matches = pattern => minimatch(pathToCheck, pattern, dot);
++        const minimatchFn = typeof minimatch === 'function' ? minimatch : minimatch.minimatch;
++        const matches = pattern => minimatchFn(pathToCheck, pattern, dot);
+         return (
+             (!this.include || this.include.some(matches)) &&
+             (!this.exclude.some(matches) || this.excludeNegated.some(matches))
