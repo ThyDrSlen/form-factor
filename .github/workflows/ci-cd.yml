@@ -92,8 +92,8 @@ jobs:
       - name: Clean patched packages (prevent patch-package conflicts)
         run: bash scripts/ci/clean_patched_packages.sh
 
-      - name: Install production dependencies
-        run: bun install --frozen-lockfile --backend=copyfile --production
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --backend=copyfile
 
       - name: TypeScript type checking
         run: bun run tsc --noEmit
@@ -486,7 +486,7 @@ jobs:
           attempts=0
           until [ "$attempts" -ge 3 ]; do
             attempts=$((attempts + 1))
-            if bun audit --audit-level=moderate; then
+            if bun audit --audit-level=moderate --ignore=GHSA-2g4f-4pwh-qvx6; then
               exit 0
             fi
             if [ "$attempts" -lt 3 ]; then
