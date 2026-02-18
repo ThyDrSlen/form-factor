@@ -19,6 +19,7 @@ export type VideoRecord = {
   duration_seconds: number | null;
   exercise: string | null;
   metrics?: Record<string, any> | null;
+  analysis_only?: boolean;
   created_at: string;
   username?: string | null;
   display_name?: string | null;
@@ -57,6 +58,7 @@ type VideoRowWithCounts = {
   duration_seconds: number | null;
   exercise: string | null;
   metrics: Record<string, any> | null;
+  analysis_only?: boolean | null;
   created_at: string;
   video_likes?: CountAggregateRow[] | null;
   video_comments?: CountAggregateRow[] | null;
@@ -217,6 +219,7 @@ async function enrichVideoRows(rows: VideoRowWithCounts[]): Promise<VideoWithUrl
         duration_seconds: row.duration_seconds,
         exercise: row.exercise,
         metrics: row.metrics,
+        analysis_only: row.analysis_only ?? false,
         created_at: row.created_at,
         like_count: extractAggregateCount(row.video_likes),
         comment_count: extractAggregateCount(row.video_comments),
@@ -259,6 +262,7 @@ export async function uploadWorkoutVideo(opts: {
   thumbnailTimeMs?: number;
   usePrivateThumbnail?: boolean;
   metrics?: Record<string, any>;
+  analysisOnly?: boolean;
 }) {
   const {
     fileUri,
@@ -269,6 +273,7 @@ export async function uploadWorkoutVideo(opts: {
     thumbnailTimeMs = 500,
     usePrivateThumbnail = false,
     metrics,
+    analysisOnly = false,
   } = opts;
 
   // Validate env before auth/upload calls so failures are explicit and actionable.
@@ -332,6 +337,7 @@ export async function uploadWorkoutVideo(opts: {
       duration_seconds: durationSeconds ?? null,
       exercise: exercise ?? null,
       metrics: metrics ?? null,
+      analysis_only: analysisOnly,
     })
     .select()
     .single();
@@ -353,6 +359,7 @@ export async function listVideos(limit = 20, opts?: { onlyMine?: boolean; social
     .select(
       'id, user_id, path, thumbnail_path, duration_seconds, exercise, metrics, created_at, video_likes(count), video_comments(count)',
     )
+    .eq('analysis_only', false)
     .order('created_at', { ascending: false })
     .limit(boundedLimit);
 
@@ -379,6 +386,7 @@ export async function getVideoById(videoId: string) {
       'id, user_id, path, thumbnail_path, duration_seconds, exercise, metrics, created_at, video_likes(count), video_comments(count)',
     )
     .eq('id', videoId)
+    .eq('analysis_only', false)
     .maybeSingle();
 
   if (error) throw error;
