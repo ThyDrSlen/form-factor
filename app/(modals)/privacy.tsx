@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Switch, Linking, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { warnWithTs } from '@/lib/logger';
+import { getConsent, updateConsent } from '@/lib/services/consent-service';
 
 type SettingItemProps = {
   icon: string;
@@ -33,7 +34,27 @@ export default function PrivacySecurityModal() {
   const toast = useToast();
   const safeBack = useSafeBack(['/(tabs)/profile', '/profile'], { alwaysReplace: true });
   const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
+  const [videoResearchEnabled, setVideoResearchEnabled] = useState(false);
   const [loadingExport, setLoadingExport] = useState(false);
+  const [savingVideoConsent, setSavingVideoConsent] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    getConsent()
+      .then((consent) => {
+        if (!active) return;
+        setAnalyticsEnabled(consent.allowAnonymousTelemetry);
+        setVideoResearchEnabled(consent.allowVideoUpload);
+      })
+      .catch((error) => {
+        warnWithTs('[privacy] Failed to load consent', error);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   React.useEffect(() => {
     if (BackHandler.addEventListener) {
@@ -77,6 +98,20 @@ export default function PrivacySecurityModal() {
   const handleToggleAnalytics = () => {
     setAnalyticsEnabled(!analyticsEnabled);
     toast.show(analyticsEnabled ? 'Analytics disabled' : 'Analytics enabled', { type: 'success' });
+  };
+
+  const handleToggleVideoResearch = async (enabled: boolean) => {
+    try {
+      setSavingVideoConsent(true);
+      await updateConsent({ allowVideoUpload: enabled });
+      setVideoResearchEnabled(enabled);
+      toast.show(enabled ? 'Video research upload enabled' : 'Video research upload disabled', { type: 'success' });
+    } catch (error) {
+      warnWithTs('[privacy] Failed to update video upload consent', error);
+      toast.show('Could not update video upload preference', { type: 'error' });
+    } finally {
+      setSavingVideoConsent(false);
+    }
   };
 
   return (
@@ -125,6 +160,20 @@ export default function PrivacySecurityModal() {
             title="Analytics"
             subtitle="Help us improve with anonymous usage data"
             rightElement={<Switch value={analyticsEnabled} onValueChange={handleToggleAnalytics} trackColor={{ false: '#E0E0E0', true: '#4C8CFF' }} />}
+          />
+          <View style={styles.divider} />
+          <SettingItem
+            icon="videocam-outline"
+            title="Video Upload for Research"
+            subtitle="Automatically upload completed recordings for model improvement when enabled"
+            rightElement={
+              <Switch
+                value={videoResearchEnabled}
+                onValueChange={handleToggleVideoResearch}
+                disabled={savingVideoConsent}
+                trackColor={{ false: '#E0E0E0', true: '#4C8CFF' }}
+              />
+            }
           />
         </View>
 

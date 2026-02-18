@@ -90,6 +90,7 @@ import {
 import type { WorkoutMetrics } from '@/lib/types/workout-definitions';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
 import { buildVideoMetricsForClip, type RecordingQuality } from '@/lib/services/video-metrics';
+import { shouldUploadVideo } from '@/lib/services/consent-service';
 import type { PullupFixtureFrame } from '@/lib/debug/pullup-fixture-corpus';
 import cameraFacingFixture from '@/tests/fixtures/pullup-tracking/camera-facing.json';
 import backTurnedFixture from '@/tests/fixtures/pullup-tracking/back-turned.json';
@@ -1044,7 +1045,9 @@ export default function ScanARKitScreen() {
   useEffect(() => {
     const frameProcessStartMs = baselineDebugEnabledRef.current ? nowMs() : null;
     if (!pose) {
-      if (DEV) logWithTs('[ScanARKit] ℹ️ No pose data');
+      if (baselineDebugEnabledRef.current) {
+        logWithTs('[ScanARKit] ℹ️ No pose data');
+      }
       // Track pose lost if we were previously tracking
       if (jointAnglesStateRef.current !== null && isTracking) {
         incrementPoseLost();
@@ -1075,7 +1078,7 @@ export default function ScanARKitScreen() {
     // Only log every 30 frames (once per second at 30fps)
     const shouldLog = frameStatsRef.current.frameCount % 30 === 0;
     
-    if (shouldLog && DEV) {
+    if (shouldLog && baselineDebugEnabledRef.current) {
       logWithTs('[ScanARKit] 📊 Pose update:', {
         joints: pose.joints.length,
         timestamp: pose.timestamp,
@@ -1167,7 +1170,7 @@ export default function ScanARKitScreen() {
           : null;
       const next: JointAngles | null = smoothingResult?.angles ?? realtimeFormEngineRef.current.smoothed;
 
-      if (shouldLog && next && DEV) {
+      if (shouldLog && next && baselineDebugEnabledRef.current) {
         logWithTs('[ScanARKit] 📐 Joint angles:', {
           leftKnee: next.leftKnee.toFixed(1),
           rightKnee: next.rightKnee.toFixed(1),
@@ -1383,7 +1386,7 @@ export default function ScanARKitScreen() {
     const elapsed = pose.timestamp - frameStatsRef.current.lastTimestamp;
     if (elapsed >= 1) {
       const newFps = Math.round(frameStatsRef.current.frameCount / elapsed);
-      if (DEV) {
+      if (baselineDebugEnabledRef.current) {
         logWithTs('[ScanARKit] 🎯 Performance:', {
           fps: newFps,
           totalFrames: frameStatsRef.current.frameCount
@@ -1401,7 +1404,7 @@ export default function ScanARKitScreen() {
 
   // Debug pose2D updates
   useEffect(() => {
-    if (DEV && pose2D) {
+    if (pose2D && baselineDebugEnabledRef.current) {
       logWithTs('[ScanARKit] 📍 pose2D update:', {
         joints: pose2D.joints.length,
         tracked: pose2D.joints.filter(j => j.isTracked).length,
@@ -1995,6 +1998,32 @@ export default function ScanARKitScreen() {
       }
     }, [uploading]);
 
+    const autoUploadAnalysisVideo = useCallback(async (payload: { uri: string; exercise: string; metrics: ClipUploadMetrics }) => {
+      try {
+        const uploadAllowed = await shouldUploadVideo();
+        if (!uploadAllowed) {
+          return;
+        }
+
+        const info = await FileSystem.getInfoAsync(payload.uri);
+        if (!info.exists) {
+          return;
+        }
+        if (info.size && info.size > MAX_UPLOAD_BYTES) {
+          return;
+        }
+
+        await uploadWorkoutVideo({
+          fileUri: payload.uri,
+          exercise: payload.exercise,
+          metrics: payload.metrics,
+          analysisOnly: true,
+        });
+      } catch (error) {
+        warnWithTs('[ScanARKit] Auto analysis upload failed', error);
+      }
+    }, []);
+
     const saveRecordingToCameraRoll = useCallback(async (uri: string) => {
       if (Platform.OS === 'web') return false;
       const hasAccess = await ensureMediaLibraryPermission();
@@ -2090,6 +2119,11 @@ export default function ScanARKitScreen() {
           });
           setPreviewError(null);
           setIsPreviewVisible(true);
+          void autoUploadAnalysisVideo({
+            uri,
+            exercise: activeWorkoutDef.displayName,
+            metrics: metricsSnapshot,
+          });
         } else {
           Alert.alert('Recording', 'No video file was generated.');
         }
@@ -2100,7 +2134,16 @@ export default function ScanARKitScreen() {
     } finally {
       recordingActiveRef.current = false;
     }
-  }, [DEV, isRecording, stopRecordingCore, latestMetricsForUpload, recordingQuality, repCount, activeWorkoutDef.displayName]);
+  }, [
+    DEV,
+    isRecording,
+    stopRecordingCore,
+    latestMetricsForUpload,
+    recordingQuality,
+    repCount,
+    activeWorkoutDef.displayName,
+    autoUploadAnalysisVideo,
+  ]);
 
   useEffect(() => {
     if (!gestureRecordingEnabled || isRecording || isFinalizingRecording) {

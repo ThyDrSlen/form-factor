@@ -244,7 +244,8 @@ async function getVideosByIds(videoIds: string[]) {
   const { data, error } = await supabase
     .from('videos')
     .select(VIDEO_SELECT_WITH_COUNTS)
-    .in('id', ids);
+    .in('id', ids)
+    .eq('analysis_only', false);
 
   if (error) throw error;
 
@@ -888,6 +889,7 @@ export async function getSocialFeed(
     .from('videos')
     .select(VIDEO_SELECT_WITH_COUNTS)
     .in('user_id', feedUserIds)
+    .eq('analysis_only', false)
     .order('created_at', { ascending: false })
     .limit(pageSize + 1);
 
@@ -921,6 +923,7 @@ export async function getUserVideos(
     .from('videos')
     .select(VIDEO_SELECT_WITH_COUNTS)
     .eq('user_id', targetUserId)
+    .eq('analysis_only', false)
     .order('created_at', { ascending: false })
     .limit(pageSize + 1);
 

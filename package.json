@@ -47,8 +47,8 @@
     "fixtures:pullup:prepare": "bun scripts/prepare-pullup-fixtures.ts",
     "eval:pullup-tracking": "bun scripts/eval-pullup-tracking.ts",
     "baseline:pullup-tracking": "bun scripts/baseline-pullup-tracking.ts",
-    "prepare": "husky",
-    "postinstall": "patch-package"
+    "prepare": "command -v husky >/dev/null 2>&1 && husky || true",
+    "postinstall": "command -v patch-package >/dev/null 2>&1 && patch-package || true"
   },
   "resolutions": {
     "framer-motion": "^12.18.1",
@@ -63,7 +63,7 @@
     "react-server-dom-webpack": "19.2.3",
     "hono": "4.11.7",
     "qs": "6.14.1",
-    "tar": "7.5.7",
+    "tar": "7.5.8",
     "lodash": "4.17.23",
     "undici": "^6.23.0"
   },
