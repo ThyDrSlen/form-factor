@@ -8,12 +8,15 @@ import { requireNativeModule } from 'expo-modules-core';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 
 // Load native module safely (don't throw during import)
-// NOTE: Logging is enabled in ALL builds to diagnose Release issues
 let ARKitBodyTracker: any = null;
 try {
-  logWithTs('[ARKitBodyTracker] Attempting to load native module...');
+  if (__DEV__) {
+    logWithTs('[ARKitBodyTracker] Attempting to load native module...');
+  }
   ARKitBodyTracker = requireNativeModule('ARKitBodyTracker');
-  logWithTs('[ARKitBodyTracker] Native module loaded:', !!ARKitBodyTracker);
+  if (__DEV__) {
+    logWithTs('[ARKitBodyTracker] Native module loaded:', !!ARKitBodyTracker);
+  }
 } catch (e) {
   // Log in ALL builds so we can diagnose Release issues
   errorWithTs('[ARKitBodyTracker] FAILED to load native module:', e);
@@ -123,10 +126,11 @@ export class BodyTracker {
    * Requires iPhone XS or newer (A12 Bionic chip or later)
    */
   static isSupported(): boolean {
-    // Log in ALL builds to diagnose Release issues
-    const deviceInfo = `[${Platform.OS}] version: ${Platform.Version}`;
-    logWithTs('[BodyTracker] isSupported() called', deviceInfo);
-    logWithTs('[BodyTracker] ARKitBodyTracker module exists:', !!ARKitBodyTracker);
+    if (__DEV__) {
+      const deviceInfo = `[${Platform.OS}] version: ${Platform.Version}`;
+      logWithTs('[BodyTracker] isSupported() called', deviceInfo);
+      logWithTs('[BodyTracker] ARKitBodyTracker module exists:', !!ARKitBodyTracker);
+    }
 
     if (!ARKitBodyTracker) {
       errorWithTs('[BodyTracker] Native module NOT loaded - returning false');
@@ -136,9 +140,13 @@ export class BodyTracker {
     }
 
     try {
-      logWithTs('[BodyTracker] Calling native isSupported()...');
+      if (__DEV__) {
+        logWithTs('[BodyTracker] Calling native isSupported()...');
+      }
       const supported = ARKitBodyTracker.isSupported();
-      logWithTs('[BodyTracker] Native isSupported() returned:', supported);
+      if (__DEV__) {
+        logWithTs('[BodyTracker] Native isSupported() returned:', supported);
+      }
       if (!supported) {
         errorWithTs('[BodyTracker] Native check reported NOT supported. See native logs for device details.');
       }
@@ -475,20 +483,28 @@ export function useBodyTracking(fps: number = 60) {
     const retryDelay = 300; // ms
 
     const checkSupport = () => {
-      logWithTs(
-        `[useBodyTracking] Checking support (attempt ${retryCount + 1}/${maxRetries}) Platform: ${Platform.OS} ${Platform.Version}`
-      );
+      if (__DEV__) {
+        logWithTs(
+          `[useBodyTracking] Checking support (attempt ${retryCount + 1}/${maxRetries}) Platform: ${Platform.OS} ${Platform.Version}`
+        );
+      }
       const supported = BodyTracker.isSupported();
-      logWithTs(`[useBodyTracking] isSupported returned: ${supported}`);
+      if (__DEV__) {
+        logWithTs(`[useBodyTracking] isSupported returned: ${supported}`);
+      }
 
       if (supported) {
         setIsSupported(true);
       } else if (retryCount < maxRetries - 1) {
         retryCount++;
-        logWithTs(`[useBodyTracking] Will retry in ${retryDelay}ms...`);
+        if (__DEV__) {
+          logWithTs(`[useBodyTracking] Will retry in ${retryDelay}ms...`);
+        }
         setTimeout(checkSupport, retryDelay);
       } else {
-        logWithTs('[useBodyTracking] All retries exhausted, device not supported');
+        if (__DEV__) {
+          logWithTs('[useBodyTracking] All retries exhausted, device not supported');
+        }
         setIsSupported(false);
       }
     };

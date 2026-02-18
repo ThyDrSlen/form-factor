@@ -198,11 +198,11 @@ export default function ARKitPermissionsScreen() {
             <View style={styles.privacyPoints}>
               <View style={styles.privacyPoint}>
                 <Ionicons name="checkmark-circle" size={20} color="#34C759" />
-                <Text style={styles.privacyPointText}>Video is analyzed in real-time, never stored</Text>
+                <Text style={styles.privacyPointText}>Video is analyzed in real-time by default</Text>
               </View>
               <View style={styles.privacyPoint}>
                 <Ionicons name="checkmark-circle" size={20} color="#34C759" />
-                <Text style={styles.privacyPointText}>No cloud upload of your footage</Text>
+                <Text style={styles.privacyPointText}>Cloud upload only happens if you enable research upload</Text>
               </View>
               <View style={styles.privacyPoint}>
                 <Ionicons name="checkmark-circle" size={20} color="#34C759" />
@@ -210,7 +210,7 @@ export default function ARKitPermissionsScreen() {
               </View>
               <View style={styles.privacyPoint}>
                 <Ionicons name="checkmark-circle" size={20} color="#34C759" />
-                <Text style={styles.privacyPointText}>All processing happens on your device</Text>
+                <Text style={styles.privacyPointText}>You can change upload consent anytime in Privacy settings</Text>
               </View>
             </View>
           </Animated.View>
