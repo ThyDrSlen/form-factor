@@ -47,7 +47,7 @@
     "fixtures:pullup:prepare": "bun scripts/prepare-pullup-fixtures.ts",
     "eval:pullup-tracking": "bun scripts/eval-pullup-tracking.ts",
     "baseline:pullup-tracking": "bun scripts/baseline-pullup-tracking.ts",
-    "prepare": "husky",
+    "prepare": "command -v husky >/dev/null 2>&1 && husky || true",
     "postinstall": "command -v patch-package >/dev/null 2>&1 && patch-package || true"
   },
   "resolutions": {
