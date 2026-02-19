@@ -9,7 +9,7 @@ Form Factor is an iOS-first fitness and health app built with Expo and Supabase.
 - Health: HealthKit permissions, summaries (steps, HR, weight), trend analysis, and historical bulk sync to Supabase; watch connectivity helpers included.
 - Form & media: ARKit body-tracking tab (pull-up/push-up rep detection, speech cues, Vision Camera overlay), Fusion Engine (combines camera, watch, and audio data), video capture/upload to Supabase Storage, and a feed with signed URLs plus comments.
 - Coach & notifications: AI coach backed by Supabase Edge Function `coach` (OpenAI), push token registration and preferences, and Edge Function `notify` for Expo push delivery.
-- UI/Navigation: Expo Router tabs, NativeWind/Tailwind styling, React Native Paper components; web target is read-only with Playwright smoke coverage.
+- UI/Navigation: Expo Router tabs, React Native Paper components; web target is read-only with Playwright smoke coverage.
 
 ## Status and roadmap
 - Implemented: offline foods/workouts, HealthKit summaries/trends, video upload + feed, AI coach, push notification plumbing, Playwright auth flow, Jest unit scaffolding, Fusion Engine (v1).
