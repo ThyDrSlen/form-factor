@@ -4,6 +4,7 @@ import { AuthError, Session, User } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { Alert } from 'react-native';
 import { SessionManager } from '@/lib/services/SessionManager';
 import { supabase } from '@/lib/supabase';
 import { runDiagnostics } from '@/lib/network-utils';
@@ -15,6 +16,7 @@ import { registerDevicePushToken, unregisterDevicePushToken } from '@/lib/servic
 // In Expo Router, group folders like (auth) are omitted from the URL path.
 // The file app/(auth)/callback.tsx resolves to '/callback', not '/auth/callback'.
 const redirectUrl = Linking.createURL('/callback');
+const SESSION_WARNING_LEAD_MS = 60 * 1000;
 
 // Mock user data for development
 const MOCK_USER: User = {
@@ -90,6 +92,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const previousUserIdRef = useRef<string | null>(null);
+  const warningTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const expiryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sessionManager = SessionManager.getInstance();
   const oauthHandler = OAuthHandler.getInstance();
@@ -97,6 +101,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Clear error helper
   const clearError = useCallback(() => {
     setError(null);
+  }, []);
+
+  const clearSessionTimers = useCallback(() => {
+    if (warningTimeoutRef.current) {
+      clearTimeout(warningTimeoutRef.current);
+      warningTimeoutRef.current = null;
+    }
+
+    if (expiryTimeoutRef.current) {
+      clearTimeout(expiryTimeoutRef.current);
+      expiryTimeoutRef.current = null;
+    }
   }, []);
 
   // Helper to update auth state
@@ -375,6 +391,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       console.log('[Auth] Signing out user');
+      clearSessionTimers();
 
       if (isMockUser) {
         console.log('[Auth] Signing out mock user');
@@ -416,7 +433,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('[Auth] Error in signOut:', error);
       return { error: error as Error };
     }
-  }, [isMockUser, sessionManager, user]);
+  }, [clearSessionTimers, isMockUser, sessionManager, user]);
+
+  const refreshSessionForTimeout = useCallback(async () => {
+    const { data, error } = await supabase.auth.refreshSession();
+
+    if (error || !data.session) {
+      console.warn('[Auth] Failed to refresh session from timeout warning:', error);
+      await signOut();
+      return;
+    }
+
+    await updateAuthState(data.session, 'session_warning_refresh');
+    setError(null);
+  }, [signOut, updateAuthState]);
+
+  useEffect(() => {
+    clearSessionTimers();
+
+    if (!session || isMockUser || !session.expires_at) {
+      return;
+    }
+
+    const now = Date.now();
+    const expiresAtMs = session.expires_at * 1000;
+    const msUntilExpiry = expiresAtMs - now;
+
+    if (msUntilExpiry <= 0) {
+      setError('Your session has expired. Please sign in again.');
+      void signOut();
+      return;
+    }
+
+    expiryTimeoutRef.current = setTimeout(() => {
+      setError('Your session expired. Please sign in again.');
+      void signOut();
+    }, msUntilExpiry);
+
+    const warningDelayMs = msUntilExpiry - SESSION_WARNING_LEAD_MS;
+
+    if (warningDelayMs > 0) {
+      warningTimeoutRef.current = setTimeout(() => {
+        Alert.alert(
+          'Session expiring soon',
+          'You will be logged out in about 1 minute. Stay logged in?',
+          [
+            {
+              text: 'Log out now',
+              style: 'destructive',
+              onPress: () => {
+                setError('You signed out before session expiry.');
+                void signOut();
+              },
+            },
+            {
+              text: 'Stay logged in',
+              onPress: () => {
+                void refreshSessionForTimeout();
+              },
+            },
+          ],
+          { cancelable: false }
+        );
+      }, warningDelayMs);
+    }
+
+    return clearSessionTimers;
+  }, [clearSessionTimers, isMockUser, refreshSessionForTimeout, session, signOut]);
 
   const signInWithMagicLink = useCallback(async (email: string) => {
     try {
