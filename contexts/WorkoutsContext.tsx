@@ -186,9 +186,10 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
       // Update UI immediately
       setWorkouts(prev => [newWorkout, ...prev]);
 
-      // Sync to Supabase if online
       if (isOnline) {
-        await syncService.syncToSupabase();
+        void syncService.syncToSupabase().catch((syncError) => {
+          console.error('[WorkoutsProvider] Background sync failed after add:', syncError);
+        });
       }
     } catch (error) {
       console.error('[WorkoutsProvider] Error adding workout:', error);
