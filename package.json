@@ -48,7 +48,7 @@
     "eval:pullup-tracking": "bun scripts/eval-pullup-tracking.ts",
     "baseline:pullup-tracking": "bun scripts/baseline-pullup-tracking.ts",
     "prepare": "command -v husky >/dev/null 2>&1 && husky || true",
-    "postinstall": "command -v patch-package >/dev/null 2>&1 && patch-package || true"
+    "postinstall": "node -e \"let r; try{r=require.resolve('patch-package')}catch(e){process.exit(0)}; require('child_process').execSync('patch-package',{stdio:'inherit'})\""
   },
   "resolutions": {
     "framer-motion": "^12.18.1",
