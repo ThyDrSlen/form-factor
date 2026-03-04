@@ -4,7 +4,7 @@
  * Create and edit workout templates with exercises and planned sets.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -22,14 +22,13 @@ import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 
 import { tabColors } from '@/styles/tabs/_tab-theme';
-import { sessionStyles, colors } from '@/styles/workout-session.styles';
+import { sessionStyles } from '@/styles/workout-session.styles';
 import { localDB } from '@/lib/services/database/local-db';
-import { genericLocalUpsert, genericSoftDelete } from '@/lib/services/database/generic-sync';
+import { genericLocalUpsert } from '@/lib/services/database/generic-sync';
 import ExercisePicker from '@/components/workout/ExercisePicker';
 import type {
   Exercise,
   GoalProfile,
-  SetType,
   WorkoutTemplate,
   WorkoutTemplateExercise,
   WorkoutTemplateSet,
