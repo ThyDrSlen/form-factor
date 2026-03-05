@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import Constants from 'expo-constants';
 import { supabase } from '@/lib/supabase';
+import { ensureUser } from '@/lib/auth-utils';
 import { warnWithTs } from '@/lib/logger';
 
 const VIDEO_BUCKET = 'videos';
@@ -63,13 +64,6 @@ type VideoRowWithCounts = {
   video_likes?: CountAggregateRow[] | null;
   video_comments?: CountAggregateRow[] | null;
 };
-
-async function ensureUser() {
-  const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  if (!data.user) throw new Error('Not signed in');
-  return data.user;
-}
 
 function getSupabaseUrl() {
   const constantsAny = Constants as any;

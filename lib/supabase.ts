@@ -4,41 +4,8 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import 'react-native-url-polyfill/auto';
 import { logWithTs, warnWithTs } from '@/lib/logger';
-import { createError, logError } from '@/lib/services/ErrorHandler';
 
 const DEV = __DEV__;
-
-function reportIngestError(location: string, error: unknown): void {
-  logError(
-    createError('network', 'DEBUG_INGEST_FAILED', 'Failed to send local debug ingest event', {
-      details: { location, error },
-      severity: 'info',
-      retryable: true,
-    }),
-    {
-      feature: 'app',
-      location,
-    }
-  );
-}
-
-// #region agent log
-fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
-  method:'POST',
-  headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({
-    sessionId:'debug-session',
-    runId:'run1',
-    hypothesisId:'H_entry_supabase',
-    location:'lib/supabase.ts:module',
-    message:'supabase module loaded',
-    data:{ platform:Platform.OS },
-    timestamp:Date.now()
-  })
-}).catch((error) => {
-  reportIngestError('lib/supabase.ts:module', error);
-});
-// #endregion
 
 // Pure JavaScript base64 implementation for Hermes (no Buffer dependency)
 const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
@@ -114,23 +81,6 @@ if (Platform.OS !== 'web') {
 
 // Validate environment variables
 function validateEnvironment() {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      sessionId:'debug-session',
-      runId:'run1',
-      hypothesisId:'H_env',
-      location:'lib/supabase.ts:validateEnvironment',
-      message:'validateEnvironment start',
-      data:{ hasUrl:!!(process.env.EXPO_PUBLIC_SUPABASE_URL || Constants.expoConfig?.extra?.supabaseUrl), hasAnon:!!(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || Constants.expoConfig?.extra?.supabaseAnonKey) },
-      timestamp:Date.now()
-    })
-  }).catch((error) => {
-    reportIngestError('lib/supabase.ts:validateEnvironment start', error);
-  });
-  // #endregion
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || Constants.expoConfig?.extra?.supabaseUrl;
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || Constants.expoConfig?.extra?.supabaseAnonKey;
 
@@ -152,23 +102,6 @@ function validateEnvironment() {
   try {
     new URL(supabaseUrl);
   } catch {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        sessionId:'debug-session',
-        runId:'run1',
-        hypothesisId:'H_env',
-        location:'lib/supabase.ts:validateEnvironment',
-        message:'invalid supabase url',
-        data:{ supabaseUrl },
-        timestamp:Date.now()
-      })
-    }).catch((error) => {
-      reportIngestError('lib/supabase.ts:invalid supabase url', error);
-    });
-    // #endregion
     throw new Error(
       `Invalid EXPO_PUBLIC_SUPABASE_URL format: ${supabaseUrl}\n` +
       'Please ensure it follows the format: https://your-project.supabase.co'
@@ -190,42 +123,8 @@ function validateEnvironment() {
         + 'If auth fails, re-check the key in your Supabase project settings.'
       );
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        sessionId:'debug-session',
-        runId:'run1',
-        hypothesisId:'H_env',
-        location:'lib/supabase.ts:validateEnvironment',
-        message:'anon key atypical format',
-        data:{ looksLikeJwt, looksLikePublishable },
-        timestamp:Date.now()
-      })
-    }).catch((error) => {
-      reportIngestError('lib/supabase.ts:anon key atypical format', error);
-    });
-    // #endregion
   }
 
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      sessionId:'debug-session',
-      runId:'run1',
-      hypothesisId:'H_env',
-      location:'lib/supabase.ts:validateEnvironment',
-      message:'validateEnvironment ok',
-      data:{ supabaseUrlLength:supabaseUrl.length, anonKeyLength:supabaseAnonKey.length },
-      timestamp:Date.now()
-    })
-  }).catch((error) => {
-    reportIngestError('lib/supabase.ts:validateEnvironment ok', error);
-  });
-  // #endregion
   return { supabaseUrl, supabaseAnonKey };
 }
 

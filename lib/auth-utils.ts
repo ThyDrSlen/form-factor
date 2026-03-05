@@ -16,11 +16,16 @@ import { supabase } from './supabase';
  * @throws {Error} If the user is not authenticated
  * @returns {Promise<string>} The current user's ID
  */
-export async function ensureUserId(): Promise<string> {
+export async function ensureUser() {
   const { data, error } = await supabase.auth.getUser();
   if (error) throw error;
-  if (!data.user?.id) throw new Error('Not signed in');
-  return data.user.id;
+  if (!data.user) throw new Error('Not signed in');
+  return data.user;
+}
+
+export async function ensureUserId(): Promise<string> {
+  const user = await ensureUser();
+  return user.id;
 }
 
 /**

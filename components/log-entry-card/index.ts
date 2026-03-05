@@ -1,1 +1,0 @@
-export { LogEntryCard } from './LogEntryCard';
