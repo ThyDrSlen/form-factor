@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Switch, ActivityIndicator, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-// import * as Notifications from 'expo-notifications';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { useSafeBack } from '@/hooks/use-safe-back';
@@ -15,7 +14,6 @@ import {
   getNotificationPermissions, // Added
 } from '@/lib/services/notifications';
 
-// type PermissionState = Notifications.PermissionStatus;
 type PermissionState = 'granted' | 'undetermined' | 'denied';
 type ToggleKey = 'comments' | 'likes' | 'reminders';
 
@@ -38,7 +36,6 @@ export default function NotificationSettingsModal() {
   useEffect(() => {
     const bootstrap = async () => {
       try {
-        // const settings = await Notifications.getPermissionsAsync();
         const status = await getNotificationPermissions();
         setPermission(status);
 

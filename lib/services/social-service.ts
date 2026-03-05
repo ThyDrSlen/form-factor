@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { ensureUser } from '@/lib/auth-utils';
 import { warnWithTs } from '@/lib/logger';
 import type { VideoWithUrls } from '@/lib/services/video-service';
 
@@ -145,13 +146,6 @@ function extractAggregateCount(rows: CountAggregateRow[] | null | undefined): nu
   if (!Array.isArray(rows) || rows.length === 0) return null;
   const value = rows[0]?.count;
   return typeof value === 'number' ? value : null;
-}
-
-async function ensureUser() {
-  const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  if (!data.user) throw new Error('Not signed in');
-  return data.user;
 }
 
 async function safeGetSignedVideoUrl(path: string, videoId: string, expiresInSeconds = DEFAULT_SIGNED_URL_SECONDS) {
