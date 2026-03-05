@@ -16,39 +16,6 @@ import { SocialProvider } from '../contexts/SocialContext';
 import { useFonts, Lexend_400Regular, Lexend_500Medium, Lexend_700Bold } from '@expo-google-fonts/lexend';
 import { ToastProvider } from '../contexts/ToastContext';
 import { logWithTs, warnWithTs } from '@/lib/logger';
-import { createError, logError } from '@/lib/services/ErrorHandler';
-
-function reportIngestError(location: string, error: unknown): void {
-  logError(
-    createError('network', 'DEBUG_INGEST_FAILED', 'Failed to send local debug ingest event', {
-      details: { location, error },
-      severity: 'info',
-      retryable: true,
-    }),
-    {
-      feature: 'app',
-      location,
-    }
-  );
-}
-
-// #region agent log
-fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
-  method:'POST',
-  headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({
-    sessionId:'debug-session',
-    runId:'run1',
-    hypothesisId:'H_entry',
-    location:'app/_layout.tsx:module',
-    message:'module loaded',
-    data:{},
-    timestamp:Date.now()
-  })
-}).catch((error) => {
-  reportIngestError('app/_layout.tsx:module', error);
-});
-// #endregion
 
 // This layout wraps the entire app with providers
 function RootLayoutNav() {
@@ -58,74 +25,21 @@ function RootLayoutNav() {
 
   // Apply global default font family ONCE after fonts load (moved out of render to avoid Hermes issues)
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        sessionId:'debug-session',
-        runId:'run1',
-        hypothesisId:'H_font',
-        location:'app/_layout.tsx:useEffect fonts',
-        message:'font effect check',
-        data:{ fontsLoaded, alreadyApplied:fontStyleAppliedRef.current },
-        timestamp:Date.now()
-      })
-    }).catch((error) => {
-      reportIngestError('app/_layout.tsx:useEffect fonts check', error);
-    });
-    // #endregion
     if (fontsLoaded && RNText && !fontStyleAppliedRef.current) {
       fontStyleAppliedRef.current = true;
       try {
         const AnyText = RNText as any;
         const existingProps = AnyText.defaultProps || {};
         const existingStyle = existingProps.style;
-        // Safely merge existing styles - fix the broken ternary that always returned the same value
         const mergedStyle = [
           { fontFamily: 'Lexend_400Regular' },
           ...(Array.isArray(existingStyle) ? existingStyle : existingStyle ? [existingStyle] : []),
         ];
         AnyText.defaultProps = { ...existingProps, style: mergedStyle };
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            sessionId:'debug-session',
-            runId:'run1',
-            hypothesisId:'H_font',
-            location:'app/_layout.tsx:useEffect fonts',
-            message:'font defaults applied',
-            data:{ mergedStyleLength:mergedStyle.length },
-            timestamp:Date.now()
-          })
-        }).catch((error) => {
-          reportIngestError('app/_layout.tsx:font defaults applied', error);
-        });
-        // #endregion
       } catch (e) {
-        // Silently fail - font styling is not critical
         if (__DEV__) {
           warnWithTs('[Layout] Failed to apply default font style:', e);
         }
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/8fe7b778-fa45-419b-917f-0b8c3047244f',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            sessionId:'debug-session',
-            runId:'run1',
-            hypothesisId:'H_font',
-            location:'app/_layout.tsx:useEffect fonts',
-            message:'font defaults error',
-            data:{ error: e instanceof Error ? e.message : String(e) },
-            timestamp:Date.now()
-          })
-        }).catch((error) => {
-          reportIngestError('app/_layout.tsx:font defaults error', error);
-        });
-        // #endregion
       }
     }
   }, [fontsLoaded]);
