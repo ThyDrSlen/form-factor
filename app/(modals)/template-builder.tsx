@@ -4,7 +4,7 @@
  * Create and edit workout templates with exercises and planned sets.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -59,13 +59,7 @@ export default function TemplateBuilderScreen() {
   const [exercises, setExercises] = useState<TemplateExerciseRow[]>([]);
   const [isEditing] = useState(!!params.templateId);
 
-  useEffect(() => {
-    if (params.templateId) {
-      loadTemplate(params.templateId);
-    }
-  }, []);
-
-  const loadTemplate = async (id: string) => {
+  const loadTemplate = useCallback(async (id: string) => {
     const db = localDB.db;
     if (!db) return;
 
@@ -101,7 +95,13 @@ export default function TemplateBuilderScreen() {
       });
     }
     setExercises(result);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (params.templateId) {
+      void loadTemplate(params.templateId);
+    }
+  }, [loadTemplate, params.templateId]);
 
   const handleSave = async () => {
     if (!name.trim()) {
