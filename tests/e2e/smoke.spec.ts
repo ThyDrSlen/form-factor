@@ -36,4 +36,32 @@ test.describe('Smoke Tests', () => {
     const viewportWidth = await page.evaluate(() => window.innerWidth);
     expect(scrollWidth).toBeLessThanOrEqual(viewportWidth + 1);
   });
+
+  test('app responds to tablet viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 768, height: 1024 });
+
+    await page.goto('/landing');
+    await waitForAppLoad(page);
+
+    await expect(page.getByText('Real-time form coaching', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Get the iOS app').first()).toBeVisible();
+
+    const scrollWidth = await page.evaluate(() => document.body.scrollWidth);
+    const viewportWidth = await page.evaluate(() => window.innerWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(viewportWidth + 1);
+  });
+
+  test('app responds to large desktop viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+
+    await page.goto('/landing');
+    await waitForAppLoad(page);
+
+    await expect(page.getByText('Real-time form coaching', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Get the iOS app').first()).toBeVisible();
+
+    const scrollWidth = await page.evaluate(() => document.body.scrollWidth);
+    const viewportWidth = await page.evaluate(() => window.innerWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(viewportWidth + 1);
+  });
 });
