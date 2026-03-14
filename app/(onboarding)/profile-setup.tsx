@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnits } from '@/contexts/UnitsContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -47,6 +48,7 @@ export default function ProfileSetupScreen() {
           return;
         }
       }
+      await AsyncStorage.setItem('@fitness_goal', fitnessGoal);
       showToast('Profile set up!', { type: 'success' });
       router.replace('/(onboarding)/nutrition-goals');
     } catch {
