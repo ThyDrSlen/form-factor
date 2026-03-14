@@ -758,7 +758,7 @@ export default function ScanARKitScreen() {
     realtimeFormEngineRef.current = createRealtimeEngineState();
     lastShadowMeanAbsDeltaRef.current = null;
     resetBaselineDebugMetrics();
-  }, []);
+  }, [createRealtimeEngineState, resetBaselineDebugMetrics]);
 
   useEffect(() => {
     const countersRef = cueCountersRef;
@@ -885,7 +885,7 @@ export default function ScanARKitScreen() {
     lastShadowMeanAbsDeltaRef.current = null;
     resetBaselineDebugMetrics();
     setWorkoutController(detectionMode);
-  }, [detectionMode, resetBaselineDebugMetrics, setWorkoutController]);
+  }, [createRealtimeEngineState, detectionMode, resetBaselineDebugMetrics, setWorkoutController]);
 
   useEffect(() => {
     if (DEV) {
@@ -913,7 +913,6 @@ export default function ScanARKitScreen() {
       if (DEV) logWithTs('[ScanARKit] Device NOT supported');
       setSupportStatus('unsupported');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nativeSupported, fixturePlaybackRequested, fixturePlaybackEnabled, fixtureName, DEV]);
 
   useEffect(() => {
@@ -1398,8 +1397,8 @@ export default function ScanARKitScreen() {
       fpsStatsRef.current.min = Math.min(fpsStatsRef.current.min, newFps);
       frameStatsRef.current = { lastTimestamp: pose.timestamp, frameCount: 0 };
     }
-    // DEV is a stable constant; avoid dependency churn in hot loop
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Intentionally scoped to frame-driven inputs to avoid hot-path dependency churn.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pose, transitionPhase, detectionMode, activeWorkoutDef, processWorkoutFrame, resetWorkoutController, resetCueHysteresis]);
 
   // Debug pose2D updates
@@ -1411,7 +1410,6 @@ export default function ScanARKitScreen() {
         isTracking: pose2D.isTracking
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pose2D]);
 
   useEffect(() => {
@@ -1670,15 +1668,19 @@ export default function ScanARKitScreen() {
 	    return messages.length ? messages : null;
 	  }, [jointAngles, activeMetrics, activePhase, activeWorkoutDef]);
 
-	    const feedback = analyzeForm();
-	    const orderedActiveCues = feedback?.filter((cue): cue is string => !!cue) ?? [];
+	    const feedback = useMemo(() => analyzeForm(), [analyzeForm]);
+	    const orderedActiveCues = useMemo(
+	      () => feedback?.filter((cue): cue is string => !!cue) ?? [],
+	      [feedback]
+	    );
+	    const poseTimestamp = pose?.timestamp ?? null;
 	    const primaryCue = useMemo(() => {
 	      if (!isTracking) {
 	        return null;
 	      }
 
-	      const frameTick = pose
-	        ? `pose:${pose.timestamp}`
+	      const frameTick = poseTimestamp !== null
+	        ? `pose:${poseTimestamp}`
 	        : fixturePlaybackEnabled
 	          ? `fixture:${fixturePlaybackFramesProcessed}`
 	          : null;
@@ -1696,7 +1698,7 @@ export default function ScanARKitScreen() {
 	      }
 
 	      return stablePrimaryCueRef.current;
-	    }, [isTracking, pose?.timestamp, fixturePlaybackEnabled, fixturePlaybackFramesProcessed, orderedActiveCues]);
+	    }, [fixturePlaybackEnabled, fixturePlaybackFramesProcessed, isTracking, orderedActiveCues, poseTimestamp]);
 	    const latestMetricsForUpload = useMemo<BaseUploadMetrics>(
 	      () => ({
 	        mode: detectionMode,
@@ -1831,7 +1833,7 @@ export default function ScanARKitScreen() {
       } finally {
         watchMirrorInFlightRef.current = false;
       }
-    }, [cameraPosition, canMirrorFromArkit, DEV]);
+    }, [cameraPosition, canMirrorFromArkit, DEV, logTrackingDebug]);
 
     useEffect(() => {
       if (Platform.OS !== 'ios') {
@@ -2086,7 +2088,7 @@ export default function ScanARKitScreen() {
         setIsRecording(false);
         Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not start recording.');
       }
-    }, [DEV, isRecording, isFinalizingRecording, isTracking, recordPreview, recordingQuality, repCount]);
+    }, [DEV, fixturePlaybackEnabled, isRecording, isFinalizingRecording, isTracking, recordPreview, recordingQuality, repCount]);
 
   const stopRecordingVideo = useCallback(async () => {
     if (!isRecording || recordingStopInFlightRef.current) return;

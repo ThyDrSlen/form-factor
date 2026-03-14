@@ -96,7 +96,7 @@ jobs:
         run: bun install --frozen-lockfile --backend=copyfile
 
       - name: TypeScript type checking
-        run: bun run tsc --noEmit
+        run: bun run check:types
 
       - name: ESLint
         run: bun run lint
