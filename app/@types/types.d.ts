@@ -4,9 +4,9 @@ declare module 'expo-router' {
   // Extend the Link component props to include our routes
   export interface LinkProps extends Omit<OriginalLinkProps, 'href'> {
     href: 
-      | '/(auth)/sign-in'
-      | '/(auth)/sign-up'
-      | '/(auth)/forgot-password'
+      | '/sign-in'
+      | '/sign-up'
+      | '/forgot-password'
       | '/reset-password'
       | `/${string}`;
   }
@@ -14,9 +14,9 @@ declare module 'expo-router' {
   // Extend the router to include our routes
   export function useRouter(): {
     push: (path: 
-      | '/(auth)/sign-in'
-      | '/(auth)/sign-up'
-      | '/(auth)/forgot-password'
+      | '/sign-in'
+      | '/sign-up'
+      | '/forgot-password'
       | '/reset-password'
       | `/${string}`) => void;
     back: () => void;
