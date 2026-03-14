@@ -17,6 +17,7 @@ import { useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { isIOS } from '@/lib/platform-utils';
+import { OnboardingProgress } from '@/components/onboarding/OnboardingProgress';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -159,10 +160,7 @@ export default function ARKitPermissionsScreen() {
               <Ionicons name="arrow-back" size={24} color="#007AFF" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Camera Access</Text>
-            <View style={styles.progressContainer}>
-              <View style={styles.progressDot} />
-              <View style={[styles.progressDot, styles.progressDotInactive]} />
-            </View>
+            <OnboardingProgress current={1} total={2} />
           </Animated.View>
 
           {/* Hero Section */}
