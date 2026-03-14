@@ -18,6 +18,7 @@ import { useRouter } from 'expo-router';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { isIOS } from '@/lib/platform-utils';
 import { OnboardingProgress } from '@/components/onboarding/OnboardingProgress';
+import { trackOnboardingEvent } from '@/lib/services/onboarding-analytics';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -65,6 +66,10 @@ export default function ARKitPermissionsScreen() {
   const [slideAnim] = useState(new Animated.Value(50));
 
   useEffect(() => {
+    trackOnboardingEvent('step_view', 'arkit-permissions');
+  }, []);
+
+  useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -77,7 +82,7 @@ export default function ARKitPermissionsScreen() {
         useNativeDriver: true,
       }),
     ]).start();
-    
+
     if (permission?.granted) {
       router.replace('/(onboarding)/arkit-usage');
     }
@@ -91,6 +96,7 @@ export default function ARKitPermissionsScreen() {
       const response = await requestPermission();
       
       if (response.granted) {
+        trackOnboardingEvent('step_complete', 'arkit-permissions');
         router.replace('/(onboarding)/arkit-usage');
       } else {
         Alert.alert(

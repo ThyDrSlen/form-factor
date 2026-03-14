@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -16,12 +16,17 @@ import { useToast } from '@/contexts/ToastContext';
 import { isIOS } from '@/lib/platform-utils';
 import { OnboardingProgress } from '@/components/onboarding/OnboardingProgress';
 import { markOnboardingCompleted } from '@/lib/services/onboarding';
+import { trackOnboardingEvent } from '@/lib/services/onboarding-analytics';
 
 export default function NutritionGoalsScreen() {
   const { goals, saveGoals, isSyncing, loading } = useNutritionGoals();
   const { show: showToast } = useToast();
   const isiOS = isIOS();
   const safeBack = useSafeBack('/(tabs)');
+
+  useEffect(() => {
+    trackOnboardingEvent('step_view', 'nutrition-goals');
+  }, []);
 
   const [calories, setCalories] = useState(goals?.calories?.toString() || '');
   const [protein, setProtein] = useState(goals?.protein?.toString() || '');
@@ -55,6 +60,7 @@ export default function NutritionGoalsScreen() {
       }
 
       await markOnboardingCompleted();
+      trackOnboardingEvent('step_complete', 'nutrition-goals');
       showToast('Nutrition goals saved successfully! 🎯', { type: 'success' });
       safeBack();
     } catch {
@@ -63,6 +69,7 @@ export default function NutritionGoalsScreen() {
   };
 
   const handleSkip = async () => {
+    trackOnboardingEvent('step_skip', 'nutrition-goals');
     if (goals) {
       await markOnboardingCompleted();
       safeBack();
