@@ -531,7 +531,7 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               await signOut();
-              router.replace('/(auth)/sign-in');
+              router.replace('/sign-in');
             } catch (error) {
               errorWithTs('Error signing out:', error);
             }
