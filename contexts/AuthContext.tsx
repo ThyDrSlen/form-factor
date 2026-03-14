@@ -1,5 +1,6 @@
 import { OAuthHandler } from '@/lib/services/OAuthHandler';
 import { createError, mapToUserMessage, logError } from '@/lib/services/ErrorHandler';
+import { clearOnboardingFlag } from '@/lib/services/onboarding';
 import { AuthError, Session, User } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
@@ -416,6 +417,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null);
       setError(null);
       await sessionManager.clearSession();
+      await clearOnboardingFlag();
 
       // Fire supabase sign-out but don't let it block the UI for long
       const result = await withTimeout(

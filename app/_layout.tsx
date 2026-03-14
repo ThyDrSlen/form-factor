@@ -1,6 +1,6 @@
 import './global.css';
 import { Slot, usePathname, useRouter, useSegments } from 'expo-router';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, View, Text as RNText, StyleSheet, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
@@ -16,6 +16,7 @@ import { SocialProvider } from '../contexts/SocialContext';
 import { useFonts, Lexend_400Regular, Lexend_500Medium, Lexend_700Bold } from '@expo-google-fonts/lexend';
 import { ToastProvider } from '../contexts/ToastContext';
 import { logWithTs, warnWithTs } from '@/lib/logger';
+import { isOnboardingCompleted } from '@/lib/services/onboarding';
 
 // This layout wraps the entire app with providers
 function RootLayoutNav() {
@@ -91,9 +92,18 @@ function InitialLayout() {
   const publicRoutes = ['/landing', '/reset-password'];
   const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
   const isWebRootLanding = Platform.OS === 'web' && pathname === '/';
+  const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (loading || goalsLoading) {
+    if (user) {
+      isOnboardingCompleted().then(setOnboardingDone);
+    } else {
+      setOnboardingDone(null);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (loading || goalsLoading || (user && onboardingDone === null)) {
       logWithTs('[Layout] Auth is loading, waiting...');
       return;
     }
@@ -105,6 +115,7 @@ function InitialLayout() {
       inTabsGroup,
       pathname,
       inModalsGroup,
+      onboardingDone,
       currentPath: segments.join('/'),
     });
 
@@ -114,14 +125,14 @@ function InitialLayout() {
       return;
     }
 
-    if (user && !goals && !inOnboardingGroup) {
-      logWithTs('[Layout] Missing nutrition goals, redirecting to onboarding');
+    if (user && !onboardingDone && !goals && !inOnboardingGroup) {
+      logWithTs('[Layout] Onboarding not completed, redirecting to onboarding');
       router.replace('/(onboarding)/nutrition-goals');
       return;
     }
 
-    if (user && goals && inOnboardingGroup) {
-      logWithTs('[Layout] Goals configured, redirecting to tabs');
+    if (user && (onboardingDone || goals) && inOnboardingGroup) {
+      logWithTs('[Layout] Onboarding done, redirecting to tabs');
       router.replace('/(tabs)');
       return;
     }
@@ -150,7 +161,7 @@ function InitialLayout() {
     }
 
     logWithTs('[Layout] No redirect needed');
-  }, [user, loading, goalsLoading, goals, segments, inAuthGroup, inTabsGroup, inOnboardingGroup, inModalsGroup, isPublicRoute, isWebRootLanding, pathname, router]);
+  }, [user, loading, goalsLoading, goals, onboardingDone, segments, inAuthGroup, inTabsGroup, inOnboardingGroup, inModalsGroup, isPublicRoute, isWebRootLanding, pathname, router]);
 
   if (loading) {
     return (
