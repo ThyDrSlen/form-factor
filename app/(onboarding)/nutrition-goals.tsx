@@ -14,6 +14,7 @@ import { useSafeBack } from '@/hooks/use-safe-back';
 import { useNutritionGoals } from '@/contexts/NutritionGoalsContext';
 import { useToast } from '@/contexts/ToastContext';
 import { isIOS } from '@/lib/platform-utils';
+import { OnboardingProgress } from '@/components/onboarding/OnboardingProgress';
 
 export default function NutritionGoalsScreen() {
   const { goals, saveGoals, isSyncing, loading } = useNutritionGoals();
@@ -109,6 +110,8 @@ export default function NutritionGoalsScreen() {
           <Text style={styles.headerTitle}>Set Nutrition Goals</Text>
           <View style={styles.headerSpacer} />
         </View>
+
+        <OnboardingProgress current={1} total={1} />
 
         <View style={styles.card}>
           <View style={styles.iconContainer}>
