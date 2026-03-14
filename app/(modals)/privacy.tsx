@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Switch, Linking, ActivityIndicator } from 'react-native';
+import { Alert, BackHandler, View, Text, StyleSheet, TouchableOpacity, Switch, Linking, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { useSafeBack } from '@/hooks/use-safe-back';
@@ -30,13 +31,15 @@ const SettingItem = ({ icon, title, subtitle, onPress, rightElement }: SettingIt
 );
 
 export default function PrivacySecurityModal() {
-  const { user } = useAuth();
+  const { user, deleteAccount } = useAuth();
   const toast = useToast();
+  const router = useRouter();
   const safeBack = useSafeBack(['/(tabs)/profile', '/profile'], { alwaysReplace: true });
   const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
   const [videoResearchEnabled, setVideoResearchEnabled] = useState(false);
   const [loadingExport, setLoadingExport] = useState(false);
   const [savingVideoConsent, setSavingVideoConsent] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -112,6 +115,30 @@ export default function PrivacySecurityModal() {
     } finally {
       setSavingVideoConsent(false);
     }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This will permanently delete your account and all associated data. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete My Account',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingAccount(true);
+            const { error } = await deleteAccount();
+            setDeletingAccount(false);
+            if (error) {
+              toast.show('Failed to delete account. Please try again.', { type: 'error' });
+              return;
+            }
+            router.replace('/(auth)/sign-in');
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -198,6 +225,26 @@ export default function PrivacySecurityModal() {
             subtitle="Manage devices logged into your account"
           />
         </View>
+
+        {/* Danger Zone */}
+        <Text style={styles.sectionTitle}>Danger Zone</Text>
+        <View style={[styles.card, styles.dangerCard]}>
+          <TouchableOpacity
+            style={styles.settingItem}
+            onPress={handleDeleteAccount}
+            disabled={deletingAccount}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.settingIconContainer, styles.dangerIconContainer]}>
+              <Ionicons name="trash-outline" size={22} color="#FF4444" />
+            </View>
+            <View style={styles.settingTextContainer}>
+              <Text style={[styles.settingTitle, styles.dangerText]}>Delete Account</Text>
+              <Text style={styles.settingSubtitle}>Permanently delete your account and all data</Text>
+            </View>
+            {deletingAccount && <ActivityIndicator size="small" color="#FF4444" />}
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -283,5 +330,14 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#E5E7EB',
     marginLeft: 64,
+  },
+  dangerCard: {
+    borderColor: 'rgba(255, 68, 68, 0.3)',
+  },
+  dangerIconContainer: {
+    backgroundColor: 'rgba(255, 68, 68, 0.1)',
+  },
+  dangerText: {
+    color: '#FF4444',
   },
 });

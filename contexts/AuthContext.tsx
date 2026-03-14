@@ -77,6 +77,7 @@ type AuthContextType = {
   resetPassword: (email: string) => Promise<{ error?: AuthError }>;
   updateProfile: (updates: { fullName?: string }) => Promise<{ error?: AuthError | Error }>;
   signOut: () => Promise<{ error?: Error }>;
+  deleteAccount: () => Promise<{ error?: Error }>;
   handleAuthCallback: (url: string) => Promise<void>;
   clearError: () => void;
 };
@@ -435,6 +436,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [clearSessionTimers, isMockUser, sessionManager, user]);
 
+  const deleteAccount = useCallback(async () => {
+    try {
+      console.log('[Auth] Deleting account');
+
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession) {
+        return { error: new Error('No active session') };
+      }
+
+      const { error: fnError } = await supabase.functions.invoke('delete-account', {
+        headers: { Authorization: `Bearer ${currentSession.access_token}` },
+      });
+
+      if (fnError) {
+        throw fnError;
+      }
+
+      // Clear local state after successful deletion
+      clearSessionTimers();
+      setUser(null);
+      setSession(null);
+      setError(null);
+      await sessionManager.clearSession();
+
+      return {};
+    } catch (error) {
+      console.error('[Auth] Error deleting account:', error);
+      const appErr = createError('auth', 'DELETE_ACCOUNT_FAILED', error instanceof Error ? error.message : 'Failed to delete account', {
+        retryable: false,
+        severity: 'error',
+        details: error,
+      });
+      logError(appErr, { feature: 'auth', location: 'deleteAccount' });
+      return { error: error as Error };
+    }
+  }, [clearSessionTimers, sessionManager]);
+
   const refreshSessionForTimeout = useCallback(async () => {
     const { data, error } = await supabase.auth.refreshSession();
 
@@ -725,6 +763,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     resetPassword,
     updateProfile,
     signOut,
+    deleteAccount,
     handleAuthCallback,
     clearError,
   };
