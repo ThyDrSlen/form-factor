@@ -15,6 +15,7 @@ import { useNutritionGoals } from '@/contexts/NutritionGoalsContext';
 import { useToast } from '@/contexts/ToastContext';
 import { isIOS } from '@/lib/platform-utils';
 import { OnboardingProgress } from '@/components/onboarding/OnboardingProgress';
+import { markOnboardingCompleted } from '@/lib/services/onboarding';
 
 export default function NutritionGoalsScreen() {
   const { goals, saveGoals, isSyncing, loading } = useNutritionGoals();
@@ -53,6 +54,7 @@ export default function NutritionGoalsScreen() {
         return;
       }
 
+      await markOnboardingCompleted();
       showToast('Nutrition goals saved successfully! 🎯', { type: 'success' });
       safeBack();
     } catch {
@@ -62,6 +64,7 @@ export default function NutritionGoalsScreen() {
 
   const handleSkip = async () => {
     if (goals) {
+      await markOnboardingCompleted();
       safeBack();
       return;
     }
@@ -79,6 +82,7 @@ export default function NutritionGoalsScreen() {
         return;
       }
 
+      await markOnboardingCompleted();
       safeBack();
     } catch {
       Alert.alert('Error', 'Failed to save goals. Please try again.');
