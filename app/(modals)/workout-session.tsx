@@ -23,7 +23,7 @@ import * as Haptics from 'expo-haptics';
 
 import { sessionStyles as styles, colors } from '@/styles/workout-session.styles';
 import { useSessionRunner } from '@/lib/stores/session-runner';
-import type { WorkoutSession, WorkoutSessionSet, SetType } from '@/lib/types/workout-session';
+import type { GoalProfile, WorkoutSession, WorkoutSessionSet, SetType } from '@/lib/types/workout-session';
 
 import ExerciseCard from '@/components/workout/ExerciseCard';
 import TimerPill from '@/components/workout/TimerPill';
@@ -33,6 +33,12 @@ import ExerciseActionSheet from '@/components/workout/ExerciseActionSheet';
 import RestTimerSheet from '@/components/workout/RestTimerSheet';
 import ExercisePicker from '@/components/workout/ExercisePicker';
 import SetNotesModal from '@/components/workout/SetNotesModal';
+
+const GOAL_PROFILES: GoalProfile[] = ['hypertrophy', 'strength', 'power', 'endurance', 'mixed'];
+
+function parseGoalProfile(goalProfile?: string): GoalProfile {
+  return GOAL_PROFILES.includes(goalProfile as GoalProfile) ? (goalProfile as GoalProfile) : 'hypertrophy';
+}
 
 export default function WorkoutSessionScreen() {
   const router = useRouter();
@@ -67,23 +73,21 @@ export default function WorkoutSessionScreen() {
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
   const [notesModalSetId, setNotesModalSetId] = useState<string | null>(null);
 
-  // Initialize session on mount
-  useEffect(() => {
-    const init = async () => {
-      // Try to load an existing active session first
-      await loadActiveSession();
+  const initializeSession = useCallback(async () => {
+    await loadActiveSession();
 
-      // If no active session, start a new one
-      const current = useSessionRunner.getState().activeSession;
-      if (!current) {
-        await startSession({
-          templateId: params.templateId,
-          goalProfile: (params.goalProfile as any) ?? 'hypertrophy',
-        });
-      }
-    };
-    init();
-  }, []);
+    const current = useSessionRunner.getState().activeSession;
+    if (!current) {
+      await startSession({
+        templateId: params.templateId,
+        goalProfile: parseGoalProfile(params.goalProfile),
+      });
+    }
+  }, [loadActiveSession, params.goalProfile, params.templateId, startSession]);
+
+  useEffect(() => {
+    void initializeSession();
+  }, [initializeSession]);
 
   // =========================================================================
   // Handlers
