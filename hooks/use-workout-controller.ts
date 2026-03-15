@@ -8,7 +8,7 @@
  * in scan-arkit.tsx with a factory pattern that works with any workout definition.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
@@ -173,6 +173,11 @@ export function useWorkoutController<TPhase extends string = string>(
   // Refs for tracking (avoid re-renders on every frame)
   const phaseRef = useRef<TPhase>(state.phase);
   const repCountRef = useRef<number>(0);
+
+  // Keep refs synchronized with React state
+  useEffect(() => { phaseRef.current = state.phase; }, [state.phase]);
+  useEffect(() => { repCountRef.current = state.repCount; }, [state.repCount]);
+
   const lastRepTimestampRef = useRef<number>(0);
   const recentRepDurationsRef = useRef<number[]>([]);
   const pendingPhaseRef = useRef<TPhase | null>(null);
