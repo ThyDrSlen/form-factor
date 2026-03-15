@@ -91,9 +91,14 @@ export default function CoachScreen() {
   // Check if user has seen coach welcome on first visit
   React.useEffect(() => {
     const checkWelcomeSeen = async () => {
-      const seen = await AsyncStorage.getItem(COACH_WELCOME_SEEN_KEY);
-      if (!seen && coachMessages.length === 1) {
-        setShowCoachWelcome(true);
+      try {
+        const seen = await AsyncStorage.getItem(COACH_WELCOME_SEEN_KEY);
+        if (!seen && coachMessages.length === 1) {
+          setShowCoachWelcome(true);
+        }
+      } catch (err) {
+        console.error('[Coach] Failed to check welcome seen status:', err);
+        // Default to not showing welcome on error
       }
     };
     checkWelcomeSeen();
