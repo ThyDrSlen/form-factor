@@ -178,6 +178,7 @@ export function useWorkoutController<TPhase extends string = string>(
   const pendingPhaseRef = useRef<TPhase | null>(null);
   const pendingPhaseSinceRef = useRef<number>(0);
   const isInActiveRepRef = useRef<boolean>(false);
+  const transitioningRef = useRef<boolean>(false);
 
   // Rep tracking data
   const repTrackingRef = useRef<RepTrackingData>({
@@ -387,6 +388,8 @@ export function useWorkoutController<TPhase extends string = string>(
       joints?: Map<string, { x: number; y: number; isTracked: boolean; confidence?: number }>,
       context?: { trackingQuality?: number; shadowMeanAbsDelta?: number | null }
     ) => {
+      if (transitioningRef.current) return;
+
       const workoutDef = workoutDefRef.current;
       if (!workoutDef) return;
 
@@ -551,9 +554,11 @@ export function useWorkoutController<TPhase extends string = string>(
   }, []);
 
   const setWorkout = useCallback((workoutId: DetectionMode) => {
+    transitioningRef.current = true;
     workoutIdRef.current = workoutId;
     workoutDefRef.current = getWorkoutById(workoutId);
     reset();
+    transitioningRef.current = false;
   }, [reset]);
 
   const getWorkoutDefinition = useCallback(() => {
