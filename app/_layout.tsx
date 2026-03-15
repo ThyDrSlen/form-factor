@@ -1,7 +1,7 @@
 import './global.css';
 import { Slot, usePathname, useRouter, useSegments } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, View, Text as RNText, StyleSheet, Platform } from 'react-native';
+import React, { Component, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, View, Text as RNText, StyleSheet, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import 'react-native-url-polyfill/auto';
@@ -17,6 +17,45 @@ import { useFonts, Lexend_400Regular, Lexend_500Medium, Lexend_700Bold } from '@
 import { ToastProvider } from '../contexts/ToastContext';
 import { logWithTs, warnWithTs } from '@/lib/logger';
 import { isOnboardingCompleted } from '@/lib/services/onboarding';
+
+// Error boundary to catch crashes in the provider tree or layout
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class RootErrorBoundary extends Component<{ children: React.ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  private handleReset = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={styles.errorContainer}>
+          <RNText style={styles.errorTitle}>Something went wrong</RNText>
+          <RNText style={styles.errorMessage}>
+            {this.state.error?.message || 'An unexpected error occurred.'}
+          </RNText>
+          <Pressable style={styles.errorButton} onPress={this.handleReset}>
+            <RNText style={styles.errorButtonText}>Try Again</RNText>
+          </Pressable>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 // This layout wraps the entire app with providers
 function RootLayoutNav() {
@@ -47,33 +86,35 @@ function RootLayoutNav() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <BottomSheetModalProvider>
-        <ToastProvider>
-          <AuthProvider>
-            <NetworkProvider>
-              <UnitsProvider>
-                <HealthKitProvider>
-                  <WorkoutsProvider>
-                    <NutritionGoalsProvider>
-                      <SocialProvider>
-                        <FoodProvider>
-                          {!fontsLoaded ? (
-                            <View style={styles.splash}>
-                              <ActivityIndicator color="#4C8CFF" />
-                            </View>
-                          ) : (
-                            <InitialLayout />
-                          )}
-                        </FoodProvider>
-                      </SocialProvider>
-                    </NutritionGoalsProvider>
-                  </WorkoutsProvider>
-                </HealthKitProvider>
-              </UnitsProvider>
-            </NetworkProvider>
-          </AuthProvider>
-        </ToastProvider>
-      </BottomSheetModalProvider>
+      <RootErrorBoundary>
+        <BottomSheetModalProvider>
+          <ToastProvider>
+            <AuthProvider>
+              <NetworkProvider>
+                <UnitsProvider>
+                  <HealthKitProvider>
+                    <WorkoutsProvider>
+                      <NutritionGoalsProvider>
+                        <SocialProvider>
+                          <FoodProvider>
+                            {!fontsLoaded ? (
+                              <View style={styles.splash}>
+                                <ActivityIndicator color="#4C8CFF" />
+                              </View>
+                            ) : (
+                              <InitialLayout />
+                            )}
+                          </FoodProvider>
+                        </SocialProvider>
+                      </NutritionGoalsProvider>
+                    </WorkoutsProvider>
+                  </HealthKitProvider>
+                </UnitsProvider>
+              </NetworkProvider>
+            </AuthProvider>
+          </ToastProvider>
+        </BottomSheetModalProvider>
+      </RootErrorBoundary>
     </GestureHandlerRootView>
   );
 }
@@ -195,5 +236,36 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#050E1F',
+    padding: 24,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: '#94A3B8',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  errorButton: {
+    backgroundColor: '#4C8CFF',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  errorButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
