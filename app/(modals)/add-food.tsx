@@ -82,7 +82,7 @@ export default function AddFoodScreen() {
       };
 
       logWithTs('Saving food:', foodEntry);
-      addFood(foodEntry);
+      await addFood(foodEntry);
 
       // Haptic feedback
       if (isiOS) {
