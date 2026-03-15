@@ -121,11 +121,28 @@ async function generateReply(body: RequestBody) {
     return badRequest('Coach failed to respond. Please try again.', { status: 502 });
   }
 
-  const data = (await response.json()) as any;
-  const message = data?.choices?.[0]?.message?.content?.trim();
+  let data: any;
+  try {
+    data = await response.json();
+  } catch (_parseErr) {
+    console.error('[coach] Failed to parse OpenAI response as JSON');
+    return badRequest('Upstream returned an invalid response.', { status: 502 });
+  }
+
+  if (
+    !data ||
+    !Array.isArray(data.choices) ||
+    data.choices.length === 0 ||
+    typeof data.choices[0]?.message?.content !== 'string'
+  ) {
+    console.error('[coach] Unexpected OpenAI response structure', JSON.stringify(data));
+    return badRequest('Upstream returned an unexpected response format.', { status: 502 });
+  }
+
+  const message = (data.choices[0].message.content as string).trim();
 
   if (!message) {
-    return badRequest('Empty response from coach', { status: 502 });
+    return badRequest('Empty response from coach.', { status: 502 });
   }
 
   return ok({ message });
