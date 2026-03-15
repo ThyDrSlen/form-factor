@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { DeleteAction } from '@/components';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
@@ -40,13 +40,13 @@ export default function WorkoutsScreen() {
   const router = useRouter();
   const { workouts, loading, refreshWorkouts, deleteWorkout } = useWorkouts();
   const { show: showToast } = useToast();
-  const refreshing = useRef(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
 
   const onRefresh = useCallback(async () => {
-    refreshing.current = true;
+    setIsRefreshing(true);
     await refreshWorkouts();
-    refreshing.current = false;
+    setIsRefreshing(false);
   }, [refreshWorkouts]);
 
   const handleAddPress = () => {
@@ -221,7 +221,7 @@ export default function WorkoutsScreen() {
           contentContainerStyle={styles.emptyState}
           refreshControl={
             <RefreshControl
-              refreshing={refreshing.current}
+              refreshing={isRefreshing}
               onRefresh={onRefresh}
               tintColor="#007AFF"
               colors={['#007AFF']}
@@ -263,7 +263,7 @@ export default function WorkoutsScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
-              refreshing={refreshing.current}
+              refreshing={isRefreshing}
               onRefresh={onRefresh}
               tintColor="#007AFF"
               colors={['#007AFF']}
