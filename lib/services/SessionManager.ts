@@ -70,7 +70,15 @@ export class SessionManager {
         return null;
       }
 
-      const parsedData: StoredSession = JSON.parse(storedData);
+      let parsedData: StoredSession;
+      try {
+        parsedData = JSON.parse(storedData);
+      } catch (parseError) {
+        errorWithTs('[SessionManager] Failed to parse stored session data — clearing corrupted session:', parseError);
+        await this.clearSession();
+        return null;
+      }
+
       const { session, timestamp, expiresAt } = parsedData;
 
       logWithTs('[SessionManager] Found stored session:', {
