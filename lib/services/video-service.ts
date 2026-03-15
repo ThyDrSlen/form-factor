@@ -337,6 +337,20 @@ export async function uploadWorkoutVideo(opts: {
     .single();
 
   if (insertError) {
+    // Clean up uploaded storage files to avoid orphans
+    try {
+      await supabase.storage.from(VIDEO_BUCKET).remove([videoPath]);
+    } catch (cleanupErr) {
+      warnWithTs('[video-service] Failed to clean up orphaned video file', cleanupErr);
+    }
+    if (thumbnailPath) {
+      try {
+        const thumbBucket = usePrivateThumbnail ? VIDEO_BUCKET : THUMBNAIL_BUCKET;
+        await supabase.storage.from(thumbBucket).remove([thumbnailPath]);
+      } catch (cleanupErr) {
+        warnWithTs('[video-service] Failed to clean up orphaned thumbnail', cleanupErr);
+      }
+    }
     throw insertError;
   }
 
