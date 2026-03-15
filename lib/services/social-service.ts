@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { ensureUser } from '@/lib/auth-utils';
 import { warnWithTs } from '@/lib/logger';
+import { createError } from '@/lib/services/ErrorHandler';
 import type { VideoWithUrls } from '@/lib/services/video-service';
 
 const VIDEO_BUCKET = 'videos';
@@ -302,7 +303,7 @@ export async function updateProfile(patch: UpdateProfileInput): Promise<ProfileR
   if (patch.username !== undefined) {
     const username = patch.username.trim().toLowerCase();
     if (!username) {
-      throw new Error('Username cannot be empty');
+      throw createError('validation', 'EMPTY_USERNAME', 'Username cannot be empty');
     }
     update.username = username;
   }
@@ -326,7 +327,7 @@ export async function updateProfile(patch: UpdateProfileInput): Promise<ProfileR
   if (Object.keys(update).length === 0) {
     const existing = await getProfile(user.id);
     if (!existing) {
-      throw new Error('Profile not found');
+      throw createError('storage', 'PROFILE_NOT_FOUND', 'Profile not found');
     }
     return existing;
   }
@@ -364,7 +365,7 @@ export async function searchUsers(query: string, limit = DEFAULT_PAGE_LIMIT): Pr
 export async function followUser(targetId: string): Promise<FollowRecord> {
   const user = await ensureUser();
   if (user.id === targetId) {
-    throw new Error('You cannot follow yourself');
+    throw createError('validation', 'SELF_FOLLOW', 'You cannot follow yourself');
   }
 
   const { data: targetProfile, error: targetProfileError } = await supabase
@@ -603,7 +604,7 @@ export async function blockUser(targetId: string): Promise<BlockRecord> {
   const user = await ensureUser();
 
   if (user.id === targetId) {
-    throw new Error('You cannot block yourself');
+    throw createError('validation', 'SELF_BLOCK', 'You cannot block yourself');
   }
 
   const { data, error } = await supabase
@@ -659,7 +660,7 @@ export async function shareVideo(videoId: string, recipientId: string, message?:
   const user = await ensureUser();
 
   if (user.id === recipientId) {
-    throw new Error('You cannot share a video with yourself');
+    throw createError('validation', 'SELF_SHARE', 'You cannot share a video with yourself');
   }
 
   const { data, error } = await supabase
@@ -790,7 +791,7 @@ export async function replyToShare(shareId: string, message: string): Promise<Sh
   const trimmed = message.trim();
 
   if (!trimmed) {
-    throw new Error('Reply cannot be empty');
+    throw createError('validation', 'EMPTY_REPLY', 'Reply cannot be empty');
   }
 
   const { data, error } = await supabase
