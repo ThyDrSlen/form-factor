@@ -96,7 +96,12 @@ function InitialLayout() {
 
   useEffect(() => {
     if (user) {
-      isOnboardingCompleted().then(setOnboardingDone);
+      isOnboardingCompleted()
+        .then(setOnboardingDone)
+        .catch((err) => {
+          console.error('[Layout] Failed to check onboarding status:', err);
+          setOnboardingDone(false);
+        });
     } else {
       setOnboardingDone(null);
     }
