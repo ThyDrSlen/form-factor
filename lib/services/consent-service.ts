@@ -102,6 +102,10 @@ export async function updateConsent(consent: Partial<TelemetryConsent>): Promise
       updateData.allow_extended_retention = consent.allowExtendedRetention;
     }
 
+    // Invalidate cache before upsert to prevent stale reads during concurrent access
+    cachedConsent = null;
+    cacheExpiry = 0;
+
     const { error } = await supabase
       .from('user_telemetry_consent')
       .upsert(updateData, { onConflict: 'user_id' });
@@ -109,10 +113,6 @@ export async function updateConsent(consent: Partial<TelemetryConsent>): Promise
     if (error) {
       throw error;
     }
-
-    // Invalidate cache
-    cachedConsent = null;
-    cacheExpiry = 0;
 
     if (__DEV__) {
       logWithTs('[consent-service] Consent updated', consent);
