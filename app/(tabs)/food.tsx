@@ -8,6 +8,7 @@ import { Swipeable } from 'react-native-gesture-handler';
 import React, { useCallback, useRef } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   RefreshControl,
   ScrollView,
@@ -88,10 +89,20 @@ export default function FoodScreen() {
     [showToast]
   );
 
+  const confirmDeleteFood = useCallback(
+    (id: string, name: string) => {
+      Alert.alert('Delete meal?', `This will permanently remove "${name}".`, [
+        { text: 'Cancel', style: 'cancel', onPress: () => swipeableRefs.current.get(id)?.close() },
+        { text: 'Delete', style: 'destructive', onPress: () => handleDeleteFood(id, name) },
+      ]);
+    },
+    [handleDeleteFood]
+  );
+
   const renderRightActions = (id: string, name: string) => (
     <TouchableOpacity
       accessibilityRole="button"
-      onPress={() => handleDeleteFood(id, name)}
+      onPress={() => confirmDeleteFood(id, name)}
       style={styles.swipeDelete}
     >
       <Ionicons name="trash-outline" size={20} color="#fff" />
