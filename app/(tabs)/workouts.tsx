@@ -7,6 +7,7 @@ import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import React, { useCallback, useRef, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
     RefreshControl,
     ScrollView,
@@ -78,10 +79,20 @@ export default function WorkoutsScreen() {
     [deleteWorkout, showToast]
   );
 
+  const confirmDeleteWorkout = useCallback(
+    (id: string, title: string) => {
+      Alert.alert('Delete workout?', `This will permanently remove "${title}".`, [
+        { text: 'Cancel', style: 'cancel', onPress: () => swipeableRefs.current.get(id)?.close() },
+        { text: 'Delete', style: 'destructive', onPress: () => handleDeleteWorkout(id, title) },
+      ]);
+    },
+    [handleDeleteWorkout]
+  );
+
   const renderRightActions = (id: string, title: string) => (
     <TouchableOpacity
       accessibilityRole="button"
-      onPress={() => handleDeleteWorkout(id, title)}
+      onPress={() => confirmDeleteWorkout(id, title)}
       style={styles.swipeDelete}
     >
       <Ionicons name="trash-outline" size={20} color="#fff" />
