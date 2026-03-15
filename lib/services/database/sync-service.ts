@@ -973,7 +973,17 @@ class SyncService {
 
         let data: Record<string, unknown> = {};
         if (item.data) {
-          const parsed = JSON.parse(item.data);
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(item.data);
+          } catch {
+            warnWithTs(
+              `[SyncService] Corrupted JSON in sync queue item ${item.id} ` +
+                `(table: ${item.table_name}, op: ${item.operation}), removing`
+            );
+            await localDB.removeSyncQueueItem(item.id);
+            continue;
+          }
           if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             data = parsed as Record<string, unknown>;
           }
