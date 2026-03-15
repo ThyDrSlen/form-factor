@@ -179,11 +179,13 @@ export async function loadNotificationPreferences(userId: string): Promise<Notif
     .eq('user_id', userId)
     .single();
 
-  if (error && status !== 406) {
-    throw error;
-  }
-
-  if (data) {
+  if (error) {
+    // 406 means row not found — fall through to create default preferences.
+    // Any other error (401, 403, 500, etc.) should surface immediately.
+    if (status !== 406) {
+      throw error;
+    }
+  } else if (data) {
     return data as NotificationPreferences;
   }
 
