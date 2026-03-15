@@ -66,10 +66,17 @@ function sanitizeMessages(messages: ChatMessage[] = []): ChatMessage[] {
     .slice(-MAX_MESSAGES);
 }
 
+/** Strip control chars, prompt delimiters, and cap length to prevent injection. */
+function sanitizeName(name: string): string {
+  return name.replace(/[^\w\s'-]/g, '').slice(0, 100).trim();
+}
+
 function buildPrompt(context?: CoachContext) {
   const focus = context?.focus || 'fitness_coach';
-  const userLine = context?.profile?.name
-    ? `You are coaching ${context.profile.name}.`
+  const rawName = context?.profile?.name;
+  const safeName = rawName ? sanitizeName(rawName) : '';
+  const userLine = safeName
+    ? `You are coaching ${safeName}.`
     : 'You are coaching the user.';
 
   return [
