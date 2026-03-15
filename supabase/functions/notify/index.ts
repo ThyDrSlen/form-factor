@@ -20,6 +20,7 @@ type ExpoPushMessage = {
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const MAX_BATCH = 90;
+const MAX_IDS = 1000;
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -41,29 +42,43 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
   });
 }
 
-async function getTokensFromUserIds(userIds: string[] = []) {
-  if (!supabase) return [];
-  if (!userIds.length) return [];
-
-  const { data, error } = await supabase
-    .from('notification_tokens')
-    .select('token')
-    .in('user_id', userIds);
-
-  if (error) {
-    console.error('[notify] Failed to fetch tokens', error);
-    return [];
-  }
-
-  return data?.map((row: { token: string }) => row.token).filter(Boolean) ?? [];
-}
-
 function chunk<T>(arr: T[], size: number) {
   const chunks: T[][] = [];
   for (let i = 0; i < arr.length; i += size) {
     chunks.push(arr.slice(i, i + size));
   }
   return chunks;
+}
+
+async function getTokensFromUserIds(userIds: string[] = []) {
+  if (!supabase) return [];
+  if (!userIds.length) return [];
+
+  if (userIds.length > MAX_IDS) {
+    console.warn(
+      `[notify] userIds count (${userIds.length}) exceeds limit of ${MAX_IDS}, truncating`,
+    );
+    userIds = userIds.slice(0, MAX_IDS);
+  }
+
+  const tokens: string[] = [];
+
+  for (const batch of chunk(userIds, MAX_BATCH)) {
+    const { data, error } = await supabase
+      .from('notification_tokens')
+      .select('token')
+      .in('user_id', batch);
+
+    if (error) {
+      console.error('[notify] Failed to fetch tokens', error);
+      continue;
+    }
+
+    const batchTokens = data?.map((row: { token: string }) => row.token).filter(Boolean) ?? [];
+    tokens.push(...batchTokens);
+  }
+
+  return tokens;
 }
 
 async function sendExpoMessages(messages: ExpoPushMessage[]) {
