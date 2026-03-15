@@ -42,7 +42,8 @@ export async function sendCoachPrompt(
       const isConfigError = errorMessage.includes('not configured') || 
                            errorMessage.includes('OPENAI_API_KEY') ||
                            errorMessage.includes('missing');
-      const isNotFound = (error as any)?.status === 404 || errorMessage.includes('404');
+      const hasStatus = typeof error === 'object' && error !== null && 'status' in error;
+      const isNotFound = (hasStatus && (error as { status: unknown }).status === 404) || errorMessage.includes('404');
       
       if (isNotFound) {
         throw createError(
@@ -103,7 +104,7 @@ export async function sendCoachPrompt(
       content: responseText,
     };
   } catch (err) {
-    if (err && typeof err === 'object' && 'domain' in (err as any)) {
+    if (err && typeof err === 'object' && 'domain' in err) {
       throw err;
     }
 
