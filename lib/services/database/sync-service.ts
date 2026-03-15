@@ -85,7 +85,6 @@ class SyncService {
   private healthChannel: RealtimeChannel | null = null;
   private nutritionGoalsChannel: RealtimeChannel | null = null;
   private workoutSessionChannels: RealtimeChannel[] = [];
-  private isSyncing = false;
   private syncPromise: Promise<void> | null = null;
   private syncCallbacks: SyncCallback[] = [];
   private syncStatusCallbacks: SyncStatusCallback[] = [];
@@ -179,7 +178,7 @@ class SyncService {
   }
 
   private scheduleConflictReconcile(reason: string): void {
-    if (this.isSyncing || this.conflictSyncTimer) {
+    if (this.syncPromise || this.conflictSyncTimer) {
       return;
     }
 
@@ -585,12 +584,20 @@ class SyncService {
 
   // Sync local changes to Supabase
   async syncToSupabase(): Promise<void> {
-    if (this.isSyncing) {
-      logWithTs('[SyncService] Sync already in progress');
-      return;
+    if (this.syncPromise) {
+      logWithTs('[SyncService] Sync already in progress, awaiting existing operation');
+      return this.syncPromise;
     }
 
-    this.isSyncing = true;
+    this.syncPromise = this.executeSyncToSupabase();
+    try {
+      await this.syncPromise;
+    } finally {
+      this.syncPromise = null;
+    }
+  }
+
+  private async executeSyncToSupabase(): Promise<void> {
     await this.refreshQueueSize();
     this.setSyncStatus({ state: 'syncing', lastError: null });
     logWithTs('[SyncService] Starting sync to Supabase...');
@@ -636,8 +643,6 @@ class SyncService {
         lastError: error instanceof Error ? error.message : 'Failed to sync data',
         lastErrorAt: new Date().toISOString(),
       });
-    } finally {
-      this.isSyncing = false;
     }
   }
 
