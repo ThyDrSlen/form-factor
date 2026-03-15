@@ -356,16 +356,24 @@ export function analyzeWeightTrends(
   if (goalWeight) {
     const currentTrend = mediumTerm.confidence > shortTerm.confidence ? mediumTerm : shortTerm;
     const weightDifference = Math.abs(current.weight - goalWeight);
-    
-    if (currentTrend.rate !== 0) {
+
+    if (weightDifference === 0) {
+      // Already at goal weight
+      goalProgress = 100;
+    } else if (currentTrend.rate !== 0) {
       const weeksToGoal = weightDifference / Math.abs(currentTrend.rate);
       estimatedTimeToGoal = Math.round(weeksToGoal * 7);
-      
+
       if (currentTrend.direction === 'losing' && current.weight > goalWeight) {
         goalProgress = Math.min(100, ((current.weight - goalWeight) / (current.weight - goalWeight + weightDifference)) * 100);
       } else if (currentTrend.direction === 'gaining' && current.weight < goalWeight) {
         goalProgress = Math.min(100, ((goalWeight - current.weight) / (goalWeight - current.weight + weightDifference)) * 100);
       }
+    }
+
+    // Safety net: ensure goalProgress is always a finite number
+    if (!isFinite(goalProgress)) {
+      goalProgress = 0;
     }
 
     // Generate recommendations
