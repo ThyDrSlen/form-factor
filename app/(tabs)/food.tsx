@@ -5,9 +5,10 @@ import { useRouter } from 'expo-router';
 import { DeleteAction } from '@/components';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import { Swipeable } from 'react-native-gesture-handler';
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   RefreshControl,
   ScrollView,
@@ -49,7 +50,14 @@ export default function FoodScreen() {
   const router = useRouter();
   const { foods, deleteFood, refreshFoods, loading } = useFood();
   const { show: showToast } = useToast();
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
+
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await refreshFoods();
+    setIsRefreshing(false);
+  }, [refreshFoods]);
 
   const handleAddPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -88,10 +96,20 @@ export default function FoodScreen() {
     [showToast]
   );
 
+  const confirmDeleteFood = useCallback(
+    (id: string, name: string) => {
+      Alert.alert('Delete meal?', `This will permanently remove "${name}".`, [
+        { text: 'Cancel', style: 'cancel', onPress: () => swipeableRefs.current.get(id)?.close() },
+        { text: 'Delete', style: 'destructive', onPress: () => handleDeleteFood(id, name) },
+      ]);
+    },
+    [handleDeleteFood]
+  );
+
   const renderRightActions = (id: string, name: string) => (
     <TouchableOpacity
       accessibilityRole="button"
-      onPress={() => handleDeleteFood(id, name)}
+      onPress={() => confirmDeleteFood(id, name)}
       style={styles.swipeDelete}
     >
       <Ionicons name="trash-outline" size={20} color="#fff" />
@@ -215,8 +233,8 @@ export default function FoodScreen() {
           contentContainerStyle={styles.emptyState}
           refreshControl={
             <RefreshControl
-              refreshing={loading}
-              onRefresh={refreshFoods}
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
               tintColor="#007AFF"
               colors={['#007AFF']}
             />
@@ -244,8 +262,8 @@ export default function FoodScreen() {
           contentContainerStyle={styles.list}
           refreshControl={
             <RefreshControl
-              refreshing={loading}
-              onRefresh={refreshFoods}
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
               tintColor="#007AFF"
               colors={['#007AFF']}
             />
