@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { isIOS } from '@/lib/platform-utils';
 import { OnboardingProgress } from '@/components/onboarding/OnboardingProgress';
+import { trackOnboardingEvent } from '@/lib/services/onboarding-analytics';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -107,6 +108,10 @@ export default function ARKitUsageScreen() {
   const [slideAnim] = useState(new Animated.Value(50));
 
   useEffect(() => {
+    trackOnboardingEvent('step_view', 'arkit-usage');
+  }, []);
+
+  useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -122,10 +127,12 @@ export default function ARKitUsageScreen() {
   }, [fadeAnim, slideAnim]);
 
   const handleGetStarted = () => {
+    trackOnboardingEvent('step_complete', 'arkit-usage');
     router.replace('/(tabs)/scan-arkit');
   };
 
   const handleSkip = () => {
+    trackOnboardingEvent('step_complete', 'arkit-usage');
     router.replace('/(tabs)');
   };
 

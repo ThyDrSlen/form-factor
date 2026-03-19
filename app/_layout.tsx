@@ -17,6 +17,7 @@ import { useFonts, Lexend_400Regular, Lexend_500Medium, Lexend_700Bold } from '@
 import { ToastProvider } from '../contexts/ToastContext';
 import { logWithTs, warnWithTs } from '@/lib/logger';
 import { isOnboardingCompleted } from '@/lib/services/onboarding';
+import { hasSeenWelcome } from '@/app/(onboarding)/welcome';
 
 // This layout wraps the entire app with providers
 function RootLayoutNav() {
@@ -93,6 +94,11 @@ function InitialLayout() {
   const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
   const isWebRootLanding = Platform.OS === 'web' && pathname === '/';
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
+  const [welcomeSeen, setWelcomeSeen] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    hasSeenWelcome().then(setWelcomeSeen);
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -103,7 +109,7 @@ function InitialLayout() {
   }, [user]);
 
   useEffect(() => {
-    if (loading || goalsLoading || (user && onboardingDone === null)) {
+    if (loading || goalsLoading || welcomeSeen === null || (user && onboardingDone === null)) {
       logWithTs('[Layout] Auth is loading, waiting...');
       return;
     }
@@ -116,6 +122,7 @@ function InitialLayout() {
       pathname,
       inModalsGroup,
       onboardingDone,
+      welcomeSeen,
       currentPath: segments.join('/'),
     });
 
@@ -153,15 +160,20 @@ function InitialLayout() {
 
     // Do not force redirect for other signed-in routes (e.g., modals or standalone flows)
 
-    // If user is not signed in but not in auth group, redirect to sign-in
-    if (!user && !inAuthGroup && !inModalsGroup && !isPublicRoute) {
-      logWithTs('[Layout] User not signed in, redirecting to sign-in');
-      router.replace('/sign-in');
+    // If user is not signed in but not in auth/onboarding group, redirect appropriately
+    if (!user && !inAuthGroup && !inOnboardingGroup && !inModalsGroup && !isPublicRoute) {
+      if (!welcomeSeen) {
+        logWithTs('[Layout] New user, redirecting to welcome');
+        router.replace('/(onboarding)/welcome');
+      } else {
+        logWithTs('[Layout] User not signed in, redirecting to sign-in');
+        router.replace('/sign-in');
+      }
       return;
     }
 
     logWithTs('[Layout] No redirect needed');
-  }, [user, loading, goalsLoading, goals, onboardingDone, segments, inAuthGroup, inTabsGroup, inOnboardingGroup, inModalsGroup, isPublicRoute, isWebRootLanding, pathname, router]);
+  }, [user, loading, goalsLoading, goals, onboardingDone, welcomeSeen, segments, inAuthGroup, inTabsGroup, inOnboardingGroup, inModalsGroup, isPublicRoute, isWebRootLanding, pathname, router]);
 
   if (loading) {
     return (
