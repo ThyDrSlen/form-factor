@@ -152,6 +152,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const watchContextSignatureRef = useRef<string | null>(null);
   const lastPermissionLogRef = useRef<boolean | null>(null);
   const autoRequestedRef = useRef<boolean>(false);
+  const hasTriggeredAutoSyncRef = useRef<boolean>(false);
   
   // Bulk sync state
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -558,8 +559,9 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         if (range.count > 0) {
           setHasSyncedBefore(true);
           console.log('[HealthKitContext] User has', range.count, 'days of synced data');
-        } else {
+        } else if (!hasTriggeredAutoSyncRef.current) {
           // Auto-trigger a 6-month historical sync for first-time users to populate trends
+          hasTriggeredAutoSyncRef.current = true;
           syncAllHistoricalData(180).catch((err) => {
             console.warn('[HealthKitContext] Auto historical sync failed', err);
           });

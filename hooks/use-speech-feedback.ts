@@ -140,7 +140,14 @@ export function useSpeechFeedback({
       return;
     }
 
-    await ensureAudioMode();
+    try {
+      await ensureAudioMode();
+    } catch (error) {
+      isSpeakingRef.current = false;
+      reportAsyncError('SPEECH_AUDIO_MODE_FAILED', 'Audio mode configuration failed, skipping cue', error);
+      onEvent?.({ cue: next, action: 'dropped', reason: 'audio_mode_error' });
+      return;
+    }
 
     isSpeakingRef.current = true;
     lastPhraseRef.current = next;

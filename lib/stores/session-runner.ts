@@ -58,6 +58,7 @@ export interface SessionRunnerState {
   // Status
   isLoading: boolean;
   isWorkoutInProgress: boolean;
+  error: string | null;
 
   // Actions
   startSession: (opts?: {
@@ -130,12 +131,13 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
   restTimer: null,
   isLoading: false,
   isWorkoutInProgress: false,
+  error: null,
 
   // =========================================================================
   // Start Session
   // =========================================================================
   startSession: async (opts) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       const now = nowIso();
       const sessionId = Crypto.randomUUID();
@@ -179,6 +181,8 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
 
       logWithTs(`[SessionRunner] Started session ${sessionId}`);
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to start session';
+      set({ error: message });
       errorWithTs('[SessionRunner] Failed to start session:', error);
     } finally {
       set({ isLoading: false });
@@ -558,7 +562,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
   // Load Active Session (on app resume)
   // =========================================================================
   loadActiveSession: async () => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       const db = localDB.db;
       if (!db) return;
@@ -604,6 +608,8 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
 
       logWithTs(`[SessionRunner] Loaded active session ${session.id}`);
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load session';
+      set({ error: message });
       errorWithTs('[SessionRunner] Failed to load active session:', error);
     } finally {
       set({ isLoading: false });
