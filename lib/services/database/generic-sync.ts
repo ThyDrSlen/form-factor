@@ -577,7 +577,20 @@ export const WORKOUT_SYNC_CONFIGS: SyncTableConfig[] = [
       for (const col of workoutSessionEventColumns) {
         if (col === 'payload') {
           // payload is stored as JSON string locally, but jsonb on Supabase
-          remote[col] = typeof row[col] === 'string' ? JSON.parse(row[col] as string) : row[col];
+          if (typeof row[col] === 'string') {
+            try {
+              remote[col] = JSON.parse(row[col] as string);
+            } catch {
+              warnWithTs(
+                `[generic-sync] Failed to parse JSON for column "${col}"` +
+                  (row.id ? ` (row id: ${row.id})` : '') +
+                  `, falling back to raw value`,
+              );
+              remote[col] = row[col];
+            }
+          } else {
+            remote[col] = row[col];
+          }
         } else if (col in row) {
           remote[col] = row[col];
         }

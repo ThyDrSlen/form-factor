@@ -144,9 +144,9 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
       // Update UI immediately
       setFoods(prev => prev.filter(f => f.id !== id));
 
-      // Sync to Supabase if online
+      // Sync to Supabase if online (fire-and-forget — local write already done)
       if (isOnline) {
-        await syncService.syncToSupabase();
+        void syncService.syncToSupabase().catch(err => console.warn('[FoodContext] Sync failed:', err));
       }
     } catch (err) {
       console.error('[FoodProvider] Error deleting food:', err);
@@ -175,9 +175,9 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
       // Update UI immediately
       setFoods(prev => [newFood, ...prev]);
 
-      // Sync to Supabase if online
+      // Sync to Supabase if online (fire-and-forget — local write already done)
       if (isOnline) {
-        await syncService.syncToSupabase();
+        void syncService.syncToSupabase().catch(err => console.warn('[FoodContext] Sync failed:', err));
       }
     } catch (error) {
       console.error('[FoodProvider] Error adding food:', error);
