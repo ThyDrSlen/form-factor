@@ -22,10 +22,27 @@ serve(async (req: Request) => {
     return new Response(JSON.stringify({ error: 'Missing authorization header' }), { status: 401 });
   }
 
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
+    const missing = [
+      !supabaseUrl && 'SUPABASE_URL',
+      !supabaseAnonKey && 'SUPABASE_ANON_KEY',
+      !supabaseServiceRoleKey && 'SUPABASE_SERVICE_ROLE_KEY',
+    ].filter(Boolean).join(', ');
+    console.error(`[delete-account] Missing required env vars: ${missing}`);
+    return new Response(
+      JSON.stringify({ error: 'Server configuration error' }),
+      { status: 500 },
+    );
+  }
+
   // Create a client with the user's JWT to verify identity
   const userClient = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_ANON_KEY')!,
+    supabaseUrl,
+    supabaseAnonKey,
     { global: { headers: { Authorization: authHeader } } },
   );
 
@@ -36,8 +53,8 @@ serve(async (req: Request) => {
 
   // Use service role to delete the auth user (cascades to all user data)
   const adminClient = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    supabaseUrl,
+    supabaseServiceRoleKey,
   );
 
   const { error: deleteError } = await adminClient.auth.admin.deleteUser(user.id);
