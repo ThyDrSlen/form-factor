@@ -82,7 +82,7 @@ export default function ARKitPermissionsScreen() {
         useNativeDriver: true,
       }),
     ]).start();
-    
+
     if (permission?.granted) {
       router.replace('/(onboarding)/arkit-usage');
     }
