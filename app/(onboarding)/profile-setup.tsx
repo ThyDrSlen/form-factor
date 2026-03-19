@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import type React from 'react';
 import { useState } from 'react';
 import {
   Alert,
@@ -18,8 +19,9 @@ import { useToast } from '@/contexts/ToastContext';
 import { isIOS } from '@/lib/platform-utils';
 
 type GoalProfile = 'strength' | 'hypertrophy' | 'endurance' | 'general';
+type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
-const goalOptions: { value: GoalProfile; label: string; icon: string; description: string }[] = [
+const goalOptions: { value: GoalProfile; label: string; icon: IoniconsName; description: string }[] = [
   { value: 'strength', label: 'Strength', icon: 'barbell-outline', description: 'Focus on heavy lifts and PRs' },
   { value: 'hypertrophy', label: 'Hypertrophy', icon: 'body-outline', description: 'Build muscle size and volume' },
   { value: 'endurance', label: 'Endurance', icon: 'heart-outline', description: 'Improve stamina and conditioning' },
@@ -117,7 +119,7 @@ export default function ProfileSetupScreen() {
                   activeOpacity={0.7}
                 >
                   <Ionicons
-                    name={option.icon as any}
+                    name={option.icon}
                     size={24}
                     color={fitnessGoal === option.value ? '#4C8CFF' : '#6781A6'}
                   />
