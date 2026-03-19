@@ -35,29 +35,37 @@ export const testSupabaseConnection = async (): Promise<NetworkStatus> => {
     
     logWithTs('[Network] Testing connection to:', healthUrl);
     
-    const response = await fetch(healthUrl, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': `FormFactorEAS/${Platform.OS}`,
-      },
-      // Set a reasonable timeout
-      signal: AbortSignal.timeout(10000), // 10 seconds
-    });
+    // Use AbortController + setTimeout for compatibility with older Hermes/RN
+    // (AbortSignal.timeout() is ES2024 and not available in all environments)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 seconds
 
-    const isHealthy = response.ok;
-    
-    logWithTs('[Network] Supabase health check:', {
-      status: response.status,
-      ok: response.ok,
-      healthy: isHealthy,
-    });
+    try {
+      const response = await fetch(healthUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': `FormFactorEAS/${Platform.OS}`,
+        },
+        signal: controller.signal,
+      });
 
-    return {
-      isConnected: isHealthy,
-      supabaseReachable: isHealthy,
-      timestamp,
-    };
+      const isHealthy = response.ok;
+
+      logWithTs('[Network] Supabase health check:', {
+        status: response.status,
+        ok: response.ok,
+        healthy: isHealthy,
+      });
+
+      return {
+        isConnected: isHealthy,
+        supabaseReachable: isHealthy,
+        timestamp,
+      };
+    } finally {
+      clearTimeout(timeoutId);
+    }
   } catch (error) {
     errorWithTs('[Network] Connection test failed:', error);
     

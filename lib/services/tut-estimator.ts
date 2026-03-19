@@ -44,7 +44,9 @@ export function parseTempo(tempo: string | null | undefined): TempoPhases | null
   if (!tempo) return null;
 
   const parts = tempo.split('-').map(Number);
-  if (parts.some(isNaN)) return null;
+
+  if (parts.length < 3 || parts.length > 4) return null;
+  if (parts.some((v) => !Number.isFinite(v) || v < 0)) return null;
 
   if (parts.length === 3) {
     return {

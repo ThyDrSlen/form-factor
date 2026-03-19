@@ -284,7 +284,11 @@ function generatePredictions(
 
   const regression = calculateLinearRegression(data);
   const predictions: WeightPrediction[] = [];
-  const lastDate = Math.max(...data.map(p => p.date));
+  const validDates = data.map(p => p.date).filter(d => Number.isFinite(d));
+  if (validDates.length === 0) {
+    return [];
+  }
+  const lastDate = Math.max(...validDates);
   const lastWeight = data[data.length - 1].value;
 
   for (let i = 1; i <= days; i++) {

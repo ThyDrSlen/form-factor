@@ -111,11 +111,37 @@ export function isRestComplete(
 // =============================================================================
 
 let activeRestNotificationId: string | null = null;
+let pendingSchedule: Promise<string | null> | null = null;
 
 /**
  * Schedule a local notification for when rest is complete.
+ *
+ * Serialised via `pendingSchedule` so that two rapid calls cannot
+ * interleave — the second call waits for the first to finish (and
+ * store its ID) before cancelling it.
  */
 export async function scheduleRestNotification(
+  targetSeconds: number,
+  exerciseName?: string,
+  nextSetNumber?: number,
+): Promise<string | null> {
+  // Wait for any in-flight schedule to finish so its ID is stored
+  // before we try to cancel it.
+  if (pendingSchedule) {
+    await pendingSchedule.catch(() => {});
+  }
+
+  const task = _scheduleRestNotification(targetSeconds, exerciseName, nextSetNumber);
+  pendingSchedule = task;
+
+  try {
+    return await task;
+  } finally {
+    if (pendingSchedule === task) pendingSchedule = null;
+  }
+}
+
+async function _scheduleRestNotification(
   targetSeconds: number,
   exerciseName?: string,
   nextSetNumber?: number,
