@@ -47,6 +47,11 @@ export default function AddFoodScreen() {
   const fatRef = React.useRef<TextInput>(null);
   const accessoryID = 'decimalAccessory';
 
+  function safeParseFloat(s: string): number | undefined {
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? n : undefined;
+  }
+
   function normalizeDecimal(value: string): string {
     const cleaned = value.replace(/[^0-9.]/g, '');
     const firstDot = cleaned.indexOf('.');
@@ -75,14 +80,14 @@ export default function AddFoodScreen() {
         id,
         name: name.trim(),
         calories: parseFloat(calories),
-        protein: protein.trim() ? parseFloat(protein) : undefined,
-        carbs: carbs.trim() ? parseFloat(carbs) : undefined,
-        fat: fat.trim() ? parseFloat(fat) : undefined,
+        protein: protein.trim() ? safeParseFloat(protein) : undefined,
+        carbs: carbs.trim() ? safeParseFloat(carbs) : undefined,
+        fat: fat.trim() ? safeParseFloat(fat) : undefined,
         date: date.toISOString(),
       };
 
       logWithTs('Saving food:', foodEntry);
-      addFood(foodEntry);
+      await addFood(foodEntry);
 
       // Haptic feedback
       if (isiOS) {

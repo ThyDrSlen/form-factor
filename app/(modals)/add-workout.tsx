@@ -82,6 +82,7 @@ function WheelPicker({ label, values, selectedValue, onChange, accessibilityLabe
   }, [loopData, middleSegmentStart, selectedValue]);
 
   const handleMomentumEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (values.length === 0) return;
     const offset = event.nativeEvent.contentOffset.y;
     const rawIndex = Math.round(offset / WHEEL_ITEM_HEIGHT);
     const safeIndex = ((rawIndex % values.length) + values.length) % values.length;

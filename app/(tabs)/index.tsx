@@ -204,13 +204,21 @@ const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: Fee
         />
       ) : null}
       {!isFullscreen ? (
-        <TouchableOpacity style={styles.videoTapSurface} onPress={togglePlayback} activeOpacity={1} />
+        <TouchableOpacity
+          style={styles.videoTapSurface}
+          onPress={togglePlayback}
+          activeOpacity={1}
+          accessibilityLabel={isPlaying ? 'Pause video' : 'Play video'}
+          accessibilityRole="button"
+        />
       ) : null}
       {!isFullscreen && !isPlaying ? (
         <TouchableOpacity
           style={styles.playButton}
           onPress={togglePlayback}
           activeOpacity={0.85}
+          accessibilityLabel="Play video"
+          accessibilityRole="button"
         >
           <Ionicons name="play" size={26} color="#0B1324" />
         </TouchableOpacity>
@@ -230,14 +238,26 @@ const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: Fee
               onLayout={(event) => setProgressWidth(event.nativeEvent.layout.width)}
               onPress={handleSeek}
               activeOpacity={0.85}
+              accessibilityLabel="Seek video"
+              accessibilityRole="adjustable"
             >
               <View style={[styles.videoProgressFill, { width: `${progress * 100}%` }]} />
             </TouchableOpacity>
             <Text style={styles.videoTimecode}>{timecode}</Text>
-            <TouchableOpacity style={styles.muteButton} onPress={toggleMuted}>
+            <TouchableOpacity
+              style={styles.muteButton}
+              onPress={toggleMuted}
+              accessibilityLabel={isMuted ? 'Unmute' : 'Mute'}
+              accessibilityRole="button"
+            >
               <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={14} color="#DDE6FF" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.fullscreenButton} onPress={enterFullscreen}>
+            <TouchableOpacity
+              style={styles.fullscreenButton}
+              onPress={enterFullscreen}
+              accessibilityLabel="Enter fullscreen"
+              accessibilityRole="button"
+            >
               <Ionicons name="scan-outline" size={14} color="#DDE6FF" />
             </TouchableOpacity>
           </View>
