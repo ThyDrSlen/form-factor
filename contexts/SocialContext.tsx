@@ -267,8 +267,8 @@ export function SocialProvider({ children }: { children: React.ReactNode }) {
       .subscribe();
 
     return () => {
-      void supabase.removeChannel(followsChannel);
-      void supabase.removeChannel(sharesChannel);
+      supabase.removeChannel(followsChannel).catch(err => console.warn('[SocialContext] Failed to remove follows channel:', err));
+      supabase.removeChannel(sharesChannel).catch(err => console.warn('[SocialContext] Failed to remove shares channel:', err));
     };
   }, [
     clearFollowStatusCache,

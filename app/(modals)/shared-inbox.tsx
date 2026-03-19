@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeBack } from '@/hooks/use-safe-back';
+import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import {
   getSharedInbox,
@@ -26,6 +27,7 @@ type BoxTab = 'inbox' | 'sent';
 export default function SharedInboxModal() {
   const safeBack = useSafeBack(['/(tabs)/index', '/']);
   const router = useRouter();
+  const { user } = useAuth();
   const { show: showToast } = useToast();
 
   const [activeTab, setActiveTab] = useState<BoxTab>('inbox');
@@ -33,6 +35,7 @@ export default function SharedInboxModal() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const unreadCount = useMemo(
     () => rows.filter((row) => activeTab === 'inbox' && row.read_at == null).length,
@@ -41,9 +44,16 @@ export default function SharedInboxModal() {
 
   const load = useCallback(
     async (mode: 'reset' | 'more' = 'reset') => {
+      if (!user) {
+        setError('You must be signed in to view shared videos.');
+        setLoading(false);
+        return;
+      }
+
       const isReset = mode === 'reset';
       if (isReset) {
         setLoading(true);
+        setError(null);
       } else {
         if (!cursor || loadingMore) return;
         setLoadingMore(true);
@@ -61,9 +71,11 @@ export default function SharedInboxModal() {
         } else {
           setRows((prev) => [...prev, ...response.items]);
         }
-      } catch (error) {
-        warnWithTs('[shared-inbox] Failed to load shares', error);
-        showToast('Unable to load shared videos.', { type: 'error' });
+      } catch (err) {
+        const message = 'Unable to load shared videos. Please try again.';
+        warnWithTs('[shared-inbox] Failed to load shares', err);
+        setError(message);
+        showToast(message, { type: 'error' });
       } finally {
         if (isReset) {
           setLoading(false);
@@ -72,7 +84,7 @@ export default function SharedInboxModal() {
         }
       }
     },
-    [activeTab, cursor, loadingMore, showToast],
+    [user, activeTab, cursor, loadingMore, showToast],
   );
 
   useEffect(() => {
@@ -143,7 +155,12 @@ export default function SharedInboxModal() {
         </TouchableOpacity>
       </View>
 
-      {loading ? (
+      {error ? (
+        <View style={styles.centerState}>
+          <Ionicons name="alert-circle-outline" size={28} color="#FF6B6B" />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : loading ? (
         <View style={styles.centerState}>
           <ActivityIndicator color="#4C8CFF" />
           <Text style={styles.mutedText}>Loading shared videos…</Text>
@@ -298,6 +315,11 @@ const styles = StyleSheet.create({
   },
   mutedText: {
     color: '#9AACD1',
+  },
+  errorText: {
+    color: '#FF6B6B',
+    textAlign: 'center',
+    paddingHorizontal: 24,
   },
   loadMoreButton: {
     marginTop: 8,
