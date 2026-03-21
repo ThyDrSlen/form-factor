@@ -22,7 +22,7 @@ set -euo pipefail
 PROMPT_FILE="${1:-prompts/overnight-ux.md}"
 PROMPT_NAME=$(basename "$PROMPT_FILE" .md)
 SESSION="$(uuidgen)"
-BRANCH="claude/multi-${PROMPT_NAME}-$(date +%Y%m%d)"
+BRANCH="claude/multi-${PROMPT_NAME}-$(date +%Y%m%d-%H%M%S)"
 REPO_ROOT=$(pwd)
 LOG_DIR="${REPO_ROOT}/logs/overnight"
 
@@ -46,7 +46,7 @@ fi
 if [[ -n "$(git status --porcelain)" ]]; then
   STASH_NAME="overnight-multi-auto-stash-$(date +%Y%m%d-%H%M%S)"
   echo "Stashing uncommitted changes as '$STASH_NAME'. Restore with: git stash pop"
-  git stash push -m "$STASH_NAME"
+  git stash push -u -m "$STASH_NAME"
 fi
 
 git checkout main 2>/dev/null || git checkout master 2>/dev/null

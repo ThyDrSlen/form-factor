@@ -47,7 +47,7 @@ done
 
 # Derive branch name from prompt file
 PROMPT_NAME=$(basename "$PROMPT_FILE" .md)
-BRANCH="${BRANCH_PREFIX}-${PROMPT_NAME}-$(date +%Y%m%d)"
+BRANCH="${BRANCH_PREFIX}-${PROMPT_NAME}-$(date +%Y%m%d-%H%M%S)"
 REPO_ROOT=$(pwd)
 LOG_DIR="${REPO_ROOT}/logs/overnight"
 LOG_FILE="${LOG_DIR}/claude-${PROMPT_NAME}-$(date +%Y%m%d-%H%M%S).log"
@@ -90,7 +90,7 @@ echo ""
 if [[ -n "$(git status --porcelain)" ]]; then
   STASH_NAME="overnight-claude-auto-stash-$(date +%Y%m%d-%H%M%S)"
   echo "Warning: Working tree has uncommitted changes. Stashing as '$STASH_NAME'..."
-  git stash push -m "$STASH_NAME"
+  git stash push -u -m "$STASH_NAME"
   echo "  Restore later with: git stash pop"
 fi
 

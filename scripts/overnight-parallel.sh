@@ -16,7 +16,7 @@ set -euo pipefail
 # ─── Configuration ───────────────────────────────────────────────────────────
 
 MAX_TURNS=40
-DATE_STAMP=$(date +%Y%m%d)
+DATE_STAMP=$(date +%Y%m%d-%H%M%S)
 LOG_DIR="logs/overnight"
 WORKTREE_BASE="../ff-overnight"
 
@@ -57,7 +57,7 @@ CURRENT_BRANCH=$(git branch --show-current)
 if [[ -n "$(git status --porcelain)" ]]; then
   STASH_NAME="overnight-parallel-auto-stash-$DATE_STAMP"
   echo "Stashing uncommitted changes as '$STASH_NAME'. Restore with: git stash pop"
-  git stash push -m "$STASH_NAME"
+  git stash push -u -m "$STASH_NAME"
 fi
 
 git checkout main 2>/dev/null || git checkout master 2>/dev/null
