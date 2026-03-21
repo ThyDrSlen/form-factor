@@ -87,9 +87,9 @@ for branch in "${BRANCHES[@]}"; do
 
     # Diff stats
     echo "── File Changes ─────────────────────────────────────────────"
-    git diff --stat main.."$branch" 2>/dev/null | tail -1
+    git diff --shortstat main.."$branch" 2>/dev/null
     echo ""
-    git diff --stat main.."$branch" 2>/dev/null | head -20
+    git diff --stat --stat-count=20 main.."$branch" 2>/dev/null
     echo ""
 
     # Files changed breakdown

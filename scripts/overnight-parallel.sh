@@ -194,7 +194,7 @@ for agent_name in "${AGENT_NAMES_LIST[@]}"; do
     echo "  Commits: $COMMIT_COUNT"
 
     if [[ "$COMMIT_COUNT" -gt 0 ]]; then
-      git log --oneline main.."$branch" 2>/dev/null | head -5
+      git log --oneline -5 main.."$branch" 2>/dev/null
       echo "  Pushing..."
       git push origin "$branch" 2>/dev/null && echo "  Pushed: $branch" || echo "  Push failed for $branch"
     else
