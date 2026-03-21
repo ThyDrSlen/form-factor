@@ -153,14 +153,17 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 FAILED=()
+OVERALL_EXIT=0
 for i in "${!PIDS[@]}"; do
   pid="${PIDS[$i]}"
   name="${AGENT_NAMES[$i]}"
   if wait "$pid"; then
     echo "  ✓ Agent '$name' completed successfully (PID $pid)"
   else
-    echo "  ✗ Agent '$name' failed with exit code $? (PID $pid)"
+    agent_exit=$?
+    echo "  ✗ Agent '$name' failed with exit code $agent_exit (PID $pid)"
     FAILED+=("$name")
+    OVERALL_EXIT=1
   fi
 done
 
@@ -223,3 +226,5 @@ echo "Create PRs:"
 for agent_name in "${AGENT_NAMES_LIST[@]}"; do
   echo "  gh pr create --base main --head claude/${agent_name}-${DATE_STAMP} --title \"Claude parallel: ${agent_name}\""
 done
+
+exit "$OVERALL_EXIT"
