@@ -127,12 +127,14 @@ for i in "${!AGENT_NAMES_LIST[@]}"; do
 
   (
     cd "$worktree_path"
+    set +e
     claude -p "$AGENT_PROMPT" \
       --allowedTools "${ALLOWED_TOOLS[@]}" \
       --max-turns "$MAX_TURNS" \
       --session-id "$AGENT_SESSION" \
       --output-format json \
       2>&1 | tee "$log_file"
+    exit ${PIPESTATUS[0]}
   ) &
 
   PIDS+=($!)
