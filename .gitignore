@@ -151,5 +151,9 @@ supabase/.temp/
 # Scripts logs
 scripts/*.csv
 
+# Overnight Claude Code logs
+logs/overnight/*
+!logs/overnight/.gitkeep
+
 # EAS local credentials (generated in CI)
 credentials.json
