@@ -179,7 +179,7 @@ git diff --stat main.."$BRANCH" 2>/dev/null || echo "(no changes)"
 echo ""
 
 # Push the branch
-if git log --oneline main.."$BRANCH" 2>/dev/null | grep -q .; then
+if [[ "$(git rev-list --count main.."$BRANCH" 2>/dev/null)" -gt 0 ]]; then
   echo "Pushing branch to origin..."
   git push origin "$BRANCH"
   echo ""
