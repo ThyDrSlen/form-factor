@@ -124,7 +124,7 @@ for agent_name in "${!AGENTS[@]}"; do
     eval claude -p \"\$\(cat \"$prompt_file\"\)\" \
       --allowedTools $TOOLS_ARG \
       --max-turns "$MAX_TURNS" \
-      --session-id "$agent_name" \
+      --session-id "$(uuidgen)" \
       --output-format json \
       2>&1 | tee "$log_file"
   ) &

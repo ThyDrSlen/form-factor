@@ -21,7 +21,7 @@ set -euo pipefail
 
 PROMPT_FILE="${1:-prompts/overnight-ux.md}"
 PROMPT_NAME=$(basename "$PROMPT_FILE" .md)
-SESSION="overnight-${PROMPT_NAME}-$(date +%Y%m%d)"
+SESSION="$(uuidgen)"
 BRANCH="claude/multi-${PROMPT_NAME}-$(date +%Y%m%d)"
 LOG_DIR="logs/overnight"
 
