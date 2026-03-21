@@ -178,16 +178,17 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "  Overnight Logs"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-if [[ -d "logs/overnight" ]]; then
+LOG_FILES=$(ls logs/overnight/*.log 2>/dev/null || true)
+if [[ -n "$LOG_FILES" ]]; then
   echo ""
-  ls -lah logs/overnight/*.log 2>/dev/null | while read -r line; do
+  ls -lah logs/overnight/*.log | while read -r line; do
     echo "  $line"
   done
   echo ""
   echo "Read logs:"
   echo "  cat logs/overnight/<logfile>.log | jq '.result' 2>/dev/null || cat logs/overnight/<logfile>.log"
 else
-  echo "  No logs found in logs/overnight/"
+  echo "  No log files found in logs/overnight/"
 fi
 echo ""
 
