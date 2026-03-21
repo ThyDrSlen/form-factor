@@ -23,7 +23,8 @@ PROMPT_FILE="${1:-prompts/overnight-ux.md}"
 PROMPT_NAME=$(basename "$PROMPT_FILE" .md)
 SESSION="$(uuidgen)"
 BRANCH="claude/multi-${PROMPT_NAME}-$(date +%Y%m%d)"
-LOG_DIR="logs/overnight"
+REPO_ROOT=$(pwd)
+LOG_DIR="${REPO_ROOT}/logs/overnight"
 
 mkdir -p "$LOG_DIR" docs
 
@@ -43,7 +44,9 @@ fi
 # ─── Git Setup ───────────────────────────────────────────────────────────────
 
 if [[ -n "$(git status --porcelain)" ]]; then
-  git stash push -m "overnight-multi-auto-stash-$(date +%Y%m%d-%H%M%S)"
+  STASH_NAME="overnight-multi-auto-stash-$(date +%Y%m%d-%H%M%S)"
+  echo "Stashing uncommitted changes as '$STASH_NAME'. Restore with: git stash pop"
+  git stash push -m "$STASH_NAME"
 fi
 
 git checkout main 2>/dev/null || git checkout master 2>/dev/null
@@ -106,12 +109,14 @@ Sort issues by severity (P0 first). Be thorough — check every relevant file.
 $(cat "$PROMPT_FILE")
 --- END MISSION PROMPT ---"
 
+set +e
 claude -p "$AUDIT_PROMPT" \
   --session-id "$SESSION" \
   --allowedTools "${AUDIT_TOOLS[@]}" \
   --max-turns 15 \
   --output-format json \
   2>&1 | tee "$AUDIT_LOG"
+set -e
 
 echo ""
 echo "Pass 1 complete. Audit written to docs/OVERNIGHT_AUDIT.md"
@@ -139,12 +144,14 @@ For each fix:
 Work through them one at a time. If a fix would take more than 5 minutes, skip it and note why.
 Do NOT modify supabase/ migrations, ios/ or android/ native code, or .env files."
 
+set +e
 claude -p "$FIX_PROMPT" \
   --session-id "$SESSION" \
   --allowedTools "${FIX_TOOLS[@]}" \
   --max-turns 30 \
   --output-format json \
   2>&1 | tee "$FIX_LOG"
+set -e
 
 echo ""
 echo "Pass 2 complete."
@@ -173,12 +180,14 @@ After all checks pass, write a changelog to docs/OVERNIGHT_CHANGELOG.md with:
 
 Commit the changelog as the final commit."
 
+set +e
 claude -p "$VERIFY_PROMPT" \
   --session-id "$SESSION" \
   --allowedTools "${VERIFY_TOOLS[@]}" \
   --max-turns 10 \
   --output-format json \
   2>&1 | tee "$VERIFY_LOG"
+set -e
 
 # ─── Post-Run ───────────────────────────────────────────────────────────────
 

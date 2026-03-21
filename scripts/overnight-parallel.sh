@@ -55,7 +55,9 @@ mkdir -p "$LOG_DIR"
 # Ensure main is up to date
 CURRENT_BRANCH=$(git branch --show-current)
 if [[ -n "$(git status --porcelain)" ]]; then
-  git stash push -m "overnight-parallel-auto-stash-$DATE_STAMP"
+  STASH_NAME="overnight-parallel-auto-stash-$DATE_STAMP"
+  echo "Stashing uncommitted changes as '$STASH_NAME'. Restore with: git stash pop"
+  git stash push -m "$STASH_NAME"
 fi
 
 git checkout main 2>/dev/null || git checkout master 2>/dev/null

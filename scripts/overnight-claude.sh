@@ -48,7 +48,8 @@ done
 # Derive branch name from prompt file
 PROMPT_NAME=$(basename "$PROMPT_FILE" .md)
 BRANCH="${BRANCH_PREFIX}-${PROMPT_NAME}-$(date +%Y%m%d)"
-LOG_DIR="logs/overnight"
+REPO_ROOT=$(pwd)
+LOG_DIR="${REPO_ROOT}/logs/overnight"
 LOG_FILE="${LOG_DIR}/claude-${PROMPT_NAME}-$(date +%Y%m%d-%H%M%S).log"
 
 # ─── Validation ──────────────────────────────────────────────────────────────
@@ -87,8 +88,10 @@ echo ""
 
 # Ensure we're on a clean working tree
 if [[ -n "$(git status --porcelain)" ]]; then
-  echo "Warning: Working tree has uncommitted changes. Stashing..."
-  git stash push -m "overnight-claude-auto-stash-$(date +%Y%m%d-%H%M%S)"
+  STASH_NAME="overnight-claude-auto-stash-$(date +%Y%m%d-%H%M%S)"
+  echo "Warning: Working tree has uncommitted changes. Stashing as '$STASH_NAME'..."
+  git stash push -m "$STASH_NAME"
+  echo "  Restore later with: git stash pop"
 fi
 
 # Create fresh branch from main
@@ -146,13 +149,14 @@ echo ""
 
 PROMPT_CONTENT=$(cat "$PROMPT_FILE")
 
+set +e
 claude -p "$PROMPT_CONTENT" \
   --allowedTools "${ALLOWED_TOOLS[@]}" \
   --max-turns "$MAX_TURNS" \
   --output-format json \
   2>&1 | tee "$LOG_FILE"
-
-EXIT_CODE=$?
+EXIT_CODE=${PIPESTATUS[0]}
+set -e
 
 # ─── Post-Run ───────────────────────────────────────────────────────────────
 
