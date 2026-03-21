@@ -138,20 +138,16 @@ ALLOWED_TOOLS=(
   "Bash(wc *)"
 )
 
-# Build --allowedTools argument
-TOOLS_ARG=""
-for tool in "${ALLOWED_TOOLS[@]}"; do
-  TOOLS_ARG="$TOOLS_ARG \"$tool\""
-done
-
 # ─── Run Claude Code ────────────────────────────────────────────────────────
 
 echo "Starting Claude Code (headless)..."
 echo "Monitor progress: tail -f $LOG_FILE"
 echo ""
 
-eval claude -p \"\$\(cat \"$PROMPT_FILE\"\)\" \
-  --allowedTools $TOOLS_ARG \
+PROMPT_CONTENT=$(cat "$PROMPT_FILE")
+
+claude -p "$PROMPT_CONTENT" \
+  --allowedTools "${ALLOWED_TOOLS[@]}" \
   --max-turns "$MAX_TURNS" \
   --output-format json \
   2>&1 | tee "$LOG_FILE"

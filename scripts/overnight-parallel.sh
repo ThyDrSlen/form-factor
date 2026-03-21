@@ -74,7 +74,12 @@ echo ""
 
 # ─── Shared Tool Whitelist ──────────────────────────────────────────────────
 
-TOOLS_ARG='"Read" "Write" "Edit" "Grep" "Glob" "Bash(bun run lint)" "Bash(bun run check:types)" "Bash(bun run test)" "Bash(git add:*)" "Bash(git commit:*)" "Bash(git diff:*)" "Bash(git status)" "Bash(git log:*)" "Bash(cat *)" "Bash(find *)" "Bash(head *)" "Bash(tail *)" "Bash(wc *)"'
+ALLOWED_TOOLS=(
+  "Read" "Write" "Edit" "Grep" "Glob"
+  "Bash(bun run lint)" "Bash(bun run check:types)" "Bash(bun run test)"
+  "Bash(git add:*)" "Bash(git commit:*)" "Bash(git diff:*)" "Bash(git status)" "Bash(git log:*)"
+  "Bash(cat *)" "Bash(find *)" "Bash(head *)" "Bash(tail *)" "Bash(wc *)"
+)
 
 # ─── Agent Configuration ────────────────────────────────────────────────────
 
@@ -119,12 +124,15 @@ for agent_name in "${!AGENTS[@]}"; do
   cp "$prompt_file" "$worktree_path/prompts/"
 
   # Launch Claude in background
+  AGENT_PROMPT=$(cat "$prompt_file")
+  AGENT_SESSION=$(uuidgen)
+
   (
     cd "$worktree_path"
-    eval claude -p \"\$\(cat \"$prompt_file\"\)\" \
-      --allowedTools $TOOLS_ARG \
+    claude -p "$AGENT_PROMPT" \
+      --allowedTools "${ALLOWED_TOOLS[@]}" \
       --max-turns "$MAX_TURNS" \
-      --session-id "$(uuidgen)" \
+      --session-id "$AGENT_SESSION" \
       --output-format json \
       2>&1 | tee "$log_file"
   ) &

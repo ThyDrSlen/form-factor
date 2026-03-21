@@ -81,13 +81,7 @@ VERIFY_TOOLS=(
   "Bash(cat *)" "Bash(find *)" "Bash(head *)" "Bash(tail *)" "Bash(wc *)"
 )
 
-build_tools_arg() {
-  local result=""
-  for tool in "$@"; do
-    result="$result \"$tool\""
-  done
-  echo "$result"
-}
+
 
 # ─── Pass 1: Audit ──────────────────────────────────────────────────────────
 
@@ -112,9 +106,9 @@ Sort issues by severity (P0 first). Be thorough — check every relevant file.
 $(cat "$PROMPT_FILE")
 --- END MISSION PROMPT ---"
 
-eval claude -p \"\$AUDIT_PROMPT\" \
+claude -p "$AUDIT_PROMPT" \
   --session-id "$SESSION" \
-  --allowedTools $(build_tools_arg "${AUDIT_TOOLS[@]}") \
+  --allowedTools "${AUDIT_TOOLS[@]}" \
   --max-turns 15 \
   --output-format json \
   2>&1 | tee "$AUDIT_LOG"
@@ -145,9 +139,9 @@ For each fix:
 Work through them one at a time. If a fix would take more than 5 minutes, skip it and note why.
 Do NOT modify supabase/ migrations, ios/ or android/ native code, or .env files."
 
-eval claude -p \"\$FIX_PROMPT\" \
+claude -p "$FIX_PROMPT" \
   --session-id "$SESSION" \
-  --allowedTools $(build_tools_arg "${FIX_TOOLS[@]}") \
+  --allowedTools "${FIX_TOOLS[@]}" \
   --max-turns 30 \
   --output-format json \
   2>&1 | tee "$FIX_LOG"
@@ -179,9 +173,9 @@ After all checks pass, write a changelog to docs/OVERNIGHT_CHANGELOG.md with:
 
 Commit the changelog as the final commit."
 
-eval claude -p \"\$VERIFY_PROMPT\" \
+claude -p "$VERIFY_PROMPT" \
   --session-id "$SESSION" \
-  --allowedTools $(build_tools_arg "${VERIFY_TOOLS[@]}") \
+  --allowedTools "${VERIFY_TOOLS[@]}" \
   --max-turns 10 \
   --output-format json \
   2>&1 | tee "$VERIFY_LOG"
