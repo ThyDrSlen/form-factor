@@ -37,12 +37,15 @@ echo ""
 if [[ -n "$SPECIFIC_BRANCH" ]]; then
   BRANCHES=("$SPECIFIC_BRANCH")
 else
-  # Find all claude/* branches
-  mapfile -t BRANCHES < <(git branch -r --list 'origin/claude/*' 2>/dev/null | sed 's|origin/||;s|^[[:space:]]*||')
+  BRANCHES=()
+  while IFS= read -r b; do
+    [[ -n "$b" ]] && BRANCHES+=("$b")
+  done < <(git branch -r --list 'origin/claude/*' 2>/dev/null | sed 's|origin/||;s|^[[:space:]]*||')
 
   if [[ ${#BRANCHES[@]} -eq 0 ]]; then
-    # Also check local branches
-    mapfile -t BRANCHES < <(git branch --list 'claude/*' 2>/dev/null | sed 's|^[[:space:]]*||;s|^\* //')
+    while IFS= read -r b; do
+      [[ -n "$b" ]] && BRANCHES+=("$b")
+    done < <(git branch --list 'claude/*' 2>/dev/null | sed 's|^[[:space:]*+]*||')
   fi
 
   if [[ ${#BRANCHES[@]} -eq 0 ]]; then

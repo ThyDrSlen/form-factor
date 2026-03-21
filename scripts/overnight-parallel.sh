@@ -81,36 +81,34 @@ ALLOWED_TOOLS=(
   "Bash(cat *)" "Bash(find *)" "Bash(head *)" "Bash(tail *)" "Bash(wc *)"
 )
 
-# ─── Agent Configuration ────────────────────────────────────────────────────
+# ─── Agent Configuration (Bash 3.2 compatible — no associative arrays) ──────
 
-declare -A AGENTS
-AGENTS[ux-polish]="prompts/overnight-ux.md"
-AGENTS[arkit-onboarding]="prompts/arkit-onboarding.md"
-AGENTS[health-dashboard]="prompts/health-dashboard.md"
+AGENT_NAMES_LIST=("ux-polish" "arkit-onboarding" "health-dashboard")
+AGENT_PROMPTS_LIST=("prompts/overnight-ux.md" "prompts/arkit-onboarding.md" "prompts/health-dashboard.md")
 
 PIDS=()
 AGENT_NAMES=()
 
+REPO_ROOT=$(pwd)
+ABS_LOG_DIR="${REPO_ROOT}/${LOG_DIR}"
+
 # ─── Create Worktrees and Launch Agents ─────────────────────────────────────
 
-for agent_name in "${!AGENTS[@]}"; do
-  prompt_file="${AGENTS[$agent_name]}"
+for i in "${!AGENT_NAMES_LIST[@]}"; do
+  agent_name="${AGENT_NAMES_LIST[$i]}"
+  prompt_file="${AGENT_PROMPTS_LIST[$i]}"
   branch="claude/${agent_name}-${DATE_STAMP}"
   worktree_path="${WORKTREE_BASE}-${agent_name}"
-  log_file="${LOG_DIR}/parallel-${agent_name}-$(date +%Y%m%d-%H%M%S).log"
+  log_file="${ABS_LOG_DIR}/parallel-${agent_name}-$(date +%Y%m%d-%H%M%S).log"
 
   echo "── Setting up Agent: $agent_name ──────────────────────────────"
 
-  # Clean up any existing worktree
   if [[ -d "$worktree_path" ]]; then
     echo "  Removing existing worktree at $worktree_path..."
     git worktree remove "$worktree_path" --force 2>/dev/null || rm -rf "$worktree_path"
   fi
 
-  # Delete branch if it exists
   git branch -D "$branch" 2>/dev/null || true
-
-  # Create worktree with new branch
   git worktree add "$worktree_path" -b "$branch"
 
   echo "  Worktree: $worktree_path"
@@ -119,11 +117,9 @@ for agent_name in "${!AGENTS[@]}"; do
   echo "  Log:      $log_file"
   echo ""
 
-  # Copy prompt file to worktree (it may not exist there yet since prompts/ is new)
   mkdir -p "$worktree_path/prompts"
   cp "$prompt_file" "$worktree_path/prompts/"
 
-  # Launch Claude in background
   AGENT_PROMPT=$(cat "$prompt_file")
   AGENT_SESSION=$(uuidgen)
 
@@ -140,7 +136,7 @@ for agent_name in "${!AGENTS[@]}"; do
   PIDS+=($!)
   AGENT_NAMES+=("$agent_name")
 
-  echo "  Launched with PID: ${PIDS[-1]}"
+  echo "  Launched with PID: ${PIDS[${#PIDS[@]}-1]}"
   echo ""
 done
 
@@ -179,7 +175,7 @@ fi
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
-for agent_name in "${!AGENTS[@]}"; do
+for agent_name in "${AGENT_NAMES_LIST[@]}"; do
   branch="claude/${agent_name}-${DATE_STAMP}"
   worktree_path="${WORKTREE_BASE}-${agent_name}"
 
@@ -197,15 +193,13 @@ for agent_name in "${!AGENTS[@]}"; do
     else
       echo "  (no commits)"
     fi
-    cd - >/dev/null
+    cd "$REPO_ROOT"
   fi
   echo ""
 done
 
-# ─── Cleanup Worktrees ──────────────────────────────────────────────────────
-
 echo "── Cleanup ────────────────────────────────────────────────────"
-for agent_name in "${!AGENTS[@]}"; do
+for agent_name in "${AGENT_NAMES_LIST[@]}"; do
   worktree_path="${WORKTREE_BASE}-${agent_name}"
   if [[ -d "$worktree_path" ]]; then
     git worktree remove "$worktree_path" --force 2>/dev/null || true
@@ -213,16 +207,15 @@ for agent_name in "${!AGENTS[@]}"; do
   fi
 done
 
-# Return to original branch
 git checkout "$CURRENT_BRANCH" 2>/dev/null || git checkout main 2>/dev/null
 
 echo ""
 echo "Done. Review branches:"
-for agent_name in "${!AGENTS[@]}"; do
+for agent_name in "${AGENT_NAMES_LIST[@]}"; do
   echo "  git log --oneline main..claude/${agent_name}-${DATE_STAMP}"
 done
 echo ""
 echo "Create PRs:"
-for agent_name in "${!AGENTS[@]}"; do
+for agent_name in "${AGENT_NAMES_LIST[@]}"; do
   echo "  gh pr create --base main --head claude/${agent_name}-${DATE_STAMP} --title \"Claude parallel: ${agent_name}\""
 done

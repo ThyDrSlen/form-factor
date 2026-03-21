@@ -77,7 +77,7 @@ FIX_TOOLS=(
 VERIFY_TOOLS=(
   "Read" "Write" "Edit" "Grep" "Glob"
   "Bash(bun run lint)" "Bash(bun run check:types)" "Bash(bun run test)"
-  "Bash(git add:*)" "Bash(git commit:*)" "Bash(git diff:*)" "Bash(git status)"
+  "Bash(git add:*)" "Bash(git commit:*)" "Bash(git diff:*)" "Bash(git status)" "Bash(git log:*)"
   "Bash(cat *)" "Bash(find *)" "Bash(head *)" "Bash(tail *)" "Bash(wc *)"
 )
 
