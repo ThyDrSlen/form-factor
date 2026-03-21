@@ -48,7 +48,10 @@
     "eval:pullup-tracking": "bun scripts/eval-pullup-tracking.ts",
     "baseline:pullup-tracking": "bun scripts/baseline-pullup-tracking.ts",
     "prepare": "command -v husky >/dev/null 2>&1 && husky || true",
-    "postinstall": "node -e \"let r; try{r=require.resolve('patch-package')}catch(e){process.exit(0)}; require('child_process').execSync('patch-package',{stdio:'inherit'})\""
+    "postinstall": "node -e \"let r; try{r=require.resolve('patch-package')}catch(e){process.exit(0)}; require('child_process').execSync('patch-package',{stdio:'inherit'})\"",
+    "web:dev": "cd apps/web && bun run dev",
+    "web:build": "cd apps/web && bun run build",
+    "web:start": "cd apps/web && bun run start"
   },
   "resolutions": {
     "framer-motion": "^12.18.1",
@@ -164,9 +167,14 @@
   },
   "private": true,
   "workspaces": [
-    "modules/*"
+    "modules/*",
+    "packages/*",
+    "apps/*"
   ],
   "trustedDependencies": [
     "unrs-resolver"
-  ]
+  ],
+  "overrides": {
+    "@eslint/eslintrc>minimatch": "9.0.5"
+  }
 }

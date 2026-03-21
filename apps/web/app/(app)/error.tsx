@@ -1,0 +1,39 @@
+'use client';
+
+import { useEffect } from 'react';
+
+export default function AppError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  useEffect(() => {
+    console.error('[App Error]', error);
+  }, [error]);
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[400px] px-4 text-center">
+      <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-8 max-w-md w-full">
+        <div className="text-3xl mb-3">⚠</div>
+        <h2 className="text-xl font-bold text-text-primary mb-2">Something went wrong</h2>
+        <p className="text-sm text-text-secondary mb-6">
+          An unexpected error occurred. Please try again.
+        </p>
+        {process.env.NODE_ENV === 'development' && (
+          <pre className="bg-panel rounded-xl p-3 text-xs text-red-400 text-left overflow-auto mb-4 max-h-32">
+            {error.message}
+          </pre>
+        )}
+        <button
+          type="button"
+          onClick={reset}
+          className="bg-accent text-white font-bold text-sm px-6 py-2.5 rounded-xl hover:bg-accent/90 transition-colors"
+        >
+          Try again
+        </button>
+      </div>
+    </div>
+  );
+}
