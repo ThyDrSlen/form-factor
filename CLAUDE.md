@@ -105,6 +105,41 @@ Form Factor is an iOS-first fitness tracking app built with Expo 54 + React Nati
 - **Husky pre-push**: policy + lint + type check (skip with `CI_LOCAL_SKIP=1`)
 - **Local CI**: `python3 scripts/ci_local.py` mirrors the GitHub Actions pipeline locally
 
+## Overnight / Headless Rules
+
+When running via `claude -p` in headless mode (overnight scripts in `scripts/overnight-*.sh`):
+
+- Always run `bun run lint` and `bun run check:types` before committing
+- Commit after each logical change, not one giant commit
+- Never modify `supabase/migrations/`, `ios/` native code, `android/` native code, or `.env` files
+- Never add new dependencies without documenting why in the commit message
+- Never delete or modify existing test files to make tests pass — fix the source code instead
+- Write commit messages in format: `feat(component): description` or `fix(screen): description`
+- If a change requires a new dependency, skip it and document in `docs/OVERNIGHT_CHANGELOG.md`
+- Available prompts live in `prompts/` — each is tailored to a specific codebase area
+- Logs go to `logs/overnight/` (gitignored)
+- Overnight branches use the `claude/` prefix
+
+### Available Overnight Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/overnight-claude.sh` | Single-session run with one prompt |
+| `scripts/overnight-multi-session.sh` | Multi-pass: audit, fix, verify |
+| `scripts/overnight-parallel.sh` | 3 parallel agents via git worktrees |
+| `scripts/overnight-review.sh` | Morning review helper + PR creation |
+
+### Available Prompts
+
+| Prompt | Focus Area |
+|--------|------------|
+| `prompts/overnight-ux.md` | Full UX overhaul (P0-P3 priorities) |
+| `prompts/workout-logging.md` | Zero-friction workout logging flow |
+| `prompts/offline-hardening.md` | Offline experience audit and fixes |
+| `prompts/arkit-onboarding.md` | ARKit scan tab onboarding overlay |
+| `prompts/health-dashboard.md` | Motivating health dashboard redesign |
+| `prompts/test-coverage.md` | Unit test coverage sprint |
+
 ## Environment
 
 - `.env` with `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_TOKEN`, etc. See `.env.example` for all vars.
