@@ -1,5 +1,5 @@
-import React from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useRef } from 'react';
+import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const colors = {
@@ -77,8 +77,22 @@ const platformSnapshot = [
 ];
 
 export default function LandingPage() {
+  const scrollRef = useRef<ScrollView>(null);
+  const sectionOffsets = useRef<Record<string, number>>({});
+
+  const scrollToSection = useCallback((section: string) => {
+    const y = sectionOffsets.current[section];
+    if (y !== undefined && scrollRef.current) {
+      scrollRef.current.scrollTo({ y, animated: true });
+    }
+  }, []);
+
+  const captureSectionY = useCallback((section: string) => (e: { nativeEvent: { layout: { y: number } } }) => {
+    sectionOffsets.current[section] = e.nativeEvent.layout.y;
+  }, []);
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <ScrollView ref={scrollRef} style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <LinearGradient colors={['#f6f9ff', '#e9f2ff'] as const} style={styles.heroSection}>
         <View style={styles.navbar}>
           <View style={styles.brandRow}>
@@ -86,13 +100,13 @@ export default function LandingPage() {
             <Text style={styles.brandName}>Form Factor</Text>
           </View>
           <View style={styles.navLinks}>
-            <Text style={styles.navLink}>Product</Text>
-            <Text style={styles.navLink}>Features</Text>
-            <Text style={styles.navLink}>Coach</Text>
-            <Text style={styles.navLink}>Roadmap</Text>
-            <Text style={styles.navLink}>Docs</Text>
+            <Pressable onPress={() => scrollToSection('product')}><Text style={styles.navLink}>Product</Text></Pressable>
+            <Pressable onPress={() => scrollToSection('features')}><Text style={styles.navLink}>Features</Text></Pressable>
+            <Pressable onPress={() => scrollToSection('coach')}><Text style={styles.navLink}>Coach</Text></Pressable>
+            <Pressable onPress={() => scrollToSection('roadmap')}><Text style={styles.navLink}>Roadmap</Text></Pressable>
+            <Pressable onPress={() => Linking.openURL('https://formfactor.app/docs')}><Text style={styles.navLink}>Docs</Text></Pressable>
           </View>
-          <Pressable style={styles.navCTA}>
+          <Pressable style={styles.navCTA} onPress={() => Linking.openURL('https://apps.apple.com/app/form-factor/id6740043889')}>
             <Text style={styles.navCTAText}>Get the app</Text>
           </Pressable>
         </View>
@@ -148,6 +162,7 @@ export default function LandingPage() {
         </View>
       </LinearGradient>
 
+      <View onLayout={captureSectionY('product')} />
       <SectionHeader title="Built for lifters" subtitle="Precise cues, fast logging, HealthKit-aware coaching." />
       <View style={styles.cardGrid}>
         {valueProps.map((item) => (
@@ -169,6 +184,7 @@ export default function LandingPage() {
         ))}
       </View>
 
+      <View onLayout={captureSectionY('features')} />
       <SectionHeader title="Feature deep dive" subtitle="From ARKit capture to HealthKit-aware coaching and feed." />
       <View style={styles.featureList}>
         {featureDeepDive.map((item, index) => (
@@ -196,6 +212,7 @@ export default function LandingPage() {
         ))}
       </View>
 
+      <View onLayout={captureSectionY('coach')} />
       <SectionHeader title="AI coach with context" subtitle="Adaptive cues that react to recovery, load, and trends." />
       <LinearGradient colors={['#0b1b34', '#0f2746'] as const} style={styles.coachPanel}>
         <View style={styles.coachTextBlock}>
@@ -254,6 +271,7 @@ export default function LandingPage() {
         ))}
       </View>
 
+      <View onLayout={captureSectionY('roadmap')} />
       <SectionHeader title="Roadmap" subtitle="What is coming next." />
       <View style={styles.roadmapRow}>
         {roadmapChips.map((item) => (
@@ -284,10 +302,10 @@ export default function LandingPage() {
           <Text style={styles.footerName}>Form Factor</Text>
         </View>
         <View style={styles.footerLinks}>
-          <Text style={styles.footerLink}>Docs</Text>
-          <Text style={styles.footerLink}>Support</Text>
-          <Text style={styles.footerLink}>Privacy</Text>
-          <Text style={styles.footerLink}>Terms</Text>
+          <Pressable onPress={() => Linking.openURL('https://formfactor.app/docs')}><Text style={styles.footerLink}>Docs</Text></Pressable>
+          <Pressable onPress={() => Linking.openURL('https://formfactor.app/support')}><Text style={styles.footerLink}>Support</Text></Pressable>
+          <Pressable onPress={() => Linking.openURL('https://formfactor.app/privacy')}><Text style={styles.footerLink}>Privacy</Text></Pressable>
+          <Pressable onPress={() => Linking.openURL('https://formfactor.app/terms')}><Text style={styles.footerLink}>Terms</Text></Pressable>
           <Text style={styles.footerLink}>Built on Expo + Supabase</Text>
         </View>
       </View>
