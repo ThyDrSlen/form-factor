@@ -1304,7 +1304,7 @@ class SyncService {
       logWithTs('[SyncService] Starting full sync...');
       try {
         await this.downloadFromSupabase();
-        await this.syncToSupabase();
+        await this.executeSyncToSupabase();
         logWithTs('[SyncService] Full sync completed');
       } catch (error) {
         errorWithTs('[SyncService] Error during full sync:', error);
