@@ -98,9 +98,15 @@ export default function PrivacySecurityModal() {
     Linking.openURL('https://formfactor.app/privacy');
   };
 
-  const handleToggleAnalytics = () => {
-    setAnalyticsEnabled(!analyticsEnabled);
-    toast.show(analyticsEnabled ? 'Analytics disabled' : 'Analytics enabled', { type: 'success' });
+  const handleToggleAnalytics = async (enabled: boolean) => {
+    try {
+      await updateConsent({ allowAnonymousTelemetry: enabled });
+      setAnalyticsEnabled(enabled);
+      toast.show(enabled ? 'Analytics enabled' : 'Analytics disabled', { type: 'success' });
+    } catch (error) {
+      warnWithTs('[privacy] Failed to update analytics consent', error);
+      toast.show('Could not update analytics preference', { type: 'error' });
+    }
   };
 
   const handleToggleVideoResearch = async (enabled: boolean) => {
