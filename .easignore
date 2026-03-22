@@ -15,9 +15,7 @@ web-build/
 playwright-report/
 test-results/
 
-# iOS/Android local build outputs (cloud build will handle these)
-/ios/
-/android/
+# iOS/Android local build outputs
 /ios/build/
 /android/app/build/
 /builds/
