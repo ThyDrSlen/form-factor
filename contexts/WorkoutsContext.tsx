@@ -1,8 +1,7 @@
-import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import * as Crypto from 'expo-crypto';
 import { localDB } from '../lib/services/database/local-db';
 import { syncService } from '../lib/services/database/sync-service';
-import { supabase } from '../lib/supabase';
 import { useNetwork } from './NetworkContext';
 import { useAuth } from './AuthContext';
 
@@ -48,39 +47,39 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
   const { isOnline } = useNetwork();
   const { user } = useAuth();
 
-  // Initialize local DB and set up sync
-  useEffect(() => {
-    initializeData();
-
-    // Set up realtime sync when authenticated
-    const setupRealtime = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user && isOnline) {
-        await syncService.initializeRealtimeSync(user.id);
-      }
-    };
-    setupRealtime();
-
-    // Register sync callback
-    const unsubscribe = syncService.onSyncComplete(() => {
-      loadLocalWorkouts();
-    });
-
-    // Cleanup
-    return () => {
-      unsubscribe();
-      syncService.cleanupRealtimeSync();
-    };
-  }, [isOnline, user?.id]);
-
-  // Sync when coming online
-  useEffect(() => {
-    if (isOnline) {
-      performSync();
+  const loadLocalWorkouts = useCallback(async () => {
+    try {
+      const localWorkouts = await localDB.getAllWorkouts();
+      const transformedWorkouts: Workout[] = localWorkouts.map(item => ({
+        id: item.id,
+        exercise: item.exercise,
+        sets: item.sets,
+        reps: item.reps,
+        weight: item.weight,
+        duration: item.duration,
+        date: item.date,
+      }));
+      console.log('[WorkoutsProvider] Loaded workouts from local DB:', transformedWorkouts.length);
+      setWorkouts(transformedWorkouts);
+    } catch (error) {
+      console.error('[WorkoutsProvider] Error loading local workouts:', error);
     }
-  }, [isOnline]);
+  }, []);
 
-  const initializeData = async () => {
+  const performSync = useCallback(async () => {
+    try {
+      setIsSyncing(true);
+      console.log('[WorkoutsProvider] Performing sync...');
+      await syncService.fullSync();
+      await loadLocalWorkouts();
+    } catch (error) {
+      console.error('[WorkoutsProvider] Error during sync:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [loadLocalWorkouts]);
+
+  const initializeData = useCallback(async () => {
     try {
       setLoading(true);
       console.log('[WorkoutsProvider] Initializing local database...');
@@ -100,39 +99,39 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isOnline, loadLocalWorkouts, performSync]);
 
-  const loadLocalWorkouts = async () => {
-    try {
-      const localWorkouts = await localDB.getAllWorkouts();
-      const transformedWorkouts: Workout[] = localWorkouts.map(item => ({
-        id: item.id,
-        exercise: item.exercise,
-        sets: item.sets,
-        reps: item.reps,
-        weight: item.weight,
-        duration: item.duration,
-        date: item.date,
-      }));
-      console.log('[WorkoutsProvider] Loaded workouts from local DB:', transformedWorkouts.length);
-      setWorkouts(transformedWorkouts);
-    } catch (error) {
-      console.error('[WorkoutsProvider] Error loading local workouts:', error);
-    }
-  };
+  useEffect(() => {
+    void initializeData();
+  }, [initializeData]);
 
-  const performSync = async () => {
-    try {
-      setIsSyncing(true);
-      console.log('[WorkoutsProvider] Performing sync...');
-      await syncService.fullSync();
-      await loadLocalWorkouts();
-    } catch (error) {
-      console.error('[WorkoutsProvider] Error during sync:', error);
-    } finally {
-      setIsSyncing(false);
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const setupRealtime = async () => {
+      if (isOnline) {
+        await syncService.initializeRealtimeSync(user.id);
+      }
+    };
+
+    void setupRealtime();
+
+    const unsubscribe = syncService.onSyncComplete(() => {
+      void loadLocalWorkouts();
+    });
+
+    return () => {
+      unsubscribe();
+      syncService.cleanupRealtimeSync();
+    };
+  }, [isOnline, loadLocalWorkouts, user?.id]);
+
+  // Sync when coming online
+  useEffect(() => {
+    if (isOnline) {
+      void performSync();
     }
-  };
+  }, [isOnline, performSync]);
 
   const fetchWorkouts = async () => {
     await loadLocalWorkouts();
