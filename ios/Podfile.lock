@@ -1,6 +1,7 @@
 PODS:
   - arkit-body-tracker (1.0.0):
     - ExpoModulesCore
+    - MediaPipeTasksCommon
     - MediaPipeTasksVision
   - EXApplication (7.0.8):
     - ExpoModulesCore
