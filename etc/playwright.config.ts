@@ -22,13 +22,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'bunx expo start --web --port 8081',
+    command: process.env.CI
+      ? 'NODE_OPTIONS=--max-old-space-size=8192 bunx expo start --web --port 8081'
+      : 'bunx expo start --web --port 8081',
     url: 'http://127.0.0.1:8081',
     reuseExistingServer: !process.env.CI,
-    timeout: 600_000,
-    env: {
-      ...process.env,
-      NODE_OPTIONS: '--max-old-space-size=8192',
-    },
+    timeout: process.env.CI ? 600_000 : 300_000,
   },
 });
