@@ -135,8 +135,14 @@ export class OAuthHandler {
       const tokens = this.parseTokensFromUrl(url);
       
       if (tokens) {
-        logWithTs('[OAuthHandler] Found tokens in URL, setting session');
-        
+        // Validate token format before attempting session creation
+        if (!this.validateTokens(tokens)) {
+          errorWithTs('[OAuthHandler] Token validation failed — tokens appear malformed');
+          return null;
+        }
+
+        logWithTs('[OAuthHandler] Tokens validated, setting session');
+
         // Set session using the extracted tokens
         const { data, error } = await supabase.auth.setSession({
           access_token: tokens.accessToken,
