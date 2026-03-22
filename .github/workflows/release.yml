@@ -1,0 +1,144 @@
+name: iOS Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'What to do'
+        required: true
+        type: choice
+        options:
+          - build-and-submit
+          - build-only
+          - submit-latest
+          - ota-update
+      profile:
+        description: 'EAS build profile'
+        required: true
+        type: choice
+        default: production
+        options:
+          - production
+          - staging
+          - preview
+      message:
+        description: 'Release / OTA message (optional)'
+        required: false
+        type: string
+
+concurrency:
+  group: ios-release-${{ github.event.inputs.profile }}
+  cancel-in-progress: false
+
+env:
+  BUN_VERSION: '1.2.22'
+
+jobs:
+  release:
+    name: iOS ${{ github.event.inputs.action }} (${{ github.event.inputs.profile }})
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    environment: ${{ github.event.inputs.profile == 'production' && 'production' || 'staging' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-cache-v3-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-cache-v3-
+
+      - name: Clean patched packages
+        run: bash scripts/ci/clean_patched_packages.sh
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --backend=copyfile
+
+      - name: Setup Expo & EAS
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: 6.3.12
+          eas-version: 16.18.1
+          packager: npm
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Write App Store Connect API key
+        if: contains(fromJSON('["build-and-submit", "submit-latest"]'), github.event.inputs.action)
+        run: |
+          mkdir -p .eas
+          python3 - <<'PY'
+          import base64, os, pathlib, sys
+          encoded = os.environ.get("ASC_API_KEY_P8_BASE64")
+          if not encoded:
+              print("ASC_API_KEY_P8_BASE64 is not set", file=sys.stderr)
+              sys.exit(1)
+          pathlib.Path(".eas/asc-api-key.p8").write_bytes(base64.b64decode(encoded))
+          PY
+          chmod 600 .eas/asc-api-key.p8
+        env:
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+
+      - name: Build iOS
+        if: contains(fromJSON('["build-and-submit", "build-only"]'), github.event.inputs.action)
+        run: |
+          SUBMIT_FLAG=""
+          if [ "${{ github.event.inputs.action }}" = "build-and-submit" ]; then
+            SUBMIT_FLAG="--auto-submit"
+          fi
+          eas build --platform ios --profile ${{ github.event.inputs.profile }} $SUBMIT_FLAG --non-interactive
+
+      - name: Submit latest build
+        if: github.event.inputs.action == 'submit-latest'
+        run: eas submit --platform ios --profile ${{ github.event.inputs.profile }} --latest --non-interactive
+
+      - name: Ensure hermesc is available
+        if: contains(fromJSON('["build-and-submit", "ota-update"]'), github.event.inputs.action)
+        run: |
+          set -euo pipefail
+          HERMESC_SRC="$(find node_modules/hermes-compiler -type f -name hermesc 2>/dev/null | head -n 1 || true)"
+          if [ -z "$HERMESC_SRC" ]; then
+            echo "hermesc not found — skipping (OTA may use JSC)"
+            exit 0
+          fi
+          if [ -d "node_modules/react-native/sdks/hermesc/macos-bin" ]; then
+            HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/macos-bin"
+          else
+            HERMESC_DEST_DIR="node_modules/react-native/sdks/hermesc/osx-bin"
+          fi
+          mkdir -p "$HERMESC_DEST_DIR"
+          ln -sf "$PWD/$HERMESC_SRC" "$HERMESC_DEST_DIR/hermesc"
+          chmod +x "$HERMESC_DEST_DIR/hermesc"
+
+      - name: Deploy OTA update
+        if: contains(fromJSON('["build-and-submit", "ota-update"]'), github.event.inputs.action)
+        run: |
+          MSG="${{ github.event.inputs.message }}"
+          if [ -z "$MSG" ]; then
+            MSG="${{ github.event.inputs.profile }} release from ${{ github.sha }}"
+          fi
+          eas update --branch ${{ github.event.inputs.profile }} --platform ios --message "$MSG"
+
+      - name: Print summary
+        if: always()
+        run: |
+          echo "## iOS Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Action** | ${{ github.event.inputs.action }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Profile** | ${{ github.event.inputs.profile }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Message** | ${{ github.event.inputs.message || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered by** | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
