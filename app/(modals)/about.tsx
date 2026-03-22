@@ -1,7 +1,8 @@
-import React from 'react';
-import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Linking, ScrollView } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { BackHandler, Modal, View, Text, StyleSheet, TouchableOpacity, Linking, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeBack } from '@/hooks/use-safe-back';
 
 type LinkItemProps = {
@@ -21,11 +22,38 @@ const LinkItem = ({ icon, title, onPress }: LinkItemProps) => (
   </TouchableOpacity>
 );
 
+const LAST_SEEN_VERSION_KEY = 'last_seen_changelog_version';
+
+const changelog = [
+  {
+    version: '1.0.0',
+    date: '2026-03-13',
+    changes: [
+      'Real-time form coaching with ARKit body tracking',
+      'Auto workout and food logging with offline sync',
+      'AI coach powered by HealthKit recovery data',
+      'Social video feed with comments and likes',
+      'Privacy controls for analytics and data',
+      'Account deletion for GDPR compliance',
+    ],
+  },
+];
+
 export default function AboutModal() {
   const safeBack = useSafeBack(['/(tabs)/profile', '/profile'], { alwaysReplace: true });
 
   const appVersion = Constants.expoConfig?.version || '1.0.0';
   const buildNumber = Constants.expoConfig?.ios?.buildNumber || '1';
+  const [showChangelog, setShowChangelog] = useState(false);
+  const [isNewVersion, setIsNewVersion] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(LAST_SEEN_VERSION_KEY).then((lastSeen) => {
+      if (lastSeen !== appVersion) {
+        setIsNewVersion(true);
+      }
+    });
+  }, [appVersion]);
 
   React.useEffect(() => {
     if (BackHandler.addEventListener) {
@@ -51,7 +79,9 @@ export default function AboutModal() {
   };
 
   const handleChangelog = () => {
-    Linking.openURL('https://formfactor.app/changelog');
+    setShowChangelog(true);
+    AsyncStorage.setItem(LAST_SEEN_VERSION_KEY, appVersion);
+    setIsNewVersion(false);
   };
 
   const handleWebsite = () => {
@@ -85,11 +115,18 @@ export default function AboutModal() {
         {/* Links Section */}
         <Text style={styles.sectionTitle}>Information</Text>
         <View style={styles.card}>
-          <LinkItem
-            icon="document-text-outline"
-            title="What's New / Changelog"
-            onPress={handleChangelog}
-          />
+          <TouchableOpacity style={styles.linkItem} onPress={handleChangelog} activeOpacity={0.7}>
+            <View style={styles.linkIconContainer}>
+              <Ionicons name="document-text-outline" size={20} color="#4C8CFF" />
+            </View>
+            <Text style={styles.linkText}>What&apos;s New</Text>
+            {isNewVersion && (
+              <View style={styles.newBadge}>
+                <Text style={styles.newBadgeText}>NEW</Text>
+              </View>
+            )}
+            <Ionicons name="chevron-forward" size={18} color="#6781A6" />
+          </TouchableOpacity>
           <View style={styles.divider} />
           <LinkItem
             icon="document-outline"
@@ -144,6 +181,35 @@ export default function AboutModal() {
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
+
+      <Modal visible={showChangelog} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>What&apos;s New</Text>
+              <TouchableOpacity onPress={() => setShowChangelog(false)} style={styles.modalClose}>
+                <Ionicons name="close" size={24} color="#1A1A2E" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              {changelog.map((release) => (
+                <View key={release.version} style={styles.releaseBlock}>
+                  <View style={styles.releaseHeader}>
+                    <Text style={styles.releaseVersion}>v{release.version}</Text>
+                    <Text style={styles.releaseDate}>{release.date}</Text>
+                  </View>
+                  {release.changes.map((change) => (
+                    <View key={change} style={styles.changeRow}>
+                      <Ionicons name="checkmark-circle" size={16} color="#4C8CFF" />
+                      <Text style={styles.changeText}>{change}</Text>
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -277,5 +343,78 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 40,
+  },
+  newBadge: {
+    backgroundColor: '#4C8CFF',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginRight: 8,
+  },
+  newBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '75%',
+    paddingBottom: 40,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1A1A2E',
+  },
+  modalClose: {
+    padding: 4,
+  },
+  modalBody: {
+    padding: 20,
+  },
+  releaseBlock: {
+    marginBottom: 24,
+  },
+  releaseHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  releaseVersion: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1A1A2E',
+  },
+  releaseDate: {
+    fontSize: 13,
+    color: '#6781A6',
+  },
+  changeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 8,
+  },
+  changeText: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1A1A2E',
+    lineHeight: 20,
   },
 });
