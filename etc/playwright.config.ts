@@ -11,7 +11,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
-    baseURL: 'http://localhost:8081',
+    baseURL: 'http://localhost:3001',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -22,11 +22,14 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: process.env.CI
-      ? 'NODE_OPTIONS=--max-old-space-size=8192 bunx expo start --web --port 8081'
-      : 'bunx expo start --web --port 8081',
-    url: 'http://127.0.0.1:8081',
+    command: 'PORT=3001 bun run --cwd apps/web dev',
+    url: 'http://127.0.0.1:3001',
     reuseExistingServer: !process.env.CI,
-    timeout: process.env.CI ? 600_000 : 300_000,
+    timeout: 60_000,
+    env: {
+      ...process.env,
+      NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || '',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+    },
   },
 });

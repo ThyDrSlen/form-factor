@@ -158,7 +158,8 @@ jobs:
         run: bun run test:e2e
         env:
           CI: true
-          NODE_OPTIONS: --max-old-space-size=8192
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: sbp_ci_placeholder
           EXPO_PUBLIC_SUPABASE_URL: https://example.supabase.co
           EXPO_PUBLIC_SUPABASE_ANON_KEY: sbp_ci_placeholder
 
