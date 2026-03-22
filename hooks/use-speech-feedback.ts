@@ -251,5 +251,13 @@ export function useSpeechFeedback({
     };
   }, [enabled, flushQueue, stop, ensureAudioMode, reportAsyncError]);
 
+  // Ensure cleanup on unmount regardless of enabled state
+  useEffect(() => {
+    return () => {
+      clearPendingTimeout();
+      Speech.stop();
+    };
+  }, [clearPendingTimeout]);
+
   return { speak, stop };
 }
