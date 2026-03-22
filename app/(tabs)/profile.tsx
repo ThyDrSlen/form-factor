@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert, Share, Modal, TextInput, ActivityIndicator, Image, Switch } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert, Share, Modal, TextInput, ActivityIndicator, Image, Switch, Linking } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from 'expo-video';
@@ -728,6 +728,17 @@ Generated: ${new Date().toISOString()}
     router.push('/(modals)/about');
   };
 
+  const handleRateApp = async () => {
+    await Linking.openURL('https://apps.apple.com/app/id6740043889?action=write-review');
+    showToast('Thanks for rating Form Factor!', { type: 'success' });
+  };
+
+  const handleInviteFriend = async () => {
+    await Share.share({
+      message: 'Check out Form Factor — real-time form coaching for lifters! https://apps.apple.com/app/id6740043889',
+    });
+  };
+
   const handleSaveProfile = async () => {
     const trimmedName = fullName.trim();
     const resolvedName = trimmedName || currentName || user?.email?.split('@')[0] || 'User';
@@ -1033,6 +1044,8 @@ Generated: ${new Date().toISOString()}
         <View style={styles.menuGroup}>
           <MenuItem icon="help-circle-outline" title="Help & Support" onPress={handleOpenHelpSupport} />
           <MenuItem icon="information-circle-outline" title="About" onPress={handleOpenAbout} />
+          <MenuItem icon="star-outline" title="Rate App" onPress={handleRateApp} />
+          <MenuItem icon="share-social-outline" title="Invite a Friend" onPress={handleInviteFriend} />
         </View>
       </View>
 
