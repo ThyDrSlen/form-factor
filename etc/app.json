@@ -74,10 +74,6 @@
         "com.apple.developer.healthkit": true
       }
     },
-    "web": {
-      "bundler": "metro",
-      "output": "static"
-    },
     "assetBundlePatterns": [
       "assets/**",
       "**/*.{png,jpg,jpeg,svg,ttf,otf}"

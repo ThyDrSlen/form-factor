@@ -3,7 +3,7 @@ import { waitForAppLoad } from './utils/test-helpers';
 
 test.describe('Navigation', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/landing');
+    await page.goto('/');
     await waitForAppLoad(page);
   });
 
@@ -17,20 +17,20 @@ test.describe('Navigation', () => {
   });
 
   test('footer content is visible on landing page', async ({ page }) => {
-    await page.getByText('Built on Expo + Supabase').scrollIntoViewIfNeeded();
-    await expect(page.getByText('Built on Expo + Supabase')).toBeVisible();
+    await page.getByText('Privacy', { exact: true }).scrollIntoViewIfNeeded();
+    await expect(page.getByText('Support', { exact: true })).toBeVisible();
     await expect(page.getByText('Privacy', { exact: true })).toBeVisible();
     await expect(page.getByText('Terms', { exact: true })).toBeVisible();
   });
 
   test('hero actions are visible in mobile viewport', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto('/landing');
+    await page.goto('/');
     await waitForAppLoad(page);
 
     await expect(page.getByText('Real-time form coaching', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Get the iOS app').first()).toBeVisible();
-    await expect(page.getByText('See how it works')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Get started free' }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Sign in' }).first()).toBeVisible();
   });
 
   test('landing page section headings are visible', async ({ page }) => {
