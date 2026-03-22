@@ -34,9 +34,7 @@ const getScheme = () => {
 };
 
 const baseConfig = {
-  runtimeVersion: {
-    policy: 'appVersion',
-  },
+  runtimeVersion: '1.0.0',
   updates: {
     enabled: false,
     fallbackToCacheTimeout: 0,
