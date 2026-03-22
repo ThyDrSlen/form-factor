@@ -474,7 +474,7 @@ jobs:
           attempts=0
           until [ "$attempts" -ge 3 ]; do
             attempts=$((attempts + 1))
-            if bun audit --audit-level=moderate --ignore=GHSA-2g4f-4pwh-qvx6 --ignore=GHSA-rf6f-7fwh-wjgh; then
+            if bun audit --audit-level=moderate; then
               exit 0
             fi
             if [ "$attempts" -lt 3 ]; then
@@ -490,7 +490,7 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          bun audit --audit-level=moderate --ignore=GHSA-2g4f-4pwh-qvx6 --ignore=GHSA-rf6f-7fwh-wjgh
+          bun audit --audit-level=moderate
 
       - name: Run audit-ci
         run: |

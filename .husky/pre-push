@@ -10,4 +10,4 @@ bun run ci:policy
 bun run lint
 bun run check:types
 bun run test
-bun audit --audit-level=moderate --ignore=GHSA-2g4f-4pwh-qvx6 --ignore=GHSA-rf6f-7fwh-wjgh
+bun audit --audit-level=moderate
