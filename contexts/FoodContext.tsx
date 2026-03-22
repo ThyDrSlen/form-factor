@@ -1,8 +1,7 @@
-import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import * as Crypto from 'expo-crypto';
 import { localDB } from '../lib/services/database/local-db';
 import { syncService } from '../lib/services/database/sync-service';
-import { supabase } from '../lib/supabase';
 import { useNetwork } from './NetworkContext';
 import { useAuth } from './AuthContext';
 
@@ -41,39 +40,39 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
   const { isOnline } = useNetwork();
   const { user } = useAuth();
 
-  // Initialize local DB and set up sync
-  useEffect(() => {
-    initializeData();
-
-    // Set up realtime sync when authenticated
-    const setupRealtime = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user && isOnline) {
-        await syncService.initializeRealtimeSync(user.id);
-      }
-    };
-    setupRealtime();
-
-    // Register sync callback
-    const unsubscribe = syncService.onSyncComplete(() => {
-      loadLocalFoods();
-    });
-
-    // Cleanup
-    return () => {
-      unsubscribe();
-      syncService.cleanupRealtimeSync();
-    };
-  }, [isOnline, user?.id]);
-
-  // Sync when coming online
-  useEffect(() => {
-    if (isOnline) {
-      performSync();
+  const loadLocalFoods = useCallback(async () => {
+    try {
+      const localFoods = await localDB.getAllFoods();
+      const transformedFoods: FoodEntry[] = localFoods.map(item => ({
+        id: item.id,
+        name: item.name,
+        calories: item.calories,
+        protein: item.protein,
+        carbs: item.carbs,
+        fat: item.fat,
+        date: item.date,
+      }));
+      console.log('[FoodProvider] Loaded foods from local DB:', transformedFoods.length);
+      setFoods(transformedFoods);
+    } catch (error) {
+      console.error('[FoodProvider] Error loading local foods:', error);
     }
-  }, [isOnline]);
+  }, []);
 
-  const initializeData = async () => {
+  const performSync = useCallback(async () => {
+    try {
+      setIsSyncing(true);
+      console.log('[FoodProvider] Performing sync...');
+      await syncService.fullSync();
+      await loadLocalFoods();
+    } catch (error) {
+      console.error('[FoodProvider] Error during sync:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [loadLocalFoods]);
+
+  const initializeData = useCallback(async () => {
     try {
       setLoading(true);
       console.log('[FoodProvider] Initializing local database...');
@@ -93,39 +92,39 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isOnline, loadLocalFoods, performSync]);
 
-  const loadLocalFoods = async () => {
-    try {
-      const localFoods = await localDB.getAllFoods();
-      const transformedFoods: FoodEntry[] = localFoods.map(item => ({
-        id: item.id,
-        name: item.name,
-        calories: item.calories,
-        protein: item.protein,
-        carbs: item.carbs,
-        fat: item.fat,
-        date: item.date,
-      }));
-      console.log('[FoodProvider] Loaded foods from local DB:', transformedFoods.length);
-      setFoods(transformedFoods);
-    } catch (error) {
-      console.error('[FoodProvider] Error loading local foods:', error);
-    }
-  };
+  useEffect(() => {
+    void initializeData();
+  }, [initializeData]);
 
-  const performSync = async () => {
-    try {
-      setIsSyncing(true);
-      console.log('[FoodProvider] Performing sync...');
-      await syncService.fullSync();
-      await loadLocalFoods();
-    } catch (error) {
-      console.error('[FoodProvider] Error during sync:', error);
-    } finally {
-      setIsSyncing(false);
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const setupRealtime = async () => {
+      if (isOnline) {
+        await syncService.initializeRealtimeSync(user.id);
+      }
+    };
+
+    void setupRealtime();
+
+    const unsubscribe = syncService.onSyncComplete(() => {
+      void loadLocalFoods();
+    });
+
+    return () => {
+      unsubscribe();
+      syncService.cleanupRealtimeSync();
+    };
+  }, [isOnline, loadLocalFoods, user?.id]);
+
+  // Sync when coming online
+  useEffect(() => {
+    if (isOnline) {
+      void performSync();
     }
-  };
+  }, [isOnline, performSync]);
 
   const fetchFoods = async () => {
     await loadLocalFoods();
