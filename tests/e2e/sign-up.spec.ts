@@ -8,32 +8,29 @@ test.describe('Sign Up Flow', () => {
   });
 
   test('should display sign up form', async ({ page }) => {
-    await expect(page.getByText('Create Account')).toBeVisible();
-    await expect(page.getByText('Sign up to get started')).toBeVisible();
-    await expect(page.getByTestId('sign-up-full-name-input')).toBeVisible();
-    await expect(page.getByTestId('sign-up-email-input')).toBeVisible();
-    await expect(page.getByTestId('sign-up-password-input')).toBeVisible();
-    await expect(page.getByTestId('sign-up-submit-button')).toBeVisible();
+    await expect(page.getByText('Create your account')).toBeVisible();
+    await expect(page.getByText('Start tracking your form with Form Factor')).toBeVisible();
+    await expect(page.getByLabel('Email')).toBeVisible();
+    await expect(page.getByLabel('Password')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create account' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
   });
 
   test('should have link back to sign in', async ({ page }) => {
-    const signInLink = page.getByTestId('sign-up-sign-in-link');
+    const signInLink = page.getByRole('link', { name: 'Sign in' });
     await expect(signInLink).toBeVisible();
     await signInLink.click();
     await waitForAppLoad(page);
 
-    await expect(page.getByText('Welcome to Form Factor')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
   });
 
-  test('should show validation error on empty submit', async ({ page }) => {
-    await page.getByTestId('sign-up-submit-button').click();
-    await expect(page.getByTestId('sign-up-error-message')).toHaveText('Please fill in all fields');
+  test('should require email and password fields', async ({ page }) => {
+    await expect(page.getByLabel('Email')).toHaveAttribute('required', '');
+    await expect(page.getByLabel('Password')).toHaveAttribute('required', '');
   });
 
-  test('should show validation error when name is missing', async ({ page }) => {
-    await page.getByTestId('sign-up-email-input').fill('test@example.com');
-    await page.getByTestId('sign-up-password-input').fill('password123');
-    await page.getByTestId('sign-up-submit-button').click();
-    await expect(page.getByTestId('sign-up-error-message')).toHaveText('Please enter your full name');
+  test('should enforce the minimum password length', async ({ page }) => {
+    await expect(page.getByLabel('Password')).toHaveAttribute('minlength', '6');
   });
 });
