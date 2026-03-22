@@ -18,7 +18,16 @@ Pod::Spec.new do |s|
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
-    'SWIFT_COMPILATION_MODE' => 'wholemodule'
+    'SWIFT_COMPILATION_MODE' => 'wholemodule',
+    'FRAMEWORK_SEARCH_PATHS' => '$(inherited) "$(PODS_XCFRAMEWORKS_BUILD_DIR)/MediaPipeTasksCommon" "$(PODS_XCFRAMEWORKS_BUILD_DIR)/MediaPipeTasksVision"',
+    'LIBRARY_SEARCH_PATHS' => '$(inherited) "$(PODS_XCFRAMEWORKS_BUILD_DIR)/MediaPipeTasksCommon" "$(PODS_XCFRAMEWORKS_BUILD_DIR)/MediaPipeTasksVision"',
+  }
+
+  # Propagate framework search paths to the main app target so the linker
+  # can find the MediaPipe xcframeworks at link time (CocoaPods #9623).
+  s.user_target_xcconfig = {
+    'FRAMEWORK_SEARCH_PATHS' => '$(inherited) "$(PODS_XCFRAMEWORKS_BUILD_DIR)/MediaPipeTasksCommon" "$(PODS_XCFRAMEWORKS_BUILD_DIR)/MediaPipeTasksVision"',
+    'LIBRARY_SEARCH_PATHS' => '$(inherited) "$(PODS_XCFRAMEWORKS_BUILD_DIR)/MediaPipeTasksCommon" "$(PODS_XCFRAMEWORKS_BUILD_DIR)/MediaPipeTasksVision"',
   }
 
   s.dependency 'ExpoModulesCore'
