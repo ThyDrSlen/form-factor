@@ -168,14 +168,11 @@ export default function SignInScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Header with help button */}
+          {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>
               Form Factor
             </Text>
-            <TouchableOpacity style={styles.helpButton}>
-              <Ionicons name="help-circle-outline" size={24} color="#8E8E93" />
-            </TouchableOpacity>
           </View>
 
           {/* Main card container */}
@@ -368,9 +365,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 40,
-  },
-  helpButton: {
-    padding: 8,
   },
   card: {
     backgroundColor: '#0F2339',

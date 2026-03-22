@@ -143,11 +143,14 @@ serve(async (req: Request) => {
     return jsonResponse({ error: 'Missing server configuration' }, 500);
   }
 
-  if (NOTIFY_SECRET) {
-    const providedSecret = req.headers.get('x-notify-secret');
-    if (providedSecret !== NOTIFY_SECRET) {
-      return jsonResponse({ error: 'Unauthorized' }, 401);
-    }
+  if (!NOTIFY_SECRET) {
+    console.error('[notify] NOTIFY_SECRET is not configured');
+    return jsonResponse({ error: 'Server configuration error' }, 500);
+  }
+
+  const providedSecret = req.headers.get('x-notify-secret');
+  if (providedSecret !== NOTIFY_SECRET) {
+    return jsonResponse({ error: 'Unauthorized' }, 401);
   }
 
   try {
