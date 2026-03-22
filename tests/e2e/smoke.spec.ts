@@ -6,13 +6,13 @@ test.describe('Smoke Tests', () => {
     await page.goto('/');
     await waitForAppLoad(page);
 
-    await expect(page).toHaveURL(/.*landing/);
-    await expect(page.getByText('Real-time form coaching', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Get the iOS app').first()).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole('heading', { name: 'Real-time form coaching from your phone camera.' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Get started free' }).first()).toBeVisible();
   });
 
   test('page has required meta tags', async ({ page }) => {
-    await page.goto('/landing');
+    await page.goto('/');
 
     const viewport = await page.locator('meta[name="viewport"]').getAttribute('content');
     expect(viewport).toBeTruthy();
@@ -24,13 +24,13 @@ test.describe('Smoke Tests', () => {
   test('app responds to mobile viewport', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
 
-    await page.goto('/landing');
+    await page.goto('/');
     await waitForAppLoad(page);
 
     const body = page.locator('body');
     await expect(body).toBeVisible();
 
-    await expect(page.getByText('Get the iOS app').first()).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Get started free' }).first()).toBeVisible();
 
     const scrollWidth = await page.evaluate(() => document.body.scrollWidth);
     const viewportWidth = await page.evaluate(() => window.innerWidth);
@@ -40,11 +40,11 @@ test.describe('Smoke Tests', () => {
   test('app responds to tablet viewport', async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1024 });
 
-    await page.goto('/landing');
+    await page.goto('/');
     await waitForAppLoad(page);
 
-    await expect(page.getByText('Real-time form coaching', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Get the iOS app').first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Real-time form coaching from your phone camera.' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Get started free' }).first()).toBeVisible();
 
     const scrollWidth = await page.evaluate(() => document.body.scrollWidth);
     const viewportWidth = await page.evaluate(() => window.innerWidth);
@@ -54,11 +54,11 @@ test.describe('Smoke Tests', () => {
   test('app responds to large desktop viewport', async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
 
-    await page.goto('/landing');
+    await page.goto('/');
     await waitForAppLoad(page);
 
-    await expect(page.getByText('Real-time form coaching', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Get the iOS app').first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Real-time form coaching from your phone camera.' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Get started free' }).first()).toBeVisible();
 
     const scrollWidth = await page.evaluate(() => document.body.scrollWidth);
     const viewportWidth = await page.evaluate(() => window.innerWidth);
