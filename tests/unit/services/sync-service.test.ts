@@ -112,7 +112,6 @@ const mockLocalDB = (global as any).__mockLocalDB as Record<string, jest.Mock>;
 // ---------------------------------------------------------------------------
 
 function resetSyncService() {
-  (syncService as any).isSyncing = false;
   (syncService as any).syncPromise = null;
   (syncService as any).syncCallbacks = [];
   (syncService as any).syncStatusCallbacks = [];
@@ -224,18 +223,25 @@ describe('SyncService', () => {
   // syncToSupabase — concurrency lock & basic flow
   // -----------------------------------------------------------------------
   describe('syncToSupabase', () => {
-    it('skips when already syncing (isSyncing lock)', async () => {
-      (syncService as any).isSyncing = true;
-      await syncService.syncToSupabase();
+    it('skips when already syncing (syncPromise lock)', async () => {
+      // Simulate an in-flight sync by setting syncPromise to a pending promise
+      const neverResolves = new Promise<void>(() => {});
+      (syncService as any).syncPromise = neverResolves;
+      // syncToSupabase should join the existing promise, not start a new sync
+      const result = syncService.syncToSupabase();
       expect(mockGetUser).not.toHaveBeenCalled();
+      // Clean up so test doesn't hang
+      (syncService as any).syncPromise = null;
+      // The returned promise is the existing neverResolves; we don't await it
+      void result;
     });
 
-    it('sets isSyncing during execution and resets after', async () => {
-      expect((syncService as any).isSyncing).toBe(false);
+    it('sets syncPromise during execution and clears after', async () => {
+      expect((syncService as any).syncPromise).toBeNull();
       const promise = syncService.syncToSupabase();
-      expect((syncService as any).isSyncing).toBe(true);
+      expect((syncService as any).syncPromise).not.toBeNull();
       await promise;
-      expect((syncService as any).isSyncing).toBe(false);
+      expect((syncService as any).syncPromise).toBeNull();
     });
 
     it('skips sync when no authenticated user', async () => {
@@ -377,7 +383,7 @@ describe('SyncService', () => {
       expect(mockLocalDB.incrementSyncQueueRetry).not.toHaveBeenCalledWith(40, expect.anything());
     });
 
-    it('handles corrupted JSON data gracefully (catches parse error)', async () => {
+    it('handles corrupted JSON data gracefully (removes unparseable item)', async () => {
       mockLocalDB.getSyncQueue.mockResolvedValue([
         {
           id: 50,
@@ -393,10 +399,8 @@ describe('SyncService', () => {
 
       await syncService.syncToSupabase();
 
-      expect(mockLocalDB.incrementSyncQueueRetry).toHaveBeenCalledWith(
-        50,
-        expect.any(String)
-      );
+      expect(mockLocalDB.removeSyncQueueItem).toHaveBeenCalledWith(50);
+      expect(mockLocalDB.incrementSyncQueueRetry).not.toHaveBeenCalled();
     });
 
     it('purges local record and removes queue item on RLS violation (42501)', async () => {
