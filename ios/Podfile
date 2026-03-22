@@ -56,5 +56,25 @@ target 'formfactoreas' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
+
+    # Fix MediaPipe XCFramework search paths (CocoaPods #9623).
+    # The [CP] Copy XCFrameworks phase copies the xcframeworks to
+    # PODS_XCFRAMEWORKS_BUILD_DIR, but the linker sometimes can't find them
+    # because FRAMEWORK_SEARCH_PATHS doesn't include those directories.
+    mediapipe_pods = ['MediaPipeTasksCommon', 'MediaPipeTasksVision']
+    xcf_paths = mediapipe_pods.map { |p| "\"${PODS_XCFRAMEWORKS_BUILD_DIR}/#{p}\"" }.join(' ')
+
+    installer.pods_project.targets.each do |target|
+      next unless target.name.start_with?('arkit-body-tracker') ||
+                  target.name.start_with?('Pods-formfactoreas')
+      target.build_configurations.each do |build_config|
+        ['FRAMEWORK_SEARCH_PATHS', 'LIBRARY_SEARCH_PATHS'].each do |key|
+          existing = build_config.build_settings[key] || '$(inherited)'
+          unless existing.include?('PODS_XCFRAMEWORKS_BUILD_DIR')
+            build_config.build_settings[key] = "$(inherited) #{xcf_paths}"
+          end
+        end
+      end
+    end
   end
 end
