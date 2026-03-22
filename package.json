@@ -176,6 +176,8 @@
     "unrs-resolver"
   ],
   "overrides": {
-    "@eslint/eslintrc>minimatch": "9.0.5"
+    "@eslint/eslintrc>minimatch": "9.0.5",
+    "flatted": "3.4.2",
+    "ajv": "6.14.0"
   }
 }
