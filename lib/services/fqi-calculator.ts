@@ -65,6 +65,15 @@ function calculateRomScore(
       const left = metric.extract(repAngles, 'left');
       const right = metric.extract(repAngles, 'right');
 
+      if (
+        !Number.isFinite(left.min) ||
+        !Number.isFinite(left.max) ||
+        !Number.isFinite(right.min) ||
+        !Number.isFinite(right.max)
+      ) {
+        continue;
+      }
+
       const avgMin = (left.min + right.min) / 2;
       const avgMax = (left.max + right.max) / 2;
       const actualRom = Math.abs(avgMax - avgMin);
@@ -148,6 +157,10 @@ function calculateDepthScore(
 
       const left = metric.extract(repAngles, 'left');
       const right = metric.extract(repAngles, 'right');
+
+      if (!Number.isFinite(left.min) || !Number.isFinite(right.min)) {
+        continue;
+      }
 
       const avgMin = (left.min + right.min) / 2;
       const deviation = Math.abs(avgMin - range.optimal);
@@ -284,6 +297,17 @@ export function calculateFqi(
   const faultContribution = (100 - totalPenalty) * weights.faults;
 
   const rawScore = romContribution + depthContribution + faultContribution;
+
+  // Guard against NaN propagation from upstream calculations
+  if (!Number.isFinite(rawScore)) {
+    return {
+      score: 0,
+      romScore: Number.isFinite(romScore) ? Math.round(romScore) : 0,
+      depthScore: Number.isFinite(depthScore) ? Math.round(depthScore) : 0,
+      faultPenalty: totalPenalty,
+      detectedFaults: faultIds,
+    };
+  }
 
   // Clamp to 0-100
   const score = Math.max(0, Math.min(100, Math.round(rawScore)));

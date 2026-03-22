@@ -81,7 +81,7 @@ export class OcclusionHoldManager {
       }
 
       held.missingFrames += 1;
-      const base = typeof held.lastGood.confidence === 'number' ? clamp01(held.lastGood.confidence) : 1;
+      const base = typeof held.lastGood.confidence === 'number' ? clamp01(held.lastGood.confidence) : CONFIDENCE_TIER_THRESHOLDS.low;
       const decayed = this.decayConfidence(base, held.missingFrames);
       output.set(key, {
         x: held.lastGood.x,
@@ -123,7 +123,7 @@ export class OcclusionHoldManager {
       }
 
       held.missingFrames += 1;
-      const base = typeof held.lastGood.confidence === 'number' ? clamp01(held.lastGood.confidence) : 1;
+      const base = typeof held.lastGood.confidence === 'number' ? clamp01(held.lastGood.confidence) : CONFIDENCE_TIER_THRESHOLDS.low;
       const decayed = this.decayConfidence(base, held.missingFrames);
       output[key] = {
         x: held.lastGood.x,

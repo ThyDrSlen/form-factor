@@ -169,17 +169,18 @@ export class RepDetectorPullup {
     }
 
     const visible = areRequiredJointsVisible(joints, REQUIRED_JOINTS, this.options.minJointConfidence);
-    const gap = visible ? computeShoulderHandGap(joints) : null;
-    if (!visible || gap === null) {
+    const rawGap = visible ? computeShoulderHandGap(joints) : null;
+    if (!visible || rawGap === null || !Number.isFinite(rawGap)) {
       this.freezeOrTimeout();
       return;
     }
+    const gap = rawGap;
 
     if (this.baselineGap === null) {
       this.baselineGap = gap;
     }
 
-    const delta = this.baselineGap === null ? 0 : gap - this.baselineGap;
+    const delta = gap - this.baselineGap;
     const avgElbow = (input.angles.leftElbow + input.angles.rightElbow) / 2;
 
     if (

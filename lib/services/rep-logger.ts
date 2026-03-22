@@ -263,8 +263,10 @@ export function checkCueAdoption(
   reps: { faultsDetected: string[]; cuesEmitted: EmittedCue[] }[],
   windowSize = 3
 ): boolean {
+  if (reps.length < windowSize) return false;
+
   // Simple heuristic: if cues were emitted and faults decreased, consider it adopted
-  for (let i = 0; i < reps.length - windowSize; i++) {
+  for (let i = 0; i <= reps.length - windowSize - 1; i++) {
     const cuesAtRep = reps[i].cuesEmitted;
     if (cuesAtRep.length === 0) continue;
 

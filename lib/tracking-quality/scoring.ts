@@ -137,16 +137,16 @@ function missingReasonForRequiredJoints(input: {
   for (const spec of input.required) {
     if (typeof spec === 'string') {
       const joint = getJointFrom(input.joints, spec);
-        if (jointVisibilityScore(joint, Number.POSITIVE_INFINITY) < minConfidence) {
-          missing.push(spec);
-        }
-        continue;
+      if (jointVisibilityScore(joint, Number.POSITIVE_INFINITY) < minConfidence) {
+        missing.push(spec);
       }
+      continue;
+    }
 
-      const best = visibilityScoreForSpec(input.joints, spec, Number.POSITIVE_INFINITY);
-      if (best < minConfidence) {
-        missing.push(`[${spec.join('|')}]`);
-      }
+    const best = visibilityScoreForSpec(input.joints, spec, Number.POSITIVE_INFINITY);
+    if (best < minConfidence) {
+      missing.push(`[${spec.join('|')}]`);
+    }
   }
 
   if (missing.length === 0) {
