@@ -3,6 +3,7 @@ import { ActivityIndicator, FlatList, Text, TextInput, TouchableOpacity, View } 
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Crypto from 'expo-crypto';
 import { useAuth } from '../../contexts/AuthContext';
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
@@ -38,6 +39,8 @@ export default function CoachScreen() {
 
   const bottomOffset = Math.max(tabBarHeight, insets.bottom) + spacing.md;
 
+  const coachSessionId = useMemo(() => Crypto.randomUUID(), []);
+
   const coachContext = useMemo(
     () => ({
       profile: {
@@ -46,8 +49,9 @@ export default function CoachScreen() {
         email: user?.email ?? null,
       },
       focus: 'fitness_coach',
+      sessionId: coachSessionId,
     }),
-    [user]
+    [user, coachSessionId]
   );
 
   const handleCoachSend = async (preset?: string) => {
