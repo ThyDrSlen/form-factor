@@ -49,6 +49,7 @@
     "eval:coach": "bun scripts/eval-coach.ts",
     "eval:redteam": "bun scripts/eval-redteam.ts",
     "eval:view": "promptfoo view",
+    "eval:export-conversations": "bun scripts/export-coach-conversations.ts",
     "prepare": "command -v husky >/dev/null 2>&1 && husky || true",
     "postinstall": "node -e \"let r; try{r=require.resolve('patch-package')}catch(e){process.exit(0)}; require('child_process').execSync('patch-package',{stdio:'inherit'})\"",
     "web:dev": "cd apps/web && bun run dev",
