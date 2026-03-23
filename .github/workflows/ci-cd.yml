@@ -113,6 +113,63 @@ jobs:
             echo "depcheck not available, skipping dependency check"
           fi
 
+  # Job: AI Coach Evaluation (runs when coach code or eval configs change)
+  # Required secrets: OPENAI_API_KEY, PROMPTFOO_GRADER (optional, defaults to openai:gpt-4o-mini)
+  ai-eval:
+    name: AI Coach Evaluation
+    runs-on: ubuntu-latest
+    needs: [changes, quality]
+    continue-on-error: true
+    if: >-
+      ${{ needs.changes.outputs.app_code == 'true' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-cache-v3-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-cache-v3-
+
+      - name: Cache Promptfoo
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/promptfoo
+          key: ${{ runner.os }}-promptfoo-${{ hashFiles('evals/**') }}
+          restore-keys: |
+            ${{ runner.os }}-promptfoo-
+
+      - name: Clean patched packages
+        run: bash scripts/ci/clean_patched_packages.sh
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --backend=copyfile
+
+      - name: Run coach evaluation
+        run: bun run eval:coach
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PROMPTFOO_GRADER: ${{ secrets.PROMPTFOO_GRADER || 'openai:gpt-4o-mini' }}
+
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coach-eval-report
+          path: |
+            evals/output/coach-report.md
+            evals/output/coach-results.json
+          retention-days: 14
+
   # Job 2: E2E Tests
   e2e-tests:
     name: E2E Tests
