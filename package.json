@@ -46,6 +46,9 @@
     "fixtures:pullup:prepare": "bun scripts/prepare-pullup-fixtures.ts",
     "eval:pullup-tracking": "bun scripts/eval-pullup-tracking.ts",
     "baseline:pullup-tracking": "bun scripts/baseline-pullup-tracking.ts",
+    "eval:coach": "bun scripts/eval-coach.ts",
+    "eval:redteam": "bun scripts/eval-redteam.ts",
+    "eval:view": "promptfoo view",
     "prepare": "command -v husky >/dev/null 2>&1 && husky || true",
     "postinstall": "node -e \"let r; try{r=require.resolve('patch-package')}catch(e){process.exit(0)}; require('child_process').execSync('patch-package',{stdio:'inherit'})\"",
     "web:dev": "cd apps/web && bun run dev",
@@ -65,7 +68,6 @@
     "qs": "6.14.1",
     "tar": "7.5.11",
     "flatted": "3.4.2",
-    "ajv": "6.14.0",
     "undici": "7.24.1",
     "minimatch": "10.2.3"
   },
@@ -163,6 +165,7 @@
     "jest-expo": "~54.0.17",
     "knip": "^5.82.1",
     "patch-package": "^8.0.1",
+    "promptfoo": "^0.121.2",
     "react-test-renderer": "19.2.3"
   },
   "private": true,
@@ -176,7 +179,6 @@
   ],
   "overrides": {
     "@eslint/eslintrc>minimatch": "9.0.5",
-    "flatted": "3.4.2",
-    "ajv": "6.14.0"
+    "flatted": "3.4.2"
   }
 }
