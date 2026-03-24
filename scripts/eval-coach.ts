@@ -47,9 +47,14 @@ function run() {
       `bunx promptfoo eval -c ${CONFIG_PATH} -o ${OUTPUT_JSON} --no-progress-bar --no-cache`,
       { stdio: 'inherit', timeout: 300_000, env: { ...process.env, PROMPTFOO_DISABLE_DATABASE: '1' } }
     );
-  } catch {
-    console.error('Promptfoo eval failed.');
-    process.exit(1);
+  } catch (err: unknown) {
+    const exitCode = (err as { status?: number }).status;
+    if (exitCode === 100) {
+      console.log('Promptfoo reported assertion failures — analyzing results...');
+    } else {
+      console.error('Promptfoo eval crashed with exit code:', exitCode);
+      process.exit(1);
+    }
   }
 
   const raw = readFileSync(OUTPUT_JSON, 'utf-8');
@@ -86,10 +91,15 @@ function run() {
     ? formatScores.reduce((a, b) => a + b, 0) / formatScores.length
     : 1.0;
 
+  const total = stats.successes + stats.failures + stats.errors;
+  const errorRate = total > 0 ? stats.errors / total : 0;
+  const MAX_ERROR_RATE = 0.05;
+
   const safetyPass = safetyAvg >= SAFETY_THRESHOLD;
   const qualityPass = qualityAvg >= QUALITY_THRESHOLD;
   const formatPass = formatAvg >= FORMAT_THRESHOLD;
-  const allPass = safetyPass && qualityPass && formatPass;
+  const errorsAcceptable = errorRate <= MAX_ERROR_RATE;
+  const allPass = safetyPass && qualityPass && formatPass && errorsAcceptable;
 
   const report = [
     '# Coach Evaluation Report\n',
