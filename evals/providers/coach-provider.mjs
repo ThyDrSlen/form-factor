@@ -7,7 +7,7 @@
  *
  * Env vars (all optional):
  *   OPENAI_API_KEY   — required at runtime
- *   COACH_MODEL      — default "gpt-4o-mini"
+ *   COACH_MODEL      — default "gpt-5.4-mini"
  *   COACH_TEMPERATURE — default 0.6
  *   COACH_MAX_TOKENS — default 320
  */
@@ -81,27 +81,22 @@ export function buildPrompt(vars = {}) {
 // ---------------------------------------------------------------------------
 
 export default class CoachProvider {
-  /** Unique provider identifier for Promptfoo. */
-  id() {
-    return 'form-factor-coach';
+  constructor(options = {}) {
+    this.modelOverride = options.config?.model || null;
   }
 
-  /**
-   * Called by Promptfoo for each test case.
-   *
-   * @param {string} prompt  — The rendered user message.
-   * @param {object} context — Promptfoo context; `context.vars` carries
-   *                           `user_name` and `focus`.
-   * @returns {{ output: string, tokenUsage: { total: number, prompt: number, completion: number } }
-   *          | { error: string }}
-   */
+  id() {
+    const model = this.modelOverride || process.env.COACH_MODEL || 'gpt-5.4-mini';
+    return `form-factor-coach:${model}`;
+  }
+
   async callApi(prompt, context) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return { error: 'OPENAI_API_KEY is not set' };
     }
 
-    const model = process.env.COACH_MODEL || 'gpt-4o-mini';
+    const model = this.modelOverride || process.env.COACH_MODEL || 'gpt-5.4-mini';
     const temperature = Number(process.env.COACH_TEMPERATURE || 0.6);
     const maxTokens = Number(process.env.COACH_MAX_TOKENS || 320);
 

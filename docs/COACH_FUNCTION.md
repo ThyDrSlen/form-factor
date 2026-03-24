@@ -8,7 +8,7 @@ Supabase Edge Function that powers the in-app Coach tab.
 ```
 supabase secrets set \
   OPENAI_API_KEY=sk-... \
-  COACH_MODEL=gpt-4o-mini \
+  COACH_MODEL=gpt-5.4-mini \
   COACH_TEMPERATURE=0.6 \
   COACH_MAX_TOKENS=320
 ```
@@ -40,5 +40,5 @@ supabase functions deploy coach
 
 ### Notes
 - Uses OpenAI chat completions; keep the key in Supabase secrets (never ship it in the app).
-- Defaults: model `gpt-4o-mini`, temperature `0.6`, max tokens `320`. Override with env vars.
+- Defaults: model `gpt-5.4-mini`, temperature `0.6`, max tokens `320`. Override with env vars.
 - Basic CORS headers are included so Expo web/mobile can call it via `supabase.functions.invoke`.

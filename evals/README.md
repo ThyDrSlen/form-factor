@@ -13,7 +13,10 @@ bun run eval:coach
 # Run red team security evaluation
 bun run eval:redteam
 
-# Open Promptfoo web UI to review results
+# A/B test across models (gpt-5.4-mini vs gpt-4o-mini vs gpt-4o)
+bun run eval:ab-test
+
+# Open Promptfoo web UI to review results (side-by-side comparison for A/B)
 bun run eval:view
 
 # Export real conversations for regression testing
@@ -25,7 +28,7 @@ bun run eval:export-conversations
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENAI_API_KEY` | Yes | — | OpenAI API key for the coach provider |
-| `PROMPTFOO_GRADER` | No | `openai:gpt-4o-mini` | Model used for LLM-graded assertions |
+| `PROMPTFOO_GRADER` | No | `openai:gpt-5.4-mini` | Model used for LLM-graded assertions |
 | `ANTHROPIC_API_KEY` | No | — | Required if using Claude as the grader |
 | `SUPABASE_SERVICE_ROLE_KEY` | No | — | Required for `eval:export-conversations` |
 
@@ -70,7 +73,7 @@ scenarios/*.yaml → coach-eval.yaml → coach-provider.mjs → OpenAI API
 | Coach eval (~45 scenarios) | $2–5 | 2–5 min |
 | Red team (~30 scenarios) | $5–10 | 5–10 min |
 
-Costs depend on grader model. Using `gpt-4o-mini` as grader is cheapest. Claude Sonnet is ~3x more expensive but may catch more nuanced issues.
+Costs depend on grader model. Using `gpt-5.4-mini` as grader is cheapest. Claude Sonnet is ~3x more expensive but may catch more nuanced issues.
 
 ## CI Integration
 
