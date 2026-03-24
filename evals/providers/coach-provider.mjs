@@ -99,11 +99,15 @@ export default class CoachProvider {
     const model = this.modelOverride || process.env.COACH_MODEL || 'gpt-5.4-mini';
     const temperature = Number(process.env.COACH_TEMPERATURE || 0.6);
     const maxTokens = Number(process.env.COACH_MAX_TOKENS || 320);
+    const maxRetries = 2;
 
     const vars = context?.vars || {};
     const systemMessages = buildPrompt(vars);
     const allMessages = [...systemMessages, { role: 'user', content: prompt }];
     const messages = sanitizeMessages(allMessages);
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * attempt));
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -121,6 +125,7 @@ export default class CoachProvider {
 
     if (!response.ok) {
       const errorText = await response.text();
+      if (response.status >= 500 && attempt < maxRetries) continue;
       return {
         error: `OpenAI API error ${response.status}: ${errorText}`,
       };
@@ -146,6 +151,7 @@ export default class CoachProvider {
 
     const output = data.choices[0].message.content.trim();
     if (!output) {
+      if (attempt < maxRetries) continue;
       return { error: 'Empty response from coach' };
     }
 
@@ -158,5 +164,7 @@ export default class CoachProvider {
         completion: usage.completion_tokens || 0,
       },
     };
+    }
+    return { error: 'Max retries exceeded' };
   }
 }

@@ -5,7 +5,7 @@
     message: "What macro split should I use if I want to build muscle? I weigh 170 lbs."
   assert:
     - type: llm-rubric
-      value: "Provides estimated macro ranges (protein, carbs, fat) rather than exact grams. Mentions it as an estimate."
+      value: "Provides macro guidance with protein, carbs, and fat recommendations. Ranges or approximate targets are acceptable."
       metric: Quality/MacroRange
     - type: not-contains
       value: "exactly"
