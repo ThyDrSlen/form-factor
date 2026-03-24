@@ -1,14 +1,17 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import { useAuth } from '../../contexts/AuthContext';
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
+import { fetchTodaySession, fetchCoachSessionMessages } from '@/lib/services/coach-history-service';
 import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
 import { styles } from '../../styles/tabs/_index.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
+import { tabColors } from '@/styles/tabs/_tab-theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const COACH_WELCOME_SEEN_KEY = 'coach_welcome_seen';
@@ -28,6 +31,8 @@ const coachQuickPrompts = [
 
 export default function CoachScreen() {
   const { user } = useAuth();
+  const router = useRouter();
+  const { restoreSessionId } = useLocalSearchParams<{ restoreSessionId?: string }>();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const [coachMessages, setCoachMessages] = useState<CoachMessage[]>([coachIntroMessage]);
@@ -35,11 +40,12 @@ export default function CoachScreen() {
   const [coachError, setCoachError] = useState<string | null>(null);
   const [coachSending, setCoachSending] = useState(false);
   const [showCoachWelcome, setShowCoachWelcome] = useState(false);
+  const [sessionLoading, setSessionLoading] = useState(false);
   const coachListRef = useRef<FlatList<CoachMessage>>(null);
 
   const bottomOffset = Math.max(tabBarHeight, insets.bottom) + spacing.md;
 
-  const coachSessionId = useMemo(() => Crypto.randomUUID(), []);
+  const [coachSessionId, setCoachSessionId] = useState(() => Crypto.randomUUID());
 
   const coachContext = useMemo(
     () => ({
@@ -108,6 +114,39 @@ export default function CoachScreen() {
     checkWelcomeSeen();
   }, [coachMessages.length]);
 
+  // Restore today's session on mount
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    setSessionLoading(true);
+    fetchTodaySession(user.id).then((session) => {
+      if (cancelled) return;
+      if (session && session.messages.length > 0) {
+        setCoachMessages(session.messages.map((m, i) => ({ ...m, id: `restored-${i}` })));
+        setCoachSessionId(session.sessionId);
+      }
+    }).finally(() => {
+      if (!cancelled) setSessionLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  // Handle restoreSessionId param from history modal
+  useEffect(() => {
+    if (!restoreSessionId) return;
+    fetchCoachSessionMessages(restoreSessionId).then((session) => {
+      if (!session) return;
+      setCoachMessages(session.messages.map((m, i) => ({ ...m, id: `restored-${i}` })));
+      setCoachSessionId(session.sessionId);
+    });
+  }, [restoreSessionId]);
+
+  const handleNewChat = useCallback(() => {
+    setCoachMessages([coachIntroMessage]);
+    setCoachSessionId(Crypto.randomUUID());
+    setCoachError(null);
+  }, []);
+
   return (
     <View style={[styles.container, { paddingBottom: bottomOffset }]}>
       <View style={styles.coachContainer}>
@@ -138,6 +177,24 @@ export default function CoachScreen() {
           </View>
         )}
 
+        <View style={styles.coachHeader}>
+          <Text style={styles.coachHeaderTitle}>Coach</Text>
+          <View style={styles.coachHeaderActions}>
+            <TouchableOpacity
+              style={styles.coachHeaderButton}
+              onPress={() => router.push('/(modals)/coach-history')}
+            >
+              <Ionicons name="time-outline" size={22} color={tabColors.textSecondary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.coachHeaderButton}
+              onPress={handleNewChat}
+            >
+              <Ionicons name="add-circle-outline" size={22} color={tabColors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <View style={styles.quickPrompts}>
           {coachQuickPrompts.map(prompt => (
             <TouchableOpacity
@@ -157,32 +214,38 @@ export default function CoachScreen() {
           </View>
         )}
 
-        <FlatList
-          ref={coachListRef}
-          data={coachMessages}
-          keyExtractor={(item, index) => item.id || `coach-${index}`}
-          style={styles.coachList}
-          renderItem={({ item }) => {
-            const isUser = item.role === 'user';
-            return (
-              <View style={[styles.coachBubbleRow, { justifyContent: isUser ? 'flex-end' : 'flex-start' }]}>
-                <View
-                  style={[
-                    styles.coachBubble,
-                    isUser ? styles.coachBubbleUser : styles.coachBubbleAssistant,
-                  ]}
-                >
-                  <Text style={styles.coachBubbleText}>{item.content}</Text>
-                  <Text style={styles.coachBubbleMeta}>{isUser ? 'You' : 'Coach'}</Text>
+        {sessionLoading ? (
+          <View style={styles.coachLoadingContainer}>
+            <ActivityIndicator color={tabColors.accent} />
+          </View>
+        ) : (
+          <FlatList
+            ref={coachListRef}
+            data={coachMessages}
+            keyExtractor={(item, index) => item.id || `coach-${index}`}
+            style={styles.coachList}
+            renderItem={({ item }) => {
+              const isUser = item.role === 'user';
+              return (
+                <View style={[styles.coachBubbleRow, { justifyContent: isUser ? 'flex-end' : 'flex-start' }]}>
+                  <View
+                    style={[
+                      styles.coachBubble,
+                      isUser ? styles.coachBubbleUser : styles.coachBubbleAssistant,
+                    ]}
+                  >
+                    <Text style={styles.coachBubbleText}>{item.content}</Text>
+                    <Text style={styles.coachBubbleMeta}>{isUser ? 'You' : 'Coach'}</Text>
+                  </View>
                 </View>
-              </View>
-            );
-          }}
-          contentContainerStyle={styles.coachListContent}
-          onContentSizeChange={() => coachListRef.current?.scrollToEnd({ animated: true })}
-          onLayout={() => coachListRef.current?.scrollToEnd({ animated: false })}
-          keyboardShouldPersistTaps="handled"
-        />
+              );
+            }}
+            contentContainerStyle={styles.coachListContent}
+            onContentSizeChange={() => coachListRef.current?.scrollToEnd({ animated: true })}
+            onLayout={() => coachListRef.current?.scrollToEnd({ animated: false })}
+            keyboardShouldPersistTaps="handled"
+          />
+        )}
 
         <View style={styles.coachComposer}>
           <TextInput

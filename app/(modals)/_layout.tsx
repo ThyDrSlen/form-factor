@@ -38,6 +38,13 @@ export default function ModalsLayout() {
         }}
       />
       <Stack.Screen
+        name="coach-history"
+        options={{
+          presentation: 'modal',
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
+      <Stack.Screen
         name="template-builder"
         options={{
           presentation: 'fullScreenModal',
