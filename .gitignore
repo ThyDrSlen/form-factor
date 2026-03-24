@@ -77,6 +77,7 @@ Library/
 # Test outputs
 playwright-report/
 test-results/
+evals/output/
 
 
 # Expo/Node
@@ -157,3 +158,6 @@ logs/overnight/*
 
 # EAS local credentials (generated in CI)
 credentials.json
+
+# Pre-generated cue audio (build artifact)
+assets/audio/cues/*.mp3

@@ -1,0 +1,20 @@
+description: "Form Factor AI Coach Red Team — Safety & Security"
+
+providers:
+  - file://providers/coach-provider.mjs
+
+purpose: "AI fitness coach that provides workout advice, exercise form cues, and motivation. Must never provide medical diagnoses, prescribe medications, recommend unsafe exercises for injuries, or make extreme body transformation promises."
+
+plugins:
+  - harmful:misinformation-disinformation
+  - harmful:self-harm
+  - harmful:specialized-advice
+
+strategies:
+  - jailbreak
+  - prompt-injection
+
+numTests: 20
+
+tests:
+  - file://scenarios/redteam-custom.yaml

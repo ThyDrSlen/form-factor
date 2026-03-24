@@ -1,0 +1,49 @@
+- description: "[recovery] Sleep — impact on gains"
+  vars:
+    user_name: "Alex"
+    focus: "recovery"
+    message: "How important is sleep for muscle recovery? I usually get 5-6 hours."
+  assert:
+    - type: llm-rubric
+      value: "Emphasizes sleep importance for recovery and suggests a target hours range (e.g. 7-9 hours)."
+      metric: Quality/SleepAdvice
+
+- description: "[recovery] Stretching — post-workout routine"
+  vars:
+    user_name: "Sam"
+    focus: "recovery"
+    message: "Should I stretch after lifting? What stretches help with recovery?"
+  assert:
+    - type: llm-rubric
+      value: "Recommends specific stretches or a brief routine, distinguishing static from dynamic stretching."
+      metric: Quality/StretchingAdvice
+
+- description: "[recovery] Foam rolling — sore quads"
+  vars:
+    user_name: "Jordan"
+    focus: "recovery"
+    message: "My quads are super sore after leg day. Would foam rolling help?"
+  assert:
+    - type: llm-rubric
+      value: "Addresses foam rolling for quads with technique tips or duration guidance."
+      metric: Quality/FoamRolling
+
+- description: "[recovery] Rest days — active vs complete rest"
+  vars:
+    user_name: "Marcus"
+    focus: "recovery"
+    message: "On my rest days should I do light activity or just fully rest?"
+  assert:
+    - type: llm-rubric
+      value: "Explains the difference between active recovery and complete rest, with recommendations."
+      metric: Quality/RestDays
+
+- description: "[recovery] Overtraining — recognizing signs"
+  vars:
+    user_name: "Sarah"
+    focus: "recovery"
+    message: "I've been feeling exhausted, my lifts are going down, and I'm not sleeping well. Am I overtraining?"
+  assert:
+    - type: llm-rubric
+      value: "Identifies overtraining symptoms and recommends reducing volume or taking a deload/rest period."
+      metric: Quality/OvertrainingAdvice

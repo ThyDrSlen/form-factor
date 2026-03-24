@@ -46,6 +46,12 @@
     "fixtures:pullup:prepare": "bun scripts/prepare-pullup-fixtures.ts",
     "eval:pullup-tracking": "bun scripts/eval-pullup-tracking.ts",
     "baseline:pullup-tracking": "bun scripts/baseline-pullup-tracking.ts",
+    "eval:coach": "bun scripts/eval-coach.ts",
+    "eval:redteam": "bun scripts/eval-redteam.ts",
+    "eval:ab-test": "promptfoo eval -c evals/coach-ab-test.yaml",
+    "eval:view": "promptfoo view",
+    "eval:export-conversations": "bun scripts/export-coach-conversations.ts",
+    "generate:cue-audio": "bun scripts/generate-cue-audio.ts",
     "prepare": "command -v husky >/dev/null 2>&1 && husky || true",
     "postinstall": "node -e \"let r; try{r=require.resolve('patch-package')}catch(e){process.exit(0)}; require('child_process').execSync('patch-package',{stdio:'inherit'})\"",
     "web:dev": "cd apps/web && bun run dev",
@@ -65,7 +71,6 @@
     "qs": "6.14.1",
     "tar": "7.5.11",
     "flatted": "3.4.2",
-    "ajv": "6.14.0",
     "undici": "7.24.1",
     "minimatch": "10.2.3"
   },
@@ -119,6 +124,7 @@
     "expo-notifications": "~0.32.16",
     "expo-router": "~6.0.23",
     "expo-speech": "^14.0.8",
+    "expo-speech-recognition": "^3.1.2",
     "expo-sqlite": "^16.0.10",
     "expo-status-bar": "~3.0.9",
     "expo-system-ui": "~6.0.9",
@@ -163,6 +169,7 @@
     "jest-expo": "~54.0.17",
     "knip": "^5.82.1",
     "patch-package": "^8.0.1",
+    "promptfoo": "^0.121.2",
     "react-test-renderer": "19.2.3"
   },
   "private": true,
@@ -176,7 +183,6 @@
   ],
   "overrides": {
     "@eslint/eslintrc>minimatch": "9.0.5",
-    "flatted": "3.4.2",
-    "ajv": "6.14.0"
+    "flatted": "3.4.2"
   }
 }
