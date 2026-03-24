@@ -159,8 +159,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --backend=copyfile
 
-      - name: Rebuild native modules for Node.js
-        run: npm rebuild better-sqlite3
+      - name: Rebuild better-sqlite3 native bindings
+        run: cd node_modules/better-sqlite3 && npx --yes node-gyp rebuild
+        env:
+          npm_config_python: python3
 
       - name: Run coach evaluation
         run: npx promptfoo eval -c evals/coach-eval.yaml -o evals/output/coach-results.json --no-progress-bar --no-cache
