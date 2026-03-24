@@ -202,8 +202,8 @@ describe('CoachProvider', () => {
     globalThis.fetch = originalFetch;
   });
 
-  test('id() returns form-factor-coach', () => {
-    expect(provider.id()).toBe('form-factor-coach');
+test('id() includes model name', () => {
+expect(provider.id()).toBe('form-factor-coach:gpt-5.4-mini');
   });
 
   test('returns error when OPENAI_API_KEY is not set', async () => {
@@ -227,7 +227,7 @@ describe('CoachProvider', () => {
     expect(options.headers.Authorization).toBe('Bearer test-api-key');
 
     const body = JSON.parse(options.body);
-    expect(body.model).toBe('gpt-4o-mini');
+    expect(body.model).toBe('gpt-5.4-mini');
     expect(body.temperature).toBe(0.6);
     expect(body.max_tokens).toBe(320);
     expect(body.messages).toHaveLength(2);

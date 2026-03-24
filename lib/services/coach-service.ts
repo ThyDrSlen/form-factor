@@ -110,7 +110,7 @@ export async function sendCoachPrompt(
         assistant_message: responseText,
         input_messages: messages,
         context: { focus: context.focus },
-        metadata: { model: 'gpt-4o-mini', timestamp: new Date().toISOString() },
+        metadata: { model: 'gpt-5.4-mini', timestamp: new Date().toISOString() },
       }).then(({ error: insertErr }) => {
         if (insertErr) console.warn('[coach] Failed to persist conversation:', insertErr.message);
       });
