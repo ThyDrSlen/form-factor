@@ -731,6 +731,40 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  coachMicButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: tabColors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.xs,
+  },
+  coachMicButtonActive: {
+    backgroundColor: tabColors.error,
+  },
+  coachVoiceIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: tabColors.overlay,
+    borderTopWidth: 1,
+    borderTopColor: tabColors.border,
+  },
+  coachVoiceDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: tabColors.error,
+    marginRight: spacing.sm,
+  },
+  coachVoiceTranscript: {
+    flex: 1,
+    fontSize: 13,
+    color: tabColors.textSecondary,
+    fontStyle: 'italic',
+  },
 });
 
 // Default export to satisfy Expo Router (this file is not a route)
