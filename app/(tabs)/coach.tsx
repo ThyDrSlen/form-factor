@@ -13,6 +13,7 @@ import { styles } from '../../styles/tabs/_index.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
 import { tabColors } from '@/styles/tabs/_tab-theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useVoiceMode } from '@/hooks/use-voice-mode';
 
 const COACH_WELCOME_SEEN_KEY = 'coach_welcome_seen';
 
@@ -42,6 +43,8 @@ export default function CoachScreen() {
   const [showCoachWelcome, setShowCoachWelcome] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
   const coachListRef = useRef<FlatList<CoachMessage>>(null);
+  const voiceMode = useVoiceMode();
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
 
   const bottomOffset = Math.max(tabBarHeight, insets.bottom) + spacing.md;
 
@@ -83,6 +86,9 @@ export default function CoachScreen() {
         { ...reply, id: reply.id || `coach-assistant-${Date.now()}` },
       ]);
       coachListRef.current?.scrollToEnd({ animated: true });
+      if (voiceEnabled && reply.content) {
+        voiceMode.playResponse(reply.content);
+      }
     } catch (err) {
       const appErr = err as AppError | null;
       const hasDomain = appErr && (appErr as any).domain;
@@ -147,6 +153,20 @@ export default function CoachScreen() {
     setCoachError(null);
   }, []);
 
+  const handleVoiceStart = useCallback(async () => {
+    await voiceMode.startVoiceMode();
+  }, [voiceMode]);
+
+  const handleCoachSendRef = useRef(handleCoachSend);
+  handleCoachSendRef.current = handleCoachSend;
+
+  const handleVoiceStop = useCallback(() => {
+    const transcript = voiceMode.stopVoiceMode();
+    if (transcript.trim()) {
+      handleCoachSendRef.current(transcript);
+    }
+  }, [voiceMode]);
+
   return (
     <View style={[styles.container, { paddingBottom: bottomOffset }]}>
       <View style={styles.coachContainer}>
@@ -180,6 +200,16 @@ export default function CoachScreen() {
         <View style={styles.coachHeader}>
           <Text style={styles.coachHeaderTitle}>Coach</Text>
           <View style={styles.coachHeaderActions}>
+            <TouchableOpacity
+              style={styles.coachHeaderButton}
+              onPress={() => setVoiceEnabled(v => !v)}
+            >
+              <Ionicons
+                name={voiceEnabled ? 'volume-high' : 'volume-mute-outline'}
+                size={22}
+                color={voiceEnabled ? tabColors.accent : tabColors.textSecondary}
+              />
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.coachHeaderButton}
               onPress={() => router.push('/(modals)/coach-history')}
@@ -247,6 +277,15 @@ export default function CoachScreen() {
           />
         )}
 
+        {voiceMode.isListening && (
+          <View style={styles.coachVoiceIndicator}>
+            <View style={styles.coachVoiceDot} />
+            <Text style={styles.coachVoiceTranscript} numberOfLines={2}>
+              {voiceMode.transcript || 'Listening...'}
+            </Text>
+          </View>
+        )}
+
         <View style={styles.coachComposer}>
           <TextInput
             style={styles.coachInput}
@@ -256,6 +295,23 @@ export default function CoachScreen() {
             onChangeText={setCoachInput}
             multiline
           />
+
+          {voiceEnabled && !coachSending && (
+            <TouchableOpacity
+              style={[
+                styles.coachMicButton,
+                voiceMode.isListening && styles.coachMicButtonActive,
+              ]}
+              onPress={voiceMode.isListening ? handleVoiceStop : handleVoiceStart}
+            >
+              <Ionicons
+                name={voiceMode.isListening ? 'stop-circle' : 'mic'}
+                size={20}
+                color="#ffffff"
+              />
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             style={[styles.coachSend, (!coachInput.trim() || coachSending) && styles.coachSendDisabled]}
             onPress={() => handleCoachSend()}
