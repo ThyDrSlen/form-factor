@@ -707,6 +707,30 @@ export const styles = StyleSheet.create({
     color: tabColors.textSecondary,
     lineHeight: 18,
   },
+  coachHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  coachHeaderTitle: {
+    fontSize: 20,
+    fontFamily: 'Lexend_700Bold',
+    color: tabColors.textPrimary,
+  },
+  coachHeaderActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  coachHeaderButton: {
+    padding: spacing.xs,
+  },
+  coachLoadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
 
 // Default export to satisfy Expo Router (this file is not a route)
