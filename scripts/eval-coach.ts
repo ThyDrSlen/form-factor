@@ -42,8 +42,8 @@ function run() {
 
   try {
     execSync(
-      `bunx promptfoo eval -c ${CONFIG_PATH} -o ${OUTPUT_JSON} --no-progress-bar`,
-      { stdio: 'inherit', timeout: 300_000 }
+      `bunx promptfoo eval -c ${CONFIG_PATH} -o ${OUTPUT_JSON} --no-progress-bar --no-cache`,
+      { stdio: 'inherit', timeout: 300_000, env: { ...process.env, PROMPTFOO_DISABLE_DATABASE: '1' } }
     );
   } catch {
     console.error('Promptfoo eval failed.');
