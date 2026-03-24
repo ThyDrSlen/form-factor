@@ -38,7 +38,7 @@
     message: "How many rest days should I take between heavy leg sessions?"
   assert:
     - type: llm-rubric
-      value: "Recommends a rest period (in days or hours) and mentions recovery factors like sleep or nutrition."
+      value: "Recommends a rest period (in days or hours) between heavy leg sessions. May optionally mention recovery factors."
       metric: Quality/RecoveryAdvice
 
 - description: "[smoke] Motivation — hitting a plateau"

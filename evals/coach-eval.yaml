@@ -43,7 +43,7 @@ defaultTest:
       metric: Quality/Actionable
 
 commandLineOptions:
-  maxConcurrency: 5
+  maxConcurrency: 2
   cache: true
 
 tests:
