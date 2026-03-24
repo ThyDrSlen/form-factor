@@ -109,7 +109,7 @@ async function generateReply(body: RequestBody) {
   const payload = {
     model: DEFAULT_MODEL,
     temperature: TEMPERATURE,
-    max_tokens: MAX_TOKENS,
+    max_completion_tokens: MAX_TOKENS,
     messages: [...buildPrompt(body.context), ...inputMessages],
   };
 

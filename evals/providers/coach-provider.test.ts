@@ -229,7 +229,7 @@ expect(provider.id()).toBe('form-factor-coach:gpt-5.4-mini');
     const body = JSON.parse(options.body);
     expect(body.model).toBe('gpt-5.4-mini');
     expect(body.temperature).toBe(0.6);
-    expect(body.max_tokens).toBe(320);
+    expect(body.max_completion_tokens).toBe(320);
     expect(body.messages).toHaveLength(2);
     expect(body.messages[0].role).toBe('system');
     expect(body.messages[0].content).toContain('You are coaching Alice.');
@@ -282,7 +282,7 @@ expect(provider.id()).toBe('form-factor-coach:gpt-5.4-mini');
     await provider.callApi('hello', { vars: {} });
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.max_tokens).toBe(500);
+    expect(body.max_completion_tokens).toBe(500);
   });
 
   test('returns error on non-OK response', async () => {
