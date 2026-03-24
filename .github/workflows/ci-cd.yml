@@ -181,6 +181,34 @@ jobs:
             evals/output/coach-results.json
           retention-days: 14
 
+  voice-integration:
+    name: Voice Integration Tests
+    runs-on: ubuntu-latest
+    needs: [changes, quality]
+    continue-on-error: true
+    if: >-
+      ${{ needs.changes.outputs.app_code == 'true' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Clean patched packages
+        run: bash scripts/ci/clean_patched_packages.sh
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --backend=copyfile
+
+      - name: Run voice integration tests
+        run: bun test tests/integration/voice/
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+
   # Job 2: E2E Tests
   e2e-tests:
     name: E2E Tests
