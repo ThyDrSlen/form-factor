@@ -16,6 +16,7 @@ export interface CoachContext {
     email?: string | null;
   };
   focus?: string;
+  sessionId?: string;
 }
 
 interface RawCoachResponse {
@@ -97,6 +98,22 @@ export async function sendCoachPrompt(
         'COACH_EMPTY_RESPONSE',
         'Coach did not return a reply'
       );
+    }
+
+    if (context?.profile?.id && context.sessionId) {
+      const userTurns = messages.filter(m => m.role === 'user');
+      supabase.from('coach_conversations').insert({
+        user_id: context.profile.id,
+        session_id: context.sessionId,
+        turn_index: Math.max(0, userTurns.length - 1),
+        user_message: userTurns[userTurns.length - 1]?.content ?? '',
+        assistant_message: responseText,
+        input_messages: messages,
+        context: { focus: context.focus },
+        metadata: { model: 'gpt-5.4-mini', timestamp: new Date().toISOString() },
+      }).then(({ error: insertErr }) => {
+        if (insertErr) console.warn('[coach] Failed to persist conversation:', insertErr.message);
+      });
     }
 
     return {

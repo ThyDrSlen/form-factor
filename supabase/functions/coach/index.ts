@@ -17,7 +17,7 @@ interface RequestBody {
   messages?: ChatMessage[];
   context?: CoachContext;
 }
-const DEFAULT_MODEL = Deno.env.get('COACH_MODEL') || 'gpt-4o-mini';
+const DEFAULT_MODEL = Deno.env.get('COACH_MODEL') || 'gpt-5.4-mini';
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
 const MAX_MESSAGES = 12;
 const MAX_CONTENT_LENGTH = 1200;
@@ -109,7 +109,7 @@ async function generateReply(body: RequestBody) {
   const payload = {
     model: DEFAULT_MODEL,
     temperature: TEMPERATURE,
-    max_tokens: MAX_TOKENS,
+    max_completion_tokens: MAX_TOKENS,
     messages: [...buildPrompt(body.context), ...inputMessages],
   };
 

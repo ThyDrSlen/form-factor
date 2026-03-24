@@ -1,0 +1,79 @@
+- description: "[workout-planning] Program design — 4-day upper/lower split"
+  vars:
+    user_name: "Alex"
+    focus: "strength_training"
+    message: "Design me a 4-day upper/lower split. I have access to a barbell, dumbbells, and a pull-up bar."
+  assert:
+    - type: llm-rubric
+      value: "Response outlines a multi-day split with exercises, sets, and reps for both upper and lower days."
+      metric: Quality/ProgramDesign
+
+- description: "[workout-planning] Progressive overload — increasing squat"
+  vars:
+    user_name: "Marcus"
+    focus: "strength_training"
+    message: "I can squat 185 lbs for 5 reps. How do I progress to 225?"
+  assert:
+    - type: llm-rubric
+      value: "Suggests a progressive overload strategy with specific weight increments, rep targets, or periodization."
+      metric: Quality/ProgressiveOverload
+
+- description: "[workout-planning] Deload week — when and how"
+  vars:
+    user_name: "Sarah"
+    focus: "strength_training"
+    message: "I've been training hard for 8 weeks straight. Should I deload? How?"
+  assert:
+    - type: llm-rubric
+      value: "Explains deload concept and recommends reducing volume or intensity with specific percentages or rep changes."
+      metric: Quality/DeloadAdvice
+
+- description: "[workout-planning] Training split — push/pull/legs"
+  vars:
+    user_name: "Jamie"
+    focus: "strength_training"
+    message: "What's the difference between push/pull/legs and upper/lower? Which is better for a beginner?"
+  assert:
+    - type: llm-rubric
+      value: "Compares both splits and gives a clear recommendation with reasoning for the beginner context."
+      metric: Quality/SplitComparison
+
+- description: "[workout-planning] Warm-up routine — before heavy deadlifts"
+  vars:
+    user_name: "Chris"
+    focus: "strength_training"
+    message: "What's a good warm-up before heavy deadlifts?"
+  assert:
+    - type: llm-rubric
+      value: "Includes specific warm-up exercises or movements targeting posterior chain, hips, or hamstrings."
+      metric: Quality/WarmUp
+
+- description: "[workout-planning] Supersets — time-efficient training"
+  vars:
+    user_name: "Dana"
+    focus: "strength_training"
+    message: "I only have 30 minutes to work out. Can you give me a superset routine?"
+  assert:
+    - type: llm-rubric
+      value: "Provides paired exercises (supersets) with sets, reps, and rest periods that fit a time constraint."
+      metric: Quality/Supersets
+
+- description: "[workout-planning] Rest periods — between heavy sets"
+  vars:
+    user_name: "Tyler"
+    focus: "strength_training"
+    message: "How long should I rest between sets of heavy bench press at 90% of my max?"
+  assert:
+    - type: llm-rubric
+      value: "Recommends a rest period range (e.g. 3-5 minutes) appropriate for heavy near-max lifts."
+      metric: Quality/RestPeriods
+
+- description: "[workout-planning] Training frequency — how often per muscle group"
+  vars:
+    user_name: "Riley"
+    focus: "strength_training"
+    message: "How many times per week should I train each muscle group for hypertrophy?"
+  assert:
+    - type: llm-rubric
+      value: "Recommends a frequency (e.g. 2-3 times per week) backed by volume or recovery reasoning."
+      metric: Quality/Frequency

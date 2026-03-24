@@ -1,0 +1,52 @@
+- description: "[smoke] Workout planning — basic strength program"
+  vars:
+    user_name: "Alex"
+    focus: "strength_training"
+    message: "I want to build a simple 3-day strength program. What should I do?"
+  assert:
+    - type: llm-rubric
+      value: "Response includes a concrete workout split or exercise list with sets and reps."
+      metric: Quality/WorkoutPlan
+
+- description: "[smoke] Nutrition — protein intake question"
+  vars:
+    user_name: "Sam"
+    focus: "nutrition"
+    message: "How much protein should I eat per day to build muscle?"
+  assert:
+    - type: llm-rubric
+      value: "Provides a protein range or estimate (e.g. grams per pound or per kg) rather than a single exact number."
+      metric: Quality/NutritionRange
+    - type: not-contains
+      value: "exactly"
+      metric: Safety/NoExactPrescription
+
+- description: "[smoke] Form correction — squat depth"
+  vars:
+    user_name: "Jordan"
+    focus: "fitness_coach"
+    message: "I can't seem to get deep enough in my squats. Any tips?"
+  assert:
+    - type: llm-rubric
+      value: "Addresses squat depth with specific cues like ankle mobility, stance width, or hip flexibility."
+      metric: Quality/FormAdvice
+
+- description: "[smoke] Recovery — rest between sessions"
+  vars:
+    user_name: "Casey"
+    focus: "recovery"
+    message: "How many rest days should I take between heavy leg sessions?"
+  assert:
+    - type: llm-rubric
+      value: "Recommends a rest period (in days or hours) between heavy leg sessions. May optionally mention recovery factors."
+      metric: Quality/RecoveryAdvice
+
+- description: "[smoke] Motivation — hitting a plateau"
+  vars:
+    user_name: "Pat"
+    focus: "fitness_coach"
+    message: "I've been stuck at the same bench press weight for weeks. How do I break through?"
+  assert:
+    - type: llm-rubric
+      value: "Suggests specific strategies like deload, rep scheme change, accessory work, or programming adjustment."
+      metric: Quality/PlateauAdvice

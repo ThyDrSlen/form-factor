@@ -1,0 +1,79 @@
+- description: "[form-correction] Pull-up — kipping and swinging"
+  vars:
+    user_name: "Alex"
+    focus: "fitness_coach"
+    message: "My pull-ups look sloppy and I keep swinging. How do I clean up my form?"
+  assert:
+    - type: llm-rubric
+      value: "Addresses body swing with cues like engaging lats, controlled tempo, or dead-hang start position."
+      metric: Quality/PullupForm
+
+- description: "[form-correction] Squat — knee cave"
+  vars:
+    user_name: "Jordan"
+    focus: "fitness_coach"
+    message: "My knees cave inward when I squat heavy. What can I do to fix this?"
+  assert:
+    - type: llm-rubric
+      value: "Mentions knee valgus and suggests corrective actions like cues, glute activation, or stance adjustment."
+      metric: Quality/SquatForm
+
+- description: "[form-correction] Push-up — sagging hips"
+  vars:
+    user_name: "Sam"
+    focus: "fitness_coach"
+    message: "I notice my hips drop during push-ups. How do I maintain a straight body line?"
+  assert:
+    - type: llm-rubric
+      value: "Addresses hip sag with core engagement cues, plank position, or glute squeeze."
+      metric: Quality/PushupForm
+
+- description: "[form-correction] Deadlift — lower back rounding"
+  vars:
+    user_name: "Marcus"
+    focus: "fitness_coach"
+    message: "My lower back rounds at the bottom of my deadlift. How can I keep a neutral spine?"
+  assert:
+    - type: llm-rubric
+      value: "Provides cues for maintaining neutral spine like chest up, hip hinge, or bracing techniques."
+      metric: Quality/DeadliftForm
+
+- description: "[form-correction] RDL — feeling it in lower back"
+  vars:
+    user_name: "Sarah"
+    focus: "fitness_coach"
+    message: "When I do Romanian deadlifts I feel it all in my lower back instead of my hamstrings. What am I doing wrong?"
+  assert:
+    - type: llm-rubric
+      value: "Identifies likely hip hinge issue and suggests cues like pushing hips back, soft knees, or hamstring loading."
+      metric: Quality/RDLForm
+
+- description: "[form-correction] Bench press — elbow flare"
+  vars:
+    user_name: "Chris"
+    focus: "fitness_coach"
+    message: "My elbows flare out wide when I bench press. Is this bad? How do I fix it?"
+  assert:
+    - type: llm-rubric
+      value: "Explains elbow flare risks and suggests a tucked elbow angle or grip width adjustment."
+      metric: Quality/BenchForm
+
+- description: "[form-correction] Dead hang — grip and shoulder position"
+  vars:
+    user_name: "Dana"
+    focus: "fitness_coach"
+    message: "I want to improve my dead hang. My shoulders feel crunched up and my grip gives out fast."
+  assert:
+    - type: llm-rubric
+      value: "Addresses shoulder packing (depressing scapulae) and grip endurance tips."
+      metric: Quality/DeadHangForm
+
+- description: "[form-correction] Farmers walk — leaning forward"
+  vars:
+    user_name: "Tyler"
+    focus: "fitness_coach"
+    message: "When I do farmer's walks I tend to lean forward and my shoulders round. Tips?"
+  assert:
+    - type: llm-rubric
+      value: "Suggests upright posture cues like chest up, shoulders back, and core bracing."
+      metric: Quality/FarmersWalkForm

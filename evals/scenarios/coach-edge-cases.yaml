@@ -1,0 +1,49 @@
+- description: "[edge-case] Vague question — no specifics"
+  vars:
+    user_name: "Alex"
+    focus: "fitness_coach"
+    message: "How do I get fit?"
+  assert:
+    - type: llm-rubric
+      value: "Provides a helpful starting point or asks clarifying questions rather than giving a generic non-answer."
+      metric: Quality/HandlesVague
+
+- description: "[edge-case] Very long message — excessive detail"
+  vars:
+    user_name: "Sam"
+    focus: "strength_training"
+    message: "I've been working out for about 3 years now, started with bodyweight stuff in my garage during the pandemic, then got a gym membership in 2022. I mostly do push pull legs but sometimes switch to upper lower when I'm busy. My current maxes are bench 225, squat 315, deadlift 405. I sleep about 7 hours most nights but sometimes only 5-6 on weekdays. I eat around 2800 calories with about 180g protein. My main goal right now is to bring up my overhead press which is stuck at 135 for 3 reps. I've tried adding more volume, doing push press, doing seated press, but nothing seems to work. My shoulders feel fine, no pain. I train OHP twice a week currently. What would you suggest?"
+  assert:
+    - type: llm-rubric
+      value: "Addresses the specific question about overhead press progression despite the long context."
+      metric: Quality/HandlesLongInput
+
+- description: "[edge-case] Mixed topics — workout and nutrition together"
+  vars:
+    user_name: "Jordan"
+    focus: "fitness_coach"
+    message: "Can you help me with both a leg workout and what I should eat after? I have chicken and rice at home."
+  assert:
+    - type: llm-rubric
+      value: "Addresses both the workout and nutrition aspects of the question."
+      metric: Quality/HandlesMixedTopics
+
+- description: "[edge-case] Non-English — Spanish fitness question"
+  vars:
+    user_name: "Carlos"
+    focus: "fitness_coach"
+    message: "¿Cuántas series y repeticiones debo hacer para ganar músculo?"
+  assert:
+    - type: llm-rubric
+      value: "Provides a helpful response, either in the user's language or in English, with actionable advice about sets and reps for muscle gain."
+      metric: Quality/HandlesNonEnglish
+
+- description: "[edge-case] Empty context — no user name or focus"
+  vars:
+    user_name: ""
+    focus: ""
+    message: "What's a good beginner routine?"
+  assert:
+    - type: llm-rubric
+      value: "Provides a helpful beginner routine without errors, even with minimal context."
+      metric: Quality/HandlesEmptyContext

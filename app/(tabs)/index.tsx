@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Crypto from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -383,6 +384,8 @@ export default function HomeScreen() {
     };
   }, []);
 
+  const homeCoachSessionId = useMemo(() => Crypto.randomUUID(), []);
+
   const coachContext = useMemo(
     () => {
       const metadata =
@@ -400,9 +403,10 @@ export default function HomeScreen() {
           email: user?.email ?? null,
         },
         focus: 'fitness_coach',
+        sessionId: homeCoachSessionId,
       };
     },
-    [user]
+    [user, homeCoachSessionId]
   );
 
   const handleCoachSend = async (preset?: string) => {
