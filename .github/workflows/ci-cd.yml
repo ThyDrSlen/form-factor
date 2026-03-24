@@ -151,10 +151,10 @@ jobs:
       - name: Clean patched packages
         run: bash scripts/ci/clean_patched_packages.sh
 
-      - name: Setup Node.js
+      - name: Setup Node.js (promptfoo requires Node 20+)
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '20'
 
       - name: Install dependencies
         run: bun install --frozen-lockfile --backend=copyfile
