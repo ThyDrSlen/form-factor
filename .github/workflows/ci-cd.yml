@@ -159,6 +159,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PROMPTFOO_GRADER: ${{ secrets.PROMPTFOO_GRADER || 'openai:gpt-4o-mini' }}
+          PROMPTFOO_DISABLE_DATABASE: '1'
 
       - name: Upload eval artifacts
         if: always()

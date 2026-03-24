@@ -1,3 +1,5 @@
+process.env.PROMPTFOO_DISABLE_DATABASE = '1';
+
 import { execSync } from 'node:child_process';
 import { readFileSync, mkdirSync } from 'node:fs';
 
