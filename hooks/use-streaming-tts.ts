@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
 import { generateSpeech } from '@/lib/services/elevenlabs-service';
 
 interface StreamingTtsControls {
@@ -31,6 +32,16 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+function speakWithSystemTts(text: string, onDone: () => void): void {
+  Speech.speak(text, {
+    language: 'en-US',
+    rate: 0.55,
+    onDone,
+    onStopped: onDone,
+    onError: onDone,
+  });
+}
+
 export function useStreamingTts(): StreamingTtsControls {
   const [isSpeaking, setIsSpeaking] = useState(false);
 
@@ -56,9 +67,16 @@ export function useStreamingTts(): StreamingTtsControls {
     try {
       const audioBuffer = await generateSpeech(next);
 
-      if (!audioBuffer || cancelledRef.current) {
+      if (cancelledRef.current) {
         processingRef.current = false;
-        processQueue();
+        return;
+      }
+
+      if (!audioBuffer) {
+        speakWithSystemTts(next, () => {
+          processingRef.current = false;
+          processQueue();
+        });
         return;
       }
 
@@ -79,13 +97,15 @@ export function useStreamingTts(): StreamingTtsControls {
 
       await sound.playAsync();
     } catch (err) {
-      console.warn('[StreamingTTS] Playback error:', err);
+      console.warn('[StreamingTTS] ElevenLabs playback error, falling back to system TTS');
       if (currentSoundRef.current) {
         currentSoundRef.current.unloadAsync().catch(() => {});
         currentSoundRef.current = null;
       }
-      processingRef.current = false;
-      processQueue();
+      speakWithSystemTts(next, () => {
+        processingRef.current = false;
+        processQueue();
+      });
     }
   }, []);
 
@@ -128,6 +148,8 @@ export function useStreamingTts(): StreamingTtsControls {
     processingRef.current = false;
     queueRef.current = [];
     streamBufferRef.current = '';
+
+    Speech.stop();
 
     if (currentSoundRef.current) {
       currentSoundRef.current.stopAsync().catch(() => {});
