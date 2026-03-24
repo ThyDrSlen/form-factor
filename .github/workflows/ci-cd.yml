@@ -165,7 +165,7 @@ jobs:
           npm_config_python: python3
 
       - name: Run coach evaluation
-        run: npx promptfoo eval -c evals/coach-eval.yaml -o evals/output/coach-results.json --no-progress-bar --no-cache
+        run: npx tsx scripts/eval-coach.ts
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PROMPTFOO_GRADER: ${{ secrets.PROMPTFOO_GRADER || 'openai:gpt-4o-mini' }}
