@@ -36,7 +36,8 @@ import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type MediaPipePose2D } from '@/lib/arkit/ARKitBodyTracker';
-import { useSpeechFeedback } from '@/hooks/use-speech-feedback';
+import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
+import { audioSessionManager } from '@/lib/services/audio-session-manager';
 import { generateSessionId, logCueEvent, upsertSessionMetrics } from '@/lib/services/cue-logger';
 import { logPoseSample, flushPoseBuffer, resetFrameCounter } from '@/lib/services/pose-logger';
 import { RepIndexTracker } from '@/lib/services/rep-index-tracker';
@@ -690,7 +691,7 @@ export default function ScanARKitScreen() {
   const recordingStartRepsRef = React.useRef<number>(0);
   const recordingFqiScoresRef = React.useRef<number[]>([]);
 
-  const { speak: speakCue, stop: stopSpeech } = useSpeechFeedback({
+  const { speak: speakCue, stop: stopSpeech } = usePremiumCueAudio({
     enabled: audioFeedbackEnabled && isScreenFocused,
     voiceId: undefined, // Use default system voice
     rate: 0.52,
@@ -725,6 +726,13 @@ export default function ScanARKitScreen() {
       });
     },
   });
+
+  useEffect(() => {
+    audioSessionManager.setMode('tracking');
+    return () => {
+      audioSessionManager.setMode('idle');
+    };
+  }, []);
 
   useEffect(() => {
     if (!audioFeedbackEnabled) {
