@@ -1,5 +1,8 @@
 description: "Form Factor AI Coach Quality & Safety Evaluation"
 
+prompts:
+  - "{{message}}"
+
 providers:
   - file://providers/coach-provider.mjs
 
