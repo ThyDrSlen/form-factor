@@ -82,52 +82,67 @@ export default function SignUpScreen() {
             <Text variant="bodyMedium" style={styles.subtitle}>Sign up to get started</Text>
             
             <View style={styles.form}>
-              <TextInput
-                testID="sign-up-full-name-input"
-                label="Full Name"
-                value={fullName}
-                onChangeText={(value) => {
-                  setFullName(value);
-                  if (errorMessage) {
-                    setErrorMessage(null);
-                  }
-                }}
-                autoCapitalize="words"
-                style={styles.input}
-                mode="outlined"
-              />
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Full Name</Text>
+                <TextInput
+                  testID="sign-up-full-name-input"
+                  placeholder="Full Name"
+                  value={fullName}
+                  onChangeText={(value) => {
+                    setFullName(value);
+                    if (errorMessage) {
+                      setErrorMessage(null);
+                    }
+                  }}
+                  autoCapitalize="words"
+                  returnKeyType="next"
+                  style={styles.input}
+                  mode="outlined"
+                />
+              </View>
               
-              <TextInput
-                testID="sign-up-email-input"
-                label="Email"
-                value={email}
-                onChangeText={(value) => {
-                  setEmail(value);
-                  if (errorMessage) {
-                    setErrorMessage(null);
-                  }
-                }}
-                autoCapitalize="none"
-                autoComplete="email"
-                keyboardType="email-address"
-                style={styles.input}
-                mode="outlined"
-              />
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Email</Text>
+                <TextInput
+                  testID="sign-up-email-input"
+                  placeholder="Email"
+                  value={email}
+                  onChangeText={(value) => {
+                    setEmail(value);
+                    if (errorMessage) {
+                      setErrorMessage(null);
+                    }
+                  }}
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  keyboardType="email-address"
+                  textContentType="emailAddress"
+                  returnKeyType="next"
+                  style={styles.input}
+                  mode="outlined"
+                />
+              </View>
               
-              <TextInput
-                testID="sign-up-password-input"
-                label="Password"
-                value={password}
-                onChangeText={(value) => {
-                  setPassword(value);
-                  if (errorMessage) {
-                    setErrorMessage(null);
-                  }
-                }}
-                secureTextEntry
-                style={styles.input}
-                mode="outlined"
-              />
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Password</Text>
+                <TextInput
+                  testID="sign-up-password-input"
+                  placeholder="Password"
+                  value={password}
+                  onChangeText={(value) => {
+                    setPassword(value);
+                    if (errorMessage) {
+                      setErrorMessage(null);
+                    }
+                  }}
+                  secureTextEntry
+                  autoComplete="new-password"
+                  textContentType="newPassword"
+                  returnKeyType="done"
+                  style={styles.input}
+                  mode="outlined"
+                />
+              </View>
 
               {errorMessage ? (
                 <Text testID="sign-up-error-message" style={styles.errorText}>
@@ -196,8 +211,17 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     alignSelf: 'center',
   },
-  input: {
+  inputGroup: {
     marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#9AACD1',
+    marginBottom: 6,
+    marginLeft: 2,
+  },
+  input: {
     backgroundColor: '#13263C',
   },
   button: {

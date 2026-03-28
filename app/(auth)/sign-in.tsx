@@ -198,6 +198,7 @@ export default function SignInScreen() {
             )}
 
             <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Email</Text>
               <TextInput
                 style={styles.input}
                 placeholder="Email"
@@ -206,13 +207,17 @@ export default function SignInScreen() {
                 onChangeText={(text) => setFormData(prev => ({ ...prev, email: text.trim() }))}
                 keyboardType="email-address"
                 autoCapitalize="none"
+                autoComplete="email"
                 autoCorrect={false}
+                textContentType="emailAddress"
+                returnKeyType={isSignUp && !isMagicLink ? 'next' : 'done'}
                 editable={!isSigningIn}
               />
             </View>
 
             {isSignUp && !isMagicLink && (
               <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Full Name</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="Full Name"
@@ -221,6 +226,7 @@ export default function SignInScreen() {
                   onChangeText={(text) => setFormData((prev) => ({ ...prev, fullName: text }))}
                   autoCapitalize="words"
                   autoCorrect={false}
+                  returnKeyType="next"
                   editable={!isSigningIn}
                 />
               </View>
@@ -229,6 +235,7 @@ export default function SignInScreen() {
             {!isMagicLink && (
               <>
                 <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Password</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="Password"
@@ -236,6 +243,9 @@ export default function SignInScreen() {
                     value={formData.password}
                     onChangeText={(text) => setFormData(prev => ({ ...prev, password: text }))}
                     secureTextEntry
+                    autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                    textContentType={isSignUp ? 'newPassword' : 'password'}
+                    returnKeyType="done"
                     editable={!isSigningIn}
                   />
                 </View>
@@ -402,6 +412,13 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#9AACD1',
+    marginBottom: 6,
+    marginLeft: 2,
   },
   input: {
     backgroundColor: '#13263C',
