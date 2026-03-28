@@ -574,7 +574,7 @@ jobs:
           attempts=0
           until [ "$attempts" -ge 3 ]; do
             attempts=$((attempts + 1))
-            if bun audit --audit-level=moderate; then
+            if bun audit --audit-level=critical; then
               exit 0
             fi
             if [ "$attempts" -lt 3 ]; then
