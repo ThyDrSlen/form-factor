@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -104,6 +106,8 @@ export default function FollowRequestsModal() {
             style={[styles.actionButton, styles.rejectButton]}
             onPress={() => void handleReject(item.follower_id)}
             disabled={disabled}
+            accessibilityRole="button"
+            accessibilityLabel={`Reject follow request from ${displayName}`}
           >
             {rejecting ? <ActivityIndicator size="small" color="#E9EFFF" /> : <Text style={styles.actionText}>Reject</Text>}
           </TouchableOpacity>
@@ -111,6 +115,8 @@ export default function FollowRequestsModal() {
             style={[styles.actionButton, styles.acceptButton]}
             onPress={() => void handleAccept(item.follower_id)}
             disabled={disabled}
+            accessibilityRole="button"
+            accessibilityLabel={`Accept follow request from ${displayName}`}
           >
             {accepting ? <ActivityIndicator size="small" color="#0F2339" /> : <Text style={[styles.actionText, styles.acceptText]}>Accept</Text>}
           </TouchableOpacity>
@@ -121,34 +127,41 @@ export default function FollowRequestsModal() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={safeBack} style={styles.iconButton}>
-          <Ionicons name="chevron-back" size={20} color="#9AACD1" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Follow Requests</Text>
-        <TouchableOpacity onPress={() => void load()} style={styles.iconButton}>
-          <Ionicons name="refresh" size={16} color="#9AACD1" />
-        </TouchableOpacity>
-      </View>
-
-      {loading ? (
-        <View style={styles.centerState}>
-          <ActivityIndicator color="#4C8CFF" />
-          <Text style={styles.mutedText}>Loading follow requests…</Text>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity onPress={safeBack} style={styles.iconButton}>
+            <Ionicons name="chevron-back" size={20} color="#9AACD1" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Follow Requests</Text>
+          <TouchableOpacity onPress={() => void load()} style={styles.iconButton}>
+            <Ionicons name="refresh" size={16} color="#9AACD1" />
+          </TouchableOpacity>
         </View>
-      ) : (
-        <FlatList
-          data={requests}
-          keyExtractor={(item) => `${item.follower_id}:${item.following_id}`}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.centerState}>
-              <Text style={styles.mutedText}>No pending requests.</Text>
-            </View>
-          }
-        />
-      )}
+
+        {loading ? (
+          <View style={styles.centerState}>
+            <ActivityIndicator color="#4C8CFF" />
+            <Text style={styles.mutedText}>Loading follow requests…</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={requests}
+            keyExtractor={(item) => `${item.follower_id}:${item.following_id}`}
+            renderItem={renderItem}
+            contentContainerStyle={styles.listContent}
+            keyboardShouldPersistTaps="handled"
+            ListEmptyComponent={
+              <View style={styles.centerState}>
+                <Text style={styles.mutedText}>No pending requests.</Text>
+              </View>
+            }
+          />
+        )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -157,6 +170,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#050E1F',
+  },
+  flex: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
