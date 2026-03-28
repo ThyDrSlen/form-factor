@@ -47,6 +47,7 @@ export default function AddFoodScreen() {
   });
   const [showPicker, setShowPicker] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const nameRef = React.useRef<TextInput>(null);
   const caloriesRef = React.useRef<TextInput>(null);
@@ -63,7 +64,7 @@ export default function AddFoodScreen() {
 
   function safeParseFloat(s: string): number | undefined {
     const n = parseFloat(s);
-    return Number.isFinite(n) ? n : undefined;
+    return isFinite(n) ? n : undefined;
   }
 
   function normalizeDecimal(value: string): string {
@@ -71,6 +72,43 @@ export default function AddFoodScreen() {
     const firstDot = cleaned.indexOf('.');
     if (firstDot === -1) return cleaned;
     return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+  }
+
+  function setFieldError(field: 'name' | 'calories', message?: string) {
+    setErrors((prev: Record<string, string>) => {
+      if (!message) {
+        if (!prev[field]) return prev;
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      }
+
+      if (prev[field] === message) return prev;
+      return { ...prev, [field]: message };
+    });
+  }
+
+  function validateName(value: string): boolean {
+    if (!value.trim()) {
+      setFieldError('name', 'Enter a food name');
+      return false;
+    }
+
+    setFieldError('name');
+    return true;
+  }
+
+  function validateCalories(value: string): boolean {
+    const trimmed = value.trim();
+    const parsed = parseFloat(trimmed);
+
+    if (!trimmed || isNaN(parsed) || parsed <= 0) {
+      setFieldError('calories', 'Enter calories greater than 0');
+      return false;
+    }
+
+    setFieldError('calories');
+    return true;
   }
 
   // Safe back: force replace to the Food tab to avoid any stack edge-cases
@@ -109,12 +147,15 @@ export default function AddFoodScreen() {
   }, [isDirty, navigation]);
 
   const onSave = async () => {
-    if (!name.trim()) {
+    const isNameValid = validateName(name);
+    const areCaloriesValid = validateCalories(calories);
+
+    if (!isNameValid) {
       Alert.alert('Error', 'Please enter a food name');
       return;
     }
 
-    if (!calories.trim() || parseFloat(calories) <= 0) {
+    if (!areCaloriesValid) {
       Alert.alert('Error', 'Please enter valid calories');
       return;
     }
@@ -181,9 +222,15 @@ export default function AddFoodScreen() {
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Food Name *</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, errors.name && styles.inputError]}
               value={name}
-              onChangeText={setName}
+              onChangeText={(value: string) => {
+                setName(value);
+                if (errors.name) {
+                  validateName(value);
+                }
+              }}
+              onBlur={() => validateName(name)}
               placeholder="e.g., Chicken Breast, Apple, Pasta"
               placeholderTextColor="#8CA5C6"
               editable={!saving}
@@ -192,14 +239,22 @@ export default function AddFoodScreen() {
               onSubmitEditing={() => caloriesRef.current?.focus()}
               blurOnSubmit={false}
             />
+            {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
           </View>
 
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Calories *</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, errors.calories && styles.inputError]}
               value={calories}
-              onChangeText={(t) => setCalories(normalizeDecimal(t))}
+              onChangeText={(t: string) => {
+                const normalized = normalizeDecimal(t);
+                setCalories(normalized);
+                if (errors.calories) {
+                  validateCalories(normalized);
+                }
+              }}
+              onBlur={() => validateCalories(calories)}
               inputMode="decimal"
               keyboardType="decimal-pad"
               placeholder="e.g., 250"
@@ -211,6 +266,7 @@ export default function AddFoodScreen() {
               blurOnSubmit={false}
               inputAccessoryViewID={isiOS ? accessoryID : undefined}
             />
+            {errors.calories ? <Text style={styles.errorText}>{errors.calories}</Text> : null}
           </View>
 
           <View style={styles.row}>
@@ -219,7 +275,7 @@ export default function AddFoodScreen() {
               <TextInput
                 style={styles.input}
                 value={protein}
-                onChangeText={(t) => setProtein(normalizeDecimal(t))}
+                onChangeText={(t: string) => setProtein(normalizeDecimal(t))}
                 inputMode="decimal"
                 keyboardType="decimal-pad"
                 placeholder="Optional"
@@ -238,7 +294,7 @@ export default function AddFoodScreen() {
               <TextInput
                 style={styles.input}
                 value={carbs}
-                onChangeText={(t) => setCarbs(normalizeDecimal(t))}
+                onChangeText={(t: string) => setCarbs(normalizeDecimal(t))}
                 inputMode="decimal"
                 keyboardType="decimal-pad"
                 placeholder="Optional"
@@ -257,7 +313,7 @@ export default function AddFoodScreen() {
               <TextInput
                 style={styles.input}
                 value={fat}
-                onChangeText={(t) => setFat(normalizeDecimal(t))}
+                onChangeText={(t: string) => setFat(normalizeDecimal(t))}
                 inputMode="decimal"
                 keyboardType="decimal-pad"
                 placeholder="Optional"
@@ -399,6 +455,16 @@ const styles = StyleSheet.create({
     padding: 16,
     fontSize: 16,
     color: '#F5F7FF',
+  },
+  inputError: {
+    borderColor: '#FF6B6B',
+  },
+  errorText: {
+    color: '#FF8A8A',
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 6,
+    marginLeft: 2,
   },
   accessoryContainer: {
     flexDirection: 'row',
