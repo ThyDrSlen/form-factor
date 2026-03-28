@@ -11,7 +11,6 @@ import { HealthTrendsView } from '@/components/dashboard-health/HealthTrendsView
 import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { deleteVideo, getVideoById, listVideos, toggleVideoLike, VideoWithUrls } from '@/lib/services/video-service';
 import { router } from 'expo-router';
-import Constants from 'expo-constants';
 import { syncService, type SyncStatus } from '@/lib/services/database/sync-service';
 import { localDB, type SyncQueueItem } from '@/lib/services/database/local-db';
 import { fixInvalidUUIDs } from '@/scripts/fix-invalid-uuids';
@@ -898,7 +897,7 @@ Generated: ${new Date().toISOString()}
       </View>
 
       {/* Debug Section - Remove before production */}
-      {(__DEV__ || (Constants.expoConfig?.extra?.appVariant !== 'staging' && Constants.expoConfig?.extra?.appVariant !== 'production')) && (
+      {__DEV__ && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>🔧 Debug Tools</Text>
           
