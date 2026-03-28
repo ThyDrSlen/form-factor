@@ -7,6 +7,7 @@
 import React, { useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useUnits } from '@/contexts/UnitsContext';
 import { sessionStyles as styles, colors } from '@/styles/workout-session.styles';
 import type { WorkoutSession } from '@/lib/types/workout-session';
 
@@ -17,7 +18,7 @@ interface SessionMetaCardProps {
 
 function formatDateTime(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleString('en-US', {
+  return d.toLocaleString(undefined, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
@@ -28,6 +29,8 @@ function formatDateTime(iso: string): string {
 }
 
 export default function SessionMetaCard({ session, onUpdateSession }: SessionMetaCardProps) {
+  const { getWeightLabel } = useUnits();
+
   const handleNameChange = useCallback(
     (text: string) => onUpdateSession({ name: text || null }),
     [onUpdateSession],
@@ -71,7 +74,7 @@ export default function SessionMetaCard({ session, onUpdateSession }: SessionMet
 
       {/* Bodyweight */}
       <View style={styles.metaRow}>
-        <Text style={styles.metaLabel}>Bodyweight (lb)</Text>
+        <Text style={styles.metaLabel}>{`Bodyweight (${getWeightLabel()})`}</Text>
         <TextInput
           style={styles.metaInput}
           value={session.bodyweight_lb != null ? String(session.bodyweight_lb) : ''}

@@ -207,7 +207,7 @@ export default function WorkoutSessionScreen() {
   // Date title
   // =========================================================================
   const dateTitle = activeSession
-    ? new Date(activeSession.started_at).toLocaleDateString('en-US', {
+    ? new Date(activeSession.started_at).toLocaleDateString(undefined, {
         month: 'short',
         day: 'numeric',
       })
