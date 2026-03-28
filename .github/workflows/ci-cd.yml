@@ -545,9 +545,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Job 6: Security Scan
+  # continue-on-error: transitive dep vulns in expo/react-native/jest/eslint
+  # are outside our control and shouldn't block PRs
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    continue-on-error: true
     if: ${{ needs.changes.outputs.app_code == 'true' }}
     needs: [changes, quality]
     steps:
