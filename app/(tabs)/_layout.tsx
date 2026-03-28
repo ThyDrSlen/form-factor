@@ -25,6 +25,7 @@ export default function TabsLayout() {
           name="index"
           options={{
             title: 'Home',
+            tabBarAccessibilityLabel: 'Home',
             tabBarIcon: ({ color, size }) => (
               <Ionicons 
                 name="home-outline" 
@@ -38,6 +39,7 @@ export default function TabsLayout() {
           name="workouts"
           options={{
             title: 'Workouts',
+            tabBarAccessibilityLabel: 'Workouts',
             tabBarIcon: ({ color, size }) => (
               <Ionicons
                 name="barbell-outline"
@@ -51,6 +53,7 @@ export default function TabsLayout() {
           name="food"
           options={{
             title: 'Food',
+            tabBarAccessibilityLabel: 'Food',
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="nutrition-outline" size={20} color={color} />
             ),
@@ -60,6 +63,7 @@ export default function TabsLayout() {
           name="coach"
           options={{
             title: 'Coach',
+            tabBarAccessibilityLabel: 'Coach',
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="sparkles-outline" size={20} color={color} />
             ),
@@ -70,6 +74,7 @@ export default function TabsLayout() {
           name="scan-arkit"
           options={{
             title: 'Analyze',
+            tabBarAccessibilityLabel: 'Analyze',
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="scan-outline" size={20} color={color} />
             ),
@@ -82,6 +87,7 @@ export default function TabsLayout() {
           name="profile"
           options={{
             title: 'Profile',
+            tabBarAccessibilityLabel: 'Profile',
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="person-outline" size={20} color={color} />
             ),
