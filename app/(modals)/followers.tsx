@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -95,60 +97,74 @@ export default function FollowersModal() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={safeBack} style={styles.iconButton}>
-          <Ionicons name="chevron-back" size={20} color="#9AACD1" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Connections</Text>
-        <TouchableOpacity onPress={() => void load()} style={styles.iconButton}>
-          <Ionicons name="refresh" size={16} color="#9AACD1" />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.tabRow}>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'followers' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('followers')}
-        >
-          <Text style={[styles.tabText, activeTab === 'followers' && styles.tabTextActive]}>Followers</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'following' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('following')}
-        >
-          <Text style={[styles.tabText, activeTab === 'following' && styles.tabTextActive]}>Following</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.searchWrap}>
-        <Ionicons name="search" size={15} color="#6781A6" />
-        <TextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder={`Search ${activeTab}`}
-          placeholderTextColor="#6781A6"
-          style={styles.searchInput}
-        />
-      </View>
-
-      {loading ? (
-        <View style={styles.centerState}>
-          <ActivityIndicator color="#4C8CFF" />
-          <Text style={styles.mutedText}>Loading {activeTab}…</Text>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity onPress={safeBack} style={styles.iconButton}>
+            <Ionicons name="chevron-back" size={20} color="#9AACD1" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Connections</Text>
+          <TouchableOpacity onPress={() => void load()} style={styles.iconButton}>
+            <Ionicons name="refresh" size={16} color="#9AACD1" />
+          </TouchableOpacity>
         </View>
-      ) : (
-        <FlatList
-          data={filteredRows}
-          keyExtractor={(item) => `${item.follower_id}:${item.following_id}`}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.centerState}>
-              <Text style={styles.mutedText}>No {activeTab} yet.</Text>
-            </View>
-          }
-        />
-      )}
+
+        <View style={styles.tabRow}>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'followers' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('followers')}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === 'followers' }}
+            accessibilityLabel="Followers tab"
+          >
+            <Text style={[styles.tabText, activeTab === 'followers' && styles.tabTextActive]}>Followers</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'following' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('following')}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === 'following' }}
+            accessibilityLabel="Following tab"
+          >
+            <Text style={[styles.tabText, activeTab === 'following' && styles.tabTextActive]}>Following</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.searchWrap}>
+          <Ionicons name="search" size={15} color="#6781A6" />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder={`Search ${activeTab}`}
+            placeholderTextColor="#6781A6"
+            style={styles.searchInput}
+            returnKeyType="search"
+          />
+        </View>
+
+        {loading ? (
+          <View style={styles.centerState}>
+            <ActivityIndicator color="#4C8CFF" />
+            <Text style={styles.mutedText}>Loading {activeTab}…</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredRows}
+            keyExtractor={(item) => `${item.follower_id}:${item.following_id}`}
+            renderItem={renderItem}
+            contentContainerStyle={styles.listContent}
+            keyboardShouldPersistTaps="handled"
+            ListEmptyComponent={
+              <View style={styles.centerState}>
+                <Text style={styles.mutedText}>No {activeTab} yet.</Text>
+              </View>
+            }
+          />
+        )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -157,6 +173,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#050E1F',
+  },
+  flex: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
