@@ -271,11 +271,10 @@ export default function ProfileScreen() {
       setFollowCounts(counts);
       await social.refreshPendingRequestCount();
     } catch (error) {
-      if (__DEV__) {
-        warnWithTs('[Profile] Failed to load social profile data', error);
-      }
+      warnWithTs('[Profile] Failed to load social profile data', error);
+      showToast('Unable to load social data', { type: 'error' });
     }
-  }, [social, user?.id]);
+  }, [showToast, social, user?.id]);
 
   useEffect(() => {
     if (!hasFetchedOnce && !loadingVideos) {

@@ -30,19 +30,18 @@ export default function TemplatesScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadTemplates();
-  }, []);
-
-  const loadTemplates = async () => {
+  const loadTemplates = useCallback(async () => {
     const db = localDB.db;
     if (!db) {
+      setError('Failed to load. Tap to retry.');
       setLoading(false);
       return;
     }
     setError(null);
 
     try {
+      setError(null);
+      setLoading(true);
       const rows = await db.getAllAsync<TemplateSummary>(`
         SELECT
           wt.*,
@@ -56,11 +55,15 @@ export default function TemplatesScreen() {
       setError(null);
     } catch (error) {
       console.error('[Templates] Failed to load templates:', error);
-      setError('Failed to load templates. Please try again.');
+      setError('Failed to load. Tap to retry.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void loadTemplates();
+  }, [loadTemplates]);
 
   const handleStartSession = useCallback(
     (templateId: string, goalProfile: string) => {
@@ -136,18 +139,21 @@ export default function TemplatesScreen() {
           <ActivityIndicator color={tabColors.accent} />
         </View>
       ) : error ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-          <Ionicons name="warning-outline" size={48} color={tabColors.accentAlt} />
-          <Text style={templateStyles.emptyText}>{error}</Text>
+        <View style={templateStyles.stateContainer}>
+          <Ionicons name="alert-circle-outline" size={48} color="#FF3B30" />
+          <Text style={templateStyles.errorText}>{error}</Text>
           <TouchableOpacity
-            style={{ marginTop: 16, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: tabColors.accent, borderRadius: 10 }}
-            onPress={loadTemplates}
+            style={templateStyles.retryButton}
+            onPress={() => {
+              setError(null);
+              void loadTemplates();
+            }}
           >
-            <Text style={{ color: '#fff', fontFamily: 'Lexend_700Bold', fontSize: 15 }}>Retry</Text>
+            <Text style={templateStyles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
       ) : templates.length === 0 ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+        <View style={templateStyles.stateContainer}>
           <Ionicons name="clipboard-outline" size={48} color={tabColors.textSecondary} />
           <Text style={templateStyles.emptyText}>No templates yet</Text>
           <Text style={templateStyles.emptySubtext}>
@@ -233,6 +239,30 @@ const templateStyles = StyleSheet.create({
     paddingHorizontal: 16,
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderLeftColor: tabColors.border,
+  },
+  stateContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  errorText: {
+    fontSize: 16,
+    fontFamily: 'Lexend_400Regular',
+    color: tabColors.textSecondary,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: tabColors.accent,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontFamily: 'Lexend_700Bold',
   },
   emptyText: {
     fontSize: 16,
