@@ -880,7 +880,14 @@ Generated: ${new Date().toISOString()}
             </View>
           ) : null}
 
-          {feedError ? <Text style={feedStyles.errorText}>{feedError}</Text> : null}
+          {feedError ? (
+            <View style={feedStyles.feedEmpty}>
+              <Text style={feedStyles.errorText}>{feedError}</Text>
+              <TouchableOpacity style={feedStyles.uploadButton} onPress={loadVideos} disabled={loadingVideos}>
+                <Text style={feedStyles.uploadButtonText}>{loadingVideos ? 'Loading...' : 'Try Again'}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           {!loadingVideos && hasFetchedOnce && videos.length === 0 ? (
             <View style={feedStyles.feedEmpty}>
