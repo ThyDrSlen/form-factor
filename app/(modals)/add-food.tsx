@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -16,16 +16,24 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  useNavigation,
+  type EventArg,
+  type NavigationAction,
+} from '@react-navigation/native';
 import { useFood } from '../../contexts/FoodContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useSafeBack } from '../../hooks/use-safe-back';
 import { errorWithTs, logWithTs } from '@/lib/logger';
 import { isIOS } from '@/lib/platform-utils';
 
+type BeforeRemoveEvent = EventArg<'beforeRemove', true, { action: NavigationAction }>;
+
 export default function AddFoodScreen() {
   const { addFood } = useFood();
   const { show: showToast } = useToast();
   const isiOS = isIOS();
+  const navigation = useNavigation();
 
   const [name, setName] = useState('');
   const [calories, setCalories] = useState('');
@@ -46,6 +54,12 @@ export default function AddFoodScreen() {
   const carbsRef = React.useRef<TextInput>(null);
   const fatRef = React.useRef<TextInput>(null);
   const accessoryID = 'decimalAccessory';
+  const shouldSkipDiscardWarningRef = useRef(false);
+
+  const isDirty = useMemo(
+    () => Boolean(name.trim() || calories.trim() || protein.trim() || carbs.trim() || fat.trim()),
+    [name, calories, protein, carbs, fat],
+  );
 
   function safeParseFloat(s: string): number | undefined {
     const n = parseFloat(s);
@@ -61,6 +75,38 @@ export default function AddFoodScreen() {
 
   // Safe back: force replace to the Food tab to avoid any stack edge-cases
   const safeBack = useSafeBack('/food', { alwaysReplace: true });
+
+  useEffect(() => {
+    if (!isDirty) {
+      shouldSkipDiscardWarningRef.current = false;
+      return;
+    }
+
+    const unsubscribe = navigation.addListener('beforeRemove', (e: BeforeRemoveEvent) => {
+      if (shouldSkipDiscardWarningRef.current) {
+        return;
+      }
+
+      e.preventDefault();
+      Alert.alert(
+        'Discard changes?',
+        'You have unsaved changes. Are you sure you want to go back?',
+        [
+          { text: "Don't leave", style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              shouldSkipDiscardWarningRef.current = true;
+              navigation.dispatch(e.data.action);
+            },
+          },
+        ],
+      );
+    });
+
+    return unsubscribe;
+  }, [isDirty, navigation]);
 
   const onSave = async () => {
     if (!name.trim()) {
@@ -98,6 +144,7 @@ export default function AddFoodScreen() {
       showToast('Meal logged successfully! 🍽️', { type: 'success' });
 
       // Navigate back after short delay
+      shouldSkipDiscardWarningRef.current = true;
       setTimeout(() => safeBack(), 500);
     } catch (error) {
       errorWithTs('Error saving food:', error);
