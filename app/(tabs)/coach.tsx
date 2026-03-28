@@ -286,6 +286,13 @@ export default function CoachScreen() {
           </View>
         )}
 
+        {coachSending ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingBottom: 12 }}>
+            <ActivityIndicator size="small" color="#4C8CFF" />
+            <Text style={{ color: '#9AACD1', fontStyle: 'italic' }}>Coach is thinking...</Text>
+          </View>
+        ) : null}
+
         <View style={styles.coachComposer}>
           <TextInput
             style={styles.coachInput}
