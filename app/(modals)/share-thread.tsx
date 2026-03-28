@@ -34,6 +34,7 @@ export default function ShareThreadModal() {
 
   const [thread, setThread] = useState<ShareThread | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [replyInput, setReplyInput] = useState('');
   const [sending, setSending] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -55,12 +56,15 @@ export default function ShareThreadModal() {
   const load = useCallback(async () => {
     if (!resolvedShareId) return;
     setLoading(true);
+    setLoadError(null);
     try {
       await markShareRead(resolvedShareId);
       const next = await getShareThread(resolvedShareId);
       setThread(next);
+      setLoadError(null);
     } catch (error) {
       warnWithTs('[share-thread] Failed to load share thread', error);
+      setLoadError('Unable to load this thread. Tap to retry.');
       showToast('Unable to load shared thread.', { type: 'error' });
     } finally {
       setLoading(false);
@@ -144,6 +148,18 @@ export default function ShareThreadModal() {
           <ActivityIndicator color="#4C8CFF" />
           <Text style={styles.mutedText}>Loading thread…</Text>
         </View>
+      ) : loadError && !thread?.share ? (
+        <TouchableOpacity
+          onPress={() => {
+            setLoadError(null);
+            void load();
+          }}
+          style={[styles.centerState, styles.retryState]}
+        >
+          <Ionicons name="alert-circle-outline" size={48} color="#FF3B30" />
+          <Text style={styles.retryTitle}>{loadError}</Text>
+          <Text style={styles.retryAction}>Tap to retry</Text>
+        </TouchableOpacity>
       ) : !thread?.share ? (
         <View style={styles.centerState}>
           <Text style={styles.mutedText}>Share not found.</Text>
@@ -199,23 +215,25 @@ export default function ShareThreadModal() {
         />
       )}
 
-      <View style={styles.composer}>
-        <TextInput
-          value={replyInput}
-          onChangeText={setReplyInput}
-          placeholder="Write a reply…"
-          placeholderTextColor="#6781A6"
-          style={styles.composerInput}
-          multiline
-        />
-        <TouchableOpacity
-          style={[styles.sendButton, (!replyInput.trim() || sending) && styles.sendButtonDisabled]}
-          onPress={() => void handleSendReply()}
-          disabled={!replyInput.trim() || sending}
-        >
-          {sending ? <ActivityIndicator color="#0F2339" /> : <Text style={styles.sendButtonText}>Send</Text>}
-        </TouchableOpacity>
-      </View>
+      {thread?.share ? (
+        <View style={styles.composer}>
+          <TextInput
+            value={replyInput}
+            onChangeText={setReplyInput}
+            placeholder="Write a reply…"
+            placeholderTextColor="#6781A6"
+            style={styles.composerInput}
+            multiline
+          />
+          <TouchableOpacity
+            style={[styles.sendButton, (!replyInput.trim() || sending) && styles.sendButtonDisabled]}
+            onPress={() => void handleSendReply()}
+            disabled={!replyInput.trim() || sending}
+          >
+            {sending ? <ActivityIndicator color="#0F2339" /> : <Text style={styles.sendButtonText}>Send</Text>}
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -408,6 +426,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 44,
     gap: 8,
+  },
+  retryState: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  retryTitle: {
+    color: '#9AACD1',
+    fontSize: 16,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  retryAction: {
+    color: '#4C8CFF',
+    fontSize: 14,
   },
   mutedText: {
     color: '#9AACD1',
