@@ -758,7 +758,14 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      {feedError ? <Text style={styles.errorText}>{feedError}</Text> : null}
+      {feedError ? (
+        <View style={styles.feedEmpty}>
+          <Text style={styles.errorText}>{feedError}</Text>
+          <TouchableOpacity style={styles.uploadButton} onPress={() => loadVideos(true)}>
+            <Text style={styles.uploadButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <FlatList
         data={videos}
