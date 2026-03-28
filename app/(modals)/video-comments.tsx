@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   ActivityIndicator,
+  type AlertButton,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -36,8 +38,10 @@ export default function VideoCommentsModal() {
   const [video, setVideo] = useState<VideoWithUrls | null>(null);
   const [comments, setComments] = useState<CommentRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [commentInput, setCommentInput] = useState('');
+  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const isFocused = useIsFocused();
 
   const displayName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'You';
@@ -106,6 +110,7 @@ export default function VideoCommentsModal() {
   const loadComments = useCallback(async () => {
     if (!videoId || typeof videoId !== 'string') return;
     setLoading(true);
+    setLoadError(null);
     setComments([]);
     try {
       const [videoData, commentData] = await Promise.all([
@@ -114,10 +119,12 @@ export default function VideoCommentsModal() {
       ]);
       setVideo(videoData);
       setComments(commentData);
+      setLoadError(null);
     } catch (error) {
       if (__DEV__) {
         warnWithTs('[Comments] Failed to load video/comments', error);
       }
+      setLoadError('Unable to load comments. Tap to retry.');
       showToast('Unable to load comments right now.', { type: 'error' });
     } finally {
       setLoading(false);
@@ -174,6 +181,44 @@ export default function VideoCommentsModal() {
     const isMine = item.user_id === user?.id;
     const name = isMine ? 'You' : 'FF Athlete';
     const time = formatRelativeTime(item.created_at);
+
+    const handleCommentOptions = () => {
+      setSelectedCommentId(item.id);
+      const actions: AlertButton[] = [
+        {
+          text: 'Report',
+          style: 'destructive',
+          onPress: () => {
+            setSelectedCommentId(item.id);
+            showToast('Comment reported. We will review it shortly.', { type: 'info' });
+            setSelectedCommentId(null);
+          },
+        },
+      ];
+
+      if (isMine) {
+        actions.push({
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setSelectedCommentId(item.id);
+            showToast('Comment deletion is coming soon.', { type: 'info' });
+            setSelectedCommentId(null);
+          },
+        });
+      }
+
+      actions.push({
+        text: 'Cancel',
+        style: 'cancel',
+        onPress: () => setSelectedCommentId(null),
+      });
+
+      Alert.alert('Comment Options', undefined, actions, {
+        onDismiss: () => setSelectedCommentId(null),
+      });
+    };
+
     return (
       <View style={styles.commentRow}>
         <View style={styles.commentAvatar}>
@@ -183,7 +228,11 @@ export default function VideoCommentsModal() {
           <View style={styles.commentHeader}>
             <Text style={styles.commentName}>{name}</Text>
             <Text style={styles.commentTime}>{time}</Text>
-            <TouchableOpacity style={styles.commentMore}>
+            <TouchableOpacity
+              style={styles.commentMore}
+              onPress={handleCommentOptions}
+              accessibilityLabel={selectedCommentId === item.id ? 'Comment options open' : 'Comment options'}
+            >
               <Ionicons name="ellipsis-horizontal" size={16} color="#9AACD1" />
             </TouchableOpacity>
           </View>
@@ -218,6 +267,18 @@ export default function VideoCommentsModal() {
             <ActivityIndicator color="#4C8CFF" />
             <Text style={styles.emptyText}>Loading comments…</Text>
           </View>
+        ) : loadError && comments.length === 0 && !video ? (
+          <TouchableOpacity
+            onPress={() => {
+              setLoadError(null);
+              void loadComments();
+            }}
+            style={[styles.emptyState, { flex: 1, justifyContent: 'center', paddingHorizontal: 20 }]}
+          >
+            <Ionicons name="alert-circle-outline" size={48} color="#FF3B30" />
+            <Text style={[styles.emptyText, { marginTop: 12, fontSize: 16, textAlign: 'center' }]}>{loadError}</Text>
+            <Text style={{ color: '#4C8CFF', fontSize: 14, marginTop: 8 }}>Tap to retry</Text>
+          </TouchableOpacity>
         ) : (
           <FlatList
             data={sortedComments}
@@ -283,36 +344,38 @@ export default function VideoCommentsModal() {
           />
         )}
 
-        <View style={styles.composerWrap}>
-          <View style={styles.composerRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{displayInitial}</Text>
+        {!loadError || comments.length > 0 || !!video ? (
+          <View style={styles.composerWrap}>
+            <View style={styles.composerRow}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{displayInitial}</Text>
+              </View>
+              <TextInput
+                style={styles.composerInput}
+                placeholder="Add a comment..."
+                placeholderTextColor="#6E7FA3"
+                value={commentInput}
+                onChangeText={setCommentInput}
+                multiline
+              />
+              <TouchableOpacity style={styles.sendButton} onPress={handleSend} disabled={sending}>
+                <Text style={styles.sendButtonText}>{sending ? '...' : 'Send'}</Text>
+              </TouchableOpacity>
             </View>
-            <TextInput
-              style={styles.composerInput}
-              placeholder="Add a comment..."
-              placeholderTextColor="#6E7FA3"
-              value={commentInput}
-              onChangeText={setCommentInput}
-              multiline
-            />
-            <TouchableOpacity style={styles.sendButton} onPress={handleSend} disabled={sending}>
-              <Text style={styles.sendButtonText}>{sending ? '...' : 'Send'}</Text>
-            </TouchableOpacity>
-          </View>
 
-          <View style={styles.quickChipRow}>
-            <TouchableOpacity style={styles.quickChip} onPress={() => appendChip('🔥')}>
-              <Text style={styles.quickChipText}>🔥 +</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.quickChip} onPress={() => appendChip('Form tip:')}>
-              <Text style={styles.quickChipText}>Form tip</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.quickChip} onPress={() => appendChip('Question:')}>
-              <Text style={styles.quickChipText}>Question</Text>
-            </TouchableOpacity>
+            <View style={styles.quickChipRow}>
+              <TouchableOpacity style={styles.quickChip} onPress={() => appendChip('🔥')}>
+                <Text style={styles.quickChipText}>🔥 +</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.quickChip} onPress={() => appendChip('Form tip:')}>
+                <Text style={styles.quickChipText}>Form tip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.quickChip} onPress={() => appendChip('Question:')}>
+                <Text style={styles.quickChipText}>Question</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        ) : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
