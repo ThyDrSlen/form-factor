@@ -203,6 +203,8 @@ export default function CoachScreen() {
             <TouchableOpacity
               style={styles.coachHeaderButton}
               onPress={() => setVoiceEnabled(v => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={voiceEnabled ? 'Turn off voice playback' : 'Turn on voice playback'}
             >
               <Ionicons
                 name={voiceEnabled ? 'volume-high' : 'volume-mute-outline'}
@@ -213,12 +215,16 @@ export default function CoachScreen() {
             <TouchableOpacity
               style={styles.coachHeaderButton}
               onPress={() => router.push('/(modals)/coach-history')}
+              accessibilityRole="button"
+              accessibilityLabel="Open coach history"
             >
               <Ionicons name="time-outline" size={22} color={tabColors.textSecondary} />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.coachHeaderButton}
               onPress={handleNewChat}
+              accessibilityRole="button"
+              accessibilityLabel="Start new chat"
             >
               <Ionicons name="add-circle-outline" size={22} color={tabColors.textSecondary} />
             </TouchableOpacity>

@@ -98,7 +98,12 @@ export default function WelcomeScreen() {
         </View>
 
         <View style={styles.ctaSection}>
-          <TouchableOpacity style={styles.primaryButton} onPress={handleGetStarted} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handleGetStarted}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+          >
             <Text style={styles.primaryButtonText}>Get Started</Text>
             <Ionicons name="arrow-forward" size={20} color="#fff" />
           </TouchableOpacity>
@@ -106,6 +111,7 @@ export default function WelcomeScreen() {
             style={styles.secondaryButton}
             onPress={handleGetStarted}
             activeOpacity={0.7}
+            accessibilityRole="button"
           >
             <Text style={styles.secondaryButtonText}>I already have an account</Text>
           </TouchableOpacity>
