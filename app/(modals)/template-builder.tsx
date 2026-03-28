@@ -241,7 +241,25 @@ export default function TemplateBuilderScreen() {
   };
 
   const handleRemoveExercise = (idx: number) => {
-    setExercises((prev) => prev.filter((_, i) => i !== idx));
+    const exerciseName = exercises[idx]?.exercise?.name ?? 'this exercise';
+
+    Alert.alert(
+      'Remove exercise',
+      `Are you sure you want to remove ${exerciseName} from this template?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              setExercises((prev) => prev.filter((_, i) => i !== idx));
+            })();
+          },
+        },
+      ],
+    );
   };
 
   return (
