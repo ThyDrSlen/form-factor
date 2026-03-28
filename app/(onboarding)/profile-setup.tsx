@@ -100,6 +100,9 @@ export default function ProfileSetupScreen() {
               placeholder="What should we call you?"
               placeholderTextColor="#8CA5C6"
               autoCapitalize="words"
+              autoComplete="name"
+              textContentType="name"
+              returnKeyType="done"
               editable={!saving}
             />
           </View>
