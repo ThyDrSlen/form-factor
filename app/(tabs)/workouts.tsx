@@ -42,13 +42,22 @@ export default function WorkoutsScreen() {
   const { workouts, loading, refreshWorkouts, deleteWorkout } = useWorkouts();
   const { show: showToast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
 
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    await refreshWorkouts();
-    setIsRefreshing(false);
+    try {
+      await refreshWorkouts();
+      setLastSynced(new Date());
+    } finally {
+      setIsRefreshing(false);
+    }
   }, [refreshWorkouts]);
+
+  const lastUpdatedLabel = lastSynced
+    ? `Last updated ${lastSynced.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`
+    : null;
 
   const handleAddPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -239,6 +248,9 @@ export default function WorkoutsScreen() {
             />
           }
         >
+          {lastUpdatedLabel ? (
+            <Text style={{ color: '#8E8E93', fontSize: 12, marginBottom: 16, textAlign: 'center' }}>{lastUpdatedLabel}</Text>
+          ) : null}
           <View style={styles.emptyIllustration}>
             <Ionicons name="barbell-outline" size={80} color="#E5E5EA" />
           </View>
@@ -272,6 +284,11 @@ export default function WorkoutsScreen() {
           renderItem={renderItem}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            lastUpdatedLabel ? (
+              <Text style={{ color: '#8E8E93', fontSize: 12, marginBottom: 12, textAlign: 'center' }}>{lastUpdatedLabel}</Text>
+            ) : null
+          }
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
