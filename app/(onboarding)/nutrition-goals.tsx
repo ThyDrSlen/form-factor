@@ -122,7 +122,7 @@ export default function NutritionGoalsScreen() {
           <View style={styles.headerSpacer} />
         </View>
 
-        <OnboardingProgress current={1} total={1} />
+        <OnboardingProgress current={2} total={2} />
 
         <View style={styles.card}>
           <View style={styles.iconContainer}>

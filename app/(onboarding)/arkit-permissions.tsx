@@ -166,7 +166,7 @@ export default function ARKitPermissionsScreen() {
               <Ionicons name="arrow-back" size={24} color="#007AFF" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Camera Access</Text>
-            <OnboardingProgress current={1} total={2} />
+            <OnboardingProgress current={1} total={3} />
           </Animated.View>
 
           {/* Hero Section */}
