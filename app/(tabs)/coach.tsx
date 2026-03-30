@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Keyboard, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -64,6 +64,7 @@ export default function CoachScreen() {
   );
 
   const handleCoachSend = async (preset?: string) => {
+    Keyboard.dismiss();
     const content = (preset ?? coachInput).trim();
     if (!content || coachSending) return;
 
