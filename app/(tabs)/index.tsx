@@ -758,7 +758,17 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      {feedError ? <Text style={styles.errorText}>{feedError}</Text> : null}
+      {feedError ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm, gap: 8 }}>
+          <Text style={styles.errorText}>{feedError}</Text>
+          <TouchableOpacity
+            onPress={() => loadVideos(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={{ color: '#4C8CFF', fontFamily: 'Lexend_500Medium', fontSize: 14 }}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <FlatList
         data={videos}
