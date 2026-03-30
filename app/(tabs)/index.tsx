@@ -20,6 +20,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFood } from '@/contexts/FoodContext';
+import { useWorkouts } from '@/contexts/WorkoutsContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useSocial } from '../../contexts/SocialContext';
 import { DashboardHealth } from '@/components';
@@ -283,6 +285,8 @@ const coachQuickPrompts = [
 
 export default function HomeScreen() {
   const { user } = useAuth();
+  const { foods } = useFood();
+  const { workouts } = useWorkouts();
   const router = useRouter();
   const tabBarHeight = useBottomTabBarHeight();
   const { show: showToast } = useToast();
@@ -729,7 +733,7 @@ export default function HomeScreen() {
             end={{ x: 1, y: 1 }}
             style={styles.statCard}
           >
-            <Text style={styles.statNumber}>0</Text>
+            <Text style={styles.statNumber}>{workouts.length}</Text>
             <Text style={styles.statLabel}>Workouts</Text>
           </LinearGradient>
           <LinearGradient
@@ -738,7 +742,7 @@ export default function HomeScreen() {
             end={{ x: 1, y: 1 }}
             style={styles.statCard}
           >
-            <Text style={styles.statNumber}>0</Text>
+            <Text style={styles.statNumber}>{foods.length}</Text>
             <Text style={styles.statLabel}>Meals Logged</Text>
           </LinearGradient>
         </View>
@@ -841,6 +845,13 @@ export default function HomeScreen() {
         onLayout={() => coachListRef.current?.scrollToEnd({ animated: false })}
         keyboardShouldPersistTaps="handled"
       />
+
+      {coachSending ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingBottom: 12 }}>
+          <ActivityIndicator size="small" color="#4C8CFF" />
+          <Text style={{ color: '#9AACD1', fontStyle: 'italic' }}>Coach is thinking...</Text>
+        </View>
+      ) : null}
 
       <View style={styles.coachComposer}>
         <TextInput
