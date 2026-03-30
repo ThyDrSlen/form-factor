@@ -1,32 +1,45 @@
-// deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
-
-type Role = 'user' | 'assistant' | 'system';
-
-interface ChatMessage {
-  role: Role;
-  content: string;
-}
-
-interface CoachContext {
-  profile?: { id?: string; name?: string | null; email?: string | null };
-  focus?: string;
-}
+import {
+  FALLBACK_MODEL,
+  type ChatMessage,
+  type CoachContext,
+  type OpenAIResponse,
+  type RateLimitEntry,
+  buildPrompt,
+  checkRateLimit,
+  isOpenAIResponse,
+  sanitizeMessages,
+  validateModel,
+} from './validation';
 
 interface RequestBody {
   messages?: ChatMessage[];
   context?: CoachContext;
 }
-const DEFAULT_MODEL = Deno.env.get('COACH_MODEL') || 'gpt-5.4-mini';
+
+const corsHeaders = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const configuredModel = Deno.env.get('COACH_MODEL') || FALLBACK_MODEL;
+const DEFAULT_MODEL = validateModel(configuredModel);
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-const MAX_MESSAGES = 12;
-const MAX_CONTENT_LENGTH = 1200;
 const MAX_TOKENS = Number(Deno.env.get('COACH_MAX_TOKENS') || 320);
 const TEMPERATURE = Number(Deno.env.get('COACH_TEMPERATURE') || 0.6);
+const REQUEST_TIMEOUT_MS = 25_000;
+const rateLimits = new Map<string, RateLimitEntry>();
 
 if (!OPENAI_API_KEY) {
   console.warn(
     '[coach] OPENAI_API_KEY is not set; requests will be rejected until configured.'
+  );
+}
+
+if (configuredModel !== DEFAULT_MODEL) {
+  console.warn(
+    `[coach] Invalid COACH_MODEL "${configuredModel}"; falling back to ${DEFAULT_MODEL}.`
   );
 }
 
@@ -35,11 +48,7 @@ function badRequest(message: string, init?: ResponseInit) {
     JSON.stringify({ error: message }),
     {
       status: init?.status ?? 400,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-      },
+      headers: corsHeaders,
       ...init,
     },
   );
@@ -48,57 +57,26 @@ function badRequest(message: string, init?: ResponseInit) {
 function ok(body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
     status: 200,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    },
+    headers: corsHeaders,
   });
-}
-
-function sanitizeMessages(messages: ChatMessage[] = []): ChatMessage[] {
-  return messages
-    .filter((m) => m && typeof m.content === 'string' && typeof m.role === 'string')
-    .map((m) => ({
-      role: (['user', 'assistant', 'system'] as Role[]).includes(m.role as Role) ? (m.role as Role) : 'user',
-      content: m.content.slice(0, MAX_CONTENT_LENGTH),
-    }))
-    .slice(-MAX_MESSAGES);
-}
-
-/** Strip control chars, prompt delimiters, and cap length to prevent injection. */
-function sanitizeName(name: string): string {
-  return name.replace(/[^\w\s'-]/g, '').slice(0, 100).trim();
-}
-
-function buildPrompt(context?: CoachContext) {
-  const focus = context?.focus || 'fitness_coach';
-  const rawName = context?.profile?.name;
-  const safeName = rawName ? sanitizeName(rawName) : '';
-  const userLine = safeName
-    ? `You are coaching ${safeName}.`
-    : 'You are coaching the user.';
-
-  return [
-    {
-      role: 'system',
-      content: [
-        'You are Form Factor’s AI coach for strength, conditioning, mobility, and nutrition.',
-        userLine,
-        'Stay safe: avoid medical advice, do not invent injuries, and recommend seeing a physician for pain, dizziness, or medical issues.',
-        'Outputs must be concise (under ~180 words) and actionable with clear sets/reps, rest, tempo, or food swaps.',
-        'Prefer simple movements with minimal equipment unless the user specifies otherwise.',
-        'Offer 1-2 options max; avoid long lists.',
-        'If user asks for calorie/protein guidance, give estimates and ranges, not exact prescriptions.',
-        `Focus: ${focus}.`,
-      ].join(' '),
-    } satisfies ChatMessage,
-  ];
 }
 
 async function generateReply(body: RequestBody) {
   if (!OPENAI_API_KEY) {
     return badRequest('Coach is not configured (missing OPENAI_API_KEY).', { status: 500 });
+  }
+
+  const userId = body.context?.profile?.id || 'anonymous';
+
+  const rateLimit = checkRateLimit(userId, rateLimits);
+  if (!rateLimit.allowed) {
+    return new Response(JSON.stringify({ error: 'Rate limit exceeded. Please try again shortly.' }), {
+      status: 429,
+      headers: {
+        ...corsHeaders,
+        'Retry-After': String(rateLimit.retryAfter ?? 60),
+      },
+    });
   }
 
   const inputMessages = sanitizeMessages(body.messages || []);
@@ -113,14 +91,31 @@ async function generateReply(body: RequestBody) {
     messages: [...buildPrompt(body.context), ...inputMessages],
   };
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      console.error('[coach] OpenAI request timed out');
+      return badRequest('Coach request timed out. Please try again.', { status: 504 });
+    }
+
+    console.error('[coach] OpenAI request failed', error);
+    return badRequest('Coach failed to respond. Please try again.', { status: 502 });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -128,25 +123,28 @@ async function generateReply(body: RequestBody) {
     return badRequest('Coach failed to respond. Please try again.', { status: 502 });
   }
 
-  let data: any;
+  let data: OpenAIResponse;
   try {
-    data = await response.json();
+    const json = (await response.json()) as unknown;
+    if (!isOpenAIResponse(json)) {
+      console.error('[coach] Unexpected OpenAI response structure', JSON.stringify(json));
+      return badRequest('Upstream returned an unexpected response format.', { status: 502 });
+    }
+
+    data = json;
   } catch (_parseErr) {
     console.error('[coach] Failed to parse OpenAI response as JSON');
     return badRequest('Upstream returned an invalid response.', { status: 502 });
   }
 
-  if (
-    !data ||
-    !Array.isArray(data.choices) ||
-    data.choices.length === 0 ||
-    typeof data.choices[0]?.message?.content !== 'string'
-  ) {
+  const firstChoice = data.choices?.[0];
+
+  if (!firstChoice || typeof firstChoice.message?.content !== 'string') {
     console.error('[coach] Unexpected OpenAI response structure', JSON.stringify(data));
     return badRequest('Upstream returned an unexpected response format.', { status: 502 });
   }
 
-  const message = (data.choices[0].message.content as string).trim();
+  const message = firstChoice.message.content.trim();
 
   if (!message) {
     return badRequest('Empty response from coach.', { status: 502 });
