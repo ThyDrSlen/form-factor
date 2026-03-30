@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { useToast } from '@/contexts/ToastContext';
 import { useSocial } from '@/contexts/SocialContext';
@@ -49,6 +50,7 @@ export default function FollowRequestsModal() {
     async (followerId: string) => {
       try {
         setActingKey(`accept:${followerId}`);
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         await social.acceptFollow(followerId);
         setRequests((prev) => prev.filter((row) => row.follower_id !== followerId));
         showToast('Follow request accepted.', { type: 'success' });
@@ -66,6 +68,7 @@ export default function FollowRequestsModal() {
     async (followerId: string) => {
       try {
         setActingKey(`reject:${followerId}`);
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         await social.rejectFollow(followerId);
         setRequests((prev) => prev.filter((row) => row.follower_id !== followerId));
         showToast('Follow request rejected.', { type: 'info' });

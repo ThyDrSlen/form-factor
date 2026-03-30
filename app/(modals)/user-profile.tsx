@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   SafeAreaView,
@@ -9,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeBack } from '@/hooks/use-safe-back';
@@ -97,14 +99,53 @@ export default function UserProfileModal() {
   const handleFollowAction = useCallback(async () => {
     if (!targetUserId || status.is_self || loadingFollowAction) return;
 
+    if (status.follows || status.requested) {
+      Alert.alert(
+        'Unfollow',
+        `Are you sure you want to unfollow @${profile?.display_name || profile?.username || 'this user'}?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Unfollow',
+            style: 'destructive',
+            onPress: () => {
+              void (async () => {
+                try {
+                  setLoadingFollowAction(true);
+                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                  await social.unfollowUser(targetUserId);
+
+                  const [nextStatus, nextCounts] = await Promise.all([
+                    social.getFollowStatus(targetUserId, { refresh: true }),
+                    getFollowCounts(targetUserId),
+                  ]);
+                  setStatus(nextStatus);
+                  setCounts(nextCounts);
+
+                  if (profile && (profile.user_id === user?.id || !profile.is_private || nextStatus.follows)) {
+                    const nextVideos = await getUserVideos(targetUserId, null, 20);
+                    setVideos(nextVideos.items);
+                  } else {
+                    setVideos([]);
+                  }
+                } catch (error) {
+                  warnWithTs('[user-profile] Follow action failed', error);
+                  showToast('Could not update follow status.', { type: 'error' });
+                } finally {
+                  setLoadingFollowAction(false);
+                }
+              })();
+            },
+          },
+        ],
+      );
+      return;
+    }
+
     try {
       setLoadingFollowAction(true);
-
-      if (status.follows || status.requested) {
-        await social.unfollowUser(targetUserId);
-      } else {
-        await social.followUser(targetUserId);
-      }
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await social.followUser(targetUserId);
 
       const [nextStatus, nextCounts] = await Promise.all([
         social.getFollowStatus(targetUserId, { refresh: true }),
