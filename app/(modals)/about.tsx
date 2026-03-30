@@ -18,7 +18,7 @@ const LinkItem = ({ icon, title, onPress }: LinkItemProps) => (
       <Ionicons name={icon as any} size={20} color="#4C8CFF" />
     </View>
     <Text style={styles.linkText}>{title}</Text>
-    <Ionicons name="open-outline" size={18} color="#6781A6" />
+    <Ionicons name="open-outline" size={18} color="#9AACD1" />
   </TouchableOpacity>
 );
 
@@ -93,7 +93,7 @@ export default function AboutModal() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={safeBack} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#1A1A2E" />
+          <Ionicons name="arrow-back" size={24} color="#E8EDF5" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>About</Text>
         <View style={styles.headerSpacer} />
@@ -125,7 +125,7 @@ export default function AboutModal() {
                 <Text style={styles.newBadgeText}>NEW</Text>
               </View>
             )}
-            <Ionicons name="chevron-forward" size={18} color="#6781A6" />
+            <Ionicons name="chevron-forward" size={18} color="#9AACD1" />
           </TouchableOpacity>
           <View style={styles.divider} />
           <LinkItem
@@ -188,7 +188,7 @@ export default function AboutModal() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>What&apos;s New</Text>
               <TouchableOpacity onPress={() => setShowChangelog(false)} style={styles.modalClose}>
-                <Ionicons name="close" size={24} color="#1A1A2E" />
+                <Ionicons name="close" size={24} color="#E8EDF5" />
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
@@ -217,7 +217,7 @@ export default function AboutModal() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FF',
+    backgroundColor: '#050E1F',
   },
   header: {
     flexDirection: 'row',
@@ -225,9 +225,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 60,
     paddingBottom: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#050E1F',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#1B2E4A',
   },
   backButton: {
     padding: 4,
@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 20,
     fontWeight: '600',
-    color: '#1A1A2E',
+    color: '#E8EDF5',
     textAlign: 'center',
     marginRight: 40,
   },
@@ -265,12 +265,12 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#1A1A2E',
+    color: '#E8EDF5',
     marginBottom: 4,
   },
   appTagline: {
     fontSize: 14,
-    color: '#6781A6',
+    color: '#9AACD1',
     marginBottom: 16,
   },
   versionInfo: {
@@ -287,17 +287,17 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#6781A6',
+    color: '#9AACD1',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,
     marginTop: 20,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#0B1A2F',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#1B2E4A',
     overflow: 'hidden',
   },
   linkItem: {
@@ -318,11 +318,11 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '500',
-    color: '#1A1A2E',
+    color: '#E8EDF5',
   },
   divider: {
     height: 1,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#1B2E4A',
     marginLeft: 64,
   },
   creditsContainer: {
@@ -331,14 +331,14 @@ const styles = StyleSheet.create({
   },
   creditsText: {
     fontSize: 13,
-    color: '#6781A6',
+    color: '#9AACD1',
     textAlign: 'center',
     lineHeight: 18,
     marginBottom: 12,
   },
   copyrightText: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: '#9AACD1',
     textAlign: 'center',
   },
   bottomSpacer: {
@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#0B1A2F',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '75%',
@@ -374,12 +374,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#1B2E4A',
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#1A1A2E',
+    color: '#E8EDF5',
   },
   modalClose: {
     padding: 4,
@@ -399,11 +399,11 @@ const styles = StyleSheet.create({
   releaseVersion: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#1A1A2E',
+    color: '#E8EDF5',
   },
   releaseDate: {
     fontSize: 13,
-    color: '#6781A6',
+    color: '#9AACD1',
   },
   changeRow: {
     flexDirection: 'row',
@@ -414,7 +414,7 @@ const styles = StyleSheet.create({
   changeText: {
     flex: 1,
     fontSize: 15,
-    color: '#1A1A2E',
+    color: '#E8EDF5',
     lineHeight: 20,
   },
 });
