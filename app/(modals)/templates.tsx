@@ -28,6 +28,7 @@ export default function TemplatesScreen() {
   const router = useRouter();
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadTemplates();
@@ -39,6 +40,7 @@ export default function TemplatesScreen() {
       setLoading(false);
       return;
     }
+    setError(null);
 
     try {
       const rows = await db.getAllAsync<TemplateSummary>(`
@@ -51,8 +53,10 @@ export default function TemplatesScreen() {
         ORDER BY wt.updated_at DESC
       `);
       setTemplates(rows);
+      setError(null);
     } catch (error) {
       console.error('[Templates] Failed to load templates:', error);
+      setError('Failed to load templates. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -130,6 +134,17 @@ export default function TemplatesScreen() {
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={tabColors.accent} />
+        </View>
+      ) : error ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+          <Ionicons name="warning-outline" size={48} color={tabColors.accentAlt} />
+          <Text style={templateStyles.emptyText}>{error}</Text>
+          <TouchableOpacity
+            style={{ marginTop: 16, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: tabColors.accent, borderRadius: 10 }}
+            onPress={loadTemplates}
+          >
+            <Text style={{ color: '#fff', fontFamily: 'Lexend_700Bold', fontSize: 15 }}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : templates.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
