@@ -159,11 +159,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --backend=copyfile
 
-      - name: Rebuild better-sqlite3 native bindings
-        run: cd node_modules/better-sqlite3 && npx --yes node-gyp rebuild
-        env:
-          npm_config_python: python3
-
       - name: Run coach evaluation
         run: npx tsx scripts/eval-coach.ts
         env:
