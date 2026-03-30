@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  RefreshControl,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -54,6 +55,7 @@ export default function UserProfileModal() {
   const [videos, setVideos] = useState<VideoWithUrls[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingFollowAction, setLoadingFollowAction] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const canViewVideos = useMemo(() => {
     if (!profile) return false;
@@ -62,9 +64,13 @@ export default function UserProfileModal() {
     return status.follows;
   }, [profile, status.follows, user?.id]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options?: { showLoading?: boolean }) => {
     if (!targetUserId) return;
-    setLoading(true);
+    const showLoading = options?.showLoading ?? true;
+    if (showLoading) {
+      setLoading(true);
+    }
+
     try {
       const [loadedProfile, loadedCounts, loadedStatus] = await Promise.all([
         getProfile(targetUserId),
@@ -86,9 +92,20 @@ export default function UserProfileModal() {
       warnWithTs('[user-profile] Failed to load profile modal data', error);
       showToast('Unable to load profile right now.', { type: 'error' });
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
   }, [showToast, social, targetUserId, user?.id]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load({ showLoading: false });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load]);
 
   useEffect(() => {
     void load();
@@ -208,6 +225,14 @@ export default function UserProfileModal() {
           keyExtractor={(item) => item.id}
           renderItem={renderVideoItem}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#4C8CFF"
+              colors={['#4C8CFF']}
+            />
+          }
           ListHeaderComponent={
             <View style={styles.profileCard}>
               <View style={styles.profileTopRow}>
