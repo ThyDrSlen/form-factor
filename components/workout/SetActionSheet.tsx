@@ -50,7 +50,7 @@ const SetActionSheet = forwardRef<BottomSheet, SetActionSheetProps>(
         <BottomSheetView style={styles.sheetContainer}>
           {/* Close button */}
           <View style={{ alignItems: 'flex-end', marginBottom: 8 }}>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity activeOpacity={0.7} onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="close" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
