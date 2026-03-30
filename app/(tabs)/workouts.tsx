@@ -192,7 +192,22 @@ export default function WorkoutsScreen() {
             </View>
             
             <View style={styles.cardFooter}>
-              <TouchableOpacity style={styles.actionButton}>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  const lines = [
+                    `Exercise: ${item.exercise}`,
+                    item.date ? `Date: ${new Date(item.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}` : null,
+                    `Sets: ${item.sets || 0}`,
+                    typeof item.reps === 'number' && item.reps > 0 ? `Reps: ${item.reps}` : null,
+                    typeof item.weight === 'number' && item.weight > 0 ? `Weight: ${item.weight} lbs` : null,
+                    typeof item.duration === 'number' && item.duration > 0 ? `Duration: ${item.duration} min` : null,
+                  ].filter(Boolean) as string[];
+                  Alert.alert(item.exercise, lines.join('\n'));
+                }}
+                activeOpacity={0.7}
+              >
                 <Ionicons name="eye-outline" size={16} color="#007AFF" />
                 <Text style={styles.actionText}>View</Text>
               </TouchableOpacity>

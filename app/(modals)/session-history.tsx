@@ -34,6 +34,7 @@ export default function SessionHistoryScreen() {
   const router = useRouter();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSessions();
@@ -45,6 +46,7 @@ export default function SessionHistoryScreen() {
       setLoading(false);
       return;
     }
+    setError(null);
 
     try {
       const rows = await db.getAllAsync<SessionSummary>(`
@@ -64,8 +66,10 @@ export default function SessionHistoryScreen() {
         ORDER BY ws.started_at DESC
       `);
       setSessions(rows);
+      setError(null);
     } catch (error) {
       console.error('[SessionHistory] Failed to load sessions:', error);
+      setError('Failed to load sessions. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -130,6 +134,17 @@ export default function SessionHistoryScreen() {
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={tabColors.accent} />
+        </View>
+      ) : error ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+          <Ionicons name="warning-outline" size={48} color={tabColors.accentAlt} />
+          <Text style={historyStyles.emptyText}>{error}</Text>
+          <TouchableOpacity
+            style={{ marginTop: 16, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: tabColors.accent, borderRadius: 10 }}
+            onPress={loadSessions}
+          >
+            <Text style={{ color: '#fff', fontFamily: 'Lexend_700Bold', fontSize: 15 }}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : sessions.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
