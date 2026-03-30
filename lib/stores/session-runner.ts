@@ -13,6 +13,7 @@
 
 import { create } from 'zustand';
 import * as Crypto from 'expo-crypto';
+import * as Haptics from 'expo-haptics';
 import { localDB } from '@/lib/services/database/local-db';
 import {
   genericLocalUpsert,
@@ -88,6 +89,29 @@ export interface SessionRunnerState {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+let restTimerCompletionTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function clearRestTimerCompletionTimeout(): void {
+  if (restTimerCompletionTimeout) {
+    clearTimeout(restTimerCompletionTimeout);
+    restTimerCompletionTimeout = null;
+  }
+}
+
+function scheduleRestTimerCompletionHaptic(startedAt: string, targetSeconds: number): void {
+  clearRestTimerCompletionTimeout();
+
+  const remainingMs = computeRemainingSeconds(startedAt, targetSeconds) * 1000;
+  if (remainingMs <= 0) {
+    return;
+  }
+
+  restTimerCompletionTimeout = setTimeout(() => {
+    restTimerCompletionTimeout = null;
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, remainingMs);
 }
 
 async function emitEvent(
@@ -428,6 +452,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
       exercise?.name,
       nextSetIdx + 1,
     );
+    scheduleRestTimerCompletionHaptic(now, restSeconds);
 
     // Update in-memory state
     set((state) => {
@@ -468,6 +493,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
 
     const now = nowIso();
 
+    clearRestTimerCompletionTimeout();
     await cancelRestNotification();
 
     const db = localDB.db;
@@ -511,6 +537,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
     if (remaining > 0) {
       scheduleRestNotification(remaining).catch(() => {});
     }
+    scheduleRestTimerCompletionHaptic(restTimer.startedAt, newTarget);
 
     // Update DB
     const db = localDB.db;
@@ -535,6 +562,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
 
     const now = nowIso();
 
+    clearRestTimerCompletionTimeout();
     await cancelRestNotification();
 
     const db = localDB.db;
@@ -593,6 +621,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
                 startedAt: s.rest_started_at,
                 setId: s.id,
               };
+              scheduleRestTimerCompletionHaptic(s.rest_started_at, s.rest_target_seconds);
             }
           }
         }
