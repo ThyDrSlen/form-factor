@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  RefreshControl,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -24,9 +25,14 @@ export default function FollowRequestsModal() {
   const [requests, setRequests] = useState<FollowRelationship[]>([]);
   const [loading, setLoading] = useState(true);
   const [actingKey, setActingKey] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (options?: { showLoading?: boolean }) => {
+    const showLoading = options?.showLoading ?? true;
+    if (showLoading) {
+      setLoading(true);
+    }
+
     try {
       const rows = await getPendingRequests();
       setRequests(rows);
@@ -35,9 +41,20 @@ export default function FollowRequestsModal() {
       warnWithTs('[follow-requests] Failed to load requests', error);
       showToast('Unable to load follow requests.', { type: 'error' });
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
   }, [showToast, social]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load({ showLoading: false });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load]);
 
   useEffect(() => {
     void load();
@@ -142,6 +159,14 @@ export default function FollowRequestsModal() {
           keyExtractor={(item) => `${item.follower_id}:${item.following_id}`}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#4C8CFF"
+              colors={['#4C8CFF']}
+            />
+          }
           ListEmptyComponent={
             <View style={styles.centerState}>
               <Text style={styles.mutedText}>No pending requests.</Text>
