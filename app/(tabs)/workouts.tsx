@@ -3,6 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { DeleteAction } from '@/components';
+import { useUnits } from '@/contexts/UnitsContext';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import React, { useCallback, useRef, useState } from 'react';
 import {
@@ -21,7 +22,7 @@ import { useWorkouts, type Workout } from '../../contexts/WorkoutsContext';
 import { useToast } from '../../contexts/ToastContext';
 import { styles } from '../../styles/tabs/_workouts.styles';
 
-const buildWorkoutShareMessage = (workout: Workout): string => {
+const buildWorkoutShareMessage = (workout: Workout, weightLabel: string): string => {
   const workoutDate = workout.date ? new Date(workout.date) : null;
   const lines: string[] = [
     `Workout: ${workout.exercise}`,
@@ -30,7 +31,7 @@ const buildWorkoutShareMessage = (workout: Workout): string => {
       : null,
     `Sets: ${workout.sets}`,
     typeof workout.reps === 'number' && workout.reps > 0 ? `Reps: ${workout.reps}` : null,
-    typeof workout.weight === 'number' && workout.weight > 0 ? `Weight: ${workout.weight} lbs` : null,
+    typeof workout.weight === 'number' && workout.weight > 0 ? `Weight: ${workout.weight} ${weightLabel}` : null,
     typeof workout.duration === 'number' && workout.duration > 0 ? `Duration: ${workout.duration} min` : null,
   ].filter((line): line is string => Boolean(line));
 
@@ -39,6 +40,7 @@ const buildWorkoutShareMessage = (workout: Workout): string => {
 
 export default function WorkoutsScreen() {
   const router = useRouter();
+  const { getWeightLabel } = useUnits();
   const { workouts, loading, refreshWorkouts, deleteWorkout } = useWorkouts();
   const { show: showToast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -112,7 +114,7 @@ export default function WorkoutsScreen() {
   const handleShareWorkout = useCallback(
     async (workout: Workout) => {
       try {
-        const message = buildWorkoutShareMessage(workout);
+        const message = buildWorkoutShareMessage(workout, getWeightLabel());
         await Share.share({ message });
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       } catch (error) {
@@ -120,7 +122,7 @@ export default function WorkoutsScreen() {
         showToast('Unable to share this workout right now.', { type: 'error' });
       }
     },
-    [showToast]
+    [getWeightLabel, showToast]
   );
 
   const renderItem = (info: { item: Workout }) => {
@@ -155,7 +157,7 @@ export default function WorkoutsScreen() {
               <View style={styles.cardDateContainer}>
                 <Ionicons name="time-outline" size={14} color="#8E8E93" />
                 <Text style={styles.cardDate}>
-                  {new Date(item.date).toLocaleDateString('en-US', {
+                  {new Date(item.date).toLocaleDateString(undefined, {
                     month: 'short',
                     day: 'numeric',
                   })}
@@ -179,7 +181,7 @@ export default function WorkoutsScreen() {
               {item.weight && (
                 <View style={styles.detailItem}>
                   <Text style={styles.detailValue}>{item.weight}</Text>
-                  <Text style={styles.detailLabel}>lbs</Text>
+                  <Text style={styles.detailLabel}>{getWeightLabel()}</Text>
                 </View>
               )}
               
