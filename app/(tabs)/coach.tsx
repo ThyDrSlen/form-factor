@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { fetchTodaySession, fetchCoachSessionMessages } from '@/lib/services/coach-history-service';
 import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
@@ -32,6 +33,7 @@ const coachQuickPrompts = [
 
 export default function CoachScreen() {
   const { user } = useAuth();
+  const { show: showToast } = useToast();
   const router = useRouter();
   const { restoreSessionId } = useLocalSearchParams<{ restoreSessionId?: string }>();
   const insets = useSafeAreaInsets();
@@ -145,8 +147,11 @@ export default function CoachScreen() {
       if (!session) return;
       setCoachMessages(session.messages.map((m, i) => ({ ...m, id: `restored-${i}` })));
       setCoachSessionId(session.sessionId);
+    }).catch((err) => {
+      console.error('[Coach] Failed to restore session:', err);
+      showToast('Failed to restore session', { type: 'error' });
     });
-  }, [restoreSessionId]);
+  }, [restoreSessionId, showToast]);
 
   const handleNewChat = useCallback(() => {
     setCoachMessages([coachIntroMessage]);
