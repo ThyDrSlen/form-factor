@@ -36,19 +36,18 @@ export default function SessionHistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadSessions();
-  }, []);
-
-  const loadSessions = async () => {
+  const loadSessions = useCallback(async () => {
     const db = localDB.db;
     if (!db) {
+      setError('Failed to load. Tap to retry.');
       setLoading(false);
       return;
     }
     setError(null);
 
     try {
+      setError(null);
+      setLoading(true);
       const rows = await db.getAllAsync<SessionSummary>(`
         SELECT
           ws.id,
@@ -69,28 +68,32 @@ export default function SessionHistoryScreen() {
       setError(null);
     } catch (error) {
       console.error('[SessionHistory] Failed to load sessions:', error);
-      setError('Failed to load sessions. Please try again.');
+      setError('Failed to load. Tap to retry.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const formatDate = (iso: string): string => {
+  useEffect(() => {
+    void loadSessions();
+  }, [loadSessions]);
+
+  const formatDate = useCallback((iso: string): string => {
     const d = new Date(iso);
     return d.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
     });
-  };
+  }, []);
 
-  const formatDuration = (start: string, end: string | null): string => {
+  const formatDuration = useCallback((start: string, end: string | null): string => {
     if (!end) return '-';
     const ms = new Date(end).getTime() - new Date(start).getTime();
     const mins = Math.round(ms / 60000);
     if (mins < 60) return `${mins}m`;
     return `${Math.floor(mins / 60)}h ${mins % 60}m`;
-  };
+  }, []);
 
   const renderItem = useCallback(
     ({ item }: { item: SessionSummary }) => (
@@ -117,7 +120,7 @@ export default function SessionHistoryScreen() {
         </View>
       </TouchableOpacity>
     ),
-    [],
+    [formatDate, formatDuration],
   );
 
   return (
@@ -136,18 +139,21 @@ export default function SessionHistoryScreen() {
           <ActivityIndicator color={tabColors.accent} />
         </View>
       ) : error ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-          <Ionicons name="warning-outline" size={48} color={tabColors.accentAlt} />
-          <Text style={historyStyles.emptyText}>{error}</Text>
+        <View style={historyStyles.stateContainer}>
+          <Ionicons name="alert-circle-outline" size={48} color="#FF3B30" />
+          <Text style={historyStyles.errorText}>{error}</Text>
           <TouchableOpacity
-            style={{ marginTop: 16, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: tabColors.accent, borderRadius: 10 }}
-            onPress={loadSessions}
+            onPress={() => {
+              setError(null);
+              void loadSessions();
+            }}
+            style={historyStyles.retryButton}
           >
-            <Text style={{ color: '#fff', fontFamily: 'Lexend_700Bold', fontSize: 15 }}>Retry</Text>
+            <Text style={historyStyles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
       ) : sessions.length === 0 ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+        <View style={historyStyles.stateContainer}>
           <Ionicons name="barbell-outline" size={48} color={tabColors.textSecondary} />
           <Text style={historyStyles.emptyText}>No completed sessions yet</Text>
           <Text style={historyStyles.emptySubtext}>
@@ -230,6 +236,30 @@ const historyStyles = StyleSheet.create({
   cardStatSep: {
     fontSize: 12,
     color: tabColors.textSecondary,
+  },
+  stateContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  errorText: {
+    fontSize: 16,
+    fontFamily: 'Lexend_400Regular',
+    color: tabColors.textSecondary,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: tabColors.accent,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontFamily: 'Lexend_700Bold',
   },
   emptyText: {
     fontSize: 16,
