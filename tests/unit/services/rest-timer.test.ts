@@ -14,12 +14,10 @@ jest.mock('@/lib/logger', () => ({
   warnWithTs: jest.fn(),
 }));
 
-let restTimer: typeof import('@/lib/services/rest-timer');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const restTimer = require('@/lib/services/rest-timer') as typeof import('@/lib/services/rest-timer');
 
 describe('rest-timer', () => {
-  beforeAll(async () => {
-    restTimer = await import('@/lib/services/rest-timer');
-  });
 
   beforeEach(async () => {
     jest.clearAllMocks();
