@@ -1135,7 +1135,7 @@ class SyncService {
         }
 
         const itemUserId = typeof data.user_id === 'string' ? data.user_id : null;
-        if (itemUserId !== user.id) {
+        if (itemUserId && itemUserId !== user.id) {
           warnWithTs(
             `[SyncService] Skipping queue item ${item.id} because user_id ${String(itemUserId)} does not match current user ${user.id}`
           );
