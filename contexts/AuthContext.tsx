@@ -4,7 +4,7 @@ import { clearOnboardingFlag } from '@/lib/services/onboarding';
 import { AuthError, Session, User } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { SessionManager } from '@/lib/services/SessionManager';
 import { supabase } from '@/lib/supabase';
@@ -750,25 +750,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const value = {
-    user,
-    session,
-    loading,
-    isSigningIn,
-    isMockUser,
-    error,
-    signInWithGoogle,
-    signInWithApple,
-    signInWithEmail,
-    signInWithMagicLink,
-    signUpWithEmail,
-    resetPassword,
-    updateProfile,
-    signOut,
-    deleteAccount,
-    handleAuthCallback,
-    clearError,
-  };
+  const value = useMemo(
+    () => ({
+      user,
+      session,
+      loading,
+      isSigningIn,
+      isMockUser,
+      error,
+      signInWithGoogle,
+      signInWithApple,
+      signInWithEmail,
+      signInWithMagicLink,
+      signUpWithEmail,
+      resetPassword,
+      updateProfile,
+      signOut,
+      deleteAccount,
+      handleAuthCallback,
+      clearError,
+    }),
+    [
+      user,
+      session,
+      loading,
+      isSigningIn,
+      isMockUser,
+      error,
+      signInWithGoogle,
+      signInWithApple,
+      signInWithEmail,
+      signInWithMagicLink,
+      signUpWithEmail,
+      resetPassword,
+      updateProfile,
+      signOut,
+      deleteAccount,
+      handleAuthCallback,
+      clearError,
+    ],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
