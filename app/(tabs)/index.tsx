@@ -490,13 +490,14 @@ export default function HomeScreen() {
       });
       
       Alert.alert('Success', 'Video uploaded successfully');
-      loadVideos(true);
+      await loadVideos(true);
     } catch (error) {
+      console.error('[Home][uploadWorkoutVideo] Failed to upload workout video', error);
       errorWithTs('Upload failed', error);
-      Alert.alert('Error', 'Failed to upload video');
+      showToast('Failed to upload video.', { type: 'error' });
       setLoadingVideos(false);
     }
-  }, [loadVideos]);
+  }, [loadVideos, showToast]);
 
   const handleDeleteVideo = useCallback(
     async (videoId: string) => {
