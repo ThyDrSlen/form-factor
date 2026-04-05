@@ -85,6 +85,7 @@ export default function CoachHistoryScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const loadSessions = useCallback(
     async (mode: 'reset' | 'more') => {
@@ -96,6 +97,7 @@ export default function CoachHistoryScreen() {
       const isReset = mode === 'reset';
       if (isReset) {
         setLoading(true);
+        setError(null);
       } else {
         if (!cursor || loadingMore) return;
         setLoadingMore(true);
@@ -115,6 +117,11 @@ export default function CoachHistoryScreen() {
         }
       } catch (err) {
         console.warn('[coach-history] Failed to load sessions:', err);
+        if (isReset) {
+          setSessions([]);
+          setCursor(null);
+          setError('Unable to load your coach history right now.');
+        }
       } finally {
         if (isReset) {
           setLoading(false);
@@ -127,13 +134,12 @@ export default function CoachHistoryScreen() {
     [user, cursor, loadingMore],
   );
 
-  useEffect(() => {
-    void loadSessions('reset');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
+    void loadSessions('reset');
+  }, [loadSessions]);
+
+  useEffect(() => {
     void loadSessions('reset');
   }, [loadSessions]);
 
@@ -210,6 +216,22 @@ export default function CoachHistoryScreen() {
       {loading && !refreshing ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator color={tabColors.accent} />
+        </View>
+      ) : error ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons
+            name="alert-circle-outline"
+            size={64}
+            color={tabColors.textSecondary}
+          />
+          <Text style={styles.emptyTitle}>Couldn&apos;t Load History</Text>
+          <Text style={styles.emptySubtitle}>{error}</Text>
+          <TouchableOpacity
+            style={styles.loadMoreButton}
+            onPress={() => void loadSessions('reset')}
+          >
+            <Text style={styles.loadMoreText}>Try again</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList

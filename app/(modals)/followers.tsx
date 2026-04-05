@@ -69,6 +69,25 @@ export default function FollowersModal() {
     });
   }, [rows, search]);
 
+  const emptyMessage = useMemo(() => {
+    const trimmed = search.trim();
+    if (trimmed.length > 0) {
+      return `No results for '${trimmed}'`;
+    }
+
+    return activeTab === 'followers' ? 'No followers yet.' : 'Not following anyone yet.';
+  }, [activeTab, search]);
+
+  const emptySubtext = useMemo(() => {
+    if (search.trim().length > 0) {
+      return 'Try a different name or username.';
+    }
+
+    return activeTab === 'followers'
+      ? 'When people follow this account, they will appear here.'
+      : 'Accounts followed by this user will appear here.';
+  }, [activeTab, search]);
+
   const renderItem = ({ item }: { item: FollowRelationship }) => {
     const profile = item.profile;
     const displayName = profile?.display_name || profile?.username || 'User';
@@ -78,6 +97,9 @@ export default function FollowersModal() {
         style={styles.row}
         onPress={() => profile?.user_id && router.push(`/(modals)/user-profile?userId=${profile.user_id}`)}
         activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${displayName}'s profile`}
+        accessibilityHint="Navigates to this user profile"
       >
         {profile?.avatar_url ? (
           <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
@@ -90,7 +112,7 @@ export default function FollowersModal() {
           <Text style={styles.rowName}>{displayName}</Text>
           {profile?.username ? <Text style={styles.rowMeta}>@{profile.username}</Text> : null}
         </View>
-        <Ionicons name="chevron-forward" size={18} color="#6781A6" />
+        <Ionicons name="chevron-forward" size={18} color="#6781A6" accessible={false} />
       </TouchableOpacity>
     );
   };
@@ -159,7 +181,8 @@ export default function FollowersModal() {
             keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
               <View style={styles.centerState}>
-                <Text style={styles.mutedText}>No {activeTab} yet.</Text>
+                <Text style={styles.mutedText}>{emptyMessage}</Text>
+                <Text style={styles.mutedText}>{emptySubtext}</Text>
               </View>
             }
           />
