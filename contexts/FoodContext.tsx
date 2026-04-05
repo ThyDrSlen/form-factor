@@ -1,4 +1,4 @@
-import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import * as Crypto from 'expo-crypto';
 import { localDB } from '../lib/services/database/local-db';
 import { syncService } from '../lib/services/database/sync-service';
@@ -126,14 +126,14 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [isOnline, performSync]);
 
-  const fetchFoods = async () => {
+  const fetchFoods = useCallback(async () => {
     await loadLocalFoods();
     if (isOnline) {
       await performSync();
     }
-  };
+  }, [isOnline, loadLocalFoods, performSync]);
 
-  const deleteFood = async (id: string) => {
+  const deleteFood = useCallback(async (id: string) => {
     try {
       console.log('[FoodProvider] Deleting food:', id);
       
@@ -150,9 +150,9 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
     } catch (err) {
       console.error('[FoodProvider] Error deleting food:', err);
     }
-  };
+  }, [isOnline]);
 
-  const addFood = async (food: FoodEntry) => {
+  const addFood = useCallback(async (food: FoodEntry) => {
     try {
       console.log('[FoodProvider] Adding food:', food);
 
@@ -182,10 +182,15 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
       console.error('[FoodProvider] Error adding food:', error);
       throw error;
     }
-  };
+  }, [isOnline]);
+
+  const value = useMemo(
+    () => ({ foods, addFood, refreshFoods: fetchFoods, deleteFood, loading, isSyncing }),
+    [foods, addFood, fetchFoods, deleteFood, loading, isSyncing],
+  );
 
   return (
-    <FoodContext.Provider value={{ foods, addFood, refreshFoods: fetchFoods, deleteFood, loading, isSyncing }}>
+    <FoodContext.Provider value={value}>
       {children}
     </FoodContext.Provider>
   );
