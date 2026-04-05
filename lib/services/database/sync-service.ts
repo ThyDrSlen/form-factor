@@ -85,6 +85,8 @@ class SyncService {
   private healthChannel: RealtimeChannel | null = null;
   private nutritionGoalsChannel: RealtimeChannel | null = null;
   private workoutSessionChannels: RealtimeChannel[] = [];
+  private channelRetryCount = new Map<string, number>();
+  private channelStates = new Map<string, string>();
   private syncPromise: Promise<void> | null = null;
   private syncCallbacks: SyncCallback[] = [];
   private syncStatusCallbacks: SyncStatusCallback[] = [];
@@ -95,6 +97,7 @@ class SyncService {
     lastErrorAt: null,
   };
   private conflictSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly maxChannelRetries = 3;
 
   private getErrorCode(error: unknown): string | undefined {
     if (error && typeof error === 'object' && 'code' in error) {
@@ -145,7 +148,9 @@ class SyncService {
   }
 
   private notifySyncComplete() {
-    this.syncCallbacks.forEach(cb => cb());
+    this.syncCallbacks.forEach((cb) => {
+      cb();
+    });
   }
 
   onSyncStatusChange(callback: SyncStatusCallback) {
@@ -174,7 +179,9 @@ class SyncService {
       ...this.syncStatus,
       ...patch,
     };
-    this.syncStatusCallbacks.forEach((cb) => cb(this.syncStatus));
+    this.syncStatusCallbacks.forEach((cb) => {
+      cb(this.syncStatus);
+    });
   }
 
   private scheduleConflictReconcile(reason: string): void {
@@ -211,8 +218,19 @@ class SyncService {
 
   // Initialize Realtime subscriptions
   async initializeRealtimeSync(userId: string): Promise<void> {
+    const hasActiveRealtimeState = Array.from(this.channelStates.values()).some(
+      (state) => state === 'subscribing' || state === 'subscribed' || state === 'retrying'
+    );
+
     // Prevent duplicate subscriptions
-    if (this.foodChannel || this.workoutChannel || this.healthChannel || this.nutritionGoalsChannel) {
+    if (
+      this.foodChannel ||
+      this.workoutChannel ||
+      this.healthChannel ||
+      this.nutritionGoalsChannel ||
+      this.workoutSessionChannels.length > 0 ||
+      hasActiveRealtimeState
+    ) {
       logWithTs('[SyncService] Realtime already initialized, skipping');
       return;
     }
@@ -241,113 +259,233 @@ class SyncService {
       logWithTs(`[SyncService] ${label} channel status:`, status);
     };
 
+    const createManagedChannel = ({
+      channelKey,
+      label,
+      buildChannel,
+      storeChannel,
+      clearChannel,
+    }: {
+      channelKey: string;
+      label: string;
+      buildChannel: () => RealtimeChannel;
+      storeChannel: (channel: RealtimeChannel) => void;
+      clearChannel: (channel: RealtimeChannel) => void;
+    }): void => {
+      const currentState = this.channelStates.get(channelKey);
+      if (currentState === 'subscribing' || currentState === 'subscribed' || currentState === 'retrying') {
+        logWithTs(`[SyncService] ${label} channel already ${currentState}, skipping duplicate subscription`);
+        return;
+      }
+
+      this.channelStates.set(channelKey, 'subscribing');
+      const channel = buildChannel();
+      storeChannel(channel);
+
+      const cleanupChannel = async (): Promise<void> => {
+        try {
+          await channel.unsubscribe();
+        } catch (unsubscribeError) {
+          warnWithTs(`[SyncService] Failed to unsubscribe ${label} channel:`, unsubscribeError);
+        }
+
+        try {
+          await supabase.removeChannel(channel);
+        } catch (removeError) {
+          warnWithTs(`[SyncService] Failed to remove ${label} channel:`, removeError);
+        }
+
+        clearChannel(channel);
+      };
+
+      const scheduleRetry = async (reason: 'CHANNEL_ERROR' | 'TIMED_OUT'): Promise<void> => {
+        if (this.channelStates.get(channelKey) === 'retrying') {
+          return;
+        }
+
+        this.channelStates.set(channelKey, 'retrying');
+        await cleanupChannel();
+
+        const retryCount = this.channelRetryCount.get(channelKey) ?? 0;
+        if (retryCount >= this.maxChannelRetries) {
+          warnWithTs(
+            `[SyncService] ${label} channel reached retry limit after ${reason.toLowerCase()}, leaving unsubscribed`
+          );
+          this.channelStates.set(channelKey, 'error');
+          return;
+        }
+
+        const nextRetryCount = retryCount + 1;
+        const retryDelayMs = this.getRetryDelayMs(retryCount);
+        this.channelRetryCount.set(channelKey, nextRetryCount);
+        warnWithTs(
+          `[SyncService] Retrying ${label} channel after ${reason.toLowerCase()} (${nextRetryCount}/${this.maxChannelRetries}) in ${retryDelayMs}ms`
+        );
+
+        setTimeout(() => {
+          createManagedChannel({ channelKey, label, buildChannel, storeChannel, clearChannel });
+        }, retryDelayMs);
+      };
+
+      channel.subscribe((status, err) => {
+        logChannelStatus(label, status, err ?? undefined);
+
+        if (status === 'SUBSCRIBED') {
+          this.channelStates.set(channelKey, 'subscribed');
+          this.channelRetryCount.set(channelKey, 0);
+          return;
+        }
+
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          void scheduleRetry(status);
+        }
+      });
+    };
+
     // Subscribe to foods table changes
-    this.foodChannel = supabase
-      .channel('foods_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'foods',
-          filter: `user_id=eq.${userId}`,
-        },
-        async (payload) => {
-          logWithTs('[SyncService] Realtime food change:', payload);
-          await this.handleRealtimeFoodChange(payload);
-        }
-      )
-      .subscribe((status, err) => {
-        logChannelStatus('Foods', status, err ?? undefined);
-      });
-
-    // Subscribe to workouts table changes
-    this.workoutChannel = supabase
-      .channel('workouts_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'workouts',
-          filter: `user_id=eq.${userId}`,
-        },
-        async (payload) => {
-          logWithTs('[SyncService] Realtime workout change:', payload);
-          await this.handleRealtimeWorkoutChange(payload);
-        }
-      )
-      .subscribe((status, err) => {
-        logChannelStatus('Workouts', status, err ?? undefined);
-      });
-
-    // Subscribe to health_metrics table changes
-    this.healthChannel = supabase
-      .channel('health_metrics_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'health_metrics',
-          filter: `user_id=eq.${userId}`,
-        },
-        async (payload) => {
-          logWithTs('[SyncService] Realtime health metric change:', payload);
-          await this.handleRealtimeHealthMetricChange(payload);
-        }
-      )
-      .subscribe((status, err) => {
-        logChannelStatus('Health metrics', status, err ?? undefined);
-      });
-
-    // Subscribe to nutrition_goals table changes
-    this.nutritionGoalsChannel = supabase
-      .channel('nutrition_goals_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'nutrition_goals',
-          filter: `user_id=eq.${userId}`,
-        },
-        async (payload) => {
-          logWithTs('[SyncService] Realtime nutrition goals change:', payload);
-          await this.handleRealtimeNutritionGoalsChange(payload);
-        }
-      )
-      .subscribe((status, err) => {
-        logChannelStatus('Nutrition goals', status, err ?? undefined);
-      });
-
-    // Subscribe to workout session tables via generic sync adapter
-    for (const config of WORKOUT_SYNC_CONFIGS) {
-      const filterClause = config.userScoped ? `user_id=eq.${userId}` : undefined;
-      const channel = supabase
-        .channel(`${config.supabaseTable}_changes`)
-        .on(
+    createManagedChannel({
+      channelKey: 'foods',
+      label: 'Foods',
+      buildChannel: () =>
+        supabase.channel('foods_changes').on(
           'postgres_changes',
           {
             event: '*',
             schema: 'public',
-            table: config.supabaseTable,
-            ...(filterClause ? { filter: filterClause } : {}),
+            table: 'foods',
+            filter: `user_id=eq.${userId}`,
           },
           async (payload) => {
-            logWithTs(`[SyncService] Realtime ${config.supabaseTable} change:`, payload.eventType);
-            await handleGenericRealtimeChange(
-              config,
-              payload,
-              () => this.notifySyncComplete(),
-              (reason: string) => this.scheduleConflictReconcile(reason),
-            );
+            logWithTs('[SyncService] Realtime food change:', payload);
+            await this.handleRealtimeFoodChange(payload);
           }
-        )
-        .subscribe((status, err) => {
-          logChannelStatus(config.supabaseTable, status, err ?? undefined);
-        });
-      this.workoutSessionChannels.push(channel);
+        ),
+      storeChannel: (channel) => {
+        this.foodChannel = channel;
+      },
+      clearChannel: (channel) => {
+        if (this.foodChannel === channel) {
+          this.foodChannel = null;
+        }
+      },
+    });
+
+    // Subscribe to workouts table changes
+    createManagedChannel({
+      channelKey: 'workouts',
+      label: 'Workouts',
+      buildChannel: () =>
+        supabase.channel('workouts_changes').on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'workouts',
+            filter: `user_id=eq.${userId}`,
+          },
+          async (payload) => {
+            logWithTs('[SyncService] Realtime workout change:', payload);
+            await this.handleRealtimeWorkoutChange(payload);
+          }
+        ),
+      storeChannel: (channel) => {
+        this.workoutChannel = channel;
+      },
+      clearChannel: (channel) => {
+        if (this.workoutChannel === channel) {
+          this.workoutChannel = null;
+        }
+      },
+    });
+
+    // Subscribe to health_metrics table changes
+    createManagedChannel({
+      channelKey: 'health_metrics',
+      label: 'Health metrics',
+      buildChannel: () =>
+        supabase.channel('health_metrics_changes').on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'health_metrics',
+            filter: `user_id=eq.${userId}`,
+          },
+          async (payload) => {
+            logWithTs('[SyncService] Realtime health metric change:', payload);
+            await this.handleRealtimeHealthMetricChange(payload);
+          }
+        ),
+      storeChannel: (channel) => {
+        this.healthChannel = channel;
+      },
+      clearChannel: (channel) => {
+        if (this.healthChannel === channel) {
+          this.healthChannel = null;
+        }
+      },
+    });
+
+    // Subscribe to nutrition_goals table changes
+    createManagedChannel({
+      channelKey: 'nutrition_goals',
+      label: 'Nutrition goals',
+      buildChannel: () =>
+        supabase.channel('nutrition_goals_changes').on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'nutrition_goals',
+            filter: `user_id=eq.${userId}`,
+          },
+          async (payload) => {
+            logWithTs('[SyncService] Realtime nutrition goals change:', payload);
+            await this.handleRealtimeNutritionGoalsChange(payload);
+          }
+        ),
+      storeChannel: (channel) => {
+        this.nutritionGoalsChannel = channel;
+      },
+      clearChannel: (channel) => {
+        if (this.nutritionGoalsChannel === channel) {
+          this.nutritionGoalsChannel = null;
+        }
+      },
+    });
+
+    // Subscribe to workout session tables via generic sync adapter
+    for (const config of WORKOUT_SYNC_CONFIGS) {
+      const filterClause = config.userScoped ? `user_id=eq.${userId}` : undefined;
+      createManagedChannel({
+        channelKey: `workout_session:${config.supabaseTable}`,
+        label: config.supabaseTable,
+        buildChannel: () =>
+          supabase.channel(`${config.supabaseTable}_changes`).on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: config.supabaseTable,
+              ...(filterClause ? { filter: filterClause } : {}),
+            },
+            async (payload) => {
+              logWithTs(`[SyncService] Realtime ${config.supabaseTable} change:`, payload.eventType);
+              await handleGenericRealtimeChange(
+                config,
+                payload,
+                () => this.notifySyncComplete(),
+                (reason: string) => this.scheduleConflictReconcile(reason),
+              );
+            }
+          ),
+        storeChannel: (channel) => {
+          this.workoutSessionChannels.push(channel);
+        },
+        clearChannel: (channel) => {
+          this.workoutSessionChannels = this.workoutSessionChannels.filter((existing) => existing !== channel);
+        },
+      });
     }
   }
 
@@ -580,6 +718,8 @@ class SyncService {
       await supabase.removeChannel(ch);
     }
     this.workoutSessionChannels = [];
+    this.channelRetryCount.clear();
+    this.channelStates.clear();
   }
 
   // Sync local changes to Supabase
@@ -994,6 +1134,14 @@ class SyncService {
           }
         }
 
+        const itemUserId = typeof data.user_id === 'string' ? data.user_id : null;
+        if (itemUserId !== user.id) {
+          warnWithTs(
+            `[SyncService] Skipping queue item ${item.id} because user_id ${String(itemUserId)} does not match current user ${user.id}`
+          );
+          continue;
+        }
+
         if (item.operation === 'delete') {
           const { error } = await supabase
             .from(item.table_name)
@@ -1027,7 +1175,7 @@ class SyncService {
             delete upsertData.id;
           }
 
-          let upsertError;
+          let upsertError: unknown = null;
           if (item.table_name === 'health_metrics') {
             const { error } = await supabase
               .from('health_metrics')
@@ -1234,9 +1382,8 @@ class SyncService {
 
       const { data: { user } } = await supabase.auth.getUser();
       // Download workout session tables via generic adapter
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (currentUser) {
-        await downloadAllWorkoutTablesFromSupabase(currentUser.id);
+      if (user) {
+        await downloadAllWorkoutTablesFromSupabase(user.id);
       }
 
       if (user) {
