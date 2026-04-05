@@ -117,11 +117,13 @@ export default function FoodScreen() {
 
   const renderRightActions = (id: string, name: string) => (
     <TouchableOpacity
+      accessibilityLabel={`Delete ${name}`}
+      accessibilityHint="Removes this meal from your log"
       accessibilityRole="button"
       onPress={() => confirmDeleteFood(id, name)}
       style={styles.swipeDelete}
     >
-      <Ionicons name="trash-outline" size={20} color="#fff" />
+      <Ionicons name="trash-outline" size={20} color="#fff" accessible={false} />
       <Text style={styles.swipeDeleteText}>Delete</Text>
     </TouchableOpacity>
   );
@@ -137,6 +139,8 @@ export default function FoodScreen() {
     >
       <TouchableOpacity 
         activeOpacity={0.9}
+        accessibilityLabel={`${item.name} meal`}
+        accessibilityHint="Swipe left to reveal delete actions"
         onPress={() => {
           Haptics.selectionAsync();
           // Navigate to food detail
