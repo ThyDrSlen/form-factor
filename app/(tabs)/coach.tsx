@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { fetchTodaySession, fetchCoachSessionMessages } from '@/lib/services/coach-history-service';
 import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
@@ -33,6 +34,7 @@ const coachQuickPrompts = [
 export default function CoachScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const { show: showToast } = useToast();
   const { restoreSessionId } = useLocalSearchParams<{ restoreSessionId?: string }>();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
@@ -45,6 +47,12 @@ export default function CoachScreen() {
   const coachListRef = useRef<FlatList<CoachMessage>>(null);
   const voiceMode = useVoiceMode();
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const userMetadata = useMemo(
+    () => (user?.user_metadata && typeof user.user_metadata === 'object'
+      ? user.user_metadata as Record<string, unknown>
+      : null),
+    [user?.user_metadata],
+  );
 
   const bottomOffset = Math.max(tabBarHeight, insets.bottom) + spacing.md;
 
@@ -54,13 +62,15 @@ export default function CoachScreen() {
     () => ({
       profile: {
         id: user?.id,
-        name: (user?.user_metadata as any)?.full_name || user?.user_metadata?.name || null,
+        name:
+          (userMetadata && typeof userMetadata.full_name === 'string' ? userMetadata.full_name : null) ??
+          (userMetadata && typeof userMetadata.name === 'string' ? userMetadata.name : null),
         email: user?.email ?? null,
       },
       focus: 'fitness_coach',
       sessionId: coachSessionId,
     }),
-    [user, coachSessionId]
+    [coachSessionId, user?.email, user?.id, userMetadata]
   );
 
   const handleCoachSend = async (preset?: string) => {
@@ -91,7 +101,7 @@ export default function CoachScreen() {
       }
     } catch (err) {
       const appErr = err as AppError | null;
-      const hasDomain = appErr && (appErr as any).domain;
+      const hasDomain = Boolean(appErr && typeof appErr === 'object' && 'domain' in appErr);
       const fallback = 'Unable to reach the coach. Please try again.';
       setCoachError(hasDomain ? mapToUserMessage(appErr as AppError) : fallback);
     } finally {
@@ -124,28 +134,64 @@ export default function CoachScreen() {
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
-    setSessionLoading(true);
-    fetchTodaySession(user.id).then((session) => {
-      if (cancelled) return;
-      if (session && session.messages.length > 0) {
-        setCoachMessages(session.messages.map((m, i) => ({ ...m, id: `restored-${i}` })));
-        setCoachSessionId(session.sessionId);
+    const restoreTodaySession = async () => {
+      setSessionLoading(true);
+      try {
+        const session = await fetchTodaySession(user.id);
+        if (cancelled) return;
+        if (session && session.messages.length > 0) {
+          setCoachMessages(session.messages.map((m, i) => ({ ...m, id: `restored-${i}` })));
+          setCoachSessionId(session.sessionId);
+        }
+      } catch (error) {
+        console.error('[Coach][fetchTodaySession] Failed to restore today session', error);
+        if (!cancelled) {
+          showToast('Unable to restore today\'s coach session.', { type: 'error' });
+        }
+      } finally {
+        if (!cancelled) {
+          setSessionLoading(false);
+        }
       }
-    }).finally(() => {
-      if (!cancelled) setSessionLoading(false);
-    });
+    };
+
+    void restoreTodaySession();
     return () => { cancelled = true; };
-  }, [user?.id]);
+  }, [showToast, user?.id]);
 
   // Handle restoreSessionId param from history modal
   useEffect(() => {
     if (!restoreSessionId) return;
-    fetchCoachSessionMessages(restoreSessionId).then((session) => {
-      if (!session) return;
-      setCoachMessages(session.messages.map((m, i) => ({ ...m, id: `restored-${i}` })));
-      setCoachSessionId(session.sessionId);
-    });
-  }, [restoreSessionId]);
+    let cancelled = false;
+
+    const restoreSelectedSession = async () => {
+      try {
+        const session = await fetchCoachSessionMessages(restoreSessionId);
+        if (cancelled) return;
+        if (!session) {
+          console.error('[Coach][fetchCoachSessionMessages] No session found', { restoreSessionId });
+          if (!cancelled) {
+            showToast('Unable to restore that coach session.', { type: 'error' });
+          }
+          return;
+        }
+
+        setCoachMessages(session.messages.map((m, i) => ({ ...m, id: `restored-${i}` })));
+        setCoachSessionId(session.sessionId);
+      } catch (error) {
+        console.error('[Coach][fetchCoachSessionMessages] Failed to restore session', error);
+        if (!cancelled) {
+          showToast('Unable to restore that coach session.', { type: 'error' });
+        }
+      }
+    };
+
+    void restoreSelectedSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [restoreSessionId, showToast]);
 
   const handleNewChat = useCallback(() => {
     setCoachMessages([coachIntroMessage]);
