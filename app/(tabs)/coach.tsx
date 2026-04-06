@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Keyboard, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Keyboard, KeyboardAvoidingView, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -134,6 +134,8 @@ export default function CoachScreen() {
         setCoachMessages(session.messages.map((m, i) => ({ ...m, id: `restored-${i}` })));
         setCoachSessionId(session.sessionId);
       }
+    }).catch((err) => {
+      if (!cancelled) console.warn('[Coach] Failed to restore today session:', err);
     }).finally(() => {
       if (!cancelled) setSessionLoading(false);
     });
@@ -174,7 +176,11 @@ export default function CoachScreen() {
   }, [voiceMode]);
 
   return (
-    <View style={[styles.container, { paddingBottom: bottomOffset }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { paddingBottom: bottomOffset }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={bottomOffset}
+    >
       <View style={styles.coachContainer}>
         {showCoachWelcome && (
           <View style={styles.coachWelcome}>
@@ -243,6 +249,8 @@ export default function CoachScreen() {
               key={prompt}
               style={styles.quickPrompt}
               onPress={() => handleCoachSend(prompt)}
+              accessibilityRole="button"
+              accessibilityLabel={`Quick prompt: ${prompt}`}
             >
               <Text style={styles.quickPromptText}>{prompt}</Text>
             </TouchableOpacity>
@@ -344,6 +352,6 @@ export default function CoachScreen() {
           </TouchableOpacity>
         </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
