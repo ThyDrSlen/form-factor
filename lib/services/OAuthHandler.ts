@@ -1,8 +1,11 @@
 import { Session } from '@supabase/supabase-js';
+import * as Crypto from 'expo-crypto';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import { supabase } from '../supabase';
+
+let pendingOAuthState: string | null = null;
 
  // Ensure the auth session is correctly completed when returning to the app (iOS 11+)
  // This avoids lingering authentication sessions after the redirect back to the app.
@@ -43,16 +46,22 @@ export class OAuthHandler {
     try {
       logWithTs(`[OAuthHandler] Starting ${provider} OAuth flow`);
 
+      pendingOAuthState = Crypto.randomUUID();
+
       // Start the OAuth flow with Supabase
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
+          queryParams: {
+            state: pendingOAuthState,
+          },
           redirectTo: this.redirectUrl,
           skipBrowserRedirect: true,
         },
       });
 
       if (error) {
+        pendingOAuthState = null;
         errorWithTs(`[OAuthHandler] Error starting ${provider} OAuth:`, error);
         return {
           success: false,
@@ -61,6 +70,7 @@ export class OAuthHandler {
       }
 
       if (!data.url) {
+        pendingOAuthState = null;
         errorWithTs(`[OAuthHandler] No OAuth URL returned from Supabase`);
         return {
           success: false,
@@ -96,6 +106,7 @@ export class OAuthHandler {
       }
 
       if (result.type === 'cancel') {
+        pendingOAuthState = null;
         logWithTs(`[OAuthHandler] User cancelled ${provider} OAuth`);
         return {
           success: false,
@@ -104,6 +115,7 @@ export class OAuthHandler {
       }
 
       if (result.type === 'dismiss') {
+        pendingOAuthState = null;
         logWithTs(`[OAuthHandler] ${provider} OAuth was dismissed`);
         return {
           success: false,
@@ -111,11 +123,13 @@ export class OAuthHandler {
         };
       }
 
+      pendingOAuthState = null;
       return {
         success: false,
         error: `Unexpected OAuth result: ${result.type}`,
       };
     } catch (error) {
+      pendingOAuthState = null;
       errorWithTs(`[OAuthHandler] Unexpected error in ${provider} OAuth:`, error);
       return {
         success: false,
@@ -130,6 +144,16 @@ export class OAuthHandler {
   async handleCallback(url: string): Promise<Session | null> {
     try {
       logWithTs('[OAuthHandler] Processing callback URL:', url);
+
+      const callbackState = this.parseStateFromUrl(url);
+      if (!callbackState || !pendingOAuthState || callbackState !== pendingOAuthState) {
+        errorWithTs('[OAuthHandler] OAuth state validation failed', {
+          hasPendingState: !!pendingOAuthState,
+          hasCallbackState: !!callbackState,
+          callbackStateMatches: callbackState === pendingOAuthState,
+        });
+        return null;
+      }
 
       // Parse tokens from the URL
       const tokens = this.parseTokensFromUrl(url);
@@ -184,6 +208,31 @@ export class OAuthHandler {
       return null;
     } catch (error) {
       errorWithTs('[OAuthHandler] Error handling callback:', error);
+      return null;
+    } finally {
+      pendingOAuthState = null;
+    }
+  }
+
+  private parseStateFromUrl(url: string): string | null {
+    try {
+      const hashMatch = url.match(/#(.+)/);
+      const queryMatch = url.match(/\?(.+?)(?:#|$)/);
+
+      if (hashMatch) {
+        const hashParams = new URLSearchParams(hashMatch[1]);
+        const hashState = hashParams.get('state');
+        if (hashState) return hashState;
+      }
+
+      if (queryMatch) {
+        const queryParams = new URLSearchParams(queryMatch[1]);
+        return queryParams.get('state');
+      }
+
+      return null;
+    } catch (error) {
+      errorWithTs('[OAuthHandler] Error parsing state from URL:', error);
       return null;
     }
   }

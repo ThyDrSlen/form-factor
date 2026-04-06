@@ -1,6 +1,10 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4?target=deno';
 
+interface DeleteAccountRequestBody {
+  confirm_delete?: boolean;
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -15,6 +19,21 @@ serve(async (req: Request) => {
 
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
+  }
+
+  let requestBody: DeleteAccountRequestBody;
+  try {
+    requestBody = await req.json() as DeleteAccountRequestBody;
+  } catch (error) {
+    console.error('[delete-account] Invalid JSON body:', error);
+    return new Response(JSON.stringify({ error: 'Invalid request body' }), { status: 400 });
+  }
+
+  if (requestBody.confirm_delete !== true) {
+    return new Response(
+      JSON.stringify({ error: 'Request body must include { confirm_delete: true }' }),
+      { status: 400 },
+    );
   }
 
   const authHeader = req.headers.get('Authorization');
@@ -63,6 +82,11 @@ serve(async (req: Request) => {
     return new Response(JSON.stringify({ error: 'Failed to delete account' }), { status: 500 });
   }
 
-  console.log(`[delete-account] Deleted user ${user.id}`);
+  console.log(
+    `[delete-account] Deletion event ${JSON.stringify({
+      timestamp: new Date().toISOString(),
+      user_id: user.id,
+    })}`,
+  );
   return new Response(JSON.stringify({ success: true }), { status: 200 });
 });
