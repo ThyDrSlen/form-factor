@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { createError } from './ErrorHandler';
 
 export type CoachRole = 'user' | 'assistant' | 'system';
@@ -102,7 +103,7 @@ export async function sendCoachPrompt(
 
     if (context?.profile?.id && context.sessionId) {
       const userTurns = messages.filter(m => m.role === 'user');
-      supabase.from('coach_conversations').insert({
+      const insertPayload = {
         user_id: context.profile.id,
         session_id: context.sessionId,
         turn_index: Math.max(0, userTurns.length - 1),
@@ -111,8 +112,15 @@ export async function sendCoachPrompt(
         input_messages: messages,
         context: { focus: context.focus },
         metadata: { model: 'gpt-5.4-mini', timestamp: new Date().toISOString() },
-      }).then(({ error: insertErr }) => {
-        if (insertErr) console.warn('[coach] Failed to persist conversation:', insertErr.message);
+      };
+      supabase.from('coach_conversations').insert(insertPayload).then(({ error: insertErr }) => {
+        if (!insertErr) return;
+        warnWithTs('[coach] Conversation persist failed, retrying once', insertErr.message);
+        supabase.from('coach_conversations').insert(insertPayload).then(({ error: retryErr }) => {
+          if (retryErr) {
+            errorWithTs('[coach] Conversation persist failed after retry', retryErr.message);
+          }
+        });
       });
     }
 
