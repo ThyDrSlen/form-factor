@@ -36,9 +36,9 @@ jest.mock('@/lib/logger', () => ({
 let consentService: typeof import('@/lib/services/consent-service');
 
 describe('consent-service', () => {
-  beforeAll(async () => {
+  beforeAll(() => {
     (globalThis as { __DEV__?: boolean }).__DEV__ = false;
-    consentService = await import('@/lib/services/consent-service');
+    consentService = require('@/lib/services/consent-service');
   });
 
   beforeEach(() => {

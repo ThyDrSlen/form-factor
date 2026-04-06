@@ -41,8 +41,8 @@ let sendCoachPrompt: typeof import('@/lib/services/coach-service')['sendCoachPro
 describe('coach-service', () => {
   const baseMessages = [{ role: 'user' as const, content: 'How should I squat?' }];
 
-  beforeAll(async () => {
-    ({ sendCoachPrompt } = await import('@/lib/services/coach-service'));
+  beforeAll(() => {
+    ({ sendCoachPrompt } = require('@/lib/services/coach-service'));
   });
 
   beforeEach(() => {

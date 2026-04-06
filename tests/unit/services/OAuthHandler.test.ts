@@ -20,6 +20,7 @@ jest.mock('expo-web-browser', () => ({
 jest.mock('expo-crypto', () => ({
   getRandomBytesAsync: jest.fn(),
   digestStringAsync: jest.fn(),
+  randomUUID: jest.fn(() => 'test-oauth-state-123'),
   CryptoDigestAlgorithm: { SHA256: 'SHA256' },
 }));
 
@@ -58,8 +59,8 @@ describe('OAuthHandler', () => {
     user: { id: 'user-1' },
   };
 
-  beforeAll(async () => {
-    ({ OAuthHandler } = await import('@/lib/services/OAuthHandler'));
+  beforeAll(() => {
+    ({ OAuthHandler } = require('@/lib/services/OAuthHandler'));
   });
 
   beforeEach(() => {
@@ -69,7 +70,7 @@ describe('OAuthHandler', () => {
     mockSignInWithOAuth.mockResolvedValue({ data: { url: 'https://supabase.test/auth' }, error: null });
     mockOpenAuthSessionAsync.mockResolvedValue({
       type: 'success',
-      url: `formfactor://callback#access_token=${validAccessToken}&refresh_token=${validRefreshToken}`,
+      url: `formfactor://callback#access_token=${validAccessToken}&refresh_token=${validRefreshToken}&state=test-oauth-state-123`,
     });
     mockSetSession.mockResolvedValue({ data: { session }, error: null });
     mockExchangeCodeForSession.mockResolvedValue({ data: { session }, error: null });
@@ -83,6 +84,9 @@ describe('OAuthHandler', () => {
     expect(mockSignInWithOAuth).toHaveBeenCalledWith({
       provider: 'google',
       options: {
+        queryParams: {
+          state: 'test-oauth-state-123',
+        },
         redirectTo: 'formfactor://callback',
         skipBrowserRedirect: true,
       },
@@ -152,8 +156,12 @@ describe('OAuthHandler', () => {
   it('handles a valid callback URL by creating a session from tokens', async () => {
     const handler = new OAuthHandler();
 
+    mockOpenAuthSessionAsync.mockImplementation(() => new Promise(() => {}));
+    void handler.initiateOAuth('google');
+    await Promise.resolve();
+
     const result = await handler.handleCallback(
-      `formfactor://callback#access_token=${validAccessToken}&refresh_token=${validRefreshToken}`
+      `formfactor://callback#state=test-oauth-state-123&access_token=${validAccessToken}&refresh_token=${validRefreshToken}`
     );
 
     expect(result).toEqual(session);
