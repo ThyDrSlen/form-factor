@@ -38,6 +38,7 @@ import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type MediaPipePose2D } from '@/lib/arkit/ARKitBodyTracker';
 import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
 import { audioSessionManager } from '@/lib/services/audio-session-manager';
+import { CrashBoundary } from '@/components/CrashBoundary';
 import { generateSessionId, logCueEvent, upsertSessionMetrics } from '@/lib/services/cue-logger';
 import { logPoseSample, flushPoseBuffer, resetFrameCounter } from '@/lib/services/pose-logger';
 import { RepIndexTracker } from '@/lib/services/rep-index-tracker';
@@ -2409,6 +2410,10 @@ export default function ScanARKitScreen() {
       : 0;
 
   return (
+    <CrashBoundary
+      fallbackTitle="Camera error"
+      fallbackMessage="The body tracking camera encountered a problem. Tap below to restart."
+    >
     <View style={styles.container}>
       <View style={[styles.topBar, { paddingTop: topBarOffset }]}>
         <View style={styles.topBarContent}>
@@ -2989,5 +2994,6 @@ export default function ScanARKitScreen() {
         </SafeAreaView>
       </Modal>
 </View>
+    </CrashBoundary>
   );
 }
