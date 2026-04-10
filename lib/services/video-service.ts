@@ -494,6 +494,27 @@ export async function recordVideoView(videoId: string) {
   return true;
 }
 
+export async function deleteVideoComment(commentId: string) {
+  const user = await ensureUser();
+  const { data, error } = await supabase
+    .from('video_comments')
+    .select('id, video_id, user_id')
+    .eq('id', commentId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new Error('Comment not found');
+  if (data.user_id !== user.id) throw new Error('You can only delete your own comments');
+
+  const { error: deleteError } = await supabase
+    .from('video_comments')
+    .delete()
+    .eq('id', commentId);
+
+  if (deleteError) throw deleteError;
+  return { videoId: data.video_id };
+}
+
 export async function deleteVideo(videoId: string) {
   const user = await ensureUser();
   const { data, error } = await supabase
