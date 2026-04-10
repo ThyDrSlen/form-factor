@@ -10,6 +10,7 @@ import {
   SyncTableName,
 } from './local-db';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
+import { createError, logError } from '../ErrorHandler';
 import {
   syncAllWorkoutTablesToSupabase,
   downloadAllWorkoutTablesFromSupabase,
@@ -97,9 +98,11 @@ class SyncService {
     lastErrorAt: null,
   };
   private conflictSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  private realtimeResyncTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly maxChannelRetries = 3;
   private readonly conflictReconcileDelayMs = 750;
   private readonly maxQueueRetries = 5;
+  private readonly realtimeResyncDelayMs = 2_000;
 
   private getErrorCode(error: unknown): string | undefined {
     if (error && typeof error === 'object' && 'code' in error) {
@@ -197,6 +200,38 @@ class SyncService {
         errorWithTs('[SyncService] Conflict reconcile sync failed:', { reason, error });
       });
     }, this.conflictReconcileDelayMs);
+  }
+
+  /**
+   * Called when a realtime change handler fails to apply a remote change
+   * to the local DB. Sets sync status to 'error' so the UI can indicate
+   * stale data and schedules a full download to recover the lost change.
+   */
+  private handleRealtimeError(table: string, error: unknown): void {
+    const message = error instanceof Error ? error.message : `Realtime ${table} change failed`;
+    this.setSyncStatus({
+      state: 'error',
+      lastError: message,
+      lastErrorAt: new Date().toISOString(),
+    });
+    this.scheduleResyncAfterRealtimeError(table);
+  }
+
+  /**
+   * Debounced full resync after a realtime handler error. Multiple
+   * errors within the delay window collapse into a single resync.
+   */
+  private scheduleResyncAfterRealtimeError(table: string): void {
+    if (this.realtimeResyncTimer) {
+      return;
+    }
+
+    this.realtimeResyncTimer = setTimeout(() => {
+      this.realtimeResyncTimer = null;
+      this.downloadFromSupabase().catch((resyncError) => {
+        errorWithTs('[SyncService] Resync after realtime error failed:', { table, resyncError });
+      });
+    }, this.realtimeResyncDelayMs);
   }
 
   private getRetryDelayMs(retryCount: number): number {
@@ -478,6 +513,7 @@ class SyncService {
                 payload,
                 () => this.notifySyncComplete(),
                 (reason: string) => this.scheduleConflictReconcile(reason),
+                (table: string, error: unknown) => this.handleRealtimeError(table, error),
               );
             }
           ),
@@ -539,7 +575,22 @@ class SyncService {
         this.notifySyncComplete();
       }
     } catch (error) {
-      errorWithTs('[SyncService] Error handling realtime food change:', error);
+      const appError = createError(
+        'sync',
+        'REALTIME_CHANGE_FAILED',
+        `Failed to apply realtime ${payload.eventType} for foods`,
+        {
+          details: { table: 'foods', eventType: payload.eventType, error },
+          retryable: true,
+          severity: 'error',
+        },
+      );
+      logError(appError, {
+        feature: 'app',
+        location: 'sync-service.handleRealtimeFoodChange',
+        meta: { table: 'foods', eventType: payload.eventType },
+      });
+      this.handleRealtimeError('foods', error);
     }
   }
 
@@ -591,7 +642,22 @@ class SyncService {
         this.notifySyncComplete();
       }
     } catch (error) {
-      errorWithTs('[SyncService] Error handling realtime workout change:', error);
+      const appError = createError(
+        'sync',
+        'REALTIME_CHANGE_FAILED',
+        `Failed to apply realtime ${payload.eventType} for workouts`,
+        {
+          details: { table: 'workouts', eventType: payload.eventType, error },
+          retryable: true,
+          severity: 'error',
+        },
+      );
+      logError(appError, {
+        feature: 'app',
+        location: 'sync-service.handleRealtimeWorkoutChange',
+        meta: { table: 'workouts', eventType: payload.eventType },
+      });
+      this.handleRealtimeError('workouts', error);
     }
   }
 
@@ -643,7 +709,22 @@ class SyncService {
         this.notifySyncComplete();
       }
     } catch (error) {
-      errorWithTs('[SyncService] Error handling realtime health metric change:', error);
+      const appError = createError(
+        'sync',
+        'REALTIME_CHANGE_FAILED',
+        `Failed to apply realtime ${payload.eventType} for health_metrics`,
+        {
+          details: { table: 'health_metrics', eventType: payload.eventType, error },
+          retryable: true,
+          severity: 'error',
+        },
+      );
+      logError(appError, {
+        feature: 'app',
+        location: 'sync-service.handleRealtimeHealthMetricChange',
+        meta: { table: 'health_metrics', eventType: payload.eventType },
+      });
+      this.handleRealtimeError('health_metrics', error);
     }
   }
 
@@ -682,7 +763,22 @@ class SyncService {
         this.notifySyncComplete();
       }
     } catch (error) {
-      errorWithTs('[SyncService] Error handling realtime nutrition goals change:', error);
+      const appError = createError(
+        'sync',
+        'REALTIME_CHANGE_FAILED',
+        `Failed to apply realtime ${payload.eventType} for nutrition_goals`,
+        {
+          details: { table: 'nutrition_goals', eventType: payload.eventType, error },
+          retryable: true,
+          severity: 'error',
+        },
+      );
+      logError(appError, {
+        feature: 'app',
+        location: 'sync-service.handleRealtimeNutritionGoalsChange',
+        meta: { table: 'nutrition_goals', eventType: payload.eventType },
+      });
+      this.handleRealtimeError('nutrition_goals', error);
     }
   }
 
@@ -693,6 +789,11 @@ class SyncService {
     if (this.conflictSyncTimer) {
       clearTimeout(this.conflictSyncTimer);
       this.conflictSyncTimer = null;
+    }
+
+    if (this.realtimeResyncTimer) {
+      clearTimeout(this.realtimeResyncTimer);
+      this.realtimeResyncTimer = null;
     }
 
     if (this.foodChannel) {

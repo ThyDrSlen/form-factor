@@ -380,12 +380,17 @@ export async function downloadTableFromSupabase(
 
 /**
  * Handle a realtime change event for a generic table.
+ *
+ * When the local DB operation fails the error is surfaced via `onError`
+ * so the caller (SyncService) can set its status to 'error' and schedule
+ * a full resync to recover the lost change.
  */
 export async function handleGenericRealtimeChange(
   config: SyncTableConfig,
   payload: GenericRealtimePayload,
   notifyCallback: () => void,
   scheduleConflictReconcile: (reason: string) => void,
+  onError?: (table: string, error: unknown) => void,
 ): Promise<void> {
   const label = config.supabaseTable;
 
@@ -419,7 +424,22 @@ export async function handleGenericRealtimeChange(
       notifyCallback();
     }
   } catch (error) {
-    errorWithTs(`[GenericSync] Error handling realtime ${label} change:`, error);
+    const appError = createError(
+      'sync',
+      'REALTIME_CHANGE_FAILED',
+      `Failed to apply realtime ${payload.eventType} for ${label}`,
+      {
+        details: { table: label, eventType: payload.eventType, error },
+        retryable: true,
+        severity: 'error',
+      },
+    );
+    logError(appError, {
+      feature: 'workouts',
+      location: 'generic-sync.handleGenericRealtimeChange',
+      meta: { table: label, eventType: payload.eventType },
+    });
+    onError?.(label, error);
   }
 }
 

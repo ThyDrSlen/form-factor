@@ -98,6 +98,17 @@ jest.mock('@/lib/logger', () => ({
   errorWithTs: jest.fn(),
 }));
 
+jest.mock('@/lib/services/ErrorHandler', () => ({
+  createError: jest.fn((_domain: string, _code: string, message: string) => ({
+    domain: _domain,
+    code: _code,
+    message,
+    retryable: true,
+    severity: 'error',
+  })),
+  logError: jest.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // Import under test
 // ---------------------------------------------------------------------------
@@ -129,6 +140,10 @@ function resetSyncService() {
   if ((syncService as any).conflictSyncTimer) {
     clearTimeout((syncService as any).conflictSyncTimer);
     (syncService as any).conflictSyncTimer = null;
+  }
+  if ((syncService as any).realtimeResyncTimer) {
+    clearTimeout((syncService as any).realtimeResyncTimer);
+    (syncService as any).realtimeResyncTimer = null;
   }
 }
 
@@ -654,6 +669,146 @@ describe('SyncService', () => {
         'food-retry',
         expect.objectContaining({ name: 'Retry Food' })
       );
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Realtime error handling (#225)
+  // -----------------------------------------------------------------------
+  describe('handleRealtimeError', () => {
+    it('sets sync status to error with the failure message', () => {
+      const fn = (syncService as any).handleRealtimeError.bind(syncService);
+      fn('foods', new Error('DB write failed'));
+
+      const status = syncService.getSyncStatus();
+      expect(status.state).toBe('error');
+      expect(status.lastError).toBe('DB write failed');
+      expect(status.lastErrorAt).toBeTruthy();
+    });
+
+    it('uses a generic message for non-Error values', () => {
+      const fn = (syncService as any).handleRealtimeError.bind(syncService);
+      fn('workouts', 'string error');
+
+      const status = syncService.getSyncStatus();
+      expect(status.state).toBe('error');
+      expect(status.lastError).toBe('Realtime workouts change failed');
+    });
+
+    it('schedules a resync via realtimeResyncTimer', () => {
+      const fn = (syncService as any).handleRealtimeError.bind(syncService);
+      fn('foods', new Error('write failed'));
+
+      // A resync timer should be pending
+      expect((syncService as any).realtimeResyncTimer).not.toBeNull();
+    });
+
+    it('debounces multiple errors into a single resync', () => {
+      jest.useFakeTimers();
+      try {
+        const fn = (syncService as any).handleRealtimeError.bind(syncService);
+        fn('foods', new Error('error 1'));
+        const timer1 = (syncService as any).realtimeResyncTimer;
+
+        fn('workouts', new Error('error 2'));
+        const timer2 = (syncService as any).realtimeResyncTimer;
+
+        // Same timer — second call was debounced
+        expect(timer1).toBe(timer2);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  describe('realtime food change error handling', () => {
+    it('sets sync status to error when local DB write fails', async () => {
+      const { createError: mockCreateError, logError: mockLogError } =
+        require('@/lib/services/ErrorHandler');
+
+      mockLocalDB.getFoodById.mockRejectedValue(new Error('SQLite full'));
+
+      const handler = (syncService as any).handleRealtimeFoodChange.bind(syncService);
+      await handler({
+        eventType: 'INSERT',
+        new: { id: 'food-rt-1', name: 'Apple', calories: 95 },
+        old: {},
+      });
+
+      const status = syncService.getSyncStatus();
+      expect(status.state).toBe('error');
+      expect(status.lastError).toBe('SQLite full');
+
+      expect(mockCreateError).toHaveBeenCalledWith(
+        'sync',
+        'REALTIME_CHANGE_FAILED',
+        expect.stringContaining('foods'),
+        expect.objectContaining({ retryable: true }),
+      );
+      expect(mockLogError).toHaveBeenCalled();
+    });
+  });
+
+  describe('realtime workout change error handling', () => {
+    it('sets sync status to error when local DB write fails', async () => {
+      mockLocalDB.getWorkoutById.mockRejectedValue(new Error('disk error'));
+
+      const handler = (syncService as any).handleRealtimeWorkoutChange.bind(syncService);
+      await handler({
+        eventType: 'UPDATE',
+        new: { id: 'workout-rt-1', exercise: 'Bench Press', sets: 3 },
+        old: {},
+      });
+
+      const status = syncService.getSyncStatus();
+      expect(status.state).toBe('error');
+      expect(status.lastError).toBe('disk error');
+    });
+  });
+
+  describe('realtime health metric change error handling', () => {
+    it('sets sync status to error when local DB write fails', async () => {
+      mockLocalDB.getHealthMetricById.mockRejectedValue(new Error('constraint violation'));
+
+      const handler = (syncService as any).handleRealtimeHealthMetricChange.bind(syncService);
+      await handler({
+        eventType: 'INSERT',
+        new: { id: 'hm-1', user_id: 'u-1', summary_date: '2025-01-01' },
+        old: {},
+      });
+
+      const status = syncService.getSyncStatus();
+      expect(status.state).toBe('error');
+      expect(status.lastError).toBe('constraint violation');
+    });
+  });
+
+  describe('realtime nutrition goals change error handling', () => {
+    it('sets sync status to error when local DB write fails', async () => {
+      mockLocalDB.getNutritionGoalsById.mockRejectedValue(new Error('table locked'));
+
+      const handler = (syncService as any).handleRealtimeNutritionGoalsChange.bind(syncService);
+      await handler({
+        eventType: 'INSERT',
+        new: { id: 'ng-1', user_id: 'u-1', calories_goal: 2000, protein_goal: 150, carbs_goal: 200, fat_goal: 60 },
+        old: {},
+      });
+
+      const status = syncService.getSyncStatus();
+      expect(status.state).toBe('error');
+      expect(status.lastError).toBe('table locked');
+    });
+  });
+
+  describe('cleanupRealtimeSync clears resync timer', () => {
+    it('clears the realtimeResyncTimer', async () => {
+      // Set up a pending resync timer
+      (syncService as any).realtimeResyncTimer = setTimeout(() => {}, 10000);
+      expect((syncService as any).realtimeResyncTimer).not.toBeNull();
+
+      await syncService.cleanupRealtimeSync();
+
+      expect((syncService as any).realtimeResyncTimer).toBeNull();
     });
   });
 });
