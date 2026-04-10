@@ -55,6 +55,7 @@ export interface SessionRunnerState {
     startedAt: string;
     setId: string;
   } | null;
+  restTimerCompletionTimeout: ReturnType<typeof setTimeout> | null;
 
   // Status
   isLoading: boolean;
@@ -148,11 +149,41 @@ async function getExerciseById(exerciseId: string): Promise<Exercise | null> {
 // Store
 // =============================================================================
 
-export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
+export const useSessionRunner = create<SessionRunnerState>((set, get) => {
+  const clearRestTimerCompletionTimeout = () => {
+    const timeout = get().restTimerCompletionTimeout;
+    if (!timeout) return;
+
+    clearTimeout(timeout);
+    set({ restTimerCompletionTimeout: null });
+  };
+
+  const scheduleRestTimerCompletion = (restTimer: NonNullable<SessionRunnerState['restTimer']>) => {
+    clearRestTimerCompletionTimeout();
+
+    const remainingMilliseconds = Math.max(
+      0,
+      computeRemainingSeconds(restTimer.startedAt, restTimer.targetSeconds) * 1000,
+    );
+
+    const timeout = setTimeout(() => {
+      const currentRestTimer = get().restTimer;
+      if (!currentRestTimer || currentRestTimer.setId !== restTimer.setId) {
+        return;
+      }
+
+      set({ restTimer: null, restTimerCompletionTimeout: null });
+    }, remainingMilliseconds);
+
+    set({ restTimerCompletionTimeout: timeout });
+  };
+
+  return {
   activeSession: null,
   exercises: [],
   sets: {},
   restTimer: null,
+  restTimerCompletionTimeout: null,
   isLoading: false,
   isWorkoutInProgress: false,
   error: null,
@@ -200,8 +231,10 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
         exercises,
         sets,
         restTimer: null,
+        restTimerCompletionTimeout: null,
         isWorkoutInProgress: true,
       });
+      clearRestTimerCompletionTimeout();
 
       logWithTs(`[SessionRunner] Started session ${sessionId}`);
     } catch (error) {
@@ -480,6 +513,11 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
         },
       };
     });
+    scheduleRestTimerCompletion({
+      targetSeconds: restSeconds,
+      startedAt: now,
+      setId,
+    });
 
     logWithTs(`[SessionRunner] Completed set ${setId}, rest: ${restSeconds}s`);
   },
@@ -531,9 +569,10 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
     if (!restTimer) return;
 
     const newTarget = restTimer.targetSeconds + seconds;
+    const nextRestTimer = { ...restTimer, targetSeconds: newTarget };
 
     // Reschedule notification
-    const remaining = computeRemainingSeconds(restTimer.startedAt, newTarget);
+    const remaining = computeRemainingSeconds(nextRestTimer.startedAt, nextRestTimer.targetSeconds);
     if (remaining > 0) {
       scheduleRestNotification(remaining).catch(() => {});
     }
@@ -549,8 +588,9 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
     }
 
     set({
-      restTimer: { ...restTimer, targetSeconds: newTarget },
+      restTimer: nextRestTimer,
     });
+    scheduleRestTimerCompletion(nextRestTimer);
   },
 
   // =========================================================================
@@ -580,6 +620,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
       exercises: [],
       sets: {},
       restTimer: null,
+      restTimerCompletionTimeout: null,
       isWorkoutInProgress: false,
     });
 
@@ -601,7 +642,15 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
       );
 
       if (rows.length === 0) {
-        set({ activeSession: null, exercises: [], sets: {}, restTimer: null, isWorkoutInProgress: false });
+        clearRestTimerCompletionTimeout();
+        set({
+          activeSession: null,
+          exercises: [],
+          sets: {},
+          restTimer: null,
+          restTimerCompletionTimeout: null,
+          isWorkoutInProgress: false,
+        });
         return;
       }
 
@@ -634,6 +683,11 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
         restTimer,
         isWorkoutInProgress: true,
       });
+      if (restTimer) {
+        scheduleRestTimerCompletion(restTimer);
+      } else {
+        clearRestTimerCompletionTimeout();
+      }
 
       logWithTs(`[SessionRunner] Loaded active session ${session.id}`);
     } catch (error) {
@@ -774,7 +828,8 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => ({
       }));
     }
   },
-}));
+  };
+});
 
 // =============================================================================
 // Internal Helpers
