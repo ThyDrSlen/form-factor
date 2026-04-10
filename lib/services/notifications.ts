@@ -36,8 +36,9 @@ type RegisterResult = {
 
 const LAST_PUSH_TOKEN_KEY = 'ff.notifications.last_token';
 const DEVICE_ID_KEY = 'ff.notifications.device_id';
+const TOKEN_UPSERT_MAX_RETRIES = 2;
+const TOKEN_UPSERT_RETRY_DELAY_MS = 1000;
 
-// Show foreground notifications by default
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldPlaySound: false,
@@ -47,6 +48,22 @@ Notifications.setNotificationHandler({
     shouldSetBadge: false,
   }),
 });
+
+async function registerNotificationCategories() {
+  if (Platform.OS !== 'ios') return;
+  try {
+    await Notifications.setNotificationCategoryAsync('social', [
+      { identifier: 'view', buttonTitle: 'View', options: { opensAppToForeground: true } },
+    ]);
+    await Notifications.setNotificationCategoryAsync('coach', [
+      { identifier: 'reply', buttonTitle: 'Reply', options: { opensAppToForeground: true } },
+    ]);
+  } catch (err) {
+    warnWithTs('[notifications] Failed to register notification categories', err);
+  }
+}
+
+registerNotificationCategories();
 
 function getProjectId() {
   const easProjectId = Constants.expoConfig?.extra?.eas?.projectId;
@@ -137,23 +154,67 @@ export async function registerDevicePushToken(
   const token = tokenResponse.data;
   const deviceId = await getDeviceId();
 
-  const { error } = await supabase.from('notification_tokens').upsert({
+  const tokenPayload = {
     token,
     user_id: userId,
     platform: Platform.OS,
     app_version: Application.nativeApplicationVersion || 'dev',
     device_id: deviceId,
     last_seen_at: new Date().toISOString(),
-  });
+  };
 
-  if (error) {
-    errorWithTs('[notifications] Failed to save push token', error);
-    return { status: permissionStatus, error: error.message, token };
+  let lastUpsertError: { message: string } | null = null;
+  for (let attempt = 0; attempt <= TOKEN_UPSERT_MAX_RETRIES; attempt++) {
+    const { error: upsertErr } = await supabase.from('notification_tokens').upsert(tokenPayload);
+    if (!upsertErr) {
+      lastUpsertError = null;
+      break;
+    }
+    lastUpsertError = upsertErr;
+    if (attempt < TOKEN_UPSERT_MAX_RETRIES) {
+      await new Promise((r) => setTimeout(r, TOKEN_UPSERT_RETRY_DELAY_MS * (attempt + 1)));
+    }
+  }
+
+  if (lastUpsertError) {
+    errorWithTs('[notifications] Failed to save push token after retries', lastUpsertError);
+    return { status: permissionStatus, error: lastUpsertError.message, token };
   }
 
   await AsyncStorage.setItem(LAST_PUSH_TOKEN_KEY, token);
 
   return { status: permissionStatus, token };
+}
+
+let pushTokenSubscription: Notifications.Subscription | null = null;
+
+export function startPushTokenRefreshListener(userId: string) {
+  stopPushTokenRefreshListener();
+  pushTokenSubscription = Notifications.addPushTokenListener(async (tokenData) => {
+    const newToken = tokenData.data;
+    infoWithTs('[notifications] Push token refreshed, re-registering', { userId });
+    const deviceId = await getDeviceId();
+    const { error } = await supabase.from('notification_tokens').upsert({
+      token: newToken,
+      user_id: userId,
+      platform: Platform.OS,
+      app_version: Application.nativeApplicationVersion || 'dev',
+      device_id: deviceId,
+      last_seen_at: new Date().toISOString(),
+    });
+    if (error) {
+      errorWithTs('[notifications] Failed to save refreshed token', error);
+    } else {
+      await AsyncStorage.setItem(LAST_PUSH_TOKEN_KEY, newToken);
+    }
+  });
+}
+
+export function stopPushTokenRefreshListener() {
+  if (pushTokenSubscription) {
+    pushTokenSubscription.remove();
+    pushTokenSubscription = null;
+  }
 }
 
 export async function unregisterDevicePushToken(userId?: string) {
@@ -172,6 +233,14 @@ export async function unregisterDevicePushToken(userId?: string) {
   }
 }
 
+const DEFAULT_PREFERENCES: Omit<NotificationPreferences, 'user_id'> = {
+  comments: true,
+  likes: true,
+  reminders: true,
+  timezone: null,
+  quiet_hours: null,
+};
+
 export async function loadNotificationPreferences(userId: string): Promise<NotificationPreferences> {
   const { data, error, status } = await supabase
     .from('notification_preferences')
@@ -180,10 +249,9 @@ export async function loadNotificationPreferences(userId: string): Promise<Notif
     .single();
 
   if (error) {
-    // 406 means row not found — fall through to create default preferences.
-    // Any other error (401, 403, 500, etc.) should surface immediately.
     if (status !== 406) {
-      throw error;
+      warnWithTs('[notifications] Failed to load preferences, using defaults', { status, error: error.message });
+      return { user_id: userId, ...DEFAULT_PREFERENCES };
     }
   } else if (data) {
     return data as NotificationPreferences;
@@ -193,15 +261,14 @@ export async function loadNotificationPreferences(userId: string): Promise<Notif
     .from('notification_preferences')
     .upsert({
       user_id: userId,
-      comments: true,
-      likes: true,
-      reminders: true,
+      ...DEFAULT_PREFERENCES,
     })
     .select()
     .single();
 
   if (createError) {
-    throw createError;
+    warnWithTs('[notifications] Failed to create default preferences, using in-memory defaults', createError);
+    return { user_id: userId, ...DEFAULT_PREFERENCES };
   }
 
   return created as NotificationPreferences;
