@@ -21,6 +21,7 @@ interface WorkoutsContextValue {
   refreshWorkouts: () => Promise<void>;
   deleteWorkout: (id: string) => Promise<void>;
   loading: boolean;
+  error: string | null;
   isSyncing: boolean;
   isWorkoutInProgress: boolean;
   startWorkout: () => void;
@@ -33,6 +34,7 @@ const WorkoutsContext = createContext<WorkoutsContextValue>({
   refreshWorkouts: async () => {},
   deleteWorkout: async () => {},
   loading: false,
+  error: null,
   isSyncing: false,
   isWorkoutInProgress: false,
   startWorkout: () => {},
@@ -42,6 +44,7 @@ const WorkoutsContext = createContext<WorkoutsContextValue>({
 export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isWorkoutInProgress, setIsWorkoutInProgress] = useState(false);
   const { isOnline } = useNetwork();
@@ -49,6 +52,7 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
 
   const loadLocalWorkouts = useCallback(async () => {
     try {
+      setError(null);
       const localWorkouts = await localDB.getAllWorkouts();
       const transformedWorkouts: Workout[] = localWorkouts.map(item => ({
         id: item.id,
@@ -63,6 +67,7 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
       setWorkouts(transformedWorkouts);
     } catch (error) {
       console.error('[WorkoutsProvider] Error loading local workouts:', error);
+      setError('Failed to load workouts. Pull to refresh.');
     }
   }, []);
 
@@ -203,12 +208,13 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
       refreshWorkouts: fetchWorkouts,
       deleteWorkout,
       loading,
+      error,
       isSyncing,
       isWorkoutInProgress,
       startWorkout,
       endWorkout,
     }),
-    [workouts, addWorkout, fetchWorkouts, deleteWorkout, loading, isSyncing, isWorkoutInProgress, startWorkout, endWorkout],
+    [workouts, addWorkout, fetchWorkouts, deleteWorkout, loading, error, isSyncing, isWorkoutInProgress, startWorkout, endWorkout],
   );
 
   return (

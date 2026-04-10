@@ -5,6 +5,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -35,10 +36,15 @@ export default function FollowersModal() {
   const [following, setFollowing] = useState<FollowRelationship[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options?: { showLoading?: boolean }) => {
     if (!targetUserId) return;
-    setLoading(true);
+    const showLoading = options?.showLoading ?? true;
+    if (showLoading) {
+      setLoading(true);
+    }
+
     try {
       const [followerRows, followingRows] = await Promise.all([
         getFollowers(targetUserId),
@@ -50,9 +56,20 @@ export default function FollowersModal() {
       warnWithTs('[followers] Failed to load followers modal data', error);
       showToast('Unable to load followers right now.', { type: 'error' });
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
   }, [showToast, targetUserId]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load({ showLoading: false });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load]);
 
   useEffect(() => {
     void load();
@@ -179,6 +196,14 @@ export default function FollowersModal() {
             renderItem={renderItem}
             contentContainerStyle={styles.listContent}
             keyboardShouldPersistTaps="handled"
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="#4C8CFF"
+                colors={['#4C8CFF']}
+              />
+            }
             ListEmptyComponent={
               <View style={styles.centerState}>
                 <Text style={styles.mutedText}>{emptyMessage}</Text>

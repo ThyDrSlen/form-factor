@@ -26,7 +26,7 @@ const SettingItem = ({ icon, title, subtitle, onPress, rightElement }: SettingIt
       {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
     </View>
     {rightElement}
-    {onPress && <Ionicons name="chevron-forward" size={20} color="#6781A6" />}
+    {onPress && <Ionicons name="chevron-forward" size={20} color="#9AACD1" />}
   </TouchableOpacity>
 );
 
@@ -152,7 +152,7 @@ export default function PrivacySecurityModal() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={safeBack} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#1A1A2E" />
+          <Ionicons name="arrow-back" size={24} color="#E8EDF5" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Privacy & Security</Text>
         <View style={styles.headerSpacer} />
@@ -259,7 +259,7 @@ export default function PrivacySecurityModal() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FF',
+    backgroundColor: '#050E1F',
   },
   header: {
     flexDirection: 'row',
@@ -267,9 +267,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 60,
     paddingBottom: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#050E1F',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#1B2E4A',
   },
   backButton: {
     padding: 4,
@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 20,
     fontWeight: '600',
-    color: '#1A1A2E',
+    color: '#E8EDF5',
     textAlign: 'center',
     marginRight: 40,
   },
@@ -292,17 +292,17 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#6781A6',
+    color: '#9AACD1',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,
     marginTop: 16,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#0B1A2F',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#1B2E4A',
     overflow: 'hidden',
   },
   settingItem: {
@@ -325,16 +325,16 @@ const styles = StyleSheet.create({
   settingTitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#1A1A2E',
+    color: '#E8EDF5',
   },
   settingSubtitle: {
     fontSize: 13,
-    color: '#6781A6',
+    color: '#9AACD1',
     marginTop: 2,
   },
   divider: {
     height: 1,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#1B2E4A',
     marginLeft: 64,
   },
   dangerCard: {

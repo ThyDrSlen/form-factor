@@ -21,6 +21,7 @@ interface FoodContextValue {
   refreshFoods: () => Promise<void>;
   deleteFood: (id: string) => Promise<void>;
   loading: boolean;
+  error: string | null;
   isSyncing: boolean;
 }
 
@@ -30,18 +31,21 @@ const FoodContext = createContext<FoodContextValue>({
   refreshFoods: async () => { },
   deleteFood: async () => { },
   loading: false,
+  error: null,
   isSyncing: false,
 });
 
 export const FoodProvider = ({ children }: { children: ReactNode }) => {
   const [foods, setFoods] = useState<FoodEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const { isOnline } = useNetwork();
   const { user } = useAuth();
 
   const loadLocalFoods = useCallback(async () => {
     try {
+      setError(null);
       const localFoods = await localDB.getAllFoods();
       const transformedFoods: FoodEntry[] = localFoods.map(item => ({
         id: item.id,
@@ -56,6 +60,7 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
       setFoods(transformedFoods);
     } catch (error) {
       console.error('[FoodProvider] Error loading local foods:', error);
+      setError('Failed to load food entries. Pull to refresh.');
     }
   }, []);
 
@@ -185,8 +190,8 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
   }, [isOnline]);
 
   const value = useMemo(
-    () => ({ foods, addFood, refreshFoods: fetchFoods, deleteFood, loading, isSyncing }),
-    [foods, addFood, fetchFoods, deleteFood, loading, isSyncing],
+    () => ({ foods, addFood, refreshFoods: fetchFoods, deleteFood, loading, error, isSyncing }),
+    [foods, addFood, fetchFoods, deleteFood, loading, error, isSyncing],
   );
 
   return (

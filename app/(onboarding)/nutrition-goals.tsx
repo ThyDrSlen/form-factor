@@ -32,6 +32,7 @@ export default function NutritionGoalsScreen() {
   const [protein, setProtein] = useState(goals?.protein?.toString() || '');
   const [carbs, setCarbs] = useState(goals?.carbs?.toString() || '');
   const [fat, setFat] = useState(goals?.fat?.toString() || '');
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   function normalizeDecimal(value: string): string {
     const cleaned = value.replace(/[^0-9.]/g, '');
@@ -40,9 +41,80 @@ export default function NutritionGoalsScreen() {
     return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
   }
 
+  function setFieldError(field: string, message?: string) {
+    setErrors((prev: Record<string, string>) => {
+      if (!message) {
+        if (!prev[field]) return prev;
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      }
+
+      if (prev[field] === message) return prev;
+      return { ...prev, [field]: message };
+    });
+  }
+
+  function getFieldError(field: 'calories' | 'protein' | 'carbs' | 'fat', value: string): string | undefined {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      return field === 'calories' ? 'Enter a calorie goal between 500 and 10,000' : undefined;
+    }
+
+    const parsed = parseFloat(trimmed);
+    if (isNaN(parsed)) {
+      return field === 'calories'
+        ? 'Enter a calorie goal between 500 and 10,000'
+        : `Enter ${field} between 0 and 1,000 g`;
+    }
+
+    if (field === 'calories') {
+      return parsed < 500 || parsed > 10000 ? 'Enter a calorie goal between 500 and 10,000' : undefined;
+    }
+
+    return parsed < 0 || parsed > 1000 ? `Enter ${field} between 0 and 1,000 g` : undefined;
+  }
+
+  function validateField(field: 'calories' | 'protein' | 'carbs' | 'fat', value: string): boolean {
+    const message = getFieldError(field, value);
+    setFieldError(field, message);
+    return !message;
+  }
+
+  function validateForm(): boolean {
+    const validations = [
+      validateField('calories', calories),
+      validateField('protein', protein),
+      validateField('carbs', carbs),
+      validateField('fat', fat),
+    ];
+
+    return validations.every(Boolean);
+  }
+
+  function handleFieldChange(field: 'calories' | 'protein' | 'carbs' | 'fat', value: string) {
+    const normalized = normalizeDecimal(value);
+
+    if (field === 'calories') setCalories(normalized);
+    if (field === 'protein') setProtein(normalized);
+    if (field === 'carbs') setCarbs(normalized);
+    if (field === 'fat') setFat(normalized);
+
+    if (errors[field]) {
+      validateField(field, normalized);
+    }
+  }
+
   const handleSave = async () => {
-    if (!calories.trim() || parseFloat(calories) <= 0) {
-      Alert.alert('Error', 'Please enter valid calorie goal');
+    if (!validateForm()) {
+      const firstError =
+        getFieldError('calories', calories)
+        ?? getFieldError('protein', protein)
+        ?? getFieldError('carbs', carbs)
+        ?? getFieldError('fat', fat)
+        ?? 'Please enter valid nutrition goals';
+      Alert.alert('Error', firstError);
       return;
     }
 
@@ -122,7 +194,7 @@ export default function NutritionGoalsScreen() {
           <View style={styles.headerSpacer} />
         </View>
 
-        <OnboardingProgress current={1} total={1} />
+        <OnboardingProgress current={2} total={2} />
 
         <View style={styles.card}>
           <View style={styles.iconContainer}>
@@ -137,61 +209,74 @@ export default function NutritionGoalsScreen() {
             Set your daily targets to track your progress. You can always update these later in your profile settings.
           </Text>
 
+          <Text style={styles.contextText}>
+            Nutrition goals help you compare what you eat against a daily target. Most people land around
+            1,500–3,000 calories, while macros often stay between 50–250g depending on goals.
+          </Text>
+
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Daily Calories *</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, errors.calories && styles.inputError]}
               value={calories}
-              onChangeText={(t) => setCalories(normalizeDecimal(t))}
+              onChangeText={(t: string) => handleFieldChange('calories', t)}
+              onBlur={() => validateField('calories', calories)}
               inputMode="decimal"
               keyboardType="decimal-pad"
               placeholder="e.g., 2000"
               placeholderTextColor="#8CA5C6"
               editable={!isSyncing}
             />
+            {errors.calories ? <Text style={styles.errorText}>{errors.calories}</Text> : null}
           </View>
 
           <View style={styles.row}>
             <View style={[styles.inputContainer, styles.thirdWidth]}>
               <Text style={styles.label}>Protein (g)</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, errors.protein && styles.inputError]}
                 value={protein}
-                onChangeText={(t) => setProtein(normalizeDecimal(t))}
+                onChangeText={(t: string) => handleFieldChange('protein', t)}
+                onBlur={() => validateField('protein', protein)}
                 inputMode="decimal"
                 keyboardType="decimal-pad"
                 placeholder="Optional"
                 placeholderTextColor="#8CA5C6"
                 editable={!isSyncing}
               />
+              {errors.protein ? <Text style={styles.errorText}>{errors.protein}</Text> : null}
             </View>
 
             <View style={[styles.inputContainer, styles.thirdWidth]}>
               <Text style={styles.label}>Carbs (g)</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, errors.carbs && styles.inputError]}
                 value={carbs}
-                onChangeText={(t) => setCarbs(normalizeDecimal(t))}
+                onChangeText={(t: string) => handleFieldChange('carbs', t)}
+                onBlur={() => validateField('carbs', carbs)}
                 inputMode="decimal"
                 keyboardType="decimal-pad"
                 placeholder="Optional"
                 placeholderTextColor="#8CA5C6"
                 editable={!isSyncing}
               />
+              {errors.carbs ? <Text style={styles.errorText}>{errors.carbs}</Text> : null}
             </View>
 
             <View style={[styles.inputContainer, styles.thirdWidth]}>
               <Text style={styles.label}>Fat (g)</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, errors.fat && styles.inputError]}
                 value={fat}
-                onChangeText={(t) => setFat(normalizeDecimal(t))}
+                onChangeText={(t: string) => handleFieldChange('fat', t)}
+                onBlur={() => validateField('fat', fat)}
                 inputMode="decimal"
                 keyboardType="decimal-pad"
                 placeholder="Optional"
                 placeholderTextColor="#8CA5C6"
                 editable={!isSyncing}
               />
+              {errors.fat ? <Text style={styles.errorText}>{errors.fat}</Text> : null}
             </View>
           </View>
 
@@ -287,8 +372,15 @@ const styles = StyleSheet.create({
     color: '#9AACD1',
     fontSize: 14,
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 12,
     lineHeight: 20,
+  },
+  contextText: {
+    color: '#C6D4EE',
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginBottom: 24,
   },
   inputContainer: {
     marginBottom: 16,
@@ -308,6 +400,16 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 16,
     color: '#F5F7FF',
+  },
+  inputError: {
+    borderColor: '#FF6B6B',
+  },
+  errorText: {
+    color: '#FF8A8A',
+    fontSize: 12,
+    marginTop: 6,
+    marginLeft: 2,
+    lineHeight: 16,
   },
   row: {
     flexDirection: 'row',

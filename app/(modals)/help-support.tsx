@@ -16,7 +16,7 @@ const FAQItem = ({ question, answer, isExpanded, onPress }: FAQItemProps) => (
   <TouchableOpacity style={styles.faqItem} onPress={onPress} activeOpacity={0.8}>
     <View style={styles.faqHeader}>
       <Text style={styles.faqQuestion}>{question}</Text>
-      <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={20} color="#6781A6" />
+      <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={20} color="#9AACD1" />
     </View>
     {isExpanded && <Text style={styles.faqAnswer}>{answer}</Text>}
   </TouchableOpacity>
@@ -39,7 +39,7 @@ const SupportOption = ({ icon, title, subtitle, onPress }: SupportOptionProps) =
       <Text style={styles.supportTitle}>{title}</Text>
       <Text style={styles.supportSubtitle}>{subtitle}</Text>
     </View>
-    <Ionicons name="chevron-forward" size={20} color="#6781A6" />
+    <Ionicons name="chevron-forward" size={20} color="#9AACD1" />
   </TouchableOpacity>
 );
 
@@ -94,7 +94,7 @@ export default function HelpSupportModal() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={safeBack} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#1A1A2E" />
+          <Ionicons name="arrow-back" size={24} color="#E8EDF5" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Help & Support</Text>
         <View style={styles.headerSpacer} />
@@ -130,7 +130,7 @@ export default function HelpSupportModal() {
         <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
         <View style={styles.faqCard}>
           {faqs.map((faq, index) => (
-            <View key={index}>
+              <View key={faq.question}>
               {index > 0 && <View style={styles.faqDivider} />}
               <FAQItem
                 question={faq.question}
@@ -169,7 +169,7 @@ export default function HelpSupportModal() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FF',
+    backgroundColor: '#050E1F',
   },
   header: {
     flexDirection: 'row',
@@ -177,9 +177,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 60,
     paddingBottom: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#050E1F',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#1B2E4A',
   },
   backButton: {
     padding: 4,
@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 20,
     fontWeight: '600',
-    color: '#1A1A2E',
+    color: '#E8EDF5',
     textAlign: 'center',
     marginRight: 40,
   },
@@ -202,24 +202,24 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#6781A6',
+    color: '#9AACD1',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,
     marginTop: 20,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#0B1A2F',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#1B2E4A',
     overflow: 'hidden',
   },
   faqCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#0B1A2F',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#1B2E4A',
     overflow: 'hidden',
   },
   supportOption: {
@@ -242,16 +242,16 @@ const styles = StyleSheet.create({
   supportTitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#1A1A2E',
+    color: '#E8EDF5',
   },
   supportSubtitle: {
     fontSize: 13,
-    color: '#6781A6',
+    color: '#9AACD1',
     marginTop: 2,
   },
   divider: {
     height: 1,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#1B2E4A',
     marginLeft: 72,
   },
   faqItem: {
@@ -265,19 +265,19 @@ const styles = StyleSheet.create({
   faqQuestion: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#1A1A2E',
+    color: '#E8EDF5',
     flex: 1,
     marginRight: 8,
   },
   faqAnswer: {
     fontSize: 14,
-    color: '#6781A6',
+    color: '#9AACD1',
     marginTop: 12,
     lineHeight: 20,
   },
   faqDivider: {
     height: 1,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#1B2E4A',
     marginHorizontal: 16,
   },
   bottomSpacer: {

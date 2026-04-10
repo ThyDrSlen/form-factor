@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  RefreshControl,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -36,6 +37,7 @@ export default function SharedInboxModal() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const unreadCount = useMemo(
     () => rows.filter((row) => activeTab === 'inbox' && row.read_at == null).length,
@@ -43,7 +45,7 @@ export default function SharedInboxModal() {
   );
 
   const load = useCallback(
-    async (mode: 'reset' | 'more' = 'reset') => {
+    async (mode: 'reset' | 'more' = 'reset', options?: { showLoading?: boolean }) => {
       if (!user) {
         setError('You must be signed in to view shared videos.');
         setLoading(false);
@@ -51,8 +53,11 @@ export default function SharedInboxModal() {
       }
 
       const isReset = mode === 'reset';
+      const showLoading = options?.showLoading ?? true;
       if (isReset) {
-        setLoading(true);
+        if (showLoading) {
+          setLoading(true);
+        }
         setError(null);
       } else {
         if (!cursor || loadingMore) return;
@@ -78,7 +83,9 @@ export default function SharedInboxModal() {
         showToast(message, { type: 'error' });
       } finally {
         if (isReset) {
-          setLoading(false);
+          if (showLoading) {
+            setLoading(false);
+          }
         } else {
           setLoadingMore(false);
         }
@@ -87,9 +94,18 @@ export default function SharedInboxModal() {
     [user, activeTab, cursor, loadingMore, showToast],
   );
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load('reset', { showLoading: false });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load]);
+
   useEffect(() => {
     void load('reset');
-  }, [activeTab, load]);
+  }, [load]);
 
   const renderRow = ({ item }: { item: VideoShareWithContext }) => {
     const counterparty = activeTab === 'inbox' ? item.sender_profile : item.recipient_profile;
@@ -171,6 +187,14 @@ export default function SharedInboxModal() {
           keyExtractor={(item) => item.id}
           renderItem={renderRow}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#4C8CFF"
+              colors={['#4C8CFF']}
+            />
+          }
           ListEmptyComponent={
             <View style={styles.centerState}>
               <Text style={styles.mutedText}>No shared videos yet.</Text>

@@ -21,6 +21,17 @@ export type VideoFeedMetrics = {
   [key: string]: any;
 };
 
+type RelativeTimeUnit = 'second' | 'minute' | 'hour' | 'day';
+
+type RelativeTimeFormatter = {
+  format: (value: number, unit: RelativeTimeUnit) => string;
+};
+
+type RelativeTimeFormatConstructor = new (
+  locales?: string | string[],
+  options?: { numeric?: 'always' | 'auto' }
+) => RelativeTimeFormatter;
+
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const isFiniteNumber = (value: unknown): value is number =>
@@ -85,13 +96,18 @@ export const formatRelativeTime = (createdAt: string): string => {
   const timestamp = date.getTime();
   if (Number.isNaN(timestamp)) return '';
   const diffMs = Date.now() - timestamp;
+  const RelativeTimeFormat = (Intl as typeof Intl & {
+    RelativeTimeFormat?: RelativeTimeFormatConstructor;
+  }).RelativeTimeFormat;
+  const formatter = RelativeTimeFormat ? new RelativeTimeFormat(undefined, { numeric: 'auto' }) : null;
+  const diffSeconds = Math.floor(diffMs / 1000);
+  if (diffSeconds < 60 && formatter) return formatter.format(-diffSeconds, 'second');
   const diffMinutes = Math.floor(diffMs / 60000);
-  if (diffMinutes < 1) return 'Just now';
-  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  if (diffMinutes < 60 && formatter) return formatter.format(-diffMinutes, 'minute');
   const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffHours < 24 && formatter) return formatter.format(-diffHours, 'hour');
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffDays < 7 && formatter) return formatter.format(-diffDays, 'day');
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
 

@@ -138,6 +138,7 @@ function SetRow({ set, index, isTimed, onUpdateSet, onCompleteSet, onMenuPress, 
 
       {/* Menu button */}
       <TouchableOpacity
+        activeOpacity={0.7}
         onPress={() => onMenuPress(set.id)}
         style={{ padding: 4, marginLeft: 4 }}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}

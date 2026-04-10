@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Keyboard, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import { useAuth } from '../../contexts/AuthContext';
-import { useToast } from '../../contexts/ToastContext';
+import { useToast } from '@/contexts/ToastContext';
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { fetchTodaySession, fetchCoachSessionMessages } from '@/lib/services/coach-history-service';
 import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
@@ -74,6 +74,7 @@ export default function CoachScreen() {
   );
 
   const handleCoachSend = async (preset?: string) => {
+    Keyboard.dismiss();
     const content = (preset ?? coachInput).trim();
     if (!content || coachSending) return;
 
@@ -337,6 +338,13 @@ export default function CoachScreen() {
             </Text>
           </View>
         )}
+
+        {coachSending ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingBottom: 12 }}>
+            <ActivityIndicator size="small" color="#4C8CFF" />
+            <Text style={{ color: '#9AACD1', fontStyle: 'italic' }}>Coach is thinking...</Text>
+          </View>
+        ) : null}
 
         <View style={styles.coachComposer}>
           <TextInput

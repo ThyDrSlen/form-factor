@@ -8,6 +8,7 @@ import React, { useMemo, forwardRef, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { sessionStyles as styles, colors } from '@/styles/workout-session.styles';
 import type { SetType } from '@/lib/types/workout-session';
 
@@ -49,7 +50,7 @@ const SetActionSheet = forwardRef<BottomSheet, SetActionSheetProps>(
         <BottomSheetView style={styles.sheetContainer}>
           {/* Close button */}
           <View style={{ alignItems: 'flex-end', marginBottom: 8 }}>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity activeOpacity={0.7} onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="close" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
@@ -122,7 +123,13 @@ const SetActionSheet = forwardRef<BottomSheet, SetActionSheetProps>(
           </View>
 
           {/* Delete */}
-          <TouchableOpacity style={styles.deleteRow} onPress={onDelete}>
+          <TouchableOpacity
+            style={styles.deleteRow}
+            onPress={async () => {
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              onDelete();
+            }}
+          >
             <Text style={styles.deleteText}>Delete</Text>
             <Ionicons name="trash-outline" size={20} color={colors.error} />
           </TouchableOpacity>

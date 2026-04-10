@@ -213,7 +213,7 @@ export default function ARKitUsageScreen() {
               <Ionicons name="arrow-back" size={24} color="#007AFF" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Get Started</Text>
-            <OnboardingProgress current={2} total={2} />
+            <OnboardingProgress current={2} total={3} />
           </Animated.View>
 
           {/* Hero Section */}
