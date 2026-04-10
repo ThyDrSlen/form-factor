@@ -53,13 +53,19 @@ jest.mock('@/lib/services/database/local-db', () => {
     'getFoodById', 'getWorkoutById', 'getHealthMetricById', 'getNutritionGoalsById',
     'getNutritionGoals', 'upsertNutritionGoals',
     'insertHealthMetric', 'updateHealthMetric',
+    'withTransaction',
   ];
   const db: Record<string, jest.Mock> = {};
   for (const m of methods) {
-    db[m] = jest.fn().mockResolvedValue(
-      m === 'countSyncQueueItems' ? 0 :
-      (m.startsWith('getUnsynced') || m === 'getSyncQueue' || m.startsWith('getAll') ? [] : undefined)
-    );
+    if (m === 'withTransaction') {
+      // Execute the callback so inner calls are visible to assertions
+      db[m] = jest.fn().mockImplementation(async (fn: () => Promise<void>) => fn());
+    } else {
+      db[m] = jest.fn().mockResolvedValue(
+        m === 'countSyncQueueItems' ? 0 :
+        (m.startsWith('getUnsynced') || m === 'getSyncQueue' || m.startsWith('getAll') ? [] : undefined)
+      );
+    }
   }
   // Store on global so tests can access it
   (global as any).__mockLocalDB = db;
@@ -148,7 +154,9 @@ describe('SyncService', () => {
     mockRemoveChannel.mockResolvedValue(undefined);
     // Re-set localDB default returns
     for (const m of Object.keys(mockLocalDB)) {
-      if (m === 'countSyncQueueItems') {
+      if (m === 'withTransaction') {
+        mockLocalDB[m].mockImplementation(async (fn: () => Promise<void>) => fn());
+      } else if (m === 'countSyncQueueItems') {
         mockLocalDB[m].mockResolvedValue(0);
       } else if (m.startsWith('getUnsynced') || m === 'getSyncQueue' || m.startsWith('getAll')) {
         mockLocalDB[m].mockResolvedValue([]);

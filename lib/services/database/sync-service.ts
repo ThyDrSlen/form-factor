@@ -529,10 +529,12 @@ class SyncService {
         if (localFood) {
           await localDB.updateFood(food.id, food);
         } else {
-          await localDB.insertFood(food);
-          await localDB.updateFoodSyncStatus(food.id, true);
+          await localDB.withTransaction(async () => {
+            await localDB.insertFood(food);
+            await localDB.updateFoodSyncStatus(food.id, true);
+          });
         }
-        
+
         this.notifySyncComplete();
       } else if (payload.eventType === 'DELETE' && oldRow.id) {
         await localDB.hardDeleteFood(oldRow.id);
@@ -581,10 +583,12 @@ class SyncService {
         if (localWorkout) {
           await localDB.updateWorkout(workout.id, workout);
         } else {
-          await localDB.insertWorkout(workout);
-          await localDB.updateWorkoutSyncStatus(workout.id, true);
+          await localDB.withTransaction(async () => {
+            await localDB.insertWorkout(workout);
+            await localDB.updateWorkoutSyncStatus(workout.id, true);
+          });
         }
-        
+
         this.notifySyncComplete();
       } else if (payload.eventType === 'DELETE' && oldRow.id) {
         await localDB.hardDeleteWorkout(oldRow.id);
@@ -633,10 +637,12 @@ class SyncService {
         if (localMetric) {
           await localDB.updateHealthMetric(metric.id, metric);
         } else {
-          await localDB.insertHealthMetric(metric);
-          await localDB.updateHealthMetricSyncStatus(metric.id, true);
+          await localDB.withTransaction(async () => {
+            await localDB.insertHealthMetric(metric);
+            await localDB.updateHealthMetricSyncStatus(metric.id, true);
+          });
         }
-        
+
         this.notifySyncComplete();
       } else if (payload.eventType === 'DELETE' && oldRow.id) {
         await localDB.deleteHealthMetric(oldRow.id);
@@ -1198,19 +1204,20 @@ class SyncService {
           if (upsertError) throw upsertError;
         }
 
-        // Remove from queue on success
-        await localDB.removeSyncQueueItem(item.id);
-        
-        // Update local record sync status
-        if (item.table_name === 'foods') {
-          await localDB.updateFoodSyncStatus(item.record_id, true);
-        } else if (item.table_name === 'workouts') {
-          await localDB.updateWorkoutSyncStatus(item.record_id, true);
-        } else if (item.table_name === 'health_metrics') {
-          await localDB.updateHealthMetricSyncStatus(item.record_id, true);
-        } else if (item.table_name === 'nutrition_goals') {
-          await localDB.updateNutritionGoalsSyncStatus(item.record_id, true);
-        }
+        // Remove from queue and update sync status atomically
+        await localDB.withTransaction(async () => {
+          await localDB.removeSyncQueueItem(item.id);
+
+          if (item.table_name === 'foods') {
+            await localDB.updateFoodSyncStatus(item.record_id, true);
+          } else if (item.table_name === 'workouts') {
+            await localDB.updateWorkoutSyncStatus(item.record_id, true);
+          } else if (item.table_name === 'health_metrics') {
+            await localDB.updateHealthMetricSyncStatus(item.record_id, true);
+          } else if (item.table_name === 'nutrition_goals') {
+            await localDB.updateNutritionGoalsSyncStatus(item.record_id, true);
+          }
+        });
       } catch (error) {
         if (this.isRlsViolation(error)) {
           warnWithTs(`[SyncService] Queue item ${item.id} was rejected by RLS, purging local record`);
