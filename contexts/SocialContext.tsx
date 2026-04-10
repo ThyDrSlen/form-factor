@@ -58,6 +58,8 @@ export function SocialProvider({ children }: { children: React.ReactNode }) {
   const [loadingCounts, setLoadingCounts] = useState(false);
   const pendingRequestCountRef = useRef(0);
   const unreadSharesCountRef = useRef(0);
+  const followStatusCacheRef = useRef(followStatusCache);
+  const userIdRef = useRef(user?.id);
 
   useEffect(() => {
     pendingRequestCountRef.current = pendingRequestCount;
@@ -67,12 +69,20 @@ export function SocialProvider({ children }: { children: React.ReactNode }) {
     unreadSharesCountRef.current = unreadSharesCount;
   }, [unreadSharesCount]);
 
+  useEffect(() => {
+    followStatusCacheRef.current = followStatusCache;
+  }, [followStatusCache]);
+
+  useEffect(() => {
+    userIdRef.current = user?.id;
+  }, [user?.id]);
+
   const clearFollowStatusCache = useCallback(() => {
     setFollowStatusCache({});
   }, []);
 
   const refreshPendingRequestCount = useCallback(async () => {
-    if (!user?.id) {
+    if (!userIdRef.current) {
       setPendingRequestCount(0);
       pendingRequestCountRef.current = 0;
       return 0;
@@ -86,10 +96,10 @@ export function SocialProvider({ children }: { children: React.ReactNode }) {
       warnWithTs('[SocialContext] Failed to refresh pending request count', error);
       return pendingRequestCountRef.current;
     }
-  }, [user?.id]);
+  }, []);
 
   const refreshUnreadShareCount = useCallback(async () => {
-    if (!user?.id) {
+    if (!userIdRef.current) {
       setUnreadSharesCount(0);
       unreadSharesCountRef.current = 0;
       return 0;
@@ -103,10 +113,10 @@ export function SocialProvider({ children }: { children: React.ReactNode }) {
       warnWithTs('[SocialContext] Failed to refresh unread share count', error);
       return unreadSharesCountRef.current;
     }
-  }, [user?.id]);
+  }, []);
 
   const refreshCounts = useCallback(async () => {
-    if (!user?.id) {
+    if (!userIdRef.current) {
       setPendingRequestCount(0);
       setUnreadSharesCount(0);
       setLoadingCounts(false);
@@ -119,28 +129,7 @@ export function SocialProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoadingCounts(false);
     }
-  }, [refreshPendingRequestCount, refreshUnreadShareCount, user?.id]);
-
-  const getFollowStatus = useCallback(
-    async (targetId: string, opts?: { refresh?: boolean }): Promise<FollowStatusSummary> => {
-      if (!user?.id) {
-        return buildSelfStatus();
-      }
-
-      if (!targetId || targetId === user.id) {
-        return buildSelfStatus();
-      }
-
-      if (!opts?.refresh && followStatusCache[targetId]) {
-        return followStatusCache[targetId];
-      }
-
-      const next = await fetchFollowStatus(targetId);
-      setFollowStatusCache((prev) => ({ ...prev, [targetId]: next }));
-      return next;
-    },
-    [followStatusCache, user?.id],
-  );
+  }, [refreshPendingRequestCount, refreshUnreadShareCount]);
 
   const invalidateFollowStatus = useCallback((targetId: string) => {
     if (!targetId) return;
@@ -151,6 +140,29 @@ export function SocialProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
   }, []);
+
+  const getFollowStatus = useCallback(
+    async (targetId: string, opts?: { refresh?: boolean }): Promise<FollowStatusSummary> => {
+      const userId = userIdRef.current;
+      if (!userId) {
+        return buildSelfStatus();
+      }
+
+      if (!targetId || targetId === userId) {
+        return buildSelfStatus();
+      }
+
+      const cached = followStatusCacheRef.current[targetId];
+      if (!opts?.refresh && cached) {
+        return cached;
+      }
+
+      const next = await fetchFollowStatus(targetId);
+      setFollowStatusCache((prev) => ({ ...prev, [targetId]: next }));
+      return next;
+    },
+    [],
+  );
 
   const followUser = useCallback(
     async (targetId: string) => {
@@ -282,14 +294,9 @@ export function SocialProvider({ children }: { children: React.ReactNode }) {
       supabase.removeChannel(followsChannel).catch(err => console.warn('[SocialContext] Failed to remove follows channel:', err));
       supabase.removeChannel(sharesChannel).catch(err => console.warn('[SocialContext] Failed to remove shares channel:', err));
     };
-  }, [
-    clearFollowStatusCache,
-    invalidateFollowStatus,
-    refreshCounts,
-    refreshPendingRequestCount,
-    refreshUnreadShareCount,
-    user?.id,
-  ]);
+    // All callbacks are stable (no deps or only stable deps), so only user?.id triggers re-subscription
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const value = useMemo<SocialContextValue>(
     () => ({
@@ -309,23 +316,9 @@ export function SocialProvider({ children }: { children: React.ReactNode }) {
       blockUser,
       unblockUser,
     }),
-    [
-      acceptFollow,
-      blockUser,
-      clearFollowStatusCache,
-      followStatusCache,
-      followUser,
-      getFollowStatus,
-      loadingCounts,
-      pendingRequestCount,
-      refreshCounts,
-      refreshPendingRequestCount,
-      refreshUnreadShareCount,
-      rejectFollow,
-      unblockUser,
-      unfollowUser,
-      unreadSharesCount,
-    ],
+    // Callbacks are stable via useCallback with empty/stable deps — only data values trigger re-memoization
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [followStatusCache, pendingRequestCount, unreadSharesCount, loadingCounts],
   );
 
   return <SocialContext.Provider value={value}>{children}</SocialContext.Provider>;
