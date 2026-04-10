@@ -1,3 +1,15 @@
+/**
+ * Angle-only rep detector tests (RepDetectorPullup).
+ *
+ * The hybrid rep detector (HybridRepDetector), which fuses angle-based and
+ * vertical-displacement signals, has its own dedicated test file at:
+ *   tests/unit/tracking-quality/hybrid-rep-detector.test.ts
+ *
+ * The tests below verify that the angle-only detector continues to work
+ * correctly as a standalone component and as a fallback when the hybrid
+ * modules are not available.
+ */
+
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -69,7 +81,7 @@ describe('tracking-quality rep detector (pull-up FSM)', () => {
     expect(detector.getSnapshot().repCount).toBe(0);
 
     for (let i = 0; i < 12; i++) {
-      bottom(t, 138, 0.61 - (i + 1) * 0.01);
+      bottom(t, 125, 0.61 - (i + 1) * 0.01);
       t += 1 / 30;
     }
     expect(detector.getSnapshot().state).toBe('ascending');

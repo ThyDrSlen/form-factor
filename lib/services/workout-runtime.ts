@@ -1,5 +1,63 @@
 import type { RepBoundary } from '@/lib/types/workout-definitions';
 
+/**
+ * Returns `true` when all supplied angle values are finite and non-null.
+ * This is the canonical check the runtime should use before forwarding
+ * angles to the phase FSM / rep detector.
+ */
+export function isValidAngle(value: number | null | undefined): boolean {
+  return value != null && Number.isFinite(value);
+}
+
+/**
+ * Returns `true` when *every* angle in the record is valid (finite, non-null).
+ * A single NaN / null / undefined means tracking is lost for this frame.
+ */
+export function areAnglesValid(angles: Record<string, number | null | undefined>): boolean {
+  const values = Object.values(angles);
+  if (values.length === 0) return false;
+  return values.every(isValidAngle);
+}
+
+/** Phase stuck timeout constant — matches FSM_PHASE_TIMEOUT_MS in phase-fsm.ts */
+export const PHASE_TIMEOUT_MS = 5000;
+
+interface PhaseTimeoutTracker {
+  /** Call each frame. Returns true if the phase timed out and was reset. */
+  check(currentPhase: string, nowMs: number): boolean;
+  reset(): void;
+}
+
+/**
+ * If a phase has not changed for longer than PHASE_TIMEOUT_MS, the FSM is
+ * considered stuck. Returns true on the frame where timeout fires.
+ */
+export function createPhaseTimeoutTracker(initialPhase: string): PhaseTimeoutTracker {
+  let lastPhase = initialPhase;
+  let phaseEnteredAt = Date.now();
+
+  return {
+    check(currentPhase: string, nowMs: number): boolean {
+      if (currentPhase !== lastPhase) {
+        lastPhase = currentPhase;
+        phaseEnteredAt = nowMs;
+        return false;
+      }
+      if (currentPhase === 'idle' || currentPhase === 'setup') return false;
+      const elapsed = nowMs - phaseEnteredAt;
+      if (elapsed > PHASE_TIMEOUT_MS) {
+        phaseEnteredAt = nowMs;
+        return true;
+      }
+      return false;
+    },
+    reset() {
+      lastPhase = 'idle';
+      phaseEnteredAt = Date.now();
+    },
+  };
+}
+
 export function shouldStartRep<T extends string>(boundary: RepBoundary<T>, prev: T, next: T): boolean {
   return prev !== boundary.startPhase && next === boundary.startPhase;
 }

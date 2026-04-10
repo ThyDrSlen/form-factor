@@ -28,6 +28,12 @@ type Scenario = {
   elbowTravelDeg: number;
   occlusionWindowsSec?: Array<{ start: number; end: number; trackedRatio: number }>;
   noiseScaleDeg?: number;
+  /** Override shoulder/head/neck Y travel (default 0.18). */
+  shoulderYTravel?: number;
+  /** Override hip Y travel (default 0.12). */
+  hipYTravel?: number;
+  /** Per-rep amplitude overrides for Y travel (fatigue degradation). Index maps to rep window index. */
+  perRepYAmplitude?: number[];
 };
 
 const FPS = 30;
@@ -57,11 +63,37 @@ function repSignal(ts: number, windows: Array<{ start: number; end: number; ampl
   return 0;
 }
 
+/**
+ * Determine which rep window (by index) the timestamp falls into, or -1 if none.
+ */
+function activeRepWindowIndex(
+  ts: number,
+  windows: Array<{ start: number; end: number }>,
+): number {
+  for (let i = 0; i < windows.length; i++) {
+    if (ts >= windows[i].start && ts <= windows[i].end) return i;
+  }
+  return -1;
+}
+
+/** Default base Y positions (normalized screen coords, Y=0 top, Y=1 bottom). */
+const BASE_SHOULDER_Y = 0.45;
+const BASE_HEAD_Y = 0.34;
+const BASE_NECK_Y = 0.39;
+const BASE_HIP_Y = 0.68;
+
+const DEFAULT_SHOULDER_Y_TRAVEL = 0.18;
+const DEFAULT_HIP_Y_TRAVEL = 0.12;
+const Y_NOISE_PER_DEG = 0.001;
+
 function buildTrace(scenario: Scenario, seed: number): PullupFixtureTrace {
   const rng = makeRng(seed);
   const frames: PullupFixtureFrame[] = [];
   const count = Math.floor(scenario.durationSec * FPS);
   const noiseScale = scenario.noiseScaleDeg ?? 1.1;
+
+  const shoulderTravel = scenario.shoulderYTravel ?? DEFAULT_SHOULDER_Y_TRAVEL;
+  const hipTravel = scenario.hipYTravel ?? DEFAULT_HIP_Y_TRAVEL;
 
   for (let index = 0; index < count; index += 1) {
     const timestampSec = Number((index * DT_SEC).toFixed(3));
@@ -86,8 +118,39 @@ function buildTrace(scenario: Scenario, seed: number): PullupFixtureTrace {
 
     const jitter = occluded ? 0.02 : 0.004;
     const xCenter = scenario.name === 'back-turned' ? 0.58 : 0.5;
-    const leftWristY = 0.61 - rep * 0.17 + (rng() - 0.5) * jitter;
-    const rightWristY = 0.61 - rep * 0.17 + (rng() - 0.5) * jitter;
+
+    // --- Vertical displacement: shoulder/head/neck/hip Y oscillation ---
+    // Per-rep amplitude override (for fatigue degradation scenarios)
+    const repWindowIdx = activeRepWindowIndex(timestampSec, scenario.repWindowsSec);
+    const perRepScale =
+      scenario.perRepYAmplitude && repWindowIdx >= 0 && repWindowIdx < scenario.perRepYAmplitude.length
+        ? scenario.perRepYAmplitude[repWindowIdx]
+        : 1;
+
+    const effectiveShoulderTravel = shoulderTravel * perRepScale;
+    const effectiveHipTravel = hipTravel * perRepScale;
+
+    // Y noise from angle noise scale
+    const yNoise = () => (rng() - 0.5) * 2 * noiseScale * Y_NOISE_PER_DEG;
+
+    // Shoulders move UP (lower Y) during pull. rep=0 -> base, rep=1 -> base - travel
+    const shoulderYDisp = tracked ? rep * effectiveShoulderTravel : 0;
+    const hipYDisp = tracked ? rep * effectiveHipTravel : 0;
+
+    // Hand Y: base travel (0.17) plus shoulder displacement to preserve shoulder-hand gap dynamics.
+    // The gap detector measures shoulderY - handY delta from baseline.
+    // With both shoulders and hands moving up, handTravel must exceed shoulderTravel for positive gap delta.
+    const handBaseTravel = 0.17;
+    const handTotalTravel = handBaseTravel + effectiveShoulderTravel;
+    const leftWristY = 0.61 - rep * handTotalTravel + (rng() - 0.5) * jitter;
+    const rightWristY = 0.61 - rep * handTotalTravel + (rng() - 0.5) * jitter;
+
+    const headY = Number((BASE_HEAD_Y - shoulderYDisp + yNoise()).toFixed(4));
+    const neckY = Number((BASE_NECK_Y - shoulderYDisp + yNoise()).toFixed(4));
+    const leftShoulderY = Number((BASE_SHOULDER_Y - shoulderYDisp + yNoise()).toFixed(4));
+    const rightShoulderY = Number((BASE_SHOULDER_Y - shoulderYDisp + yNoise()).toFixed(4));
+    const leftHipY = Number((BASE_HIP_Y - hipYDisp + yNoise()).toFixed(4));
+    const rightHipY = Number((BASE_HIP_Y - hipYDisp + yNoise()).toFixed(4));
 
     frames.push({
       timestampSec,
@@ -102,12 +165,14 @@ function buildTrace(scenario: Scenario, seed: number): PullupFixtureTrace {
         rightShoulder,
       },
       joints: {
-        head: { x: Number((xCenter + (rng() - 0.5) * jitter).toFixed(4)), y: 0.22, isTracked: tracked, confidence: tracked ? 0.95 : 0.31 },
-        neck: { x: Number((xCenter + (rng() - 0.5) * jitter).toFixed(4)), y: 0.29, isTracked: tracked, confidence: tracked ? 0.94 : 0.29 },
-        left_shoulder: { x: Number((xCenter - 0.1 + (rng() - 0.5) * jitter).toFixed(4)), y: 0.33, isTracked: tracked, confidence: tracked ? 0.93 : 0.27 },
-        right_shoulder: { x: Number((xCenter + 0.1 + (rng() - 0.5) * jitter).toFixed(4)), y: 0.33, isTracked: tracked, confidence: tracked ? 0.93 : 0.27 },
+        head: { x: Number((xCenter + (rng() - 0.5) * jitter).toFixed(4)), y: headY, isTracked: tracked, confidence: tracked ? 0.95 : 0.31 },
+        neck: { x: Number((xCenter + (rng() - 0.5) * jitter).toFixed(4)), y: neckY, isTracked: tracked, confidence: tracked ? 0.94 : 0.29 },
+        left_shoulder: { x: Number((xCenter - 0.1 + (rng() - 0.5) * jitter).toFixed(4)), y: leftShoulderY, isTracked: tracked, confidence: tracked ? 0.93 : 0.27 },
+        right_shoulder: { x: Number((xCenter + 0.1 + (rng() - 0.5) * jitter).toFixed(4)), y: rightShoulderY, isTracked: tracked, confidence: tracked ? 0.93 : 0.27 },
         left_hand: { x: Number((xCenter - 0.16 + (rng() - 0.5) * jitter).toFixed(4)), y: Number(leftWristY.toFixed(4)), isTracked: tracked, confidence: tracked ? 0.92 : 0.25 },
         right_hand: { x: Number((xCenter + 0.16 + (rng() - 0.5) * jitter).toFixed(4)), y: Number(rightWristY.toFixed(4)), isTracked: tracked, confidence: tracked ? 0.92 : 0.25 },
+        left_hip: { x: Number((xCenter - 0.08 + (rng() - 0.5) * jitter).toFixed(4)), y: leftHipY, isTracked: tracked, confidence: tracked ? 0.91 : 0.24 },
+        right_hip: { x: Number((xCenter + 0.08 + (rng() - 0.5) * jitter).toFixed(4)), y: rightHipY, isTracked: tracked, confidence: tracked ? 0.91 : 0.24 },
       },
       expected: scenario.expected,
     });
@@ -137,6 +202,88 @@ export function buildPullupFixtureCorpus(): PullupFixtureTrace[] {
       baseElbowDeg: 154,
       elbowTravelDeg: 76,
       noiseScaleDeg: 1.4,
+    },
+    {
+      name: 'back-turned-multi',
+      expected: { repCount: 3, partialFramesMin: 30, partialFramesMax: 100 },
+      durationSec: 14.0,
+      repWindowsSec: [
+        { start: 1.5, end: 3.8 },
+        { start: 5.0, end: 7.3 },
+        { start: 8.8, end: 11.2 },
+      ],
+      baseElbowDeg: 154,
+      elbowTravelDeg: 76,
+      noiseScaleDeg: 1.4,
+    },
+    {
+      name: 'back-turned-no-deadhang',
+      expected: { repCount: 2, partialFramesMin: 18, partialFramesMax: 70 },
+      durationSec: 10.0,
+      repWindowsSec: [
+        { start: 1.0, end: 3.2 },
+        { start: 4.8, end: 7.0 },
+      ],
+      baseElbowDeg: 152,
+      elbowTravelDeg: 68,
+      noiseScaleDeg: 1.3,
+      shoulderYTravel: 0.12,
+      hipYTravel: 0.08,
+    },
+    {
+      name: 'vertical-displacement',
+      expected: { repCount: 2, partialFramesMin: 22, partialFramesMax: 68 },
+      durationSec: 10.5,
+      repWindowsSec: [
+        { start: 1.3, end: 3.8 },
+        { start: 5.5, end: 8.0 },
+      ],
+      baseElbowDeg: 155,
+      elbowTravelDeg: 78,
+      shoulderYTravel: 0.20,
+      hipYTravel: 0.14,
+    },
+    {
+      name: 'side-angle',
+      expected: { repCount: 2, partialFramesMin: 20, partialFramesMax: 65 },
+      durationSec: 10.0,
+      repWindowsSec: [
+        { start: 1.2, end: 3.6 },
+        { start: 5.4, end: 7.8 },
+      ],
+      baseElbowDeg: 155,
+      elbowTravelDeg: 78,
+      noiseScaleDeg: 1.6,
+    },
+    {
+      name: 'fatigue-degradation',
+      expected: { repCount: 5, partialFramesMin: 40, partialFramesMax: 150 },
+      durationSec: 22.0,
+      repWindowsSec: [
+        { start: 1.0, end: 3.2 },
+        { start: 4.5, end: 6.8 },
+        { start: 8.0, end: 10.4 },
+        { start: 11.8, end: 14.5, amplitude: 0.85 },
+        { start: 16.0, end: 19.0, amplitude: 0.70 },
+      ],
+      baseElbowDeg: 156,
+      elbowTravelDeg: 80,
+      noiseScaleDeg: 1.3,
+      // Y amplitude decreases with fatigue: 0.18 for reps 1-3, 0.14 for rep 4, 0.10 for rep 5
+      perRepYAmplitude: [1.0, 1.0, 1.0, 0.78, 0.56],
+    },
+    {
+      name: 'tracking-dropout-recovery',
+      expected: { repCount: 2, partialFramesMin: 20, partialFramesMax: 72 },
+      durationSec: 11.0,
+      repWindowsSec: [
+        { start: 1.5, end: 3.8 },
+        { start: 6.0, end: 8.5 },
+      ],
+      baseElbowDeg: 155,
+      elbowTravelDeg: 78,
+      occlusionWindowsSec: [{ start: 4.0, end: 5.5, trackedRatio: 0.0 }],
+      noiseScaleDeg: 1.2,
     },
     {
       name: 'occlusion-brief',

@@ -10,6 +10,19 @@
  *
  * Key difference from conventional deadlift: knees stay relatively fixed,
  * movement is primarily a hip hinge with emphasis on hamstring stretch.
+ *
+ * Threshold Inventory:
+ * - standing: 165°     — fully standing (lockout position)
+ * - hingeStart: 140°   — starting the hip hinge (enter hinge phase)
+ * - bottom: 90°        — bottom position (hamstring stretch)
+ * - riseStart: 110°    — rising back up
+ * - kneeSoftBend: 155°  — knee should stay relatively straight
+ * - kneeMinBend: 130°   — minimum knee angle (too much = not an RDL)
+ * - minDurationMs: 600  — minimum time between reps
+ *
+ * Hysteresis gaps:
+ * - hingeStart (140°) vs standing (165°): 25° gap prevents bounce at top
+ * - bottom (90°) vs riseStart (110°): 20° gap prevents bounce at bottom
  */
 
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
@@ -48,8 +61,8 @@ export interface RDLMetrics extends WorkoutMetrics {
 export const RDL_THRESHOLDS = {
   /** Fully standing (lockout position) */
   standing: 165,
-  /** Starting the hip hinge */
-  hingeStart: 145,
+  /** Starting the hip hinge — 25° below standing for clear entry */
+  hingeStart: 140,
   /** Bottom position (hamstring stretch) */
   bottom: 90,
   /** Rising back up */
@@ -176,7 +189,7 @@ const phases: PhaseDefinition<RDLPhase>[] = [
 const repBoundary: RepBoundary<RDLPhase> = {
   startPhase: 'hinge',
   endPhase: 'standing',
-  minDurationMs: 800,
+  minDurationMs: 600, // RDLs are deliberate but 800ms was too restrictive
 };
 
 // =============================================================================

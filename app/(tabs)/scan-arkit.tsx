@@ -388,6 +388,8 @@ export default function ScanARKitScreen() {
   const smoothedPose2DRef = React.useRef<Joint2D[] | null>(null);
   const pose2DCacheRef = React.useRef<Record<string, { x: number; y: number }>>({});
   const lastSpokenCueRef = React.useRef<{ cue: string; timestamp: number } | null>(null);
+  /** Latest tracking quality from the realtime form engine (0-1). Updated every frame. */
+  const latestTrackingQualityRef = React.useRef<number>(1.0);
   const cueHysteresisControllerRef = React.useRef(
     new CueHysteresisController<string>({ showFrames: SHOW_N_FRAMES, hideFrames: HIDE_N_FRAMES })
   );
@@ -875,6 +877,7 @@ export default function ScanARKitScreen() {
     reset: resetWorkoutController,
     setWorkout: setWorkoutController,
     addRepCue: addWorkoutRepCue,
+    hybridDetectionState,
   } = workoutController;
 
   useEffect(() => {
@@ -1177,6 +1180,11 @@ export default function ScanARKitScreen() {
           : null;
       const next: JointAngles | null = smoothingResult?.angles ?? realtimeFormEngineRef.current.smoothed;
 
+      // Persist latest tracking quality for overlay rendering
+      if (typeof smoothingResult?.trackingQuality === 'number') {
+        latestTrackingQualityRef.current = smoothingResult.trackingQuality;
+      }
+
       if (shouldLog && next && baselineDebugEnabledRef.current) {
         logWithTs('[ScanARKit] 📐 Joint angles:', {
           leftKnee: next.leftKnee.toFixed(1),
@@ -1351,7 +1359,21 @@ export default function ScanARKitScreen() {
           lastLivePartialBadgeRef.current = null;
         }
 
-        processWorkoutFrame(next, jointsMap, {
+        // Build a 2D joints map from smoothed pose data for the hybrid
+        // detector. Falls back to the raw 3D-projected jointsMap when
+        // smoothed data is not yet available.
+        const smoothed2D = smoothedPose2DRef.current;
+        const joints2DMap: typeof jointsMap = smoothed2D
+          ? (() => {
+              const m = new Map<string, { x: number; y: number; isTracked: boolean }>();
+              for (const j of smoothed2D) {
+                m.set(j.name, { x: j.x, y: j.y, isTracked: j.isTracked });
+              }
+              return m;
+            })()
+          : jointsMap;
+
+        processWorkoutFrame(next, joints2DMap, {
           trackingQuality: smoothingResult?.trackingQuality,
           shadowMeanAbsDelta: shadowComparison?.meanAbsDelta,
         });
@@ -2550,7 +2572,38 @@ export default function ScanARKitScreen() {
                   return undefined;
                 };
 
-                const drawLine = (from: string, to: string, color: string = '#4C8CFF') => {
+                // Determine spine line color based on tracking mode.
+                // When vertical displacement is the primary signal
+                // (tracking quality < 0.3), use amber to indicate
+                // "vertical tracking mode"; otherwise default blue.
+                const trackingQuality = latestTrackingQualityRef.current;
+                const isVerticalPrimary =
+                  hybridDetectionState.isHybridActive &&
+                  hybridDetectionState.activeSource === 'vertical';
+                const spineColor =
+                  isVerticalPrimary || trackingQuality < 0.3
+                    ? '#FFB347'
+                    : '#4C8CFF';
+
+                // Compute per-joint opacity from confidence when
+                // available: high confidence -> 1.0, low -> 0.3.
+                const jointOpacity = (j: Joint2D): number => {
+                  if (!j.isTracked) return 0;
+                  // Joint2D may not carry confidence; treat missing as high.
+                  const conf = (j as Joint2D & { confidence?: number }).confidence;
+                  if (typeof conf !== 'number' || !Number.isFinite(conf)) return 0.9;
+                  // Scale: conf >= 0.7 -> 1.0, conf <= 0.3 -> 0.3, linear between
+                  return Math.min(1.0, Math.max(0.3, 0.3 + (conf - 0.3) * (0.7 / 0.4)));
+                };
+
+                const lineOpacity = (from: string, to: string): number => {
+                  const j1 = findJoint2D(from);
+                  const j2 = findJoint2D(to);
+                  if (!j1 || !j2) return 0;
+                  return Math.min(jointOpacity(j1), jointOpacity(j2));
+                };
+
+                const drawLine = (from: string, to: string, color: string = spineColor) => {
                   const j1 = findJoint2D(from);
                   const j2 = findJoint2D(to);
                   if (j1 && j2 && j1.isTracked && j2.isTracked) {
@@ -2558,6 +2611,7 @@ export default function ScanARKitScreen() {
                     const y1 = j1.y;
                     const x2 = j2.x;
                     const y2 = j2.y;
+                    const opacity = lineOpacity(from, to);
 
                     return (
                       <Line
@@ -2569,7 +2623,7 @@ export default function ScanARKitScreen() {
                         stroke={color}
                         strokeWidth="0.004"
                         strokeLinecap="round"
-                        strokeOpacity={0.9}
+                        strokeOpacity={opacity}
                       />
                     );
                   }
@@ -2578,10 +2632,10 @@ export default function ScanARKitScreen() {
 
                 return (
                   <>
-                    {/* Spine */}
-                    {drawLine('hips_joint', 'spine_4_joint')}
-                    {drawLine('spine_4_joint', 'neck_1_joint')}
-                    {drawLine('neck_1_joint', 'head_joint')}
+                    {/* Spine — color shifts to amber in vertical tracking mode */}
+                    {drawLine('hips_joint', 'spine_4_joint', spineColor)}
+                    {drawLine('spine_4_joint', 'neck_1_joint', spineColor)}
+                    {drawLine('neck_1_joint', 'head_joint', spineColor)}
 
                     {/* Left arm */}
                     {drawLine('neck_1_joint', 'left_shoulder_1_joint', '#3CC8A9')}
@@ -2608,9 +2662,14 @@ export default function ScanARKitScreen() {
                 );
               })()}
 
-              {/* Draw joints */}
+              {/* Draw joints — opacity scales with confidence */}
               {smoothedPose2DJoints.map((joint: Joint2D, index: number) => {
                 if (!joint.isTracked) return null;
+                const conf = (joint as Joint2D & { confidence?: number }).confidence;
+                const opacity =
+                  typeof conf === 'number' && Number.isFinite(conf)
+                    ? Math.min(1.0, Math.max(0.3, 0.3 + (conf - 0.3) * (0.7 / 0.4)))
+                    : 0.9;
                 return (
                     <Circle
                       key={`joint-${index}-${joint.name}`}
@@ -2618,7 +2677,7 @@ export default function ScanARKitScreen() {
                       cy={joint.y}
                       r="0.006"
                       fill="#FFFFFF"
-                      opacity={0.9}
+                      opacity={opacity}
                     />
                 );
               })}
@@ -2725,6 +2784,23 @@ export default function ScanARKitScreen() {
             {baselineDebugEnabled && (
               <Text style={styles.statusSubtext}>
                 {`cueFlipRate=${(debugCueFlipRate * 100).toFixed(1)}% meanFrameLatency=${debugMeanFrameLatencyMs.toFixed(2)}ms buckets[<4:${baselineMetricsSnapshot.latencyBuckets.lt4} <8:${baselineMetricsSnapshot.latencyBuckets.lt8} <16:${baselineMetricsSnapshot.latencyBuckets.lt16} >=16:${baselineMetricsSnapshot.latencyBuckets.gte16}]`}
+              </Text>
+            )}
+            {isTracking && (
+              <Text style={styles.statusSubtext}>
+                {`TQ=${latestTrackingQualityRef.current.toFixed(2)} mode=${
+                  hybridDetectionState.isHybridActive
+                    ? hybridDetectionState.activeSource === 'both'
+                      ? 'Hybrid'
+                      : hybridDetectionState.activeSource === 'vertical'
+                        ? 'Vertical'
+                        : 'Angle'
+                    : 'Angle'
+                }${
+                  hybridDetectionState.verticalSignal
+                    ? ` vDelta=${hybridDetectionState.verticalSignal.peakToValleyDelta.toFixed(3)}`
+                    : ''
+                }`}
               </Text>
             )}
           </View>

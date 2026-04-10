@@ -1,7 +1,7 @@
 import type { CanonicalJoint2D } from '@/lib/pose/types';
 import { HOLD_FRAMES } from '@/lib/tracking-quality';
 import { OcclusionHoldManager } from '@/lib/tracking-quality/occlusion';
-import { PULLUP_CRITICAL_JOINTS, areRequiredJointsVisible } from '@/lib/tracking-quality/visibility';
+import { JointStabilityTracker, PULLUP_CRITICAL_JOINTS, areRequiredJointsVisible } from '@/lib/tracking-quality/visibility';
 
 function tracked(x: number, y: number, confidence: number): CanonicalJoint2D {
   return { x, y, isTracked: true, confidence };
@@ -9,6 +9,11 @@ function tracked(x: number, y: number, confidence: number): CanonicalJoint2D {
 
 function missing(x = 0, y = 0, confidence = 0): CanonicalJoint2D {
   return { x, y, isTracked: false, confidence };
+}
+
+/** ARKit-style joint: isTracked=true but no confidence field */
+function arkitJoint(x: number, y: number): CanonicalJoint2D {
+  return { x, y, isTracked: true };
 }
 
 describe('tracking-quality occlusion hold/decay', () => {
@@ -77,5 +82,201 @@ describe('tracking-quality occlusion hold/decay', () => {
     }
 
     expect(areRequiredJointsVisible(out, PULLUP_CRITICAL_JOINTS, 0.3)).toBe(false);
+  });
+});
+
+describe('soft occlusion detection', () => {
+  test('isSoftOccluded returns false when no stability tracker is set', () => {
+    const manager = new OcclusionHoldManager();
+    expect(manager.isSoftOccluded('left_elbow')).toBe(false);
+  });
+
+  test('joint becomes soft-occluded after consecutive low-confidence frames', () => {
+    const tracker = new JointStabilityTracker({ windowSize: 3, maxVariance: 0.005 });
+    const manager = new OcclusionHoldManager({
+      holdFrames: HOLD_FRAMES,
+      stabilityTracker: tracker,
+      softOcclusionThreshold: 0.3,
+      softOcclusionConsecFrames: 3,
+    });
+
+    const key = 'left_elbow';
+
+    // First: establish a good baseline with stable data
+    for (let i = 0; i < 4; i++) {
+      const frame = { [key]: arkitJoint(0.5 + i * 0.0001, 0.5) };
+      tracker.update(frame);
+      manager.update(frame);
+    }
+    expect(manager.isSoftOccluded(key)).toBe(false);
+
+    // Now: introduce jitter (large position jumps) that will drive variance up
+    for (let i = 0; i < 6; i++) {
+      const jitter = i % 2 === 0 ? 0.15 : -0.15;
+      const frame = { [key]: arkitJoint(0.5 + jitter, 0.5 + jitter) };
+      tracker.update(frame);
+      manager.update(frame);
+    }
+
+    // After enough jittery frames, the joint should be soft-occluded
+    expect(manager.isSoftOccluded(key)).toBe(true);
+  });
+
+  test('soft occlusion holds a position and decays confidence', () => {
+    const tracker = new JointStabilityTracker({ windowSize: 3, maxVariance: 0.005 });
+    const manager = new OcclusionHoldManager({
+      holdFrames: HOLD_FRAMES,
+      stabilityTracker: tracker,
+      softOcclusionThreshold: 0.3,
+      softOcclusionConsecFrames: 3,
+    });
+
+    const key = 'left_elbow';
+
+    // Establish good baseline
+    for (let i = 0; i < 4; i++) {
+      const frame = { [key]: arkitJoint(0.5 + i * 0.0001, 0.5) };
+      tracker.update(frame);
+      manager.update(frame);
+    }
+
+    // Introduce jitter — once soft occlusion triggers, position is held
+    const outputs: (CanonicalJoint2D | null | undefined)[] = [];
+    for (let i = 0; i < 6; i++) {
+      const jitter = i % 2 === 0 ? 0.15 : -0.15;
+      const frame = { [key]: arkitJoint(0.5 + jitter, 0.5 + jitter) };
+      tracker.update(frame);
+      const out = manager.update(frame);
+      outputs.push(out[key]);
+    }
+
+    expect(manager.isSoftOccluded(key)).toBe(true);
+
+    // Once occluded, the held output should have decaying confidence
+    const lastOutput = outputs[outputs.length - 1];
+    expect(lastOutput).toBeDefined();
+    expect(lastOutput!.isTracked).toBe(true);
+    expect(typeof lastOutput!.confidence).toBe('number');
+    // The held confidence should be lower than the original (decayed)
+    expect(lastOutput!.confidence!).toBeLessThan(0.9);
+  });
+
+  test('soft occlusion clears when confidence recovers', () => {
+    const tracker = new JointStabilityTracker({ windowSize: 3, maxVariance: 0.005 });
+    const manager = new OcclusionHoldManager({
+      holdFrames: HOLD_FRAMES,
+      stabilityTracker: tracker,
+      softOcclusionThreshold: 0.3,
+      softOcclusionConsecFrames: 3,
+    });
+
+    const key = 'left_elbow';
+
+    // Establish baseline
+    for (let i = 0; i < 4; i++) {
+      const frame = { [key]: arkitJoint(0.5 + i * 0.0001, 0.5) };
+      tracker.update(frame);
+      manager.update(frame);
+    }
+
+    // Make it jittery to trigger soft occlusion
+    for (let i = 0; i < 6; i++) {
+      const jitter = i % 2 === 0 ? 0.15 : -0.15;
+      const frame = { [key]: arkitJoint(0.5 + jitter, 0.5 + jitter) };
+      tracker.update(frame);
+      manager.update(frame);
+    }
+
+    // Now stabilize again
+    for (let i = 0; i < 6; i++) {
+      const frame = { [key]: arkitJoint(0.5 + i * 0.00001, 0.5) };
+      tracker.update(frame);
+      manager.update(frame);
+    }
+
+    // Should recover from soft occlusion
+    expect(manager.isSoftOccluded(key)).toBe(false);
+  });
+
+  test('soft occlusion does not apply to joints with native confidence', () => {
+    const tracker = new JointStabilityTracker({ windowSize: 3, maxVariance: 0.005 });
+    const manager = new OcclusionHoldManager({
+      holdFrames: HOLD_FRAMES,
+      stabilityTracker: tracker,
+      softOcclusionThreshold: 0.3,
+      softOcclusionConsecFrames: 3,
+    });
+
+    const key = 'left_elbow';
+
+    // Even with jitter in tracker, joints with native confidence pass through
+    for (let i = 0; i < 6; i++) {
+      const jitter = i % 2 === 0 ? 0.15 : -0.15;
+      const frame = { [key]: tracked(0.5 + jitter, 0.5 + jitter, 0.9) };
+      tracker.update(frame);
+      manager.update(frame);
+    }
+
+    // Should NOT be soft-occluded because the joint has native confidence
+    expect(manager.isSoftOccluded(key)).toBe(false);
+  });
+
+  test('setStabilityTracker enables soft occlusion after construction', () => {
+    const tracker = new JointStabilityTracker({ windowSize: 3, maxVariance: 0.005 });
+    const manager = new OcclusionHoldManager({
+      holdFrames: HOLD_FRAMES,
+      softOcclusionThreshold: 0.3,
+      softOcclusionConsecFrames: 3,
+    });
+
+    const key = 'left_elbow';
+
+    // No tracker initially — soft occlusion disabled
+    for (let i = 0; i < 4; i++) {
+      const frame = { [key]: arkitJoint(0.5 + i * 0.0001, 0.5) };
+      tracker.update(frame);
+      manager.update(frame);
+    }
+
+    // Set tracker after the fact
+    manager.setStabilityTracker(tracker);
+
+    // Now jitter should trigger soft occlusion
+    for (let i = 0; i < 6; i++) {
+      const jitter = i % 2 === 0 ? 0.15 : -0.15;
+      const frame = { [key]: arkitJoint(0.5 + jitter, 0.5 + jitter) };
+      tracker.update(frame);
+      manager.update(frame);
+    }
+
+    expect(manager.isSoftOccluded(key)).toBe(true);
+  });
+
+  test('reset clears soft occlusion state', () => {
+    const tracker = new JointStabilityTracker({ windowSize: 3, maxVariance: 0.005 });
+    const manager = new OcclusionHoldManager({
+      holdFrames: HOLD_FRAMES,
+      stabilityTracker: tracker,
+      softOcclusionThreshold: 0.3,
+      softOcclusionConsecFrames: 3,
+    });
+
+    const key = 'left_elbow';
+
+    // Build up soft occlusion
+    for (let i = 0; i < 4; i++) {
+      const frame = { [key]: arkitJoint(0.5 + i * 0.0001, 0.5) };
+      tracker.update(frame);
+      manager.update(frame);
+    }
+    for (let i = 0; i < 6; i++) {
+      const jitter = i % 2 === 0 ? 0.15 : -0.15;
+      const frame = { [key]: arkitJoint(0.5 + jitter, 0.5 + jitter) };
+      tracker.update(frame);
+      manager.update(frame);
+    }
+
+    manager.reset();
+    expect(manager.isSoftOccluded(key)).toBe(false);
   });
 });

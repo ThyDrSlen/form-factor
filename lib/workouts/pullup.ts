@@ -7,6 +7,20 @@
  * - Thresholds for elbow angles
  * - Fault detection conditions
  * - FQI calculation weights
+ *
+ * Threshold Inventory:
+ * - hang: 150°      — full arm extension (dead hang position)
+ * - engage: 130°    — arms start pulling (enter pull phase)
+ * - top: 85°        — chin over bar (top of movement)
+ * - release: 115°   — arms releasing back to hang (hysteresis gap from engage)
+ * - shoulderElevation: 120° — shoulder elevation warning
+ * - minDurationMs: 350     — minimum time between reps (allows fast athletic reps)
+ *
+ * Hysteresis gaps (release vs engage):
+ * - release (115°) is well below engage (130°), providing a 15° hysteresis
+ *   gap that prevents oscillation at the transition boundary.
+ * - The previous values (release: 140°, engage: 140°) had NO gap, which
+ *   caused the FSM to bounce between top and hang, blocking multi-rep counting.
  */
 
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
@@ -46,15 +60,18 @@ export interface PullUpMetrics extends WorkoutMetrics {
 export const PULLUP_THRESHOLDS = {
   /** Full arm extension (dead hang) */
   hang: 150,
-  // Increased for hysteresis - prevents bounce between hang and pull
-  /** Arms start engaging (beginning pull) */
-  engage: 140,
-  /** Top of movement (chin over bar) */
-  top: 85,
-  /** Arms releasing back to hang */
-  release: 140,
+  /** Arms start engaging (beginning pull) — 20° below hang for clear entry */
+  engage: 130,
+  /** Top of movement (chin over bar) — raised from 85 to 95 to count fatigued reps with reduced ROM */
+  top: 95,
+  /** Arms releasing back to hang — 15° below engage for hysteresis gap */
+  release: 115,
   /** Shoulder elevation warning threshold */
   shoulderElevation: 120,
+  /** Relaxed release for partial-extension users who never reach a full dead hang.
+   *  When the FSM entered pull directly from idle (bypassing hang), this lower threshold
+   *  lets top→hang fire so the cycle can repeat. */
+  partialRelease: 110,
 } as const;
 
 // =============================================================================
@@ -65,7 +82,7 @@ const angleRanges: Record<string, AngleRange> = {
   elbow: {
     min: 70,      // Tightest at top
     max: 170,     // Full extension
-    optimal: 80,  // Ideal top position
+    optimal: 90,  // Ideal top position (aligned with top threshold 95)
     tolerance: 15,
   },
   shoulder: {
@@ -163,11 +180,10 @@ const phases: PhaseDefinition<PullUpPhase>[] = [
 // Rep Boundary
 // =============================================================================
 
-// Increased debounce - reduces double-counting on fast bounces
 const repBoundary: RepBoundary<PullUpPhase> = {
   startPhase: 'pull',
   endPhase: 'top',
-  minDurationMs: 500,
+  minDurationMs: 350, // Allows fast athletic reps while preventing double-counts
 };
 
 // =============================================================================
@@ -191,9 +207,9 @@ const faults: FaultDefinition[] = [
     id: 'incomplete_extension',
     displayName: 'Incomplete Arm Extension',
     condition: (ctx: RepContext) => {
-      // Check if arms weren't fully extended at start
+      // Check if arms weren't fully extended at start (generous margin for limited ROM)
       const startElbow = (ctx.startAngles.leftElbow + ctx.startAngles.rightElbow) / 2;
-      return startElbow < PULLUP_THRESHOLDS.hang - 10;
+      return startElbow < PULLUP_THRESHOLDS.hang - 25;
     },
     severity: 1,
     dynamicCue: 'Fully extend your arms before the next rep.',
@@ -325,8 +341,15 @@ function getNextPhase(
       return 'pull';
 
     case 'top':
+      // Normal cycle: full extension back to dead hang
       if (avgElbow >= PULLUP_THRESHOLDS.release) {
         return 'hang';
+      }
+      // Partial-extension users who never reach full release: allow
+      // direct top→pull when elbow extends past partialRelease then
+      // drops back below engage. This lets them cycle without a dead hang.
+      if (avgElbow >= PULLUP_THRESHOLDS.partialRelease && avgElbow <= PULLUP_THRESHOLDS.engage) {
+        return 'pull';
       }
       return 'top';
 

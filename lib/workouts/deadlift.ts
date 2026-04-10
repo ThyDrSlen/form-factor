@@ -7,6 +7,19 @@
  * - Thresholds for hip and knee angles
  * - Fault detection conditions
  * - FQI calculation weights
+ *
+ * Threshold Inventory:
+ * - lockout: 165°      — fully standing (lockout position)
+ * - address: 120°      — start position at the bar (address)
+ * - bottom: 85°        — bottom position (bar at shins)
+ * - hipExtended: 170°  — hip angle indicating full extension
+ * - descentStart: 150° — starting to lower the bar
+ * - shoulderNeutral: 90° — shoulder angle for back position
+ * - minDurationMs: 600 — minimum time between reps
+ *
+ * Hysteresis gaps:
+ * - lockout (165°) vs descentStart (150°): 15° gap prevents bounce at top
+ * - address (120°) vs pull entry (>120°): clear directional entry
  */
 
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
@@ -52,8 +65,8 @@ export const DEADLIFT_THRESHOLDS = {
   bottom: 85,
   /** Hip angle indicating full extension */
   hipExtended: 170,
-  /** Starting to lower the bar */
-  descentStart: 155,
+  /** Starting to lower the bar — 15° below lockout for hysteresis gap */
+  descentStart: 150,
   /** Shoulder angle for back position */
   shoulderNeutral: 90,
 } as const;
@@ -174,7 +187,7 @@ const phases: PhaseDefinition<DeadliftPhase>[] = [
 const repBoundary: RepBoundary<DeadliftPhase> = {
   startPhase: 'pull',
   endPhase: 'lockout',
-  minDurationMs: 800,
+  minDurationMs: 600, // Deadlifts are inherently slower; 600ms allows fast touch-and-go
 };
 
 // =============================================================================

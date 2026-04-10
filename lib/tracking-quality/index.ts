@@ -132,3 +132,21 @@ export type {
   TrackingQualityConfig,
   TrackingQualityPipeline,
 } from './types';
+
+export type {
+  HybridRepDetectorSnapshot,
+  HybridRepDetectorStepInput,
+  HybridRepSource,
+  IHybridRepDetector,
+  IVerticalDisplacementTracker,
+} from './hybrid-types';
+
+export { HybridRepDetector } from './hybrid-rep-detector';
+export type {
+  HybridRepDetectorConfig,
+  HybridRepDetectorFrameInput,
+  HybridRepEvent,
+} from './hybrid-rep-detector';
+
+export { VerticalDisplacementTracker } from './vertical-displacement';
+export type { VerticalDisplacementConfig, VerticalSignal } from './vertical-displacement';

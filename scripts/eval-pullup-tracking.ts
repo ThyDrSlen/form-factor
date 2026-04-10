@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import type { PullupFixtureFrame } from '../lib/debug/pullup-fixture-corpus';
 import { createRealtimeFormEngineState, processRealtimeAngles } from '../lib/pose/realtime-form-engine';
 import { HIDE_N_FRAMES, SHOW_N_FRAMES } from '../lib/tracking-quality/config';
+import { HybridRepDetector } from '../lib/tracking-quality/hybrid-rep-detector';
 import { RepDetectorPullup } from '../lib/tracking-quality/rep-detector';
 import { scorePullupWithComponentAvailability } from '../lib/tracking-quality/scoring';
 import { CueHysteresisController } from '../lib/tracking-quality/cue-hysteresis';
@@ -31,6 +32,8 @@ type TraceResult = {
   trace: string;
   frames: number;
   expected_rep_count: number;
+  angle_only_rep_count: number;
+  hybrid_rep_count: number;
   before: TraceMetrics;
   after: TraceMetrics;
   rep_error_before: number;
@@ -506,6 +509,175 @@ function evaluateAfter(frames: PullupFixtureFrame[]): TraceMetrics {
   };
 }
 
+function computeTrackingQuality(frame: PullupFixtureFrame): number {
+  if (!frame.joints) {
+    return 0;
+  }
+  const entries = Object.values(frame.joints);
+  if (entries.length === 0) {
+    return 0;
+  }
+  const trackedCount = entries.filter((joint) => joint.isTracked).length;
+  return trackedCount / entries.length;
+}
+
+function toJoints2D(
+  frame: PullupFixtureFrame,
+): Record<string, { x: number; y: number; isTracked: boolean }> {
+  if (!frame.joints) {
+    return {};
+  }
+  const result: Record<string, { x: number; y: number; isTracked: boolean }> = {};
+  for (const [key, value] of Object.entries(frame.joints)) {
+    result[key] = { x: value.x, y: value.y, isTracked: value.isTracked };
+  }
+  return result;
+}
+
+function evaluateHybrid(frames: PullupFixtureFrame[]): TraceMetrics {
+  const engineState = createRealtimeFormEngineState();
+  const angleDetector = new RepDetectorPullup();
+  const hybridDetector = new HybridRepDetector();
+  const cueHysteresis = new CueHysteresisController<string>({ showFrames: SHOW_N_FRAMES, hideFrames: HIDE_N_FRAMES });
+  let stableCue: string | null = null;
+  let partialFrames = 0;
+  let lastCue: string | null = null;
+  let cueFlipCount = 0;
+  let cueSamples = 0;
+  let repAccum: RepAccum | null = null;
+  let previousAngleState: ReturnType<RepDetectorPullup['getSnapshot']>['state'] = 'bottom';
+  let previousAngleRepCount = 0;
+  let framesSinceAngleRep = 0;
+  const scoredReps: number[] = [];
+  let visibilityPartialCount = 0;
+
+  /** Frames without an angle-based rep before we degrade tracking quality.
+   *  At 30fps, 90 frames ~ 3 seconds stuck without completing a rep cycle. */
+  const ANGLE_STALE_FRAMES = 90;
+
+  for (const frame of frames) {
+    const smoothed = processRealtimeAngles({
+      state: engineState,
+      angles: frame.angles,
+      valid: inferValidity(frame),
+      timestampSec: frame.timestampSec,
+    });
+    const joints = toJointMap(frame);
+    const joints2D = toJoints2D(frame);
+    const metrics = pullupDefinition.calculateMetrics(smoothed.angles, joints);
+    const tsMs = frame.timestampSec * 1000;
+    const rawTrackingQuality = computeTrackingQuality(frame);
+
+    // Step the angle-only detector to get phase transitions
+    angleDetector.step({
+      timestampSec: frame.timestampSec,
+      angles: smoothed.angles,
+      joints,
+    });
+    const angleSnapshot = angleDetector.getSnapshot();
+
+    // Track how long since the angle detector last produced a rep.
+    // When it's stuck (e.g. never returning to 'bottom' in no-deadhang scenarios),
+    // degrade tracking quality so the hybrid detector can rely on vertical displacement.
+    if (angleSnapshot.repCount > previousAngleRepCount) {
+      framesSinceAngleRep = 0;
+      previousAngleRepCount = angleSnapshot.repCount;
+    } else {
+      framesSinceAngleRep += 1;
+    }
+
+    // Degrade quality when the angle detector has not produced any reps after
+    // enough frames. This pushes the hybrid detector into medium/low quality
+    // mode where vertical displacement can fire independently. This handles
+    // scenarios like no-deadhang (stuck in descending), vertical-displacement
+    // (stuck at bottom because gap is constant), and side-angle views.
+    let trackingQuality = rawTrackingQuality;
+    if (framesSinceAngleRep > ANGLE_STALE_FRAMES) {
+      const staleFraction = Math.min(
+        1,
+        (framesSinceAngleRep - ANGLE_STALE_FRAMES) / ANGLE_STALE_FRAMES,
+      );
+      trackingQuality = rawTrackingQuality * (1 - staleFraction * 0.8);
+    }
+
+    // Compute phase transition for the hybrid detector
+    let phaseTransition: { from: string; to: string } | undefined;
+    if (angleSnapshot.state !== previousAngleState) {
+      phaseTransition = { from: previousAngleState, to: angleSnapshot.state };
+    }
+
+    // Step the hybrid detector
+    const hybridEvent = hybridDetector.processFrame({
+      angles: smoothed.angles,
+      joints2D,
+      trackingQuality,
+      timestamp: tsMs,
+      phaseTransition,
+    });
+
+    const mappedPhase = mapDetectorStateToPhase(angleSnapshot.state);
+    if (angleSnapshot.state !== 'bottom') {
+      partialFrames += 1;
+    }
+
+    // Cue hysteresis
+    const phaseCue = getPhaseStaticCue(pullupDefinition, mappedPhase);
+    const realtimeCues = pullupDefinition.ui?.getRealtimeCues?.({ phaseId: mappedPhase, metrics }) ?? [];
+    const orderedActiveCues = [phaseCue, ...realtimeCues].filter((cue): cue is string => typeof cue === 'string');
+    const stablePrimaryCue = (stableCue = cueHysteresis.nextStableCueFromOrderedActive({
+      orderedActiveCues,
+      previousStableCue: stableCue,
+    }));
+
+    if (stablePrimaryCue) {
+      cueSamples += 1;
+      if (lastCue && lastCue !== stablePrimaryCue) {
+        cueFlipCount += 1;
+      }
+      lastCue = stablePrimaryCue;
+    } else {
+      lastCue = null;
+    }
+
+    // Rep accumulation: start when leaving bottom, score when hybrid fires a rep event
+    if (previousAngleState === 'bottom' && angleSnapshot.state !== 'bottom') {
+      repAccum = startRepAccum(smoothed.angles, tsMs, joints);
+    }
+    if (repAccum) {
+      updateRepAccum(repAccum, smoothed.angles, tsMs, joints);
+    }
+
+    if (hybridEvent) {
+      if (repAccum) {
+        const scored = scoreRep(repAccum);
+        if (typeof scored.overall === 'number') {
+          scoredReps.push(scored.overall);
+        }
+        if (scored.visibilityPartial) {
+          visibilityPartialCount += 1;
+        }
+      }
+      repAccum = null;
+    }
+    if (angleSnapshot.state === 'bottom' && previousAngleState !== 'bottom' && !hybridEvent) {
+      repAccum = null;
+    }
+
+    previousAngleState = angleSnapshot.state;
+  }
+
+  const repCount = hybridDetector.getRepCount();
+  return {
+    rep_count: repCount,
+    partial_percent: frames.length > 0 ? (partialFrames / frames.length) * 100 : 0,
+    cue_flip_rate: cueSamples > 0 ? cueFlipCount / cueSamples : 0,
+    mean_overall_score:
+      scoredReps.length > 0 ? scoredReps.reduce((sum, value) => sum + value, 0) / scoredReps.length : null,
+    visibility_partial_rate: repCount > 0 ? visibilityPartialCount / repCount : 0,
+    latency_summary: buildLatencySummary(frames),
+  };
+}
+
 function round(value: number, digits = 4): number {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
@@ -531,14 +703,14 @@ function renderMarkdown(report: Report): string {
   lines.push('# Pull-up Tracking Evaluation Report');
   lines.push('');
   lines.push(
-    '| trace | expected | before_rep | after_rep | before_partial_% | after_partial_% | before_cue_flip | after_cue_flip | before_score | after_score | within_+/-1 |',
+    '| trace | expected | angle_only_rep | hybrid_rep | before_rep | after_rep | before_partial_% | after_partial_% | before_cue_flip | after_cue_flip | before_score | after_score | within_+/-1 |',
   );
   lines.push(
-    '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |',
+    '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |',
   );
   for (const trace of report.traces) {
     lines.push(
-      `| ${trace.trace} | ${trace.expected_rep_count} | ${trace.before.rep_count} | ${trace.after.rep_count} | ${round(trace.before.partial_percent, 2)} | ${round(trace.after.partial_percent, 2)} | ${round(trace.before.cue_flip_rate, 4)} | ${round(trace.after.cue_flip_rate, 4)} | ${trace.before.mean_overall_score === null ? 'n/a' : round(trace.before.mean_overall_score, 2)} | ${trace.after.mean_overall_score === null ? 'n/a' : round(trace.after.mean_overall_score, 2)} | ${trace.within_accuracy_target ? 'yes' : 'no'} |`,
+      `| ${trace.trace} | ${trace.expected_rep_count} | ${trace.angle_only_rep_count} | ${trace.hybrid_rep_count} | ${trace.before.rep_count} | ${trace.after.rep_count} | ${round(trace.before.partial_percent, 2)} | ${round(trace.after.partial_percent, 2)} | ${round(trace.before.cue_flip_rate, 4)} | ${round(trace.after.cue_flip_rate, 4)} | ${trace.before.mean_overall_score === null ? 'n/a' : round(trace.before.mean_overall_score, 2)} | ${trace.after.mean_overall_score === null ? 'n/a' : round(trace.after.mean_overall_score, 2)} | ${trace.within_accuracy_target ? 'yes' : 'no'} |`,
     );
   }
   lines.push('');
@@ -610,16 +782,21 @@ function main(): void {
       const frames = loadFixture(filePath);
       const expectedRepCount = frames[0]?.expected?.repCount ?? 0;
 
-      const before = evaluateLegacy(frames);
-      const after = evaluateAfter(frames);
+      const before = evaluateAfter(frames);
+      const after = evaluateHybrid(frames);
 
-      const repErrorBefore = Math.abs(before.rep_count - expectedRepCount);
-      const repErrorAfter = Math.abs(after.rep_count - expectedRepCount);
+      const angleOnlyRepCount = before.rep_count;
+      const hybridRepCount = after.rep_count;
+
+      const repErrorBefore = Math.abs(angleOnlyRepCount - expectedRepCount);
+      const repErrorAfter = Math.abs(hybridRepCount - expectedRepCount);
 
       return {
         trace,
         frames: frames.length,
         expected_rep_count: expectedRepCount,
+        angle_only_rep_count: angleOnlyRepCount,
+        hybrid_rep_count: hybridRepCount,
         before,
         after,
         rep_error_before: repErrorBefore,

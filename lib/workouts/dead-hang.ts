@@ -10,6 +10,17 @@
  * Note: Dead hang is primarily a static hold. We model a “rep” as one hold
  * from establishing a hang to releasing it so we can reuse the existing
  * rep/FQI logging pipeline.
+ *
+ * Threshold Inventory:
+ * - elbowExtended: 150°    — full arm extension (dead hang)
+ * - handsAboveHead: 0.08   — hands sufficiently above head (normalized Y)
+ * - handsReleased: 0.03    — hands no longer above head (normalized Y)
+ * - shoulderElevation: 115° — shoulder elevation warning
+ * - minHoldMs: 1500        — minimum hold duration to count as a rep
+ * - minDurationMs: 800     — debounce between holds
+ *
+ * Note: Dead hang is a static hold so phase transition hysteresis is
+ * primarily managed by the handsAboveHead/handsReleased gap (0.08 vs 0.03).
  */
 
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';

@@ -7,6 +7,20 @@
  * - Thresholds for knee and hip angles
  * - Fault detection conditions
  * - FQI calculation weights
+ *
+ * Threshold Inventory:
+ * - standing: 160°     — standing position (nearly straight legs)
+ * - descentStart: 140° — begin counting a descent (enter descent phase)
+ * - parallel: 95°      — parallel depth (hip crease at or below knee)
+ * - deep: 80°          — deep squat (below parallel)
+ * - ascent: 110°       — on the way up, transitioning to ascent
+ * - finish: 155°       — completed rep (back to standing)
+ * - kneeValgusMax: 25° — maximum knee cave angle difference
+ * - minDurationMs: 450 — minimum time between reps (allows explosive squats)
+ *
+ * Hysteresis gaps:
+ * - descentStart (140°) vs finish (155°): 15° gap prevents bounce at top
+ * - parallel (95°) vs ascent (110°): 15° gap prevents bounce at bottom
  */
 
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
@@ -45,15 +59,15 @@ export interface SquatMetrics extends WorkoutMetrics {
 export const SQUAT_THRESHOLDS = {
   /** Standing position (nearly straight legs) */
   standing: 160,
-  /** Begin counting a descent */
-  descentStart: 145,
+  /** Begin counting a descent — 20° below standing for clear entry */
+  descentStart: 140,
   /** Parallel depth (hip crease at or below knee) */
   parallel: 95,
   /** Deep squat (below parallel) */
   deep: 80,
   /** On the way up, transitioning to ascent */
   ascent: 110,
-  /** Completed rep (back to standing) */
+  /** Completed rep — 5° below standing for hysteresis vs descentStart */
   finish: 155,
   /** Maximum knee cave (valgus) angle difference */
   kneeValgusMax: 25,
@@ -175,7 +189,7 @@ const phases: PhaseDefinition<SquatPhase>[] = [
 const repBoundary: RepBoundary<SquatPhase> = {
   startPhase: 'descent',
   endPhase: 'standing',
-  minDurationMs: 600,
+  minDurationMs: 450, // Allows explosive squats while preventing double-counts
 };
 
 // =============================================================================

@@ -10,6 +10,18 @@
  *
  * Unlike other exercises, farmers walk is about maintaining proper
  * posture while moving, not about range of motion.
+ *
+ * Threshold Inventory:
+ * - standingHip: 165°         — standing tall with weights (good posture)
+ * - hingeHip: 120°            — pickup/set down position (hip hinge)
+ * - shoulderNeutral: 95°      — shoulders back and down
+ * - shoulderAsymmetryMax: 15° — maximum acceptable shoulder asymmetry
+ * - hipAsymmetryMax: 15°      — maximum acceptable hip asymmetry
+ * - shoulderElevated: 75°     — shoulder elevation warning (shrugging)
+ * - minDurationMs: 3000       — farmers walks should be at least 3 seconds
+ *
+ * Hysteresis gaps:
+ * - standingHip (165°) vs hingeHip (120°): 45° gap (inherent in movement)
  */
 
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';

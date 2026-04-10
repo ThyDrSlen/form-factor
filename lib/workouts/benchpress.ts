@@ -7,6 +7,19 @@
  * - Thresholds for elbow angles and shoulder position
  * - Fault detection conditions
  * - FQI calculation weights
+ *
+ * Threshold Inventory:
+ * - readyElbow: 155°   — arms locked out at the top
+ * - loweringStart: 135° — begin counting a descent
+ * - bottom: 90°         — bottom position (bar near chest)
+ * - press: 120°         — on the way up, transitioning to press
+ * - finish: 150°        — completed press (back to lockout)
+ * - elbowFlareShoulderMax: 120° — shoulder angle above this = elbow flare
+ * - minDurationMs: 350  — minimum time between reps
+ *
+ * Hysteresis gaps:
+ * - loweringStart (135°) vs finish (150°): 15° gap prevents bounce at lockout
+ * - bottom (90°) vs press (120°): 30° gap prevents bounce at bottom
  */
 
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
@@ -46,14 +59,14 @@ export interface BenchPressMetrics extends WorkoutMetrics {
 export const BENCHPRESS_THRESHOLDS = {
   /** Arms nearly locked out at the top */
   readyElbow: 155,
-  /** Begin counting a descent */
-  loweringStart: 140,
+  /** Begin counting a descent — 20° below ready for clear entry */
+  loweringStart: 135,
   /** Bottom position (bar near chest) */
   bottom: 90,
   /** On the way up, transitioning to press */
   press: 120,
-  /** Completed press (back to lockout) */
-  finish: 155,
+  /** Completed press — 5° below ready for hysteresis vs loweringStart */
+  finish: 150,
   /** Shoulder angle above this is treated as elbow flare */
   elbowFlareShoulderMax: 120,
 } as const;
@@ -174,7 +187,7 @@ const phases: PhaseDefinition<BenchPressPhase>[] = [
 const repBoundary: RepBoundary<BenchPressPhase> = {
   startPhase: 'lowering',
   endPhase: 'lockout',
-  minDurationMs: 400,
+  minDurationMs: 350, // Allows fast athletic reps while preventing double-counts
 };
 
 // =============================================================================

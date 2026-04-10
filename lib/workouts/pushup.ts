@@ -7,6 +7,19 @@
  * - Thresholds for elbow angles and hip stability
  * - Fault detection conditions
  * - FQI calculation weights
+ *
+ * Threshold Inventory:
+ * - readyElbow: 155°   — arms locked out (plank/top position)
+ * - loweringStart: 135° — begin counting a descent (enter lowering phase)
+ * - bottom: 90°         — bottom position (elbows at ~90°)
+ * - press: 120°         — on the way up, transitioning to press
+ * - finish: 150°        — completed press (back to lockout)
+ * - hipSagMax: 0.18     — maximum allowed hip drop ratio
+ * - minDurationMs: 350  — minimum time between reps (allows fast athletic reps)
+ *
+ * Hysteresis gaps:
+ * - loweringStart (135°) vs finish (150°): 15° gap prevents bounce at lockout
+ * - bottom (90°) vs press (120°): 30° gap prevents bounce at bottom
  */
 
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
@@ -46,14 +59,14 @@ export interface PushUpMetrics extends WorkoutMetrics {
 export const PUSHUP_THRESHOLDS = {
   /** Arms nearly locked out (plank position) */
   readyElbow: 155,
-  /** Begin counting a descent */
-  loweringStart: 140,
+  /** Begin counting a descent — 20° below ready for clear entry */
+  loweringStart: 135,
   /** Bottom position (elbows at ~90°) */
   bottom: 90,
   /** On the way up, transitioning to press */
   press: 120,
-  /** Completed press (back to lockout) */
-  finish: 155,
+  /** Completed press — 5° below ready for hysteresis vs loweringStart */
+  finish: 150,
   /** Maximum allowed hip drop ratio vs shoulders */
   hipSagMax: 0.18,
 } as const;
@@ -174,7 +187,7 @@ const phases: PhaseDefinition<PushUpPhase>[] = [
 const repBoundary: RepBoundary<PushUpPhase> = {
   startPhase: 'lowering',
   endPhase: 'plank', // Rep completes when returning to plank after press
-  minDurationMs: 400, // Debounce to prevent double-counting
+  minDurationMs: 350, // Allows fast athletic reps while preventing double-counts
 };
 
 // =============================================================================

@@ -5,6 +5,8 @@ import { getPhaseStaticCue } from '../lib/workouts/helpers';
 import { createRealtimeFormEngineState, processRealtimeAngles } from '../lib/pose/realtime-form-engine';
 import { CueHysteresisController } from '../lib/tracking-quality/cue-hysteresis';
 import { HIDE_N_FRAMES, SHOW_N_FRAMES } from '../lib/tracking-quality/config';
+import { HybridRepDetector } from '../lib/tracking-quality/hybrid-rep-detector';
+import { RepDetectorPullup } from '../lib/tracking-quality/rep-detector';
 import type { PullupFixtureFrame } from '../lib/debug/pullup-fixture-corpus';
 import type { PullUpPhase } from '../lib/workouts/pullup';
 
@@ -18,6 +20,8 @@ type TraceBaseline = {
   frames: number;
   expected_rep_count: number;
   rep_count: number;
+  angle_only_rep_count: number;
+  hybrid_rep_count: number;
   partial_frame_percent: number;
   cue_flip_rate: number;
   cue_flip_rate_frame_raw: number;
@@ -61,6 +65,31 @@ function inferValidity(frame: PullupFixtureFrame): Record<keyof PullupFixtureFra
   };
 }
 
+function computeTrackingQuality(frame: PullupFixtureFrame): number {
+  if (!frame.joints) {
+    return 0;
+  }
+  const entries = Object.values(frame.joints);
+  if (entries.length === 0) {
+    return 0;
+  }
+  const trackedCount = entries.filter((joint) => joint.isTracked).length;
+  return trackedCount / entries.length;
+}
+
+function toJoints2D(
+  frame: PullupFixtureFrame,
+): Record<string, { x: number; y: number; isTracked: boolean }> {
+  if (!frame.joints) {
+    return {};
+  }
+  const result: Record<string, { x: number; y: number; isTracked: boolean }> = {};
+  for (const [key, value] of Object.entries(frame.joints)) {
+    result[key] = { x: value.x, y: value.y, isTracked: value.isTracked };
+  }
+  return result;
+}
+
 function evaluateTrace(traceName: string, frames: PullupFixtureFrame[], options: { hysteresis: boolean }): TraceBaseline {
   const expectedRepCount = frames[0]?.expected?.repCount ?? 0;
   const engineState = createRealtimeFormEngineState();
@@ -84,6 +113,19 @@ function evaluateTrace(traceName: string, frames: PullupFixtureFrame[], options:
     : null;
   let stableCue: string | null = null;
 
+  // Angle-only detector (RepDetectorPullup)
+  const angleDetector = new RepDetectorPullup();
+  let previousAngleState: ReturnType<RepDetectorPullup['getSnapshot']>['state'] = 'bottom';
+  let previousAngleRepCount = 0;
+  let framesSinceAngleRep = 0;
+
+  // Hybrid detector
+  const hybridDetector = new HybridRepDetector();
+
+  /** Frames without an angle-based rep before we degrade tracking quality.
+   *  At 30fps, 90 frames ~ 3 seconds stuck without completing a rep cycle. */
+  const ANGLE_STALE_FRAMES = 90;
+
   for (const frame of frames) {
     const frameStartNs = process.hrtime.bigint();
 
@@ -102,8 +144,20 @@ function evaluateTrace(traceName: string, frames: PullupFixtureFrame[], options:
           ]),
         )
       : undefined;
+    // Joints with confidence for the angle-only and hybrid detectors
+    const jointsWithConfidence = frame.joints
+      ? new Map(
+          Object.entries(frame.joints).map(([key, value]) => [
+            key,
+            { x: value.x, y: value.y, isTracked: value.isTracked, confidence: value.confidence },
+          ]),
+        )
+      : undefined;
+    const joints2D = toJoints2D(frame);
     const metrics = pullupDefinition.calculateMetrics(smoothed.angles, joints);
     const nextPhase = pullupDefinition.getNextPhase(phase, smoothed.angles, metrics);
+    const tsMs = frame.timestampSec * 1000;
+    const rawTrackingQuality = computeTrackingQuality(frame);
 
     if (nextPhase === 'pull') {
       partialFrames += 1;
@@ -111,7 +165,6 @@ function evaluateTrace(traceName: string, frames: PullupFixtureFrame[], options:
 
     if (nextPhase !== phase) {
       if (nextPhase === pullupDefinition.repBoundary.endPhase && phase !== pullupDefinition.initialPhase) {
-        const tsMs = frame.timestampSec * 1000;
         if (tsMs - lastRepTimestampMs > pullupDefinition.repBoundary.minDurationMs) {
           repCount += 1;
           lastRepTimestampMs = tsMs;
@@ -119,6 +172,53 @@ function evaluateTrace(traceName: string, frames: PullupFixtureFrame[], options:
       }
       phase = nextPhase;
     }
+
+    // Step angle-only detector (uses confidence-aware joints for consistent results with eval script)
+    angleDetector.step({
+      timestampSec: frame.timestampSec,
+      angles: smoothed.angles,
+      joints: jointsWithConfidence,
+    });
+    const angleSnapshot = angleDetector.getSnapshot();
+
+    // Track how long since the angle detector last produced a rep.
+    if (angleSnapshot.repCount > previousAngleRepCount) {
+      framesSinceAngleRep = 0;
+      previousAngleRepCount = angleSnapshot.repCount;
+    } else {
+      framesSinceAngleRep += 1;
+    }
+
+    // Degrade quality when the angle detector has not produced any reps after
+    // enough frames. This pushes the hybrid detector into medium/low quality
+    // mode where vertical displacement can fire independently. This handles
+    // scenarios like no-deadhang (stuck in descending), vertical-displacement
+    // (stuck at bottom because gap is constant), and side-angle views.
+    let trackingQuality = rawTrackingQuality;
+    if (framesSinceAngleRep > ANGLE_STALE_FRAMES) {
+      const staleFraction = Math.min(
+        1,
+        (framesSinceAngleRep - ANGLE_STALE_FRAMES) / ANGLE_STALE_FRAMES,
+      );
+      trackingQuality = rawTrackingQuality * (1 - staleFraction * 0.8);
+    }
+
+    // Compute phase transition for the hybrid detector
+    let phaseTransition: { from: string; to: string } | undefined;
+    if (angleSnapshot.state !== previousAngleState) {
+      phaseTransition = { from: previousAngleState, to: angleSnapshot.state };
+    }
+
+    // Step hybrid detector
+    hybridDetector.processFrame({
+      angles: smoothed.angles,
+      joints2D,
+      trackingQuality,
+      timestamp: tsMs,
+      phaseTransition,
+    });
+
+    previousAngleState = angleSnapshot.state;
 
     const phaseCue = getPhaseStaticCue(pullupDefinition, phase);
     const realtimeCues = pullupDefinition.ui?.getRealtimeCues?.({ phaseId: phase, metrics });
@@ -181,6 +281,8 @@ function evaluateTrace(traceName: string, frames: PullupFixtureFrame[], options:
     frames: frameCount,
     expected_rep_count: expectedRepCount,
     rep_count: repCount,
+    angle_only_rep_count: angleDetector.getSnapshot().repCount,
+    hybrid_rep_count: hybridDetector.getRepCount(),
     partial_frame_percent: frameCount > 0 ? (partialFrames / frameCount) * 100 : 0,
     cue_flip_rate: cueSamples > 0 ? cueFlipCount / cueSamples : 0,
     cue_flip_rate_frame_raw: frameFlipDenom > 0 ? frameFlipCountRaw / frameFlipDenom : 0,

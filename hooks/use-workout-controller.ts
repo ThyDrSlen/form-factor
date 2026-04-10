@@ -24,6 +24,50 @@ import {
   type PullupScoringInput,
   type PullupScoringResult,
 } from '@/lib/tracking-quality/scoring';
+import type {
+  HybridRepEvent,
+  HybridRepSource,
+  IHybridRepDetector,
+  IVerticalDisplacementTracker,
+  VerticalSignal,
+} from '@/lib/tracking-quality/hybrid-types';
+
+// ---------------------------------------------------------------------------
+// Hybrid detection lazy loader — gracefully degrades if the modules
+// built by Agent 2 are not yet merged.
+// ---------------------------------------------------------------------------
+
+let _HybridRepDetector: (new () => IHybridRepDetector) | null = null;
+let _VerticalDisplacementTracker: (new () => IVerticalDisplacementTracker) | null = null;
+let _hybridModulesResolved = false;
+
+function resolveHybridModules(): boolean {
+  if (_hybridModulesResolved) return _HybridRepDetector !== null;
+  _hybridModulesResolved = true;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const hybridMod = require('@/lib/tracking-quality/hybrid-rep-detector');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const vertMod = require('@/lib/tracking-quality/vertical-displacement');
+    _HybridRepDetector = hybridMod?.HybridRepDetector ?? null;
+    _VerticalDisplacementTracker = vertMod?.VerticalDisplacementTracker ?? null;
+  } catch {
+    // Modules not available yet — fall back to angle-only detection
+    _HybridRepDetector = null;
+    _VerticalDisplacementTracker = null;
+  }
+  return _HybridRepDetector !== null;
+}
+
+/** State exposed from the hybrid detection system for UI consumers. */
+export interface HybridDetectionState {
+  /** Currently active detection source. */
+  activeSource: HybridRepSource;
+  /** Latest vertical displacement signal, if available. */
+  verticalSignal: VerticalSignal | null;
+  /** Whether hybrid detection is actually active (modules loaded). */
+  isHybridActive: boolean;
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -120,6 +164,13 @@ export interface UseWorkoutControllerOptions {
   callbacks?: WorkoutControllerCallbacks;
   /** Enable haptic feedback on rep completion */
   enableHaptics?: boolean;
+  /**
+   * When true (the default), the controller will attempt to use the
+   * hybrid rep detection system (vertical displacement + angle fusion).
+   * Falls back to angle-only detection if the hybrid modules are not
+   * available.
+   */
+  useHybridDetection?: boolean;
 }
 
 export interface ResetWorkoutOptions {
@@ -143,6 +194,8 @@ export interface UseWorkoutControllerReturn<TPhase extends string = string> {
   getWorkoutDefinition: () => WorkoutDefinition | undefined;
   /** Add a cue to the current rep's tracking data */
   addRepCue: (cueType: string) => void;
+  /** Hybrid detection state for UI consumers (debug panel, overlay). */
+  hybridDetectionState: HybridDetectionState;
 }
 
 // =============================================================================
@@ -153,7 +206,17 @@ export function useWorkoutController<TPhase extends string = string>(
   initialWorkoutId: DetectionMode,
   options: UseWorkoutControllerOptions
 ): UseWorkoutControllerReturn<TPhase> {
-  const { sessionId, callbacks, enableHaptics = true } = options;
+  const { sessionId, callbacks, enableHaptics = true, useHybridDetection = true } = options;
+
+  // Hybrid detection refs — initialised lazily on first frame
+  const hybridDetectorRef = useRef<IHybridRepDetector | null>(null);
+  const verticalTrackerRef = useRef<IVerticalDisplacementTracker | null>(null);
+  const hybridInitialisedRef = useRef(false);
+  const [hybridDetectionState, setHybridDetectionState] = useState<HybridDetectionState>({
+    activeSource: 'angle',
+    verticalSignal: null,
+    isHybridActive: false,
+  });
 
   // Current workout definition
   const workoutIdRef = useRef<DetectionMode>(initialWorkoutId);
@@ -398,6 +461,54 @@ export function useWorkoutController<TPhase extends string = string>(
       const workoutDef = workoutDefRef.current;
       if (!workoutDef) return;
 
+      // ------------------------------------------------------------------
+      // Lazy-init hybrid detection modules (once)
+      // ------------------------------------------------------------------
+      if (useHybridDetection && !hybridInitialisedRef.current) {
+        hybridInitialisedRef.current = true;
+        const available = resolveHybridModules();
+        if (available && _HybridRepDetector && _VerticalDisplacementTracker) {
+          hybridDetectorRef.current = new _HybridRepDetector();
+          verticalTrackerRef.current = new _VerticalDisplacementTracker();
+          setHybridDetectionState((prev) => ({ ...prev, isHybridActive: true }));
+          if (__DEV__) {
+            logWithTs('[WorkoutController] Hybrid detection modules loaded');
+          }
+        } else if (__DEV__) {
+          logWithTs('[WorkoutController] Hybrid detection modules not available, using angle-only');
+        }
+      }
+
+      // ------------------------------------------------------------------
+      // Feed hybrid detector (runs in parallel with angle-based FSM)
+      // ------------------------------------------------------------------
+      const hybridDetector = hybridDetectorRef.current;
+      const verticalTracker = verticalTrackerRef.current;
+      let hybridRepEvent: HybridRepEvent | null = null;
+
+      if (hybridDetector && joints) {
+        // Update vertical tracker first so the hybrid detector can consume
+        // its signal on the same frame.
+        if (verticalTracker) {
+          verticalTracker.update(joints, Date.now() / 1000);
+        }
+
+        hybridRepEvent = hybridDetector.step({
+          timestampSec: Date.now() / 1000,
+          angles,
+          joints2D: joints,
+          trackingQuality: context?.trackingQuality ?? 1.0,
+        });
+
+        // Publish snapshot for UI
+        const snap = hybridDetector.getSnapshot();
+        setHybridDetectionState({
+          activeSource: snap.activeSource,
+          verticalSignal: snap.verticalSignal,
+          isHybridActive: true,
+        });
+      }
+
       // Calculate metrics using the workout's calculator
       const metrics = workoutDef.calculateMetrics(angles, joints);
 
@@ -518,8 +629,48 @@ export function useWorkoutController<TPhase extends string = string>(
         // Throttle state updates for metrics (every ~80ms)
         // This is handled by the component using this hook
       }
+
+      // ------------------------------------------------------------------
+      // Hybrid rep event override — if the hybrid detector fired a rep
+      // that the angle-only FSM did not catch, count it here.
+      // ------------------------------------------------------------------
+      if (hybridRepEvent && hybridRepEvent.repNumber > repCountRef.current) {
+        const now = Date.now();
+        const minDuration = computeAdaptiveRepDurationMs({
+          baseMinDurationMs: workoutDef.repBoundary.minDurationMs,
+          recentRepDurationsMs: recentRepDurationsRef.current,
+          trackingQuality: combineTrackingQuality(context?.trackingQuality, context?.shadowMeanAbsDelta),
+        });
+
+        if (now - lastRepTimestampRef.current > minDuration) {
+          lastRepTimestampRef.current = now;
+          repCountRef.current = hybridRepEvent.repNumber;
+          const newRepCount = repCountRef.current;
+
+          isInActiveRepRef.current = false;
+
+          if (enableHaptics && Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+          }
+
+          completeRepTracking(workoutDef.id, newRepCount, angles);
+
+          setState((prev) => ({
+            ...prev,
+            repCount: newRepCount,
+            metrics,
+            isActive: true,
+          }));
+
+          if (__DEV__) {
+            logWithTs(
+              `[WorkoutController] Hybrid rep detected: #${newRepCount} source=${hybridRepEvent.source} confidence=${hybridRepEvent.confidence.toFixed(2)}`
+            );
+          }
+        }
+      }
     },
-    [callbacks, enableHaptics, startRepTracking, updateRepAngles, completeRepTracking, emitFramePullupScoring]
+    [callbacks, enableHaptics, startRepTracking, updateRepAngles, completeRepTracking, emitFramePullupScoring, useHybridDetection]
   );
 
   // =============================================================================
@@ -549,6 +700,15 @@ export function useWorkoutController<TPhase extends string = string>(
       cues: [],
       lastJoints: null,
     };
+
+    // Reset hybrid detectors
+    hybridDetectorRef.current?.reset();
+    verticalTrackerRef.current?.reset();
+    setHybridDetectionState({
+      activeSource: 'angle',
+      verticalSignal: null,
+      isHybridActive: hybridDetectorRef.current !== null,
+    });
 
     setState({
       phase: initialPhase,
@@ -586,6 +746,7 @@ export function useWorkoutController<TPhase extends string = string>(
     setWorkout,
     getWorkoutDefinition,
     addRepCue,
+    hybridDetectionState,
   };
 }
 

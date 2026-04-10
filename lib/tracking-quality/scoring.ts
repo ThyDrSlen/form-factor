@@ -2,6 +2,7 @@ import type { CanonicalJoint2D, CanonicalJointMap } from '@/lib/pose/types';
 import { CONFIDENCE_TIER_THRESHOLDS } from './config';
 import {
   getVisibilityTier,
+  JointStabilityTracker,
   type RequiredJointSpec,
   type VisibilityTier,
   PULLUP_CRITICAL_JOINTS,
@@ -369,3 +370,66 @@ export function scorePullupWithComponentAvailability(input: PullupScoringInput):
     suppression_reason: overall.suppression_reason,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Tracking quality aggregation — computes a single 0-1 quality score for the
+// current frame based on stability-derived synthetic confidence.
+// ---------------------------------------------------------------------------
+
+export type CriticalJointWeight = {
+  jointName: string;
+  weight: number;
+};
+
+/**
+ * Compute a single 0-1 tracking quality score for the current frame.
+ *
+ * @param joints      Current frame joints (used to check isTracked)
+ * @param stabilityTracker  The stability tracker that provides synthetic confidence
+ * @param criticalJoints    Weighted list of joints critical for the current exercise
+ * @returns 0-1 quality score (0 = no usable data, 1 = all critical joints high-confidence)
+ */
+export function computeTrackingQuality(
+  joints: CanonicalJointMap | Record<string, CanonicalJoint2D | null | undefined> | null,
+  stabilityTracker: JointStabilityTracker,
+  criticalJoints: CriticalJointWeight[],
+): number {
+  if (!joints || criticalJoints.length === 0) return 0;
+
+  let weightedSum = 0;
+  let totalWeight = 0;
+
+  for (const { jointName, weight } of criticalJoints) {
+    const joint: CanonicalJoint2D | null | undefined =
+      joints instanceof Map ? joints.get(jointName) : joints[jointName];
+
+    // Joint not tracked at all — contributes 0
+    if (!joint || !joint.isTracked) {
+      totalWeight += weight;
+      continue;
+    }
+
+    // Prefer native confidence (MediaPipe), fall back to synthetic
+    let confidence: number;
+    if (typeof joint.confidence === 'number') {
+      confidence = clamp01(joint.confidence);
+    } else {
+      const synthetic = stabilityTracker.getJointConfidence(jointName);
+      confidence = synthetic !== null ? clamp01(synthetic) : 0;
+    }
+
+    weightedSum += confidence * weight;
+    totalWeight += weight;
+  }
+
+  if (totalWeight <= 0) return 0;
+  return clamp01(weightedSum / totalWeight);
+}
+
+/** Pre-built critical joint weights for pullups */
+export const PULLUP_CRITICAL_JOINT_WEIGHTS: CriticalJointWeight[] = [
+  { jointName: 'left_elbow', weight: 0.3 },
+  { jointName: 'right_elbow', weight: 0.3 },
+  { jointName: 'left_shoulder', weight: 0.2 },
+  { jointName: 'right_shoulder', weight: 0.2 },
+];

@@ -12,14 +12,19 @@ export const REP_DETECTOR_THRESHOLDS: RepDetectorThresholds = {
   liftTopDelta: 0.14,
   liftTopExitDelta: 0.11,
   liftBottomDelta: 0.03,
-  elbowEngageDeg: 140,
-  elbowTopDeg: 90,
-  elbowBottomDeg: 150,
+  elbowEngageDeg: 130,
+  elbowTopDeg: 95,
+  elbowBottomDeg: 130,
 };
 export const CONFIDENCE_TIER_THRESHOLDS = {
   low: 0.3,
   medium: 0.6,
 } as const;
+
+export const STABILITY_WINDOW_SIZE = 10;
+export const STABILITY_MAX_VARIANCE = 0.005;
+export const SOFT_OCCLUSION_CONFIDENCE_THRESHOLD = 0.3;
+export const SOFT_OCCLUSION_CONSEC_FRAMES = 3;
 
 export const TRACKING_QUALITY_CONFIG: TrackingQualityConfig = {
   EMA_ALPHA_COORD,
