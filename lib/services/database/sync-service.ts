@@ -98,6 +98,8 @@ class SyncService {
   };
   private conflictSyncTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly maxChannelRetries = 3;
+  private readonly conflictReconcileDelayMs = 750;
+  private readonly maxQueueRetries = 5;
 
   private getErrorCode(error: unknown): string | undefined {
     if (error && typeof error === 'object' && 'code' in error) {
@@ -194,7 +196,7 @@ class SyncService {
       this.syncToSupabase().catch((error) => {
         errorWithTs('[SyncService] Conflict reconcile sync failed:', { reason, error });
       });
-    }, 750);
+    }, this.conflictReconcileDelayMs);
   }
 
   private getRetryDelayMs(retryCount: number): number {
@@ -1110,8 +1112,8 @@ class SyncService {
           continue;
         }
 
-        if (item.retry_count >= 5) {
-          warnWithTs(`[SyncService] Max retries reached for queue item ${item.id}, removing`);
+        if (item.retry_count >= this.maxQueueRetries) {
+          warnWithTs(`[SyncService] Max retries (${this.maxQueueRetries}) reached for queue item ${item.id}, removing`);
           await localDB.removeSyncQueueItem(item.id);
           continue;
         }

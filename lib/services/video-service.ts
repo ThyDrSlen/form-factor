@@ -8,9 +8,26 @@ import { warnWithTs } from '@/lib/logger';
 
 const VIDEO_BUCKET = 'videos';
 const THUMBNAIL_BUCKET = 'video-thumbnails';
-const DEFAULT_SIGNED_URL_SECONDS = 60 * 60 * 24; // 24 hours
-const DEFAULT_MAX_UPLOAD_BYTES = 250 * 1024 * 1024; // 250MB
-const DEFAULT_MAX_THUMBNAIL_BYTES = 80 * 1024 * 1024; // 80MB
+const DEFAULT_SIGNED_URL_SECONDS = 60 * 60 * 24;
+const DEFAULT_MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
+const DEFAULT_MAX_THUMBNAIL_BYTES = 80 * 1024 * 1024;
+const SIGNED_URL_MAX_RETRIES = 2;
+const SIGNED_URL_RETRY_DELAY_MS = 500;
+
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = SIGNED_URL_MAX_RETRIES, delayMs = SIGNED_URL_RETRY_DELAY_MS): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs * (attempt + 1)));
+      }
+    }
+  }
+  throw lastError;
+}
 
 export type VideoRecord = {
   id: string;
@@ -167,11 +184,9 @@ async function getSocialFeedUserIds(currentUserId: string) {
 
 async function safeGetSignedVideoUrl(path: string, videoId: string, expiresInSeconds = DEFAULT_SIGNED_URL_SECONDS) {
   try {
-    return await getSignedVideoUrl(path, expiresInSeconds);
+    return await withRetry(() => getSignedVideoUrl(path, expiresInSeconds));
   } catch (error) {
-    if (__DEV__) {
-      warnWithTs(`[video-service] Failed to sign video URL for ${videoId}`, error);
-    }
+    warnWithTs(`[video-service] Failed to sign video URL for ${videoId} after retries`, error);
     return undefined;
   }
 }
@@ -183,11 +198,9 @@ async function safeGetSignedThumbnailUrl(
 ) {
   if (!path) return null;
   try {
-    return await getSignedThumbnailUrl(path, expiresInSeconds);
+    return await withRetry(() => getSignedThumbnailUrl(path, expiresInSeconds));
   } catch (error) {
-    if (__DEV__) {
-      warnWithTs(`[video-service] Failed to sign thumbnail URL for ${videoId}`, error);
-    }
+    warnWithTs(`[video-service] Failed to sign thumbnail URL for ${videoId} after retries`, error);
     return null;
   }
 }
