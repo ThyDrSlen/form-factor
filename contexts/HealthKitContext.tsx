@@ -158,6 +158,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncProgress, setSyncProgress] = useState<BulkSyncProgress | null>(null);
   const [hasSyncedBefore, setHasSyncedBefore] = useState<boolean>(false);
+  const syncProgressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Weight analysis refresh function
   const refreshWeightAnalysis = useCallback(async () => {
@@ -201,6 +202,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
+    const pendingTimers: ReturnType<typeof setTimeout>[] = [];
 
     async function loadMetrics() {
       try {
@@ -305,10 +307,12 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
           setDataSource('healthkit');
           setLastUpdatedAt(Date.now());
 
-          // Trigger weight analysis after data is loaded
-          setTimeout(() => {
-            refreshWeightAnalysis();
-          }, 100);
+          if (!cancelled) {
+            const analysisTimer = setTimeout(() => {
+              if (!cancelled) refreshWeightAnalysis();
+            }, 100);
+            pendingTimers.push(analysisTimer);
+          }
 
           const metricsSignature = JSON.stringify({
             steps: normalizedSteps,
@@ -424,6 +428,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
       if (timeout) clearTimeout(timeout);
+      pendingTimers.forEach(clearTimeout);
     };
   }, [status?.hasReadPermission, user?.id, isWorkoutInProgress]);
 
@@ -545,9 +550,10 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsSyncing(false);
       
-      // Clear progress after a few seconds
-      setTimeout(() => {
+      if (syncProgressTimerRef.current) clearTimeout(syncProgressTimerRef.current);
+      syncProgressTimerRef.current = setTimeout(() => {
         setSyncProgress(null);
+        syncProgressTimerRef.current = null;
       }, 5000);
     }
   }, [user?.id, isSyncing]);
@@ -560,14 +566,21 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
           setHasSyncedBefore(true);
           console.log('[HealthKitContext] User has', range.count, 'days of synced data');
         } else if (!hasTriggeredAutoSyncRef.current) {
-          // Auto-trigger a 6-month historical sync for first-time users to populate trends
           hasTriggeredAutoSyncRef.current = true;
           syncAllHistoricalData(180).catch((err) => {
             console.warn('[HealthKitContext] Auto historical sync failed', err);
           });
         }
+      }).catch((err) => {
+        console.warn('[HealthKitContext] checkDataRange failed', err);
       });
     }
+    return () => {
+      if (syncProgressTimerRef.current) {
+        clearTimeout(syncProgressTimerRef.current);
+        syncProgressTimerRef.current = null;
+      }
+    };
   }, [user?.id, checkDataRange, syncAllHistoricalData]);
 
   useEffect(() => {
