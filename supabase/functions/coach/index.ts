@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4?target=deno';
 
@@ -18,12 +17,44 @@ interface RequestBody {
   messages?: ChatMessage[];
   context?: CoachContext;
 }
-const DEFAULT_MODEL = Deno.env.get('COACH_MODEL') || 'gpt-5.4-mini';
+
+interface OpenAIResponse {
+  choices?: { message?: { content?: string } }[];
+}
+
+const ALLOWED_MODELS = new Set([
+  'gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano',
+  'gpt-5.4-mini', 'gpt-4-turbo', 'o3-mini', 'o4-mini',
+]);
+const RAW_MODEL = (Deno.env.get('COACH_MODEL') || 'gpt-5.4-mini').trim();
+const DEFAULT_MODEL = ALLOWED_MODELS.has(RAW_MODEL) ? RAW_MODEL : 'gpt-5.4-mini';
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
 const MAX_MESSAGES = 12;
 const MAX_CONTENT_LENGTH = 1200;
 const MAX_TOKENS = Number(Deno.env.get('COACH_MAX_TOKENS') || 320);
 const TEMPERATURE = Number(Deno.env.get('COACH_TEMPERATURE') || 0.6);
+const REQUEST_TIMEOUT_MS = 30_000;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 10;
+
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+
+function isRateLimited(userId: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(userId);
+
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitMap.set(userId, { count: 1, windowStart: now });
+    return false;
+  }
+
+  entry.count += 1;
+  return entry.count > RATE_LIMIT_MAX_REQUESTS;
+}
+
+if (RAW_MODEL !== DEFAULT_MODEL) {
+  console.warn(`[coach] COACH_MODEL "${RAW_MODEL}" is not in allowed list, falling back to "${DEFAULT_MODEL}"`);
+}
 
 if (!OPENAI_API_KEY) {
   console.warn(
@@ -115,14 +146,30 @@ async function generateReply(body: RequestBody) {
     messages: [...buildPrompt(body.context), ...inputMessages],
   };
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch (fetchErr) {
+    clearTimeout(timeoutId);
+    const isTimeout = fetchErr instanceof DOMException && fetchErr.name === 'AbortError';
+    console.error('[coach] OpenAI fetch failed', { timeout: isTimeout, error: fetchErr });
+    return badRequest(
+      isTimeout ? 'Coach took too long to respond. Please try again.' : 'Failed to reach coach service.',
+      { status: 504 },
+    );
+  }
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -130,25 +177,21 @@ async function generateReply(body: RequestBody) {
     return badRequest('Coach failed to respond. Please try again.', { status: 502 });
   }
 
-  let data: any;
+  let data: OpenAIResponse;
   try {
-    data = await response.json();
+    data = (await response.json()) as OpenAIResponse;
   } catch (_parseErr) {
     console.error('[coach] Failed to parse OpenAI response as JSON');
     return badRequest('Upstream returned an invalid response.', { status: 502 });
   }
 
-  if (
-    !data ||
-    !Array.isArray(data.choices) ||
-    data.choices.length === 0 ||
-    typeof data.choices[0]?.message?.content !== 'string'
-  ) {
+  const rawContent = data?.choices?.[0]?.message?.content;
+  if (typeof rawContent !== 'string') {
     console.error('[coach] Unexpected OpenAI response structure', JSON.stringify(data));
     return badRequest('Upstream returned an unexpected response format.', { status: 502 });
   }
 
-  const message = (data.choices[0].message.content as string).trim();
+  const message = rawContent.trim();
 
   if (!message) {
     return badRequest('Empty response from coach.', { status: 502 });
@@ -181,6 +224,10 @@ serve(async (req: Request) => {
   const { data: { user }, error: userError } = await userClient.auth.getUser();
   if (userError || !user) {
     return badRequest('Unauthorized', { status: 401 });
+  }
+
+  if (isRateLimited(user.id)) {
+    return badRequest('Too many requests. Please wait a moment.', { status: 429 });
   }
 
   try {
