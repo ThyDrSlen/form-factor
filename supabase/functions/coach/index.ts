@@ -1,5 +1,6 @@
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4?target=deno';
 
 type Role = 'user' | 'assistant' | 'system';
 
@@ -161,11 +162,32 @@ serve(async (req: Request) => {
     return ok({ ok: true });
   }
 
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) {
+    return badRequest('Missing authorization header', { status: 401 });
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('[coach] Missing SUPABASE_URL or SUPABASE_ANON_KEY');
+    return badRequest('Server configuration error', { status: 500 });
+  }
+
+  const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  const { data: { user }, error: userError } = await userClient.auth.getUser();
+  if (userError || !user) {
+    return badRequest('Unauthorized', { status: 401 });
+  }
+
   try {
     const body = (await req.json()) as RequestBody;
     return await generateReply(body);
   } catch (err) {
-    console.error('[coach] Request failed', err);
+    console.error('[coach] Request failed', { userId: user.id, error: err });
     return badRequest('Invalid request payload', { status: 400 });
   }
 });
