@@ -1,5 +1,5 @@
 import * as Network from 'expo-network';
-import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import React, { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
 interface NetworkContextValue {
   isOnline: boolean;
@@ -48,8 +48,13 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
     return () => clearInterval(interval);
   }, []);
 
+  const value = useMemo(
+    () => ({ isOnline, isConnected, networkType }),
+    [isOnline, isConnected, networkType],
+  );
+
   return (
-    <NetworkContext.Provider value={{ isOnline, isConnected, networkType }}>
+    <NetworkContext.Provider value={value}>
       {children}
     </NetworkContext.Provider>
   );

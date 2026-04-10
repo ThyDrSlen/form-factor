@@ -102,11 +102,13 @@ export default function WorkoutsScreen() {
 
   const renderRightActions = (id: string, title: string) => (
     <TouchableOpacity
+      accessibilityLabel={`Delete ${title}`}
+      accessibilityHint="Removes this workout from your history"
       accessibilityRole="button"
       onPress={() => confirmDeleteWorkout(id, title)}
       style={styles.swipeDelete}
     >
-      <Ionicons name="trash-outline" size={20} color="#fff" />
+      <Ionicons name="trash-outline" size={20} color="#fff" accessible={false} />
       <Text style={styles.swipeDeleteText}>Delete</Text>
     </TouchableOpacity>
   );
@@ -139,6 +141,8 @@ export default function WorkoutsScreen() {
         <View style={styles.card}>
           <TouchableOpacity 
             activeOpacity={0.9}
+            accessibilityLabel={`${item.exercise} workout`}
+            accessibilityHint="Swipe left to reveal delete actions"
             onPress={() => {
               Haptics.selectionAsync();
               // Navigate to workout detail

@@ -238,7 +238,12 @@ const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: Fee
           <View style={styles.videoControlsRow}>
             <TouchableOpacity
               style={styles.videoProgressTrack}
-              onLayout={(event) => setProgressWidth(event.nativeEvent.layout.width)}
+              onLayout={(event) => {
+                const width = event.nativeEvent.layout.width;
+                if (width !== progressWidth) {
+                  setProgressWidth(width);
+                }
+              }}
               onPress={handleSeek}
               activeOpacity={0.85}
               accessibilityLabel="Seek video"
@@ -494,13 +499,14 @@ export default function HomeScreen() {
       });
       
       Alert.alert('Success', 'Video uploaded successfully');
-      loadVideos(true);
+      await loadVideos(true);
     } catch (error) {
+      console.error('[Home][uploadWorkoutVideo] Failed to upload workout video', error);
       errorWithTs('Upload failed', error);
-      Alert.alert('Error', 'Failed to upload video');
+      showToast('Failed to upload video.', { type: 'error' });
       setLoadingVideos(false);
     }
-  }, [loadVideos]);
+  }, [loadVideos, showToast]);
 
   const handleDeleteVideo = useCallback(
     async (videoId: string) => {
