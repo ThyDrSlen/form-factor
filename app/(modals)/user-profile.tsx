@@ -217,8 +217,16 @@ export default function UserProfileModal() {
         <TouchableOpacity
           style={styles.videoAction}
           onPress={() => router.push(`/(modals)/video-comments?videoId=${item.id}&returnTo=videos`)}
+          accessibilityRole="button"
+          accessibilityLabel={`Open comments for ${exercise} video`}
+          accessibilityHint="Opens the comments for this shared workout video"
         >
-          <Ionicons name="chatbubble-ellipses-outline" size={17} color="#9AACD1" />
+          <Ionicons
+            name="chatbubble-ellipses-outline"
+            size={17}
+            color="#9AACD1"
+            accessible={false}
+          />
         </TouchableOpacity>
       </View>
     );
@@ -292,6 +300,13 @@ export default function UserProfileModal() {
                     style={[styles.followButton, (status.follows || status.requested) && styles.followButtonMuted]}
                     onPress={handleFollowAction}
                     disabled={loadingFollowAction}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${followButtonLabel} ${displayName}`}
+                    accessibilityHint={
+                      status.follows || status.requested
+                        ? 'Double tap to remove this follow relationship'
+                        : 'Double tap to follow this profile'
+                    }
                   >
                     {loadingFollowAction ? (
                       <ActivityIndicator color="#0F2339" size="small" />
@@ -310,6 +325,9 @@ export default function UserProfileModal() {
                 <TouchableOpacity
                   style={styles.countPill}
                   onPress={() => router.push(`/(modals)/followers?userId=${profile.user_id}&tab=followers`)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${counts.followers} followers`}
+                  accessibilityHint="Opens the followers list"
                 >
                   <Text style={styles.countValue}>{counts.followers}</Text>
                   <Text style={styles.countLabel}>Followers</Text>
@@ -317,6 +335,9 @@ export default function UserProfileModal() {
                 <TouchableOpacity
                   style={styles.countPill}
                   onPress={() => router.push(`/(modals)/followers?userId=${profile.user_id}&tab=following`)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${counts.following} following`}
+                  accessibilityHint="Opens the following list"
                 >
                   <Text style={styles.countValue}>{counts.following}</Text>
                   <Text style={styles.countLabel}>Following</Text>
@@ -325,7 +346,7 @@ export default function UserProfileModal() {
 
               {profile.is_private && !status.follows && !status.is_self ? (
                 <View style={styles.privateCard}>
-                  <Ionicons name="lock-closed" size={16} color="#9AACD1" />
+                  <Ionicons name="lock-closed" size={16} color="#9AACD1" accessible={false} />
                   <Text style={styles.privateText}>This account is private.</Text>
                 </View>
               ) : null}

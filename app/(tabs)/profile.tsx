@@ -190,7 +190,12 @@ const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: Fee
         <View style={feedStyles.videoControlsRow}>
           <TouchableOpacity
             style={feedStyles.videoProgressTrack}
-            onLayout={(event) => setProgressWidth(event.nativeEvent.layout.width)}
+            onLayout={(event) => {
+              const width = event.nativeEvent.layout.width;
+              if (width !== progressWidth) {
+                setProgressWidth(width);
+              }
+            }}
             onPress={handleSeek}
             activeOpacity={0.85}
           >

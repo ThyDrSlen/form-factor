@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type WeightUnit = 'kg' | 'lbs';
@@ -26,25 +26,34 @@ export function UnitsProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const toggleWeightUnit = async () => {
+  const toggleWeightUnit = useCallback(async () => {
     const newUnit: WeightUnit = weightUnit === 'kg' ? 'lbs' : 'kg';
     setWeightUnit(newUnit);
     await AsyncStorage.setItem(WEIGHT_UNIT_KEY, newUnit);
-  };
+  }, [weightUnit]);
 
-  const convertWeight = (kg: number): number => {
-    if (weightUnit === 'lbs') {
-      return kg * 2.20462;
-    }
-    return kg;
-  };
+  const convertWeight = useCallback(
+    (kg: number): number => {
+      if (weightUnit === 'lbs') {
+        return kg * 2.20462;
+      }
+      return kg;
+    },
+    [weightUnit],
+  );
 
-  const getWeightLabel = (): string => {
-    return weightUnit === 'kg' ? 'kg' : 'lbs';
-  };
+  const getWeightLabel = useCallback(
+    (): string => (weightUnit === 'kg' ? 'kg' : 'lbs'),
+    [weightUnit],
+  );
+
+  const value = useMemo(
+    () => ({ weightUnit, toggleWeightUnit, convertWeight, getWeightLabel }),
+    [weightUnit, toggleWeightUnit, convertWeight, getWeightLabel],
+  );
 
   return (
-    <UnitsContext.Provider value={{ weightUnit, toggleWeightUnit, convertWeight, getWeightLabel }}>
+    <UnitsContext.Provider value={value}>
       {children}
     </UnitsContext.Provider>
   );

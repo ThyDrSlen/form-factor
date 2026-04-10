@@ -162,6 +162,13 @@ serve(async (req: Request) => {
       return jsonResponse({ error: 'title and body are required' }, 400);
     }
 
+    if (payload.data && typeof payload.data === 'object') {
+      const dataStr = JSON.stringify(payload.data);
+      if (dataStr.length > 4096) {
+        return jsonResponse({ error: 'data payload exceeds 4KB limit' }, 400);
+      }
+    }
+
     const tokenList: string[] = [];
     if (Array.isArray(payload.tokens)) {
       tokenList.push(...payload.tokens.filter((t) => typeof t === 'string' && t.length > 0));
