@@ -1,4 +1,4 @@
-import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import * as Crypto from 'expo-crypto';
 import { localDB } from '../lib/services/database/local-db';
 import { syncService } from '../lib/services/database/sync-service';
@@ -138,17 +138,17 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [isOnline, performSync]);
 
-  const fetchWorkouts = async () => {
+  const fetchWorkouts = useCallback(async () => {
     await loadLocalWorkouts();
     if (isOnline) {
       await performSync();
     }
-  };
+  }, [isOnline, loadLocalWorkouts, performSync]);
 
-  const startWorkout = () => setIsWorkoutInProgress(true);
-  const endWorkout = () => setIsWorkoutInProgress(false);
+  const startWorkout = useCallback(() => setIsWorkoutInProgress(true), []);
+  const endWorkout = useCallback(() => setIsWorkoutInProgress(false), []);
 
-  const deleteWorkout = async (id: string) => {
+  const deleteWorkout = useCallback(async (id: string) => {
     try {
       console.log('[WorkoutsProvider] Deleting workout:', id);
       
@@ -166,9 +166,9 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
     } catch (err) {
       console.error('[WorkoutsProvider] Error deleting workout:', err);
     }
-  };
+  }, [isOnline]);
 
-  const addWorkout = async (workout: Workout) => {
+  const addWorkout = useCallback(async (workout: Workout) => {
     try {
       console.log('[WorkoutsProvider] Adding workout:', workout);
 
@@ -199,10 +199,26 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
       console.error('[WorkoutsProvider] Error adding workout:', error);
       throw error;
     }
-  };
+  }, [isOnline]);
+
+  const value = useMemo(
+    () => ({
+      workouts,
+      addWorkout,
+      refreshWorkouts: fetchWorkouts,
+      deleteWorkout,
+      loading,
+      error,
+      isSyncing,
+      isWorkoutInProgress,
+      startWorkout,
+      endWorkout,
+    }),
+    [workouts, addWorkout, fetchWorkouts, deleteWorkout, loading, error, isSyncing, isWorkoutInProgress, startWorkout, endWorkout],
+  );
 
   return (
-    <WorkoutsContext.Provider value={{ workouts, addWorkout, refreshWorkouts: fetchWorkouts, deleteWorkout, loading, error, isSyncing, isWorkoutInProgress, startWorkout, endWorkout }}>
+    <WorkoutsContext.Provider value={value}>
       {children}
     </WorkoutsContext.Provider>
   );

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { warnWithTs } from '@/lib/logger';
 import { supabase } from '@/lib/supabase';
@@ -56,6 +56,16 @@ export function SocialProvider({ children }: { children: React.ReactNode }) {
   const [pendingRequestCount, setPendingRequestCount] = useState(0);
   const [unreadSharesCount, setUnreadSharesCount] = useState(0);
   const [loadingCounts, setLoadingCounts] = useState(false);
+  const pendingRequestCountRef = useRef(0);
+  const unreadSharesCountRef = useRef(0);
+
+  useEffect(() => {
+    pendingRequestCountRef.current = pendingRequestCount;
+  }, [pendingRequestCount]);
+
+  useEffect(() => {
+    unreadSharesCountRef.current = unreadSharesCount;
+  }, [unreadSharesCount]);
 
   const clearFollowStatusCache = useCallback(() => {
     setFollowStatusCache({});
@@ -64,6 +74,7 @@ export function SocialProvider({ children }: { children: React.ReactNode }) {
   const refreshPendingRequestCount = useCallback(async () => {
     if (!user?.id) {
       setPendingRequestCount(0);
+      pendingRequestCountRef.current = 0;
       return 0;
     }
 
@@ -73,13 +84,14 @@ export function SocialProvider({ children }: { children: React.ReactNode }) {
       return count;
     } catch (error) {
       warnWithTs('[SocialContext] Failed to refresh pending request count', error);
-      return pendingRequestCount;
+      return pendingRequestCountRef.current;
     }
-  }, [pendingRequestCount, user?.id]);
+  }, [user?.id]);
 
   const refreshUnreadShareCount = useCallback(async () => {
     if (!user?.id) {
       setUnreadSharesCount(0);
+      unreadSharesCountRef.current = 0;
       return 0;
     }
 
@@ -89,9 +101,9 @@ export function SocialProvider({ children }: { children: React.ReactNode }) {
       return count;
     } catch (error) {
       warnWithTs('[SocialContext] Failed to refresh unread share count', error);
-      return unreadSharesCount;
+      return unreadSharesCountRef.current;
     }
-  }, [unreadSharesCount, user?.id]);
+  }, [user?.id]);
 
   const refreshCounts = useCallback(async () => {
     if (!user?.id) {
