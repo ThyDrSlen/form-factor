@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -16,16 +16,24 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  useNavigation,
+  type EventArg,
+  type NavigationAction,
+} from '@react-navigation/native';
 import { useFood } from '../../contexts/FoodContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useSafeBack } from '../../hooks/use-safe-back';
 import { errorWithTs, logWithTs } from '@/lib/logger';
 import { isIOS } from '@/lib/platform-utils';
 
+type BeforeRemoveEvent = EventArg<'beforeRemove', true, { action: NavigationAction }>;
+
 export default function AddFoodScreen() {
   const { addFood } = useFood();
   const { show: showToast } = useToast();
   const isiOS = isIOS();
+  const navigation = useNavigation();
 
   const [name, setName] = useState('');
   const [calories, setCalories] = useState('');
@@ -39,6 +47,7 @@ export default function AddFoodScreen() {
   });
   const [showPicker, setShowPicker] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const nameRef = React.useRef<TextInput>(null);
   const caloriesRef = React.useRef<TextInput>(null);
@@ -46,10 +55,16 @@ export default function AddFoodScreen() {
   const carbsRef = React.useRef<TextInput>(null);
   const fatRef = React.useRef<TextInput>(null);
   const accessoryID = 'decimalAccessory';
+  const shouldSkipDiscardWarningRef = useRef(false);
+
+  const isDirty = useMemo(
+    () => Boolean(name.trim() || calories.trim() || protein.trim() || carbs.trim() || fat.trim()),
+    [name, calories, protein, carbs, fat],
+  );
 
   function safeParseFloat(s: string): number | undefined {
     const n = parseFloat(s);
-    return Number.isFinite(n) ? n : undefined;
+    return isFinite(n) ? n : undefined;
   }
 
   function normalizeDecimal(value: string): string {
@@ -59,16 +74,88 @@ export default function AddFoodScreen() {
     return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
   }
 
+  function setFieldError(field: 'name' | 'calories', message?: string) {
+    setErrors((prev: Record<string, string>) => {
+      if (!message) {
+        if (!prev[field]) return prev;
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      }
+
+      if (prev[field] === message) return prev;
+      return { ...prev, [field]: message };
+    });
+  }
+
+  function validateName(value: string): boolean {
+    if (!value.trim()) {
+      setFieldError('name', 'Enter a food name');
+      return false;
+    }
+
+    setFieldError('name');
+    return true;
+  }
+
+  function validateCalories(value: string): boolean {
+    const trimmed = value.trim();
+    const parsed = parseFloat(trimmed);
+
+    if (!trimmed || isNaN(parsed) || parsed <= 0) {
+      setFieldError('calories', 'Enter calories greater than 0');
+      return false;
+    }
+
+    setFieldError('calories');
+    return true;
+  }
+
   // Safe back: force replace to the Food tab to avoid any stack edge-cases
   const safeBack = useSafeBack('/food', { alwaysReplace: true });
 
+  useEffect(() => {
+    if (!isDirty) {
+      shouldSkipDiscardWarningRef.current = false;
+      return;
+    }
+
+    const unsubscribe = navigation.addListener('beforeRemove', (e: BeforeRemoveEvent) => {
+      if (shouldSkipDiscardWarningRef.current) {
+        return;
+      }
+
+      e.preventDefault();
+      Alert.alert(
+        'Discard changes?',
+        'You have unsaved changes. Are you sure you want to go back?',
+        [
+          { text: "Don't leave", style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              shouldSkipDiscardWarningRef.current = true;
+              navigation.dispatch(e.data.action);
+            },
+          },
+        ],
+      );
+    });
+
+    return unsubscribe;
+  }, [isDirty, navigation]);
+
   const onSave = async () => {
-    if (!name.trim()) {
+    const isNameValid = validateName(name);
+    const areCaloriesValid = validateCalories(calories);
+
+    if (!isNameValid) {
       Alert.alert('Error', 'Please enter a food name');
       return;
     }
 
-    if (!calories.trim() || parseFloat(calories) <= 0) {
+    if (!areCaloriesValid) {
       Alert.alert('Error', 'Please enter valid calories');
       return;
     }
@@ -98,6 +185,7 @@ export default function AddFoodScreen() {
       showToast('Meal logged successfully! 🍽️', { type: 'success' });
 
       // Navigate back after short delay
+      shouldSkipDiscardWarningRef.current = true;
       setTimeout(() => safeBack(), 500);
     } catch (error) {
       errorWithTs('Error saving food:', error);
@@ -134,9 +222,15 @@ export default function AddFoodScreen() {
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Food Name *</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, errors.name && styles.inputError]}
               value={name}
-              onChangeText={setName}
+              onChangeText={(value: string) => {
+                setName(value);
+                if (errors.name) {
+                  validateName(value);
+                }
+              }}
+              onBlur={() => validateName(name)}
               placeholder="e.g., Chicken Breast, Apple, Pasta"
               placeholderTextColor="#8CA5C6"
               editable={!saving}
@@ -145,14 +239,22 @@ export default function AddFoodScreen() {
               onSubmitEditing={() => caloriesRef.current?.focus()}
               blurOnSubmit={false}
             />
+            {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
           </View>
 
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Calories *</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, errors.calories && styles.inputError]}
               value={calories}
-              onChangeText={(t) => setCalories(normalizeDecimal(t))}
+              onChangeText={(t: string) => {
+                const normalized = normalizeDecimal(t);
+                setCalories(normalized);
+                if (errors.calories) {
+                  validateCalories(normalized);
+                }
+              }}
+              onBlur={() => validateCalories(calories)}
               inputMode="decimal"
               keyboardType="decimal-pad"
               placeholder="e.g., 250"
@@ -164,6 +266,7 @@ export default function AddFoodScreen() {
               blurOnSubmit={false}
               inputAccessoryViewID={isiOS ? accessoryID : undefined}
             />
+            {errors.calories ? <Text style={styles.errorText}>{errors.calories}</Text> : null}
           </View>
 
           <View style={styles.row}>
@@ -172,7 +275,7 @@ export default function AddFoodScreen() {
               <TextInput
                 style={styles.input}
                 value={protein}
-                onChangeText={(t) => setProtein(normalizeDecimal(t))}
+                onChangeText={(t: string) => setProtein(normalizeDecimal(t))}
                 inputMode="decimal"
                 keyboardType="decimal-pad"
                 placeholder="Optional"
@@ -191,7 +294,7 @@ export default function AddFoodScreen() {
               <TextInput
                 style={styles.input}
                 value={carbs}
-                onChangeText={(t) => setCarbs(normalizeDecimal(t))}
+                onChangeText={(t: string) => setCarbs(normalizeDecimal(t))}
                 inputMode="decimal"
                 keyboardType="decimal-pad"
                 placeholder="Optional"
@@ -210,7 +313,7 @@ export default function AddFoodScreen() {
               <TextInput
                 style={styles.input}
                 value={fat}
-                onChangeText={(t) => setFat(normalizeDecimal(t))}
+                onChangeText={(t: string) => setFat(normalizeDecimal(t))}
                 inputMode="decimal"
                 keyboardType="decimal-pad"
                 placeholder="Optional"
@@ -352,6 +455,16 @@ const styles = StyleSheet.create({
     padding: 16,
     fontSize: 16,
     color: '#F5F7FF',
+  },
+  inputError: {
+    borderColor: '#FF6B6B',
+  },
+  errorText: {
+    color: '#FF8A8A',
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 6,
+    marginLeft: 2,
   },
   accessoryContainer: {
     flexDirection: 'row',

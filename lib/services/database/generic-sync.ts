@@ -7,6 +7,7 @@
  */
 
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { createError, logError } from '../ErrorHandler';
 import { supabase } from '../../supabase';
 import { localDB } from './local-db';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
@@ -54,6 +55,8 @@ export async function genericLocalUpsert(
   row: Record<string, unknown>,
   synced: number = 0,
 ): Promise<void> {
+  assertValidTableName(table);
+
   const db = localDB.db;
   if (!db) throw new Error('Database not initialized');
 
@@ -88,6 +91,8 @@ export async function genericGetUnsynced(
   table: string,
   supportsSoftDelete: boolean,
 ): Promise<Record<string, unknown>[]> {
+  assertValidTableName(table);
+
   const db = localDB.db;
   if (!db) throw new Error('Database not initialized');
 
@@ -127,6 +132,8 @@ export async function genericUpdateSyncStatus(
   id: string,
   synced: boolean,
 ): Promise<void> {
+  assertValidTableName(table);
+
   const db = localDB.db;
   if (!db) throw new Error('Database not initialized');
 
@@ -144,6 +151,8 @@ export async function genericSoftDelete(
   primaryKey: string,
   id: string,
 ): Promise<void> {
+  assertValidTableName(table);
+
   const db = localDB.db;
   if (!db) throw new Error('Database not initialized');
 
@@ -161,6 +170,8 @@ export async function genericHardDelete(
   primaryKey: string,
   id: string,
 ): Promise<void> {
+  assertValidTableName(table);
+
   const db = localDB.db;
   if (!db) throw new Error('Database not initialized');
 
@@ -608,6 +619,38 @@ export const WORKOUT_SYNC_CONFIGS: SyncTableConfig[] = [
     },
   },
 ];
+
+export const VALID_TABLE_NAMES = new Set(
+  WORKOUT_SYNC_CONFIGS.flatMap((config) => [config.localTable, config.supabaseTable]),
+);
+
+function assertValidTableName(table: string): void {
+  if (VALID_TABLE_NAMES.has(table)) {
+    return;
+  }
+
+  const appError = createError(
+    'sync',
+    'INVALID_SYNC_TABLE',
+    `Invalid sync table name "${table}". Expected one of: ${Array.from(VALID_TABLE_NAMES).sort().join(', ')}`,
+    {
+      details: {
+        table,
+        validTableNames: Array.from(VALID_TABLE_NAMES).sort(),
+      },
+      retryable: false,
+      severity: 'error',
+    },
+  );
+
+  logError(appError, {
+    feature: 'workouts',
+    location: 'generic-sync.assertValidTableName',
+    meta: { table },
+  });
+
+  throw new Error(appError.message);
+}
 
 /**
  * Run sync for all workout-related tables.

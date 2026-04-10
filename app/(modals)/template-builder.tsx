@@ -4,7 +4,7 @@
  * Create and edit workout templates with exercises and planned sets.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,11 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import BottomSheet from '@gorhom/bottom-sheet';
 import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
+import {
+  useNavigation,
+  type EventArg,
+  type NavigationAction,
+} from '@react-navigation/native';
 
 import { tabColors } from '@/styles/tabs/_tab-theme';
 import { sessionStyles } from '@/styles/workout-session.styles';
@@ -39,6 +44,29 @@ interface TemplateExerciseRow extends WorkoutTemplateExercise {
   sets: WorkoutTemplateSet[];
 }
 
+type TemplateDraftSnapshot = {
+  name: string;
+  description: string;
+  goalProfile: GoalProfile;
+  exercises: Array<{
+    exercise_id: string;
+    notes: string | null;
+    default_rest_seconds: number | null;
+    default_tempo: string | null;
+    sets: Array<{
+      set_type: WorkoutTemplateSet['set_type'];
+      target_reps: number | null;
+      target_seconds: number | null;
+      target_weight: number | null;
+      target_rpe: number | null;
+      rest_seconds_override: number | null;
+      notes: string | null;
+    }>;
+  }>;
+};
+
+type BeforeRemoveEvent = EventArg<'beforeRemove', true, { action: NavigationAction }>;
+
 const GOAL_OPTIONS: { value: GoalProfile; label: string }[] = [
   { value: 'hypertrophy', label: 'Hypertrophy' },
   { value: 'strength', label: 'Strength' },
@@ -49,8 +77,11 @@ const GOAL_OPTIONS: { value: GoalProfile; label: string }[] = [
 
 export default function TemplateBuilderScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const params = useLocalSearchParams<{ templateId?: string }>();
   const exercisePickerRef = useRef<BottomSheet>(null);
+  const initialSnapshotRef = useRef<string | null>(null);
+  const shouldSkipDiscardWarningRef = useRef(false);
 
   const [templateId] = useState(() => params.templateId ?? Crypto.randomUUID());
   const [name, setName] = useState('');
@@ -58,6 +89,46 @@ export default function TemplateBuilderScreen() {
   const [goalProfile, setGoalProfile] = useState<GoalProfile>('hypertrophy');
   const [exercises, setExercises] = useState<TemplateExerciseRow[]>([]);
   const [isEditing] = useState(!!params.templateId);
+
+  const buildSnapshot = useCallback(
+    (
+      nextName: string,
+      nextDescription: string,
+      nextGoalProfile: GoalProfile,
+      nextExercises: TemplateExerciseRow[],
+    ): string => {
+      const snapshot: TemplateDraftSnapshot = {
+        name: nextName.trim(),
+        description: nextDescription.trim(),
+        goalProfile: nextGoalProfile,
+        exercises: nextExercises.map((exercise) => ({
+          exercise_id: exercise.exercise_id,
+          notes: exercise.notes,
+          default_rest_seconds: exercise.default_rest_seconds,
+          default_tempo: exercise.default_tempo,
+          sets: exercise.sets.map((set) => ({
+            set_type: set.set_type,
+            target_reps: set.target_reps,
+            target_seconds: set.target_seconds,
+            target_weight: set.target_weight,
+            target_rpe: set.target_rpe,
+            rest_seconds_override: set.rest_seconds_override,
+            notes: set.notes,
+          })),
+        })),
+      };
+
+      return JSON.stringify(snapshot);
+    },
+    [],
+  );
+
+  const currentSnapshot = useMemo(
+    () => buildSnapshot(name, description, goalProfile, exercises),
+    [buildSnapshot, name, description, goalProfile, exercises],
+  );
+
+  const isDirty = initialSnapshotRef.current !== null && currentSnapshot !== initialSnapshotRef.current;
 
   const loadTemplate = useCallback(async (id: string) => {
     const db = localDB.db;
@@ -94,14 +165,55 @@ export default function TemplateBuilderScreen() {
         sets: setRows,
       });
     }
+    initialSnapshotRef.current = buildSnapshot(t.name, t.description ?? '', t.goal_profile, result);
     setExercises(result);
-  }, []);
+  }, [buildSnapshot]);
 
   useEffect(() => {
     if (params.templateId) {
       void loadTemplate(params.templateId);
     }
   }, [loadTemplate, params.templateId]);
+
+  useEffect(() => {
+    if (params.templateId) {
+      return;
+    }
+
+    initialSnapshotRef.current = buildSnapshot('', '', 'hypertrophy', []);
+  }, [buildSnapshot, params.templateId]);
+
+  useEffect(() => {
+    if (!isDirty) {
+      shouldSkipDiscardWarningRef.current = false;
+      return;
+    }
+
+    const unsubscribe = navigation.addListener('beforeRemove', (e: BeforeRemoveEvent) => {
+      if (shouldSkipDiscardWarningRef.current) {
+        return;
+      }
+
+      e.preventDefault();
+      Alert.alert(
+        'Discard changes?',
+        'You have unsaved template changes. Are you sure you want to go back?',
+        [
+          { text: "Don't leave", style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              shouldSkipDiscardWarningRef.current = true;
+              navigation.dispatch(e.data.action);
+            },
+          },
+        ],
+      );
+    });
+
+    return unsubscribe;
+  }, [isDirty, navigation]);
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -162,6 +274,7 @@ export default function TemplateBuilderScreen() {
       }
     }
 
+    shouldSkipDiscardWarningRef.current = true;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.back();
   };
@@ -241,7 +354,25 @@ export default function TemplateBuilderScreen() {
   };
 
   const handleRemoveExercise = (idx: number) => {
-    setExercises((prev) => prev.filter((_, i) => i !== idx));
+    const exerciseName = exercises[idx]?.exercise?.name ?? 'this exercise';
+
+    Alert.alert(
+      'Remove exercise',
+      `Are you sure you want to remove ${exerciseName} from this template?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              setExercises((prev) => prev.filter((_, i) => i !== idx));
+            })();
+          },
+        },
+      ],
+    );
   };
 
   return (

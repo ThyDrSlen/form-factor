@@ -22,6 +22,7 @@ import BottomSheet from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 
 import { sessionStyles as styles, colors } from '@/styles/workout-session.styles';
+import { useToast } from '@/contexts/ToastContext';
 import { useSessionRunner } from '@/lib/stores/session-runner';
 import type { GoalProfile, WorkoutSession, WorkoutSessionSet, SetType } from '@/lib/types/workout-session';
 
@@ -43,6 +44,7 @@ function parseGoalProfile(goalProfile?: string): GoalProfile {
 export default function WorkoutSessionScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ templateId?: string; goalProfile?: string }>();
+  const { show: showToast } = useToast();
 
   // Zustand store
   const activeSession = useSessionRunner((s) => s.activeSession);
@@ -127,11 +129,12 @@ export default function WorkoutSessionScreen() {
         onPress: async () => {
           await finishSession();
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          showToast('Workout saved! 💪', { type: 'success' });
           router.back();
         },
       },
     ]);
-  }, [finishSession, router]);
+  }, [finishSession, router, showToast]);
 
   const handleAddExercise = useCallback(() => {
     exercisePickerRef.current?.expand();
@@ -204,7 +207,7 @@ export default function WorkoutSessionScreen() {
   // Date title
   // =========================================================================
   const dateTitle = activeSession
-    ? new Date(activeSession.started_at).toLocaleDateString('en-US', {
+    ? new Date(activeSession.started_at).toLocaleDateString(undefined, {
         month: 'short',
         day: 'numeric',
       })
@@ -219,7 +222,7 @@ export default function WorkoutSessionScreen() {
       <SafeAreaView style={styles.container}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ color: colors.textSecondary, fontFamily: 'Lexend_400Regular' }}>
-            Loading...
+            Starting your workout…
           </Text>
         </View>
       </SafeAreaView>

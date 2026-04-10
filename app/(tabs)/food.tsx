@@ -199,7 +199,25 @@ export default function FoodScreen() {
           </View>
           
           <View style={styles.cardFooter}>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                const dateLabel = new Date(item.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                const macros = [
+                  typeof item.protein === 'number' ? `${item.protein}g protein` : null,
+                  typeof item.carbs === 'number' ? `${item.carbs}g carbs` : null,
+                  typeof item.fat === 'number' ? `${item.fat}g fat` : null,
+                ].filter(Boolean) as string[];
+                const body = [
+                  `Date: ${dateLabel}`,
+                  typeof item.calories === 'number' ? `${item.calories} kcal` : null,
+                  macros.length > 0 ? macros.join(' • ') : null,
+                ].filter(Boolean) as string[];
+                Alert.alert(item.name, body.join('\n'));
+              }}
+              activeOpacity={0.7}
+            >
               <Ionicons name="eye-outline" size={16} color="#007AFF" />
               <Text style={styles.actionText}>View</Text>
             </TouchableOpacity>
