@@ -5,8 +5,6 @@ import * as WebBrowser from 'expo-web-browser';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import { supabase } from '../supabase';
 
-let pendingOAuthState: string | null = null;
-
  // Ensure the auth session is correctly completed when returning to the app (iOS 11+)
  // This avoids lingering authentication sessions after the redirect back to the app.
  WebBrowser.maybeCompleteAuthSession();
@@ -25,6 +23,7 @@ interface ParsedTokens {
 export class OAuthHandler {
   private static instance: OAuthHandler;
   private redirectUrl: string;
+  private pendingOAuthState: string | null = null;
 
   constructor() {
     // In Expo Router, group folders like (auth) are omitted from the URL path
@@ -46,14 +45,24 @@ export class OAuthHandler {
     try {
       logWithTs(`[OAuthHandler] Starting ${provider} OAuth flow`);
 
-      pendingOAuthState = Crypto.randomUUID();
+      // Guard against concurrent OAuth flows — the previous flow's CSRF state
+      // would be overwritten and its callback would fail validation.
+      if (this.pendingOAuthState !== null) {
+        warnWithTs(
+          '[OAuthHandler] New OAuth flow started while one was already in progress — ' +
+          'clearing previous pending state to avoid CSRF race'
+        );
+        this.pendingOAuthState = null;
+      }
+
+      this.pendingOAuthState = Crypto.randomUUID();
 
       // Start the OAuth flow with Supabase
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
           queryParams: {
-            state: pendingOAuthState,
+            state: this.pendingOAuthState,
           },
           redirectTo: this.redirectUrl,
           skipBrowserRedirect: true,
@@ -61,7 +70,7 @@ export class OAuthHandler {
       });
 
       if (error) {
-        pendingOAuthState = null;
+        this.pendingOAuthState = null;
         errorWithTs(`[OAuthHandler] Error starting ${provider} OAuth:`, error);
         return {
           success: false,
@@ -70,7 +79,7 @@ export class OAuthHandler {
       }
 
       if (!data.url) {
-        pendingOAuthState = null;
+        this.pendingOAuthState = null;
         errorWithTs(`[OAuthHandler] No OAuth URL returned from Supabase`);
         return {
           success: false,
@@ -91,7 +100,7 @@ export class OAuthHandler {
       if (result.type === 'success') {
         // Parse the callback URL to extract tokens or code
         const session = await this.handleCallback(result.url);
-        
+
         if (session) {
           return {
             success: true,
@@ -106,7 +115,7 @@ export class OAuthHandler {
       }
 
       if (result.type === 'cancel') {
-        pendingOAuthState = null;
+        this.pendingOAuthState = null;
         logWithTs(`[OAuthHandler] User cancelled ${provider} OAuth`);
         return {
           success: false,
@@ -115,7 +124,7 @@ export class OAuthHandler {
       }
 
       if (result.type === 'dismiss') {
-        pendingOAuthState = null;
+        this.pendingOAuthState = null;
         logWithTs(`[OAuthHandler] ${provider} OAuth was dismissed`);
         return {
           success: false,
@@ -123,13 +132,13 @@ export class OAuthHandler {
         };
       }
 
-      pendingOAuthState = null;
+      this.pendingOAuthState = null;
       return {
         success: false,
         error: `Unexpected OAuth result: ${result.type}`,
       };
     } catch (error) {
-      pendingOAuthState = null;
+      this.pendingOAuthState = null;
       errorWithTs(`[OAuthHandler] Unexpected error in ${provider} OAuth:`, error);
       return {
         success: false,
@@ -146,11 +155,11 @@ export class OAuthHandler {
       logWithTs('[OAuthHandler] Processing callback URL:', url);
 
       const callbackState = this.parseStateFromUrl(url);
-      if (!callbackState || !pendingOAuthState || callbackState !== pendingOAuthState) {
+      if (!callbackState || !this.pendingOAuthState || callbackState !== this.pendingOAuthState) {
         errorWithTs('[OAuthHandler] OAuth state validation failed', {
-          hasPendingState: !!pendingOAuthState,
+          hasPendingState: !!this.pendingOAuthState,
           hasCallbackState: !!callbackState,
-          callbackStateMatches: callbackState === pendingOAuthState,
+          callbackStateMatches: callbackState === this.pendingOAuthState,
         });
         return null;
       }
@@ -210,7 +219,7 @@ export class OAuthHandler {
       errorWithTs('[OAuthHandler] Error handling callback:', error);
       return null;
     } finally {
-      pendingOAuthState = null;
+      this.pendingOAuthState = null;
     }
   }
 
