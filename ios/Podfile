@@ -20,6 +20,68 @@ platform :ios, podfile_properties['ios.deploymentTarget'] || '15.1'
 
 prepare_react_native_project!
 
+# Create a stub hermesvm.xcframework before pod install so CocoaPods generates
+# the correct xcconfig linker flags and [CP] Copy XCFrameworks build phase entry.
+#
+# On clean EAS builds, hermesvm.xcframework doesn't exist at pod install time.
+# CocoaPods checks vendored_frameworks paths and silently skips the xcconfig
+# contributions (OTHER_LDFLAGS += -framework "hermesvm", FRAMEWORK_SEARCH_PATHS)
+# and the [CP] Copy XCFrameworks phase entry when the path is absent. This
+# produces 43 undefined facebook::jsi::* and hermes::vm::* symbols at link time.
+#
+# Build phase order: [CP-User] Replace Hermes runs (before_compile) and downloads
+# the real xcframework to Pods/hermes-engine/destroot/ before [CP] Copy XCFrameworks
+# copies the slice to PODS_XCFRAMEWORKS_BUILD_DIR. Our stub is overwritten by the
+# real framework before any linking occurs.
+pre_install do |installer|
+  next unless ENV['RCT_USE_PREBUILT_RNCORE'] == '1'
+  require 'fileutils'
+
+  rn_path = File.dirname(`node --print "require.resolve('react-native/package.json')"`.strip)
+  xcf_dir = File.join(rn_path, 'sdks', 'hermes-engine', 'destroot',
+                      'Library', 'Frameworks', 'universal', 'hermesvm.xcframework')
+  next if File.exist?(xcf_dir)
+
+  fw_dir = File.join(xcf_dir, 'ios-arm64', 'hermesvm.framework')
+  FileUtils.mkdir_p(fw_dir)
+
+  # Attempt a minimal Mach-O dynamic library; fall back to empty placeholder.
+  binary = File.join(fw_dir, 'hermesvm')
+  system("xcrun clang -x c /dev/null -dynamiclib -arch arm64 -target arm64-apple-ios15.1 -o '#{binary}' 2>/dev/null")
+  FileUtils.touch(binary) unless File.exist?(binary)
+
+  File.write(File.join(fw_dir, 'Info.plist'), <<~PLIST)
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0"><dict>
+      <key>CFBundleExecutable</key><string>hermesvm</string>
+      <key>CFBundleIdentifier</key><string>com.facebook.hermes</string>
+      <key>CFBundlePackageType</key><string>FMWK</string>
+      <key>CFBundleVersion</key><string>1.0</string>
+      <key>MinimumOSVersion</key><string>15.1</string>
+    </dict></plist>
+  PLIST
+
+  File.write(File.join(xcf_dir, 'Info.plist'), <<~PLIST)
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0"><dict>
+      <key>AvailableLibraries</key><array>
+        <dict>
+          <key>LibraryIdentifier</key><string>ios-arm64</string>
+          <key>LibraryPath</key><string>hermesvm.framework</string>
+          <key>SupportedArchitectures</key><array><string>arm64</string></array>
+          <key>SupportedPlatform</key><string>ios</string>
+        </dict>
+      </array>
+      <key>CFBundlePackageType</key><string>XFWK</string>
+      <key>XCFrameworkFormatVersion</key><string>1.0</string>
+    </dict></plist>
+  PLIST
+
+  puts "hermes-engine: created stub xcframework at #{xcf_dir}"
+end
+
 target 'formfactoreas' do
   use_expo_modules!
 
