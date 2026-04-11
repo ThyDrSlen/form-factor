@@ -434,12 +434,25 @@ export async function addVideoComment(videoId: string, comment: string) {
   return data as CommentRecord;
 }
 
+const _activeCommentChannels = new Map<string, ReturnType<typeof supabase.channel>>();
+
 export function subscribeToVideoComments(
   videoId: string,
   onInsert: (comment: CommentRecord) => void
 ) {
+  const channelName = `video-comments-${videoId}`;
+
+  // Remove any pre-existing channel for this videoId before creating a new one.
+  // This prevents duplicate Realtime channels when the hook re-runs (e.g. React
+  // Strict Mode double-invoke, or rapid mount/unmount cycles).
+  const existing = _activeCommentChannels.get(videoId);
+  if (existing) {
+    supabase.removeChannel(existing);
+    _activeCommentChannels.delete(videoId);
+  }
+
   const channel = supabase
-    .channel(`video-comments-${videoId}`)
+    .channel(channelName)
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'video_comments', filter: `video_id=eq.${videoId}` },
@@ -449,8 +462,14 @@ export function subscribeToVideoComments(
     )
     .subscribe();
 
+  _activeCommentChannels.set(videoId, channel);
+
   return () => {
     supabase.removeChannel(channel);
+    // Only remove from the map if this is still the active channel for the videoId.
+    if (_activeCommentChannels.get(videoId) === channel) {
+      _activeCommentChannels.delete(videoId);
+    }
   };
 }
 
