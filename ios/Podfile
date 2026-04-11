@@ -82,28 +82,44 @@ target 'formfactoreas' do
     # On a fresh EAS machine, hermesvm.xcframework doesn't exist at pod install
     # time — it's only materialised by the [CP-User] Replace Hermes script phase
     # during the Xcode build. CocoaPods skips vendored_framework xcconfig
-    # contributions when the path doesn't exist, producing an xcconfig missing
-    # -framework "hermesvm" and its framework search paths, causing 43 undefined
-    # jsi/hermes symbols at link time.
+    # contributions when the declared path doesn't exist on disk, producing a
+    # Pods-formfactoreas xcconfig missing -framework "hermesvm" and its search
+    # paths. This causes 43 undefined facebook::jsi::* and hermes::vm::* symbols
+    # at link time across libRNWorklets, libRNReanimated, libExpoModulesCore, etc.
     #
-    # We inject the flags here so they're always present regardless of whether
-    # hermesvm.xcframework already exists on disk.
+    # The main app target reads the xcconfig FILE on disk (not the aggregate
+    # target's inline build settings), so we patch the xcconfig files directly.
     if ENV['RCT_USE_PREBUILT_RNCORE'] == '1'
-      installer.pods_project.targets.each do |target|
-        next unless target.name == 'Pods-formfactoreas'
-        target.build_configurations.each do |build_config|
-          # Inject hermesvm framework link flag
-          existing_ldflags = build_config.build_settings['OTHER_LDFLAGS'] || '$(inherited)'
-          unless existing_ldflags.include?('hermesvm')
-            build_config.build_settings['OTHER_LDFLAGS'] = "$(inherited) -framework \"hermesvm\""
-          end
-          # Inject hermes framework search paths
-          existing_fsp = build_config.build_settings['FRAMEWORK_SEARCH_PATHS'] || '$(inherited)'
-          unless existing_fsp.include?('hermes-engine')
-            build_config.build_settings['FRAMEWORK_SEARCH_PATHS'] =
-              "$(inherited) \"${PODS_ROOT}/hermes-engine/destroot/Library/Frameworks/universal\" \"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built\""
+      hermes_fw_path = '"${PODS_ROOT}/hermes-engine/destroot/Library/Frameworks/universal"'
+      hermes_xcf_path = '"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built"'
+      support_dir = "#{installer.sandbox.root}/Target Support Files/Pods-formfactoreas"
+
+      ['debug', 'release'].each do |config_name|
+        xcconfig_path = "#{support_dir}/Pods-formfactoreas.#{config_name}.xcconfig"
+        next unless File.exist?(xcconfig_path)
+        next if File.read(xcconfig_path).include?('hermesvm')
+
+        lines = File.readlines(xcconfig_path)
+        has_ldflags = false
+        has_fsp = false
+
+        patched = lines.map do |line|
+          if line.start_with?('OTHER_LDFLAGS = ')
+            has_ldflags = true
+            line.chomp + " -framework \"hermesvm\"\n"
+          elsif line.start_with?('FRAMEWORK_SEARCH_PATHS = ')
+            has_fsp = true
+            line.chomp + " #{hermes_fw_path} #{hermes_xcf_path}\n"
+          else
+            line
           end
         end
+
+        patched << "OTHER_LDFLAGS = $(inherited) -framework \"hermesvm\"\n" unless has_ldflags
+        patched << "FRAMEWORK_SEARCH_PATHS = $(inherited) #{hermes_fw_path} #{hermes_xcf_path}\n" unless has_fsp
+
+        File.write(xcconfig_path, patched.join)
+        puts "hermes-engine: patched #{config_name} xcconfig with hermesvm linker flags"
       end
     end
   end
