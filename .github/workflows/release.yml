@@ -96,7 +96,7 @@ jobs:
           if [ "${{ github.event.inputs.action }}" = "build-and-submit" ]; then
             SUBMIT_FLAG="--auto-submit"
           fi
-          eas build --platform ios --profile ${{ github.event.inputs.profile }} $SUBMIT_FLAG --non-interactive
+          eas build --platform ios --profile ${{ github.event.inputs.profile }} $SUBMIT_FLAG --clear-cache --non-interactive
 
       - name: Submit latest build
         if: github.event.inputs.action == 'submit-latest'
