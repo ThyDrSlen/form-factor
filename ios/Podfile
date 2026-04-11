@@ -152,41 +152,66 @@ target 'formfactoreas' do
     # The main app target reads the xcconfig FILE on disk (not the aggregate
     # target's inline build settings), so we patch the xcconfig files directly.
     if ENV['RCT_USE_PREBUILT_RNCORE'] == '1'
-      # [CP-User] Replace Hermes downloads hermesvm.xcframework to destroot/...
-      # [CP] Copy XCFrameworks is NOT generated for hermes-engine on clean machines,
-      # so PODS_XCFRAMEWORKS_BUILD_DIR/hermes-engine/Pre-built never gets populated.
-      # Point directly into the ios-arm64 slice inside the xcframework; hermesvm.framework
-      # lives there after Replace Hermes runs (before_compile, before the link step).
+      # [CP-User] Replace Hermes downloads hermesvm.xcframework and hermesc to
+      # destroot/ before the Bundle and Link phases run. Two xcconfig fixes needed:
+      #
+      # 1. HERMES_CLI_PATH: CocoaPods bakes an absolute machine-specific path from
+      #    require.resolve('hermes-compiler') into the xcconfig at pod install time.
+      #    On EAS that path doesn't match the build VM, causing "Bundle React Native
+      #    code and images" to fail with "No such file or directory" when hermesc is
+      #    invoked. Override with PODS_ROOT-relative path that works on any machine.
+      #    Replace Hermes puts hermesc at destroot/bin/hermesc before the Bundle phase.
+      #
+      # 2. FRAMEWORK_SEARCH_PATHS / OTHER_LDFLAGS: [CP] Copy XCFrameworks is not
+      #    generated for hermes-engine on clean builds, so PODS_XCFRAMEWORKS_BUILD_DIR
+      #    is never populated. Point directly into the ios-arm64 slice directory where
+      #    hermesvm.framework lives after Replace Hermes runs.
       hermes_slice_path = '"${PODS_ROOT}/hermes-engine/destroot/Library/Frameworks/universal/hermesvm.xcframework/ios-arm64"'
       hermes_xcf_path = '"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built"'
+      portable_hermesc = '${PODS_ROOT}/hermes-engine/destroot/bin/hermesc'
       support_dir = "#{installer.sandbox.root}/Target Support Files/Pods-formfactoreas"
 
       ['debug', 'release'].each do |config_name|
         xcconfig_path = "#{support_dir}/Pods-formfactoreas.#{config_name}.xcconfig"
         next unless File.exist?(xcconfig_path)
-        next if File.read(xcconfig_path).include?('hermesvm')
 
-        lines = File.readlines(xcconfig_path)
-        has_ldflags = false
-        has_fsp = false
+        content = File.read(xcconfig_path)
+        changed = false
 
-        patched = lines.map do |line|
-          if line.start_with?('OTHER_LDFLAGS = ')
-            has_ldflags = true
-            line.chomp + " -framework \"hermesvm\"\n"
-          elsif line.start_with?('FRAMEWORK_SEARCH_PATHS = ')
-            has_fsp = true
-            line.chomp + " #{hermes_slice_path} #{hermes_xcf_path}\n"
-          else
-            line
-          end
+        # Fix 1: always replace absolute HERMES_CLI_PATH with portable build-var path.
+        if content =~ /^HERMES_CLI_PATH = (?!\$\{PODS_ROOT\})/
+          content = content.gsub(/^HERMES_CLI_PATH = .*$/, "HERMES_CLI_PATH = #{portable_hermesc}")
+          changed = true
+          puts "hermes-engine: fixed HERMES_CLI_PATH to portable PODS_ROOT path in #{config_name} xcconfig"
         end
 
-        patched << "OTHER_LDFLAGS = $(inherited) -framework \"hermesvm\"\n" unless has_ldflags
-        patched << "FRAMEWORK_SEARCH_PATHS = $(inherited) #{hermes_slice_path} #{hermes_xcf_path}\n" unless has_fsp
+        # Fix 2: add hermesvm linker flags if not already present.
+        unless content.include?('hermesvm')
+          lines = content.lines
+          has_ldflags = false
+          has_fsp = false
 
-        File.write(xcconfig_path, patched.join)
-        puts "hermes-engine: patched #{config_name} xcconfig with hermesvm linker flags"
+          patched = lines.map do |line|
+            if line.start_with?('OTHER_LDFLAGS = ')
+              has_ldflags = true
+              line.chomp + " -framework \"hermesvm\"\n"
+            elsif line.start_with?('FRAMEWORK_SEARCH_PATHS = ')
+              has_fsp = true
+              line.chomp + " #{hermes_slice_path} #{hermes_xcf_path}\n"
+            else
+              line
+            end
+          end
+
+          patched << "OTHER_LDFLAGS = $(inherited) -framework \"hermesvm\"\n" unless has_ldflags
+          patched << "FRAMEWORK_SEARCH_PATHS = $(inherited) #{hermes_slice_path} #{hermes_xcf_path}\n" unless has_fsp
+
+          content = patched.join
+          changed = true
+          puts "hermes-engine: patched #{config_name} xcconfig with hermesvm linker flags"
+        end
+
+        File.write(xcconfig_path, content) if changed
       end
     end
   end
