@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 import { supabase } from '@/lib/supabase';
 import { ensureUser } from '@/lib/auth-utils';
 import { warnWithTs } from '@/lib/logger';
+import { createError } from '@/lib/services/ErrorHandler';
 
 const VIDEO_BUCKET = 'videos';
 const THUMBNAIL_BUCKET = 'video-thumbnails';
@@ -282,6 +283,19 @@ export async function uploadWorkoutVideo(opts: {
     metrics,
     analysisOnly = false,
   } = opts;
+
+  // Validate exercise and metrics fields before any I/O.
+  if (exercise !== undefined) {
+    if (typeof exercise !== 'string' || exercise.length > 255) {
+      throw createError('validation', 'INVALID_INPUT', 'Exercise name exceeds maximum length');
+    }
+  }
+  if (metrics !== undefined) {
+    const metricsJson = JSON.stringify(metrics);
+    if (new TextEncoder().encode(metricsJson).byteLength > 10240) {
+      throw createError('validation', 'INVALID_INPUT', 'Metrics payload exceeds maximum size');
+    }
+  }
 
   // Validate env before auth/upload calls so failures are explicit and actionable.
   getSupabaseUrl();
