@@ -2,6 +2,7 @@ import React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react-native';
 import type * as WorkoutsContextModule from '@/contexts/WorkoutsContext';
 import type { Workout } from '@/contexts/WorkoutsContext';
+import { ToastProvider } from '@/contexts/ToastContext';
 
 // Mock expo-crypto
 jest.mock('expo-crypto', () => ({
@@ -77,7 +78,9 @@ beforeAll(() => {
 });
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
-  <WorkoutsProvider>{children}</WorkoutsProvider>
+  <ToastProvider>
+    <WorkoutsProvider>{children}</WorkoutsProvider>
+  </ToastProvider>
 );
 
 const makeWorkout = (overrides: Partial<Workout> = {}): Workout => ({
