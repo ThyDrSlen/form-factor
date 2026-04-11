@@ -62,19 +62,19 @@ function fault(def: { faults: { id: string; condition: (ctx: RepContext) => bool
 // =============================================================================
 
 describe('pullup faults', () => {
-  // Thresholds: hang=150, engage=140, top=85, shoulderElevation=120
+  // Thresholds: hang=150, engage=130, top=95, shoulderElevation=120
 
   describe('incomplete_rom', () => {
     const f = fault(pullupDefinition, 'incomplete_rom');
 
-    it('triggers when min elbow avg > top + 15 (100)', () => {
-      // avg min elbow = (105 + 105) / 2 = 105 > 100
-      const c = ctx({ min: { leftElbow: 105, rightElbow: 105 } });
+    it('triggers when min elbow avg > top + 15 (110)', () => {
+      // avg min elbow = (115 + 115) / 2 = 115 > 110
+      const c = ctx({ min: { leftElbow: 115, rightElbow: 115 } });
       expect(f.condition(c)).toBe(true);
     });
 
-    it('does not trigger on good form (min elbow avg ≤ 100)', () => {
-      // avg min elbow = (80 + 80) / 2 = 80 ≤ 100
+    it('does not trigger on good form (min elbow avg ≤ 110)', () => {
+      // avg min elbow = (80 + 80) / 2 = 80 ≤ 110
       const c = ctx({ min: { leftElbow: 80, rightElbow: 80 } });
       expect(f.condition(c)).toBe(false);
     });
@@ -83,14 +83,14 @@ describe('pullup faults', () => {
   describe('incomplete_extension', () => {
     const f = fault(pullupDefinition, 'incomplete_extension');
 
-    it('triggers when start elbow avg < hang - 10 (140)', () => {
-      // avg start elbow = (130 + 130) / 2 = 130 < 140
-      const c = ctx({ start: { leftElbow: 130, rightElbow: 130 } });
+    it('triggers when start elbow avg < hang - 25 (125)', () => {
+      // avg start elbow = (120 + 120) / 2 = 120 < 125
+      const c = ctx({ start: { leftElbow: 120, rightElbow: 120 } });
       expect(f.condition(c)).toBe(true);
     });
 
-    it('does not trigger on good form (start elbow avg ≥ 140)', () => {
-      // avg start elbow = (160 + 160) / 2 = 160 ≥ 140
+    it('does not trigger on good form (start elbow avg ≥ 125)', () => {
+      // avg start elbow = (160 + 160) / 2 = 160 ≥ 125
       const c = ctx({ start: { leftElbow: 160, rightElbow: 160 } });
       expect(f.condition(c)).toBe(false);
     });
