@@ -10,7 +10,7 @@
       "ios": {
         "simulator": false,
         "buildConfiguration": "Debug",
-        "image": "macos-sequoia-15.5-xcode-26.0"
+        "image": "macos-sequoia-15.6-xcode-16.4"
       },
       "env": {
         "APP_VARIANT": "development"
@@ -24,7 +24,7 @@
       "ios": {
         "simulator": false,
         "buildConfiguration": "Debug",
-        "image": "macos-sequoia-15.5-xcode-26.0",
+        "image": "macos-sequoia-15.6-xcode-16.4",
         "credentialsSource": "remote"
       },
       "android": { "buildType": "apk" },
@@ -36,7 +36,7 @@
       "distribution": "store",
       "ios": {
         "buildConfiguration": "Release",
-        "image": "macos-sequoia-15.5-xcode-26.0"
+        "image": "macos-sequoia-15.6-xcode-16.4"
       },
       "env": {
         "APP_VARIANT": "staging",
@@ -49,7 +49,7 @@
       "distribution": "store",
       "ios": {
         "buildConfiguration": "Release",
-        "image": "macos-sequoia-15.5-xcode-26.0",
+        "image": "macos-sequoia-15.6-xcode-16.4",
         "credentialsSource": "remote"
       },
       "env": {
