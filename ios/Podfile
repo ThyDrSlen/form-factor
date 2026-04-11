@@ -76,5 +76,35 @@ target 'formfactoreas' do
         end
       end
     end
+
+    # Fix hermes-engine xcframework linker flags on EAS clean builds.
+    #
+    # On a fresh EAS machine, hermesvm.xcframework doesn't exist at pod install
+    # time — it's only materialised by the [CP-User] Replace Hermes script phase
+    # during the Xcode build. CocoaPods skips vendored_framework xcconfig
+    # contributions when the path doesn't exist, producing an xcconfig missing
+    # -framework "hermesvm" and its framework search paths, causing 43 undefined
+    # jsi/hermes symbols at link time.
+    #
+    # We inject the flags here so they're always present regardless of whether
+    # hermesvm.xcframework already exists on disk.
+    if ENV['RCT_USE_PREBUILT_RNCORE'] == '1'
+      installer.pods_project.targets.each do |target|
+        next unless target.name == 'Pods-formfactoreas'
+        target.build_configurations.each do |build_config|
+          # Inject hermesvm framework link flag
+          existing_ldflags = build_config.build_settings['OTHER_LDFLAGS'] || '$(inherited)'
+          unless existing_ldflags.include?('hermesvm')
+            build_config.build_settings['OTHER_LDFLAGS'] = "$(inherited) -framework \"hermesvm\""
+          end
+          # Inject hermes framework search paths
+          existing_fsp = build_config.build_settings['FRAMEWORK_SEARCH_PATHS'] || '$(inherited)'
+          unless existing_fsp.include?('hermes-engine')
+            build_config.build_settings['FRAMEWORK_SEARCH_PATHS'] =
+              "$(inherited) \"${PODS_ROOT}/hermes-engine/destroot/Library/Frameworks/universal\" \"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built\""
+          end
+        end
+      end
+    end
   end
 end
