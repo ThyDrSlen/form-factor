@@ -121,9 +121,9 @@ describe('FQI Calculator', () => {
     it('perfect form — full ROM, good depth, no faults', () => {
       // Elbow: min=70, max=170 → ROM=100/100=100%
       // Shoulder: min=70, max=120 → ROM=50/120=41.67%  avg ROM=70.83
-      // Depth elbow: |70-80|=10 ≤15 → 100; shoulder: |70-90|=20 ≤20 → 100  avg=100
+      // Depth elbow: |70-90|=20 > 15 → 100-(20-15)*2=90; shoulder: |70-90|=20 ≤20 → 100  avg=95
       // No faults → faultComponent=100
-      // Score = 70.83*0.4 + 100*0.3 + 100*0.3 = 88.33 → 88
+      // Score = 70.83*0.4 + 95*0.3 + 100*0.3 = 86.83 → 87
       const r = rep({
         start: { leftElbow: 170, rightElbow: 170, leftShoulder: 90, rightShoulder: 90 },
         end: { leftElbow: 170, rightElbow: 170, leftShoulder: 90, rightShoulder: 90 },
@@ -132,20 +132,20 @@ describe('FQI Calculator', () => {
       });
       const result = calculateFqi(r, 2000, 1, pullup);
 
-      expect(result.score).toBeCloseTo(88, 0);
+      expect(result.score).toBeCloseTo(87, 0);
       expect(result.romScore).toBeCloseTo(71, 0);
-      expect(result.depthScore).toBeCloseTo(100, 0);
+      expect(result.depthScore).toBeCloseTo(95, 0);
       expect(result.faultPenalty).toBe(0);
       expect(result.detectedFaults).toEqual([]);
     });
 
     it('minor fault — incomplete_extension only', () => {
-      // start elbow avg=130 < 140 → incomplete_extension (penalty 10)
+      // start elbow avg=120 < 125 → incomplete_extension (penalty 10)
       // Elbow ROM: |170-75|=95/100=95%; Shoulder ROM: |110-70|=40/120=33.33%  avg=64.17
-      // Depth: elbow |75-80|=5≤15→100; shoulder |70-90|=20≤20→100  avg=100
+      // Depth: elbow |75-90|=15≤15→100; shoulder |70-90|=20≤20→100  avg=100
       // Score = 64.17*0.4 + 100*0.3 + 90*0.3 = 82.67 → 83
       const r = rep({
-        start: { leftElbow: 130, rightElbow: 130, leftShoulder: 90, rightShoulder: 90 },
+        start: { leftElbow: 120, rightElbow: 120, leftShoulder: 90, rightShoulder: 90 },
         end: { leftElbow: 170, rightElbow: 170, leftShoulder: 90, rightShoulder: 90 },
         min: { leftElbow: 75, rightElbow: 75, leftShoulder: 70, rightShoulder: 70 },
         max: { leftElbow: 170, rightElbow: 170, leftShoulder: 110, rightShoulder: 110 },
@@ -158,24 +158,24 @@ describe('FQI Calculator', () => {
     });
 
     it('major fault — incomplete_rom + incomplete_extension + shoulder_elevation + fast_descent', () => {
-      // start elbow=130 < 140 → incomplete_extension(10)
-      // min elbow=105 > 100 → incomplete_rom(15)
+      // start elbow=115 < 125 → incomplete_extension(10)
+      // min elbow=115 > 110 → incomplete_rom(15)
       // max shoulder=125 > 120 → shoulder_elevation(12)
       // duration=500 < 800 → fast_descent(5)
       // Total penalty = 42
-      // Elbow ROM: |170-105|=65/100=65%; Shoulder ROM: |125-80|=45/120=37.5%  avg=51.25
-      // Depth: elbow |105-80|=25>15 → 100-(25-15)*2=80; shoulder |80-90|=10≤20→100  avg=90
-      // Score = 51.25*0.4 + 90*0.3 + 58*0.3 = 64.9 → 65
+      // Elbow ROM: |170-115|=55/100=55%; Shoulder ROM: |125-80|=45/120=37.5%  avg=46.25
+      // Depth: elbow |115-90|=25>15 → 100-(25-15)*2=80; shoulder |80-90|=10≤20→100  avg=90
+      // Score = 46.25*0.4 + 90*0.3 + 58*0.3 = 62.9 → 63
       const r = rep({
-        start: { leftElbow: 130, rightElbow: 130, leftShoulder: 90, rightShoulder: 90 },
-        end: { leftElbow: 130, rightElbow: 130, leftShoulder: 90, rightShoulder: 90 },
-        min: { leftElbow: 105, rightElbow: 105, leftShoulder: 80, rightShoulder: 80 },
+        start: { leftElbow: 115, rightElbow: 115, leftShoulder: 90, rightShoulder: 90 },
+        end: { leftElbow: 115, rightElbow: 115, leftShoulder: 90, rightShoulder: 90 },
+        min: { leftElbow: 115, rightElbow: 115, leftShoulder: 80, rightShoulder: 80 },
         max: { leftElbow: 170, rightElbow: 170, leftShoulder: 125, rightShoulder: 125 },
       });
       const result = calculateFqi(r, 500, 1, pullup);
 
-      expect(result.score).toBeCloseTo(65, 0);
-      expect(result.romScore).toBeCloseTo(51, 0);
+      expect(result.score).toBeCloseTo(63, 0);
+      expect(result.romScore).toBeCloseTo(46, 0);
       expect(result.depthScore).toBeCloseTo(90, 0);
       expect(result.faultPenalty).toBe(42);
       expect(result.detectedFaults).toEqual(
@@ -805,16 +805,16 @@ describe('FQI Calculator', () => {
       const r = rep({
         start: { leftElbow: 100, rightElbow: 100, leftShoulder: 90, rightShoulder: 90 },
         end: { leftElbow: 100, rightElbow: 100, leftShoulder: 90, rightShoulder: 90 },
-        min: { leftElbow: 80, rightElbow: 130, leftShoulder: 80, rightShoulder: 80 },
+        min: { leftElbow: 100, rightElbow: 130, leftShoulder: 80, rightShoulder: 80 },
         max: { leftElbow: 170, rightElbow: 170, leftShoulder: 150, rightShoulder: 150 },
       });
       const result = calculateFqi(r, 200, 1, pullup);
 
       // Verify all 5 pullup faults triggered:
-      // incomplete_rom: avg min elbow = (80+130)/2=105 > 100 ✓
-      // incomplete_extension: avg start elbow = 100 < 140 ✓
+      // incomplete_rom: avg min elbow = (100+130)/2=115 > 110 ✓
+      // incomplete_extension: avg start elbow = 100 < 125 ✓
       // shoulder_elevation: max(150,150) > 120 ✓
-      // asymmetric_pull: |80-130|=50 > 20 ✓
+      // asymmetric_pull: |100-130|=30 > 20 ✓
       // fast_descent: 200 < 800 ✓
       expect(result.detectedFaults).toHaveLength(5);
       expect(result.faultPenalty).toBe(50);
