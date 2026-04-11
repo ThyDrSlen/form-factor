@@ -4,6 +4,7 @@ import { localDB } from '../lib/services/database/local-db';
 import { syncService } from '../lib/services/database/sync-service';
 import { useNetwork } from './NetworkContext';
 import { useAuth } from './AuthContext';
+import { useToast } from './ToastContext';
 
 export interface FoodEntry {
   id: string;
@@ -42,6 +43,7 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const { isOnline } = useNetwork();
   const { user } = useAuth();
+  const { show: showToast } = useToast();
 
   const loadLocalFoods = useCallback(async () => {
     try {
@@ -150,7 +152,10 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
 
       // Sync to Supabase if online (fire-and-forget — local write already done)
       if (isOnline) {
-        void syncService.syncToSupabase().catch(err => console.warn('[FoodContext] Sync failed:', err));
+        void syncService.syncToSupabase().catch(err => {
+          console.warn('[FoodContext] Sync failed:', err);
+          showToast('Sync failed. Changes saved locally.', { type: 'error' });
+        });
       }
     } catch (err) {
       console.error('[FoodProvider] Error deleting food:', err);
@@ -181,7 +186,10 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
 
       // Sync to Supabase if online (fire-and-forget — local write already done)
       if (isOnline) {
-        void syncService.syncToSupabase().catch(err => console.warn('[FoodContext] Sync failed:', err));
+        void syncService.syncToSupabase().catch(err => {
+          console.warn('[FoodContext] Sync failed:', err);
+          showToast('Sync failed. Changes saved locally.', { type: 'error' });
+        });
       }
     } catch (error) {
       console.error('[FoodProvider] Error adding food:', error);
