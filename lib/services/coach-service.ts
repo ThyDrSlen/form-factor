@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { errorWithTs, warnWithTs } from '@/lib/logger';
-import { createError } from './ErrorHandler';
+import { createError, logError } from './ErrorHandler';
 
 export type CoachRole = 'user' | 'assistant' | 'system';
 
@@ -119,8 +119,21 @@ export async function sendCoachPrompt(
         supabase.from('coach_conversations').insert(insertPayload).then(({ error: retryErr }) => {
           if (retryErr) {
             errorWithTs('[coach] Conversation persist failed after retry', retryErr.message);
+            logError(
+              createError('storage', 'COACH_PERSIST_FAILED', 'Coach conversation persist failed after retry', {
+                details: retryErr,
+                retryable: false,
+                severity: 'error',
+              }),
+              { feature: 'workouts', location: 'coach-service.sendCoachPrompt' }
+            );
           }
         });
+      });
+    } else {
+      console.warn('[coach] Conversation persistence skipped: missing profile.id or sessionId', {
+        hasProfileId: Boolean(context?.profile?.id),
+        hasSessionId: Boolean(context?.sessionId),
       });
     }
 
