@@ -103,6 +103,15 @@ class SyncService {
   private readonly conflictReconcileDelayMs = 750;
   private readonly maxQueueRetries = 5;
   private readonly realtimeResyncDelayMs = 2_000;
+  // Minimum delay enforced when scheduling a retry, regardless of computed backoff.
+  // This acts as a floor against backward device-clock drift: if the clock jumps
+  // backward after next_retry_at is written, the stored timestamp would immediately
+  // pass the `<= Date.now()` check and trigger an infinite retry loop.  By ensuring
+  // every retry is at least MIN_RETRY_DELAY_MS in the future (relative to the moment
+  // we write it), we guarantee at least that much wall-clock time must elapse before
+  // the item is eligible again — even if the clock later moves backward by a smaller
+  // amount.  (Closes #387)
+  private readonly minRetryDelayMs = 30_000;
 
   private getErrorCode(error: unknown): string | undefined {
     if (error && typeof error === 'object' && 'code' in error) {
@@ -250,7 +259,11 @@ class SyncService {
   }
 
   private getNextRetryIso(item: SyncQueueItem): string {
-    return new Date(Date.now() + this.getRetryDelayMs(item.retry_count)).toISOString();
+    // Use the larger of the exponential-backoff delay and the minimum floor so
+    // that backward clock drift cannot make a just-failed item immediately
+    // eligible again.  See #387.
+    const delayMs = Math.max(this.minRetryDelayMs, this.getRetryDelayMs(item.retry_count));
+    return new Date(Date.now() + delayMs).toISOString();
   }
 
   // Initialize Realtime subscriptions
