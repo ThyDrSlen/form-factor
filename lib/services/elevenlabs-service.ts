@@ -148,9 +148,12 @@ export async function generateCueFile(
     const arrayBuffer = await generateSpeech(text, options);
     if (!arrayBuffer) return false;
 
-    // Dynamic import so Metro bundler doesn't pull in node:fs for RN builds.
-    // Bun / Node.js resolve this fine; React Native will never call this path.
-    const { writeFileSync } = await import(/* webpackIgnore: true */ 'node:fs');
+    // Use require() so hermesc (the Hermes bytecode compiler) can compile the
+    // iOS bundle.  hermesc rejects ES dynamic import() syntax regardless of the
+    // webpackIgnore magic comment.  Metro's resolveRequest stub maps 'node:*'
+    // to an empty module on iOS, so this path never executes on React Native.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { writeFileSync } = require('node:fs');
     writeFileSync(outputPath, Buffer.from(arrayBuffer));
     return true;
   } catch (error) {
