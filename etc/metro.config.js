@@ -14,22 +14,36 @@ const config = (() => {
     assetExts: [...resolver.assetExts, 'task'],
     // Stub out packages that ship Node.js-only code incompatible with Hermes.
     //
-    // onnxruntime-web: @huggingface/transformers pulls this in as an ONNX backend.
-    // Its pre-compiled .mjs bundles contain `import(/* webpackIgnore: true */'node:fs')`
-    // which hermesc cannot compile (it doesn't support dynamic import() syntax).
-    // Metro doesn't re-transform pre-compiled node_modules, so the raw import()
-    // ends up in main.jsbundle and causes "Invalid expression encountered" at archive.
-    // On React Native/iOS the app uses the native arkit-body-tracker module, not
-    // onnxruntime-web, so stubbing it to {} is safe.
+    // @huggingface/transformers: on iOS Metro resolves this to
+    // dist/transformers.web.js — a webpack pre-bundle that has onnxruntime-web
+    // code INLINED.  That inlined code contains
+    //   import(/* webpackIgnore: true */'node:fs')
+    // which hermesc rejects ("Invalid expression encountered").
+    // Stubbing onnxruntime-web alone is not enough because the import() call
+    // lives inside transformers.web.js, never as a separate top-level require;
+    // resolveRequest is never consulted for it.  Stubbing the parent package
+    // prevents Metro from reading transformers.web.js altogether.
     //
-    // node:* protocol: belt-and-suspenders stub for any other leaking Node built-ins.
+    // onnxruntime-web / onnxruntime-node: belt-and-suspenders for any path that
+    // bypasses the transformers pre-bundle and reaches these packages directly.
+    //
+    // ink / quickjs-wasi: terminal/WASM libs pulled in transitively by promptfoo
+    // (a dev CLI tool); both contain literal import('node:fs') that hermesc rejects.
+    //
+    // node:* protocol: catch-all for any remaining Node built-in leakage.
     resolveRequest: (context, moduleName, platform) => {
       if (
         moduleName.startsWith('node:') ||
+        moduleName === '@huggingface/transformers' ||
+        moduleName.startsWith('@huggingface/transformers/') ||
         moduleName === 'onnxruntime-web' ||
         moduleName.startsWith('onnxruntime-web/') ||
         moduleName === 'onnxruntime-node' ||
-        moduleName.startsWith('onnxruntime-node/')
+        moduleName.startsWith('onnxruntime-node/') ||
+        moduleName === 'ink' ||
+        moduleName.startsWith('ink/') ||
+        moduleName === 'quickjs-wasi' ||
+        moduleName.startsWith('quickjs-wasi/')
       ) {
         return { type: 'empty' };
       }
