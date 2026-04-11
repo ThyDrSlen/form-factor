@@ -13,7 +13,9 @@
         "image": "macos-sequoia-15.6-xcode-16.4"
       },
       "env": {
-        "APP_VARIANT": "development"
+        "APP_VARIANT": "development",
+        "RCT_USE_PREBUILT_RNCORE": "1",
+        "RCT_USE_RN_DEP": "1"
       }
     },
     "preview": {
@@ -29,7 +31,9 @@
       },
       "android": { "buildType": "apk" },
       "env": {
-        "APP_VARIANT": "preview"
+        "APP_VARIANT": "preview",
+        "RCT_USE_PREBUILT_RNCORE": "1",
+        "RCT_USE_RN_DEP": "1"
       }
     },
     "staging": {
@@ -40,7 +44,9 @@
       },
       "env": {
         "APP_VARIANT": "staging",
-        "EXPO_USE_NEW_ARCH": "1"
+        "EXPO_USE_NEW_ARCH": "1",
+        "RCT_USE_PREBUILT_RNCORE": "1",
+        "RCT_USE_RN_DEP": "1"
       },
       "android": { "buildType": "app-bundle" }
     },
@@ -54,7 +60,9 @@
       },
       "env": {
         "APP_VARIANT": "production",
-        "EXPO_USE_NEW_ARCH": "1"
+        "EXPO_USE_NEW_ARCH": "1",
+        "RCT_USE_PREBUILT_RNCORE": "1",
+        "RCT_USE_RN_DEP": "1"
       },
       "android": { "buildType": "app-bundle" }
     }
