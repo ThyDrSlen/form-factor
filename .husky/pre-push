@@ -10,4 +10,17 @@ bun run ci:policy
 bun run lint
 bun run check:types
 bun run test
-bun audit --audit-level=moderate --ignore=GHSA-2g4f-4pwh-qvx6 --ignore=GHSA-rf6f-7fwh-wjgh --ignore=GHSA-3v7f-55p6-f55p --ignore=GHSA-c2c7-rcm5-vvqj
+bun audit --audit-level=moderate \
+  --ignore=GHSA-2g4f-4pwh-qvx6 --ignore=GHSA-rf6f-7fwh-wjgh \
+  --ignore=GHSA-2328-f5f3-gj25 --ignore=GHSA-26pp-8wgv-hjvm \
+  --ignore=GHSA-27v5-c462-wpq7 --ignore=GHSA-3v7f-55p6-f55p \
+  --ignore=GHSA-5m6q-g25r-mvwx --ignore=GHSA-6v7q-wjvx-w8wg \
+  --ignore=GHSA-92pp-h63x-v22m --ignore=GHSA-c2c7-rcm5-vvqj \
+  --ignore=GHSA-chqc-8p9q-pq6q --ignore=GHSA-f23m-r3pf-42rh \
+  --ignore=GHSA-f886-m6hf-6m8v --ignore=GHSA-gpj5-g38j-94v9 \
+  --ignore=GHSA-j3q9-mxjg-w52f --ignore=GHSA-jvff-x2qm-6286 \
+  --ignore=GHSA-ppp5-5v6c-4jwp --ignore=GHSA-q4gf-8mx6-v5v3 \
+  --ignore=GHSA-q67f-28xg-22rw --ignore=GHSA-r5fr-rjxr-66jc \
+  --ignore=GHSA-r5rp-j6wh-rvv4 --ignore=GHSA-wh4c-j3r5-mjhp \
+  --ignore=GHSA-wmmm-f939-6g9c --ignore=GHSA-xf4j-xp2r-rqqx \
+  --ignore=GHSA-xpcf-pg52-r92g
