@@ -21,6 +21,7 @@ import { useSafeBack } from '@/hooks/use-safe-back';
 import { warnWithTs } from '@/lib/logger';
 import {
   addVideoComment,
+  deleteVideoComment,
   fetchVideoComments,
   getVideoById,
   subscribeToVideoComments,
@@ -42,6 +43,7 @@ export default function VideoCommentsModal() {
   const [sending, setSending] = useState(false);
   const [commentInput, setCommentInput] = useState('');
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const isFocused = useIsFocused();
 
   const displayName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'You';
@@ -177,6 +179,28 @@ export default function VideoCommentsModal() {
     });
   }, []);
 
+  const handleDeleteComment = useCallback(
+    async (commentId: string) => {
+      if (deleting) return;
+      setDeleting(true);
+      try {
+        const result = await deleteVideoComment(commentId);
+        setComments((prev) => prev.filter((c) => c.id !== commentId));
+        showToast('Comment deleted.', { type: 'success' });
+        emitCommentEvent({ type: 'commentDeleted', videoId: result.videoId });
+      } catch (error) {
+        if (__DEV__) {
+          warnWithTs('[Comments] Failed to delete comment', error);
+        }
+        showToast('Unable to delete comment right now.', { type: 'error' });
+      } finally {
+        setDeleting(false);
+        setSelectedCommentId(null);
+      }
+    },
+    [deleting, showToast],
+  );
+
   const renderComment = ({ item }: { item: CommentRecord }) => {
     const isMine = item.user_id === user?.id;
     const name = isMine ? 'You' : 'FF Athlete';
@@ -201,9 +225,19 @@ export default function VideoCommentsModal() {
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            setSelectedCommentId(item.id);
-            showToast('Comment deletion is coming soon.', { type: 'info' });
-            setSelectedCommentId(null);
+            Alert.alert(
+              'Delete Comment',
+              'Are you sure you want to delete this comment?',
+              [
+                { text: 'Cancel', style: 'cancel', onPress: () => setSelectedCommentId(null) },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: () => void handleDeleteComment(item.id),
+                },
+              ],
+              { onDismiss: () => setSelectedCommentId(null) },
+            );
           },
         });
       }

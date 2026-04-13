@@ -1,5 +1,6 @@
 type CommentEvent =
   | { type: 'commentAdded'; videoId: string }
+  | { type: 'commentDeleted'; videoId: string }
   | { type: 'commentModalClosed'; videoId: string };
 
 type CommentEventListener = (event: CommentEvent) => void;
