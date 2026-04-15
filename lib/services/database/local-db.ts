@@ -1141,13 +1141,22 @@ class LocalDatabase {
     recordId: string,
     data?: unknown
   ): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
+    const dbResult = await this.ensureInitialized();
+    if (!dbResult.ok) {
+      throw new Error(dbResult.error.message);
+    }
     const nowIso = new Date().toISOString();
 
-    await this.db.runAsync(
-      'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
-      [tableName, operation, recordId, JSON.stringify(data || {}), nowIso, nowIso]
-    );
+    await dbResult.data.withTransactionAsync(async () => {
+      await dbResult.data.runAsync(
+        'DELETE FROM sync_queue WHERE table_name = ? AND record_id = ?',
+        [tableName, recordId]
+      );
+      await dbResult.data.runAsync(
+        'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
+        [tableName, operation, recordId, JSON.stringify(data || {}), nowIso, nowIso]
+      );
+    });
   }
 
   async getSyncQueue(): Promise<SyncQueueItem[]> {

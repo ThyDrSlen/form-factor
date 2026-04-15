@@ -179,6 +179,26 @@ describe('LocalDatabase', () => {
       await expect(localDB.upsertNutritionGoals(goals)).resolves.not.toThrow();
       expect(mockRunAsync).toHaveBeenCalled();
     });
+
+    it('addToSyncQueue should replace any existing queue row for the same record', async () => {
+      mockRunAsync.mockClear();
+      mockWithTransactionAsync.mockClear();
+      mockWithTransactionAsync.mockImplementation(
+        async (fn: () => Promise<void>) => fn(),
+      );
+
+      await localDB.addToSyncQueue('foods', 'delete', 'f1', { deleted: true });
+
+      expect(mockWithTransactionAsync).toHaveBeenCalledTimes(1);
+      expect(mockRunAsync).toHaveBeenCalledTimes(2);
+      expect(mockRunAsync.mock.calls[0][0]).toContain('DELETE FROM sync_queue WHERE table_name = ? AND record_id = ?');
+      expect(mockRunAsync.mock.calls[0][1]).toEqual(['foods', 'f1']);
+      expect(mockRunAsync.mock.calls[1][0]).toContain('INSERT INTO sync_queue');
+      expect(mockRunAsync.mock.calls[1][1]).toEqual(
+        expect.arrayContaining(['foods', 'delete', 'f1'])
+      );
+      expect(mockRunAsync.mock.calls[1][1][4]).toBe(mockRunAsync.mock.calls[1][1][5]);
+    });
   });
 
   describe('atomic write+queue transaction methods', () => {
