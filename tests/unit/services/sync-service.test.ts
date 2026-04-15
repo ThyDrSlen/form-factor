@@ -469,6 +469,60 @@ describe('SyncService', () => {
       expect(mockLocalDB.deleteHealthMetric).toHaveBeenCalledWith('bad-uuid');
       expect(mockLocalDB.removeSyncQueueItem).toHaveBeenCalledWith(70);
     });
+
+    it('removes stale duplicate queue rows before processing the newest entry', async () => {
+      mockLocalDB.getSyncQueue.mockResolvedValue([
+        {
+          id: 80,
+          table_name: 'foods',
+          operation: 'upsert',
+          record_id: 'food-dup',
+          data: JSON.stringify({ id: 'food-dup', name: 'Old', calories: 10, user_id: 'user-123' }),
+          created_at: new Date().toISOString(),
+          retry_count: 4,
+          next_retry_at: null,
+        },
+        {
+          id: 81,
+          table_name: 'foods',
+          operation: 'delete',
+          record_id: 'food-dup',
+          data: JSON.stringify({ id: 'food-dup', user_id: 'user-123' }),
+          created_at: new Date().toISOString(),
+          retry_count: 0,
+          next_retry_at: null,
+        },
+      ]);
+
+      await syncService.syncToSupabase();
+
+      expect(mockLocalDB.removeSyncQueueItem).toHaveBeenCalledWith(80);
+      expect(mockLocalDB.removeSyncQueueItem).toHaveBeenCalledWith(81);
+      expect(mockFrom).toHaveBeenCalledTimes(1);
+      expect(mockLocalDB.incrementSyncQueueRetry).not.toHaveBeenCalledWith(80, expect.any(String));
+    });
+
+    it('drops wrong-user queue items instead of leaving them stuck forever', async () => {
+      mockLocalDB.getSyncQueue.mockResolvedValue([
+        {
+          id: 90,
+          table_name: 'foods',
+          operation: 'upsert',
+          record_id: 'food-wrong-user',
+          data: JSON.stringify({ id: 'food-wrong-user', name: 'Other', calories: 10, user_id: 'someone-else' }),
+          created_at: new Date().toISOString(),
+          retry_count: 0,
+          next_retry_at: null,
+        },
+      ]);
+
+      await syncService.syncToSupabase();
+
+      expect(mockLocalDB.hardDeleteFood).toHaveBeenCalledWith('food-wrong-user');
+      expect(mockLocalDB.removeSyncQueueItem).toHaveBeenCalledWith(90);
+      expect(mockLocalDB.incrementSyncQueueRetry).not.toHaveBeenCalledWith(90, expect.any(String));
+      expect(mockFrom).not.toHaveBeenCalled();
+    });
   });
 
   // -----------------------------------------------------------------------
