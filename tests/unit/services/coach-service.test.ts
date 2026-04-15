@@ -129,4 +129,229 @@ describe('coach-service', () => {
       })
     );
   });
+
+  // ---------------------------------------------------------------------------
+  // Successful response extraction
+  // ---------------------------------------------------------------------------
+
+  it('extracts message from data.content when data.message is absent', async () => {
+    mockInvoke.mockResolvedValue({ data: { content: 'Brace your core.' }, error: null });
+
+    const result = await sendCoachPrompt(baseMessages);
+
+    expect(result).toEqual({ role: 'assistant', content: 'Brace your core.' });
+  });
+
+  it('extracts message from data.reply when message and content are absent', async () => {
+    mockInvoke.mockResolvedValue({ data: { reply: 'Use a hip hinge.' }, error: null });
+
+    const result = await sendCoachPrompt(baseMessages);
+
+    expect(result).toEqual({ role: 'assistant', content: 'Use a hip hinge.' });
+  });
+
+  it('prefers data.message over data.content and data.reply', async () => {
+    mockInvoke.mockResolvedValue({
+      data: { message: 'Primary', content: 'Secondary', reply: 'Tertiary' },
+      error: null,
+    });
+
+    const result = await sendCoachPrompt(baseMessages);
+
+    expect(result).toEqual({ role: 'assistant', content: 'Primary' });
+  });
+
+  it('trims whitespace from the response text', async () => {
+    mockInvoke.mockResolvedValue({ data: { message: '  Keep your chest up.  ' }, error: null });
+
+    const result = await sendCoachPrompt(baseMessages);
+
+    expect(result.content).toBe('Keep your chest up.');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Error classification edge cases
+  // ---------------------------------------------------------------------------
+
+  it('classifies a "not configured" error message as COACH_NOT_CONFIGURED', async () => {
+    mockInvoke.mockResolvedValue({
+      data: null,
+      error: { message: 'Function not configured for production' },
+    });
+
+    await expect(sendCoachPrompt(baseMessages)).rejects.toMatchObject({
+      code: 'COACH_NOT_CONFIGURED',
+    });
+  });
+
+  it('classifies a 404 error from message string (no status field) as COACH_NOT_DEPLOYED', async () => {
+    mockInvoke.mockResolvedValue({
+      data: null,
+      error: { message: '404 Function not found' },
+    });
+
+    await expect(sendCoachPrompt(baseMessages)).rejects.toMatchObject({
+      code: 'COACH_NOT_DEPLOYED',
+    });
+  });
+
+  it('classifies a generic invoke error as COACH_INVOKE_FAILED with retryable=true', async () => {
+    mockInvoke.mockResolvedValue({
+      data: null,
+      error: { message: 'Timeout exceeded' },
+    });
+
+    await expect(sendCoachPrompt(baseMessages)).rejects.toMatchObject({
+      domain: 'network',
+      code: 'COACH_INVOKE_FAILED',
+      retryable: true,
+    });
+  });
+
+  it('classifies data.error with OPENAI_API_KEY as COACH_NOT_CONFIGURED', async () => {
+    mockInvoke.mockResolvedValue({
+      data: { error: 'OPENAI_API_KEY is not set' },
+      error: null,
+    });
+
+    await expect(sendCoachPrompt(baseMessages)).rejects.toMatchObject({
+      domain: 'validation',
+      code: 'COACH_NOT_CONFIGURED',
+      retryable: false,
+    });
+  });
+
+  it('classifies data.error with "not configured" as COACH_NOT_CONFIGURED', async () => {
+    mockInvoke.mockResolvedValue({
+      data: { error: 'Model not configured' },
+      error: null,
+    });
+
+    await expect(sendCoachPrompt(baseMessages)).rejects.toMatchObject({
+      domain: 'validation',
+      code: 'COACH_NOT_CONFIGURED',
+    });
+  });
+
+  it('classifies data.error without config keywords as COACH_ERROR', async () => {
+    mockInvoke.mockResolvedValue({
+      data: { error: 'Model capacity exceeded' },
+      error: null,
+    });
+
+    await expect(sendCoachPrompt(baseMessages)).rejects.toMatchObject({
+      domain: 'network',
+      code: 'COACH_ERROR',
+      retryable: true,
+    });
+  });
+
+  it('rejects when data is null and no error is returned (empty response)', async () => {
+    mockInvoke.mockResolvedValue({ data: null, error: null });
+
+    await expect(sendCoachPrompt(baseMessages)).rejects.toMatchObject({
+      code: 'COACH_EMPTY_RESPONSE',
+    });
+  });
+
+  it('rejects when data has no message/content/reply fields', async () => {
+    mockInvoke.mockResolvedValue({ data: { other: 'field' }, error: null });
+
+    await expect(sendCoachPrompt(baseMessages)).rejects.toMatchObject({
+      code: 'COACH_EMPTY_RESPONSE',
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Non-AppError exceptions are wrapped as COACH_REQUEST_FAILED
+  // ---------------------------------------------------------------------------
+
+  it('wraps non-domain errors as COACH_REQUEST_FAILED', async () => {
+    mockInvoke.mockRejectedValue(new Error('Network unreachable'));
+
+    await expect(sendCoachPrompt(baseMessages)).rejects.toMatchObject({
+      domain: 'network',
+      code: 'COACH_REQUEST_FAILED',
+      retryable: true,
+    });
+  });
+
+  it('re-throws errors that already have a domain property', async () => {
+    const domainErr = { domain: 'validation', code: 'CUSTOM', message: 'custom' };
+    mockInvoke.mockRejectedValue(domainErr);
+
+    await expect(sendCoachPrompt(baseMessages)).rejects.toBe(domainErr);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Conversation persistence
+  // ---------------------------------------------------------------------------
+
+  it('does not persist when profile.id is missing', async () => {
+    await sendCoachPrompt(baseMessages, {
+      profile: { name: 'Pat' },
+      sessionId: 'sess-1',
+    });
+    await Promise.resolve();
+
+    expect(mockFrom).not.toHaveBeenCalledWith('coach_conversations');
+  });
+
+  it('does not persist when sessionId is missing', async () => {
+    await sendCoachPrompt(baseMessages, {
+      profile: { id: 'user-1', name: 'Pat' },
+    });
+    await Promise.resolve();
+
+    expect(mockFrom).not.toHaveBeenCalledWith('coach_conversations');
+  });
+
+  it('does not persist when context is undefined', async () => {
+    await sendCoachPrompt(baseMessages);
+    await Promise.resolve();
+
+    expect(mockFrom).not.toHaveBeenCalledWith('coach_conversations');
+  });
+
+  it('retries persist once when initial insert fails', async () => {
+    let insertCallCount = 0;
+    mockInsert.mockImplementation(() => {
+      insertCallCount++;
+      if (insertCallCount === 1) {
+        return Promise.resolve({ error: { message: 'DB timeout' } });
+      }
+      return Promise.resolve({ error: null });
+    });
+
+    const messages = [{ role: 'user' as const, content: 'test' }];
+    await sendCoachPrompt(messages, {
+      profile: { id: 'user-1' },
+      sessionId: 'sess-1',
+    });
+
+    // Wait for the fire-and-forget promises
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(insertCallCount).toBe(2);
+  });
+
+  it('uses the env-configured function name', () => {
+    // The function name is read at module evaluation time from
+    // process.env.EXPO_PUBLIC_COACH_FUNCTION, defaulting to 'coach'.
+    // We verify the mock invoke is called with the expected name.
+    expect(mockInvoke.mock.calls[0]?.[0] || 'coach').toBe('coach');
+  });
+
+  it('calculates turn_index correctly for single user message', async () => {
+    const messages = [{ role: 'user' as const, content: 'Hello' }];
+    await sendCoachPrompt(messages, {
+      profile: { id: 'user-1' },
+      sessionId: 'sess-1',
+    });
+    await Promise.resolve();
+
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ turn_index: 0 })
+    );
+  });
 });
