@@ -4,6 +4,7 @@ import { localDB } from '../lib/services/database/local-db';
 import { syncService } from '../lib/services/database/sync-service';
 import { useNetwork } from './NetworkContext';
 import { useAuth } from './AuthContext';
+import { useToast } from './ToastContext';
 
 export interface Workout {
   id: string;
@@ -49,6 +50,7 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
   const [isWorkoutInProgress, setIsWorkoutInProgress] = useState(false);
   const { isOnline } = useNetwork();
   const { user } = useAuth();
+  const { show: showToast } = useToast();
 
   const loadLocalWorkouts = useCallback(async () => {
     try {
@@ -161,6 +163,7 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
       if (isOnline) {
         void syncService.syncToSupabase().catch((syncError) => {
           console.error('[WorkoutsProvider] Background sync failed after add:', syncError);
+          showToast('Sync failed. Changes saved locally.', { type: 'error' });
         });
       }
     } catch (err) {
@@ -193,6 +196,7 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
       if (isOnline) {
         void syncService.syncToSupabase().catch((syncError) => {
           console.error('[WorkoutsProvider] Background sync failed after add:', syncError);
+          showToast('Sync failed. Changes saved locally.', { type: 'error' });
         });
       }
     } catch (error) {

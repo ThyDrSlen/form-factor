@@ -10,6 +10,7 @@ import {
   SyncTableName,
 } from './local-db';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
+import { createError, logError } from '../ErrorHandler';
 import {
   syncAllWorkoutTablesToSupabase,
   downloadAllWorkoutTablesFromSupabase,
@@ -97,9 +98,20 @@ class SyncService {
     lastErrorAt: null,
   };
   private conflictSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  private realtimeResyncTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly maxChannelRetries = 3;
   private readonly conflictReconcileDelayMs = 750;
   private readonly maxQueueRetries = 5;
+  private readonly realtimeResyncDelayMs = 2_000;
+  // Minimum delay enforced when scheduling a retry, regardless of computed backoff.
+  // This acts as a floor against backward device-clock drift: if the clock jumps
+  // backward after next_retry_at is written, the stored timestamp would immediately
+  // pass the `<= Date.now()` check and trigger an infinite retry loop.  By ensuring
+  // every retry is at least MIN_RETRY_DELAY_MS in the future (relative to the moment
+  // we write it), we guarantee at least that much wall-clock time must elapse before
+  // the item is eligible again — even if the clock later moves backward by a smaller
+  // amount.  (Closes #387)
+  private readonly minRetryDelayMs = 30_000;
 
   private getErrorCode(error: unknown): string | undefined {
     if (error && typeof error === 'object' && 'code' in error) {
@@ -199,6 +211,38 @@ class SyncService {
     }, this.conflictReconcileDelayMs);
   }
 
+  /**
+   * Called when a realtime change handler fails to apply a remote change
+   * to the local DB. Sets sync status to 'error' so the UI can indicate
+   * stale data and schedules a full download to recover the lost change.
+   */
+  private handleRealtimeError(table: string, error: unknown): void {
+    const message = error instanceof Error ? error.message : `Realtime ${table} change failed`;
+    this.setSyncStatus({
+      state: 'error',
+      lastError: message,
+      lastErrorAt: new Date().toISOString(),
+    });
+    this.scheduleResyncAfterRealtimeError(table);
+  }
+
+  /**
+   * Debounced full resync after a realtime handler error. Multiple
+   * errors within the delay window collapse into a single resync.
+   */
+  private scheduleResyncAfterRealtimeError(table: string): void {
+    if (this.realtimeResyncTimer) {
+      return;
+    }
+
+    this.realtimeResyncTimer = setTimeout(() => {
+      this.realtimeResyncTimer = null;
+      this.downloadFromSupabase().catch((resyncError) => {
+        errorWithTs('[SyncService] Resync after realtime error failed:', { table, resyncError });
+      });
+    }, this.realtimeResyncDelayMs);
+  }
+
   private getRetryDelayMs(retryCount: number): number {
     const baseDelayMs = 1_000;
     const maxDelayMs = 60_000;
@@ -215,7 +259,11 @@ class SyncService {
   }
 
   private getNextRetryIso(item: SyncQueueItem): string {
-    return new Date(Date.now() + this.getRetryDelayMs(item.retry_count)).toISOString();
+    // Use the larger of the exponential-backoff delay and the minimum floor so
+    // that backward clock drift cannot make a just-failed item immediately
+    // eligible again.  See #387.
+    const delayMs = Math.max(this.minRetryDelayMs, this.getRetryDelayMs(item.retry_count));
+    return new Date(Date.now() + delayMs).toISOString();
   }
 
   // Initialize Realtime subscriptions
@@ -478,6 +526,7 @@ class SyncService {
                 payload,
                 () => this.notifySyncComplete(),
                 (reason: string) => this.scheduleConflictReconcile(reason),
+                (table: string, error: unknown) => this.handleRealtimeError(table, error),
               );
             }
           ),
@@ -529,17 +578,34 @@ class SyncService {
         if (localFood) {
           await localDB.updateFood(food.id, food);
         } else {
-          await localDB.insertFood(food);
-          await localDB.updateFoodSyncStatus(food.id, true);
+          await localDB.withTransaction(async () => {
+            await localDB.insertFood(food);
+            await localDB.updateFoodSyncStatus(food.id, true);
+          });
         }
-        
+
         this.notifySyncComplete();
       } else if (payload.eventType === 'DELETE' && oldRow.id) {
         await localDB.hardDeleteFood(oldRow.id);
         this.notifySyncComplete();
       }
     } catch (error) {
-      errorWithTs('[SyncService] Error handling realtime food change:', error);
+      const appError = createError(
+        'sync',
+        'REALTIME_CHANGE_FAILED',
+        `Failed to apply realtime ${payload.eventType} for foods`,
+        {
+          details: { table: 'foods', eventType: payload.eventType, error },
+          retryable: true,
+          severity: 'error',
+        },
+      );
+      logError(appError, {
+        feature: 'app',
+        location: 'sync-service.handleRealtimeFoodChange',
+        meta: { table: 'foods', eventType: payload.eventType },
+      });
+      this.handleRealtimeError('foods', error);
     }
   }
 
@@ -581,17 +647,34 @@ class SyncService {
         if (localWorkout) {
           await localDB.updateWorkout(workout.id, workout);
         } else {
-          await localDB.insertWorkout(workout);
-          await localDB.updateWorkoutSyncStatus(workout.id, true);
+          await localDB.withTransaction(async () => {
+            await localDB.insertWorkout(workout);
+            await localDB.updateWorkoutSyncStatus(workout.id, true);
+          });
         }
-        
+
         this.notifySyncComplete();
       } else if (payload.eventType === 'DELETE' && oldRow.id) {
         await localDB.hardDeleteWorkout(oldRow.id);
         this.notifySyncComplete();
       }
     } catch (error) {
-      errorWithTs('[SyncService] Error handling realtime workout change:', error);
+      const appError = createError(
+        'sync',
+        'REALTIME_CHANGE_FAILED',
+        `Failed to apply realtime ${payload.eventType} for workouts`,
+        {
+          details: { table: 'workouts', eventType: payload.eventType, error },
+          retryable: true,
+          severity: 'error',
+        },
+      );
+      logError(appError, {
+        feature: 'app',
+        location: 'sync-service.handleRealtimeWorkoutChange',
+        meta: { table: 'workouts', eventType: payload.eventType },
+      });
+      this.handleRealtimeError('workouts', error);
     }
   }
 
@@ -633,17 +716,34 @@ class SyncService {
         if (localMetric) {
           await localDB.updateHealthMetric(metric.id, metric);
         } else {
-          await localDB.insertHealthMetric(metric);
-          await localDB.updateHealthMetricSyncStatus(metric.id, true);
+          await localDB.withTransaction(async () => {
+            await localDB.insertHealthMetric(metric);
+            await localDB.updateHealthMetricSyncStatus(metric.id, true);
+          });
         }
-        
+
         this.notifySyncComplete();
       } else if (payload.eventType === 'DELETE' && oldRow.id) {
         await localDB.deleteHealthMetric(oldRow.id);
         this.notifySyncComplete();
       }
     } catch (error) {
-      errorWithTs('[SyncService] Error handling realtime health metric change:', error);
+      const appError = createError(
+        'sync',
+        'REALTIME_CHANGE_FAILED',
+        `Failed to apply realtime ${payload.eventType} for health_metrics`,
+        {
+          details: { table: 'health_metrics', eventType: payload.eventType, error },
+          retryable: true,
+          severity: 'error',
+        },
+      );
+      logError(appError, {
+        feature: 'app',
+        location: 'sync-service.handleRealtimeHealthMetricChange',
+        meta: { table: 'health_metrics', eventType: payload.eventType },
+      });
+      this.handleRealtimeError('health_metrics', error);
     }
   }
 
@@ -682,7 +782,22 @@ class SyncService {
         this.notifySyncComplete();
       }
     } catch (error) {
-      errorWithTs('[SyncService] Error handling realtime nutrition goals change:', error);
+      const appError = createError(
+        'sync',
+        'REALTIME_CHANGE_FAILED',
+        `Failed to apply realtime ${payload.eventType} for nutrition_goals`,
+        {
+          details: { table: 'nutrition_goals', eventType: payload.eventType, error },
+          retryable: true,
+          severity: 'error',
+        },
+      );
+      logError(appError, {
+        feature: 'app',
+        location: 'sync-service.handleRealtimeNutritionGoalsChange',
+        meta: { table: 'nutrition_goals', eventType: payload.eventType },
+      });
+      this.handleRealtimeError('nutrition_goals', error);
     }
   }
 
@@ -693,6 +808,11 @@ class SyncService {
     if (this.conflictSyncTimer) {
       clearTimeout(this.conflictSyncTimer);
       this.conflictSyncTimer = null;
+    }
+
+    if (this.realtimeResyncTimer) {
+      clearTimeout(this.realtimeResyncTimer);
+      this.realtimeResyncTimer = null;
     }
 
     if (this.foodChannel) {
@@ -1096,7 +1216,8 @@ class SyncService {
   // Process items in sync queue
   private async processSyncQueue(): Promise<boolean> {
     const queue = await localDB.getSyncQueue();
-    logWithTs(`[SyncService] Processing ${queue.length} items in sync queue`);
+    const dedupedQueue = await this.removeStaleQueueDuplicates(queue);
+    logWithTs(`[SyncService] Processing ${dedupedQueue.length} items in sync queue`);
     let hadProcessingErrors = false;
 
     // Get current user
@@ -1106,7 +1227,7 @@ class SyncService {
       return false;
     }
 
-    for (const item of queue) {
+    for (const item of dedupedQueue) {
       try {
         if (!this.isQueueItemReady(item)) {
           continue;
@@ -1139,8 +1260,12 @@ class SyncService {
         const itemUserId = typeof data.user_id === 'string' ? data.user_id : null;
         if (itemUserId && itemUserId !== user.id) {
           warnWithTs(
-            `[SyncService] Skipping queue item ${item.id} because user_id ${String(itemUserId)} does not match current user ${user.id}`
+            `[SyncService] Dropping queue item ${item.id} because user_id ${String(itemUserId)} does not match current user ${user.id}`
           );
+          if (this.isManagedTable(item.table_name)) {
+            await this.purgeLocalRecord(item.table_name, item.record_id);
+          }
+          await localDB.removeSyncQueueItem(item.id);
           continue;
         }
 
@@ -1198,19 +1323,20 @@ class SyncService {
           if (upsertError) throw upsertError;
         }
 
-        // Remove from queue on success
-        await localDB.removeSyncQueueItem(item.id);
-        
-        // Update local record sync status
-        if (item.table_name === 'foods') {
-          await localDB.updateFoodSyncStatus(item.record_id, true);
-        } else if (item.table_name === 'workouts') {
-          await localDB.updateWorkoutSyncStatus(item.record_id, true);
-        } else if (item.table_name === 'health_metrics') {
-          await localDB.updateHealthMetricSyncStatus(item.record_id, true);
-        } else if (item.table_name === 'nutrition_goals') {
-          await localDB.updateNutritionGoalsSyncStatus(item.record_id, true);
-        }
+        // Remove from queue and update sync status atomically
+        await localDB.withTransaction(async () => {
+          await localDB.removeSyncQueueItem(item.id);
+
+          if (item.table_name === 'foods') {
+            await localDB.updateFoodSyncStatus(item.record_id, true);
+          } else if (item.table_name === 'workouts') {
+            await localDB.updateWorkoutSyncStatus(item.record_id, true);
+          } else if (item.table_name === 'health_metrics') {
+            await localDB.updateHealthMetricSyncStatus(item.record_id, true);
+          } else if (item.table_name === 'nutrition_goals') {
+            await localDB.updateNutritionGoalsSyncStatus(item.record_id, true);
+          }
+        });
       } catch (error) {
         if (this.isRlsViolation(error)) {
           warnWithTs(`[SyncService] Queue item ${item.id} was rejected by RLS, purging local record`);
@@ -1242,6 +1368,34 @@ class SyncService {
 
     await this.refreshQueueSize();
     return hadProcessingErrors;
+  }
+
+  private async removeStaleQueueDuplicates(queue: SyncQueueItem[]): Promise<SyncQueueItem[]> {
+    const latestIdsByRecord = new Map<string, number>();
+
+    for (const item of queue) {
+      const key = `${item.table_name}:${item.record_id}`;
+      const existingId = latestIdsByRecord.get(key);
+      if (existingId === undefined || item.id > existingId) {
+        latestIdsByRecord.set(key, item.id);
+      }
+    }
+
+    const dedupedQueue: SyncQueueItem[] = [];
+    for (const item of queue) {
+      const key = `${item.table_name}:${item.record_id}`;
+      if (latestIdsByRecord.get(key) === item.id) {
+        dedupedQueue.push(item);
+        continue;
+      }
+
+      warnWithTs(
+        `[SyncService] Removing stale duplicate queue item ${item.id} for ${item.table_name}:${item.record_id}`
+      );
+      await localDB.removeSyncQueueItem(item.id);
+    }
+
+    return dedupedQueue;
   }
 
   // Download all data from Supabase to local DB

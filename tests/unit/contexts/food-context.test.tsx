@@ -2,6 +2,7 @@ import React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react-native';
 import type * as FoodContextModule from '@/contexts/FoodContext';
 import type { FoodEntry } from '@/contexts/FoodContext';
+import { ToastProvider } from '@/contexts/ToastContext';
 
 // Mock expo-crypto
 jest.mock('expo-crypto', () => ({
@@ -78,7 +79,9 @@ beforeAll(() => {
 });
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
-  <FoodProvider>{children}</FoodProvider>
+  <ToastProvider>
+    <FoodProvider>{children}</FoodProvider>
+  </ToastProvider>
 );
 
 const makeFoodEntry = (overrides: Partial<FoodEntry> = {}): FoodEntry => ({
