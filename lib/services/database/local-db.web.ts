@@ -379,7 +379,9 @@ class LocalDatabase {
     recordId: string,
     data?: unknown
   ): Promise<void> {
-    const queue = this.getData<SyncQueueItem>(this.getStorageKey('sync_queue'));
+    const queue = this.getData<SyncQueueItem>(this.getStorageKey('sync_queue')).filter(
+      item => !(item.table_name === tableName && item.record_id === recordId)
+    );
     const maxId = queue.reduce((max, item) => Math.max(max, item.id), 0);
     const nowIso = new Date().toISOString();
     queue.push({
