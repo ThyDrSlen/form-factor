@@ -41,6 +41,7 @@ export default function CoachScreen() {
   const [coachMessages, setCoachMessages] = useState<CoachMessage[]>([coachIntroMessage]);
   const [coachInput, setCoachInput] = useState('');
   const [coachError, setCoachError] = useState<string | null>(null);
+  const [coachErrorDomain, setCoachErrorDomain] = useState<AppError['domain'] | null>(null);
   const [coachSending, setCoachSending] = useState(false);
   const [showCoachWelcome, setShowCoachWelcome] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
@@ -88,6 +89,7 @@ export default function CoachScreen() {
     setCoachMessages(conversation);
     setCoachInput('');
     setCoachError(null);
+    setCoachErrorDomain(null);
     setCoachSending(true);
 
     try {
@@ -105,6 +107,7 @@ export default function CoachScreen() {
       const hasDomain = Boolean(appErr && typeof appErr === 'object' && 'domain' in appErr);
       const fallback = 'Unable to reach the coach. Please try again.';
       setCoachError(hasDomain ? mapToUserMessage(appErr as AppError) : fallback);
+      setCoachErrorDomain(hasDomain ? (appErr as AppError).domain : null);
     } finally {
       setCoachSending(false);
     }
@@ -198,6 +201,7 @@ export default function CoachScreen() {
     setCoachMessages([coachIntroMessage]);
     setCoachSessionId(Crypto.randomUUID());
     setCoachError(null);
+    setCoachErrorDomain(null);
   }, []);
 
   const handleVoiceStart = useCallback(async () => {
@@ -218,7 +222,7 @@ export default function CoachScreen() {
     <KeyboardAvoidingView
       style={[styles.container, { paddingBottom: bottomOffset }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={bottomOffset}
+      keyboardVerticalOffset={tabBarHeight}
     >
       <View style={styles.coachContainer}>
         {showCoachWelcome && (
@@ -298,7 +302,13 @@ export default function CoachScreen() {
 
         {coachError && (
           <View style={styles.coachError}>
-            <Text style={styles.coachErrorTitle}>Coach is busy</Text>
+            <Text style={styles.coachErrorTitle}>
+              {coachErrorDomain === 'network'
+                ? 'Connection error'
+                : coachErrorDomain === 'unknown' || coachErrorDomain == null
+                  ? 'Coach is busy'
+                  : 'Service unavailable'}
+            </Text>
             <Text style={styles.coachErrorText}>{coachError}</Text>
           </View>
         )}
