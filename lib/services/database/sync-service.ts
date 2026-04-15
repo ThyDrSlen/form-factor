@@ -1216,7 +1216,8 @@ class SyncService {
   // Process items in sync queue
   private async processSyncQueue(): Promise<boolean> {
     const queue = await localDB.getSyncQueue();
-    logWithTs(`[SyncService] Processing ${queue.length} items in sync queue`);
+    const dedupedQueue = await this.removeStaleQueueDuplicates(queue);
+    logWithTs(`[SyncService] Processing ${dedupedQueue.length} items in sync queue`);
     let hadProcessingErrors = false;
 
     // Get current user
@@ -1226,7 +1227,7 @@ class SyncService {
       return false;
     }
 
-    for (const item of queue) {
+    for (const item of dedupedQueue) {
       try {
         if (!this.isQueueItemReady(item)) {
           continue;
@@ -1259,8 +1260,12 @@ class SyncService {
         const itemUserId = typeof data.user_id === 'string' ? data.user_id : null;
         if (itemUserId && itemUserId !== user.id) {
           warnWithTs(
-            `[SyncService] Skipping queue item ${item.id} because user_id ${String(itemUserId)} does not match current user ${user.id}`
+            `[SyncService] Dropping queue item ${item.id} because user_id ${String(itemUserId)} does not match current user ${user.id}`
           );
+          if (this.isManagedTable(item.table_name)) {
+            await this.purgeLocalRecord(item.table_name, item.record_id);
+          }
+          await localDB.removeSyncQueueItem(item.id);
           continue;
         }
 
@@ -1363,6 +1368,34 @@ class SyncService {
 
     await this.refreshQueueSize();
     return hadProcessingErrors;
+  }
+
+  private async removeStaleQueueDuplicates(queue: SyncQueueItem[]): Promise<SyncQueueItem[]> {
+    const latestIdsByRecord = new Map<string, number>();
+
+    for (const item of queue) {
+      const key = `${item.table_name}:${item.record_id}`;
+      const existingId = latestIdsByRecord.get(key);
+      if (existingId === undefined || item.id > existingId) {
+        latestIdsByRecord.set(key, item.id);
+      }
+    }
+
+    const dedupedQueue: SyncQueueItem[] = [];
+    for (const item of queue) {
+      const key = `${item.table_name}:${item.record_id}`;
+      if (latestIdsByRecord.get(key) === item.id) {
+        dedupedQueue.push(item);
+        continue;
+      }
+
+      warnWithTs(
+        `[SyncService] Removing stale duplicate queue item ${item.id} for ${item.table_name}:${item.record_id}`
+      );
+      await localDB.removeSyncQueueItem(item.id);
+    }
+
+    return dedupedQueue;
   }
 
   // Download all data from Supabase to local DB
