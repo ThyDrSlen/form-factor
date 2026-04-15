@@ -159,6 +159,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const [syncProgress, setSyncProgress] = useState<BulkSyncProgress | null>(null);
   const [hasSyncedBefore, setHasSyncedBefore] = useState<boolean>(false);
   const syncProgressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rescheduleAfterSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Weight analysis refresh function
   const refreshWeightAnalysis = useCallback(async () => {
@@ -427,8 +428,19 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
     tick();
     return () => {
       cancelled = true;
-      if (timeout) clearTimeout(timeout);
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
       pendingTimers.forEach(clearTimeout);
+      pendingTimers.length = 0;
+      // Prevent any post-cleanup reschedule call from restarting the loop
+      rescheduleRef.current = () => {};
+      // Cancel any deferred reschedule triggered by syncAllHistoricalData
+      if (rescheduleAfterSyncTimerRef.current) {
+        clearTimeout(rescheduleAfterSyncTimerRef.current);
+        rescheduleAfterSyncTimerRef.current = null;
+      }
     };
   }, [status?.hasReadPermission, user?.id, isWorkoutInProgress]);
 
@@ -527,9 +539,11 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
       if (result.success) {
         console.log('[HealthKitContext] Bulk sync completed successfully', result);
         setHasSyncedBefore(true);
-        
-        // Refresh the metrics after sync
-        setTimeout(() => {
+
+        // Refresh the metrics after sync — tracked so it can be cancelled on unmount
+        if (rescheduleAfterSyncTimerRef.current) clearTimeout(rescheduleAfterSyncTimerRef.current);
+        rescheduleAfterSyncTimerRef.current = setTimeout(() => {
+          rescheduleAfterSyncTimerRef.current = null;
           try {
             rescheduleRef.current?.();
           } catch (error) {
