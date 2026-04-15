@@ -85,7 +85,17 @@ export default function FoodScreen() {
         swipeableRefs.current.delete(id);
       } catch (error) {
         errorWithTs('[Food] delete failed', error);
-        showToast('Failed to delete entry', { type: 'error' });
+        const isNetworkError =
+          error instanceof Error &&
+          (error.message.toLowerCase().includes('network') ||
+            error.message.toLowerCase().includes('fetch') ||
+            error.message.toLowerCase().includes('offline'));
+        showToast(
+          isNetworkError
+            ? "Couldn't delete — check your connection"
+            : "Couldn't delete entry — try again",
+          { type: 'error' }
+        );
       }
     },
     [deleteFood, showToast]
@@ -309,9 +319,12 @@ export default function FoodScreen() {
           }
         />
       )}
-      <TouchableOpacity 
-        style={styles.addButton} 
+      <TouchableOpacity
+        style={styles.addButton}
         onPress={handleAddPress}
+        activeOpacity={0.9}
+        accessibilityLabel="Add meal"
+        accessibilityRole="button"
       >
         <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>

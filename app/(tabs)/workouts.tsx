@@ -84,7 +84,17 @@ export default function WorkoutsScreen() {
         swipeableRefs.current.delete(id);
       } catch (error) {
         errorWithTs('[Workouts] delete failed', error);
-        showToast('Failed to delete workout', { type: 'error' });
+        const isNetworkError =
+          error instanceof Error &&
+          (error.message.toLowerCase().includes('network') ||
+            error.message.toLowerCase().includes('fetch') ||
+            error.message.toLowerCase().includes('offline'));
+        showToast(
+          isNetworkError
+            ? "Couldn't delete — check your connection"
+            : "Couldn't delete workout — try again",
+          { type: 'error' }
+        );
       }
     },
     [deleteWorkout, showToast]
@@ -320,10 +330,12 @@ export default function WorkoutsScreen() {
           }
         />
       )}
-      <TouchableOpacity 
-        style={styles.addButton} 
+      <TouchableOpacity
+        style={styles.addButton}
         onPress={handleAddPress}
         activeOpacity={0.9}
+        accessibilityLabel="Add workout"
+        accessibilityRole="button"
       >
         <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
