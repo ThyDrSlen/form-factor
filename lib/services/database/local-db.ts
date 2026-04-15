@@ -468,6 +468,18 @@ class LocalDatabase {
     }
   }
 
+  /**
+   * Run a callback inside a SQLite transaction. If the callback throws,
+   * the transaction is rolled back; otherwise it is committed.
+   */
+  async withTransaction(fn: () => Promise<void>): Promise<void> {
+    const dbResult = await this.ensureInitialized();
+    if (!dbResult.ok) {
+      throw new Error(dbResult.error.message);
+    }
+    await dbResult.data.withTransactionAsync(fn);
+  }
+
   // Food operations
   async insertFood(food: Omit<LocalFood, 'synced' | 'deleted' | 'updated_at'>): Promise<void> {
     const dbResult = await this.ensureInitialized();
@@ -480,6 +492,29 @@ class LocalDatabase {
        VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
       [food.id, food.name, food.calories, food.protein || null, food.carbs || null, food.fat || null, food.date, new Date().toISOString()]
     );
+  }
+
+  async insertFoodAndQueue(
+    food: Omit<LocalFood, 'synced' | 'deleted' | 'updated_at'>,
+    syncData?: unknown,
+  ): Promise<void> {
+    const dbResult = await this.ensureInitialized();
+    if (!dbResult.ok) {
+      throw new Error(dbResult.error.message);
+    }
+
+    const now = new Date().toISOString();
+    await dbResult.data.withTransactionAsync(async () => {
+      await dbResult.data.runAsync(
+        `INSERT OR REPLACE INTO foods (id, name, calories, protein, carbs, fat, date, synced, deleted, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
+        [food.id, food.name, food.calories, food.protein || null, food.carbs || null, food.fat || null, food.date, now]
+      );
+      await dbResult.data.runAsync(
+        'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
+        ['foods', 'upsert', food.id, JSON.stringify(syncData || {}), now, now]
+      );
+    });
   }
 
   async getAllFoods(): Promise<LocalFood[]> {
@@ -538,6 +573,23 @@ class LocalDatabase {
     );
   }
 
+  async softDeleteFoodAndQueue(id: string, syncData?: unknown): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const now = new Date().toISOString();
+    const db = this.db;
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        'UPDATE foods SET deleted = 1, synced = 0, updated_at = ? WHERE id = ?',
+        [now, id]
+      );
+      await db.runAsync(
+        'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
+        ['foods', 'delete', id, JSON.stringify(syncData || {}), now, now]
+      );
+    });
+  }
+
   async hardDeleteFood(id: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -563,6 +615,37 @@ class LocalDatabase {
     );
   }
 
+  async updateFoodAndQueue(
+    id: string,
+    updates: Partial<LocalFood>,
+    syncData?: unknown,
+  ): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const fields = Object.keys(updates).filter(k => k !== 'id');
+    if (fields.length === 0) return;
+
+    const setClauses = fields.map(f => `${f} = ?`).join(', ');
+    const values = fields.map(f => {
+      const val = updates[f as keyof LocalFood];
+      return val === undefined ? null : val;
+    });
+    values.push(id);
+
+    const now = new Date().toISOString();
+    const db = this.db;
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        `UPDATE foods SET ${setClauses} WHERE id = ?`,
+        values
+      );
+      await db.runAsync(
+        'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
+        ['foods', 'upsert', id, JSON.stringify(syncData || {}), now, now]
+      );
+    });
+  }
+
   // Workout operations
   async insertWorkout(workout: Omit<LocalWorkout, 'synced' | 'deleted' | 'updated_at'>): Promise<void> {
     const dbResult = await this.ensureInitialized();
@@ -584,6 +667,38 @@ class LocalDatabase {
         new Date().toISOString()
       ]
     );
+  }
+
+  async insertWorkoutAndQueue(
+    workout: Omit<LocalWorkout, 'synced' | 'deleted' | 'updated_at'>,
+    syncData?: unknown,
+  ): Promise<void> {
+    const dbResult = await this.ensureInitialized();
+    if (!dbResult.ok) {
+      throw new Error(dbResult.error.message);
+    }
+
+    const now = new Date().toISOString();
+    await dbResult.data.withTransactionAsync(async () => {
+      await dbResult.data.runAsync(
+        `INSERT OR REPLACE INTO workouts (id, exercise, sets, reps, weight, duration, date, synced, deleted, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
+        [
+          workout.id,
+          workout.exercise,
+          workout.sets,
+          workout.reps || null,
+          workout.weight || null,
+          workout.duration || null,
+          workout.date,
+          now,
+        ]
+      );
+      await dbResult.data.runAsync(
+        'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
+        ['workouts', 'upsert', workout.id, JSON.stringify(syncData || {}), now, now]
+      );
+    });
   }
 
   async getAllWorkouts(): Promise<LocalWorkout[]> {
@@ -642,6 +757,23 @@ class LocalDatabase {
     );
   }
 
+  async softDeleteWorkoutAndQueue(id: string, syncData?: unknown): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const now = new Date().toISOString();
+    const db = this.db;
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        'UPDATE workouts SET deleted = 1, synced = 0, updated_at = ? WHERE id = ?',
+        [now, id]
+      );
+      await db.runAsync(
+        'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
+        ['workouts', 'delete', id, JSON.stringify(syncData || {}), now, now]
+      );
+    });
+  }
+
   async hardDeleteWorkout(id: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -667,12 +799,43 @@ class LocalDatabase {
     );
   }
 
+  async updateWorkoutAndQueue(
+    id: string,
+    updates: Partial<LocalWorkout>,
+    syncData?: unknown,
+  ): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const fields = Object.keys(updates).filter(k => k !== 'id');
+    if (fields.length === 0) return;
+
+    const setClauses = fields.map(f => `${f} = ?`).join(', ');
+    const values = fields.map(f => {
+      const val = updates[f as keyof LocalWorkout];
+      return val === undefined ? null : val;
+    });
+    values.push(id);
+
+    const now = new Date().toISOString();
+    const db = this.db;
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        `UPDATE workouts SET ${setClauses} WHERE id = ?`,
+        values
+      );
+      await db.runAsync(
+        'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
+        ['workouts', 'upsert', id, JSON.stringify(syncData || {}), now, now]
+      );
+    });
+  }
+
   // Health Metric operations
   async insertHealthMetric(metric: Omit<LocalHealthMetric, 'synced' | 'updated_at'>): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
     await this.db.runAsync(
-      `INSERT OR REPLACE INTO health_metrics 
+      `INSERT OR REPLACE INTO health_metrics
        (id, user_id, summary_date, steps, heart_rate_bpm, heart_rate_timestamp, weight_kg, weight_timestamp, synced, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
       [
@@ -687,6 +850,38 @@ class LocalDatabase {
         new Date().toISOString()
       ]
     );
+  }
+
+  async insertHealthMetricAndQueue(
+    metric: Omit<LocalHealthMetric, 'synced' | 'updated_at'>,
+    syncData?: unknown,
+  ): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const now = new Date().toISOString();
+    const db = this.db;
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO health_metrics
+         (id, user_id, summary_date, steps, heart_rate_bpm, heart_rate_timestamp, weight_kg, weight_timestamp, synced, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+        [
+          metric.id,
+          metric.user_id,
+          metric.summary_date,
+          metric.steps,
+          metric.heart_rate_bpm,
+          metric.heart_rate_timestamp,
+          metric.weight_kg,
+          metric.weight_timestamp,
+          now,
+        ]
+      );
+      await db.runAsync(
+        'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
+        ['health_metrics', 'upsert', metric.id, JSON.stringify(syncData || {}), now, now]
+      );
+    });
   }
 
   async getHealthMetricsForRange(userId: string, startDate: string, endDate: string): Promise<LocalHealthMetric[]> {
@@ -811,6 +1006,37 @@ class LocalDatabase {
     );
   }
 
+  async upsertNutritionGoalsAndQueue(
+    goals: Omit<LocalNutritionGoals, 'synced' | 'updated_at'>,
+    syncData?: unknown,
+  ): Promise<void> {
+    const dbResult = await this.ensureInitialized();
+    if (!dbResult.ok) {
+      throw new Error(dbResult.error.message);
+    }
+
+    const now = new Date().toISOString();
+    await dbResult.data.withTransactionAsync(async () => {
+      await dbResult.data.runAsync(
+        `INSERT OR REPLACE INTO nutrition_goals (id, user_id, calories_goal, protein_goal, carbs_goal, fat_goal, synced, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+        [
+          goals.id,
+          goals.user_id,
+          goals.calories_goal,
+          goals.protein_goal,
+          goals.carbs_goal,
+          goals.fat_goal,
+          now,
+        ]
+      );
+      await dbResult.data.runAsync(
+        'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
+        ['nutrition_goals', 'upsert', goals.id, JSON.stringify(syncData || {}), now, now]
+      );
+    });
+  }
+
   async getNutritionGoals(userId: string): Promise<LocalNutritionGoals | null> {
     const dbResult = await this.ensureInitialized();
     if (!dbResult.ok) {
@@ -881,6 +1107,27 @@ class LocalDatabase {
     );
   }
 
+  async insertNutritionGoalsAndQueue(
+    goals: Omit<LocalNutritionGoals, 'synced' | 'updated_at'>,
+    syncData?: unknown,
+  ): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const now = new Date().toISOString();
+    const db = this.db;
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO nutrition_goals (id, user_id, calories_goal, protein_goal, carbs_goal, fat_goal, synced, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+        [goals.id, goals.user_id, goals.calories_goal, goals.protein_goal, goals.carbs_goal, goals.fat_goal, now]
+      );
+      await db.runAsync(
+        'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
+        ['nutrition_goals', 'upsert', goals.id, JSON.stringify(syncData || {}), now, now]
+      );
+    });
+  }
+
   async deleteNutritionGoals(id: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -894,13 +1141,22 @@ class LocalDatabase {
     recordId: string,
     data?: unknown
   ): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
+    const dbResult = await this.ensureInitialized();
+    if (!dbResult.ok) {
+      throw new Error(dbResult.error.message);
+    }
     const nowIso = new Date().toISOString();
 
-    await this.db.runAsync(
-      'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
-      [tableName, operation, recordId, JSON.stringify(data || {}), nowIso, nowIso]
-    );
+    await dbResult.data.withTransactionAsync(async () => {
+      await dbResult.data.runAsync(
+        'DELETE FROM sync_queue WHERE table_name = ? AND record_id = ?',
+        [tableName, recordId]
+      );
+      await dbResult.data.runAsync(
+        'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
+        [tableName, operation, recordId, JSON.stringify(data || {}), nowIso, nowIso]
+      );
+    });
   }
 
   async getSyncQueue(): Promise<SyncQueueItem[]> {
@@ -939,15 +1195,18 @@ class LocalDatabase {
   async cleanupSyncedDeletes(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    await this.db.runAsync('DELETE FROM foods WHERE deleted = 1 AND synced = 1');
-    await this.db.runAsync('DELETE FROM workouts WHERE deleted = 1 AND synced = 1');
-    // Workout session tables
-    await this.db.runAsync('DELETE FROM workout_templates WHERE deleted = 1 AND synced = 1');
-    await this.db.runAsync('DELETE FROM workout_template_exercises WHERE deleted = 1 AND synced = 1');
-    await this.db.runAsync('DELETE FROM workout_template_sets WHERE deleted = 1 AND synced = 1');
-    await this.db.runAsync('DELETE FROM workout_sessions WHERE deleted = 1 AND synced = 1');
-    await this.db.runAsync('DELETE FROM workout_session_exercises WHERE deleted = 1 AND synced = 1');
-    await this.db.runAsync('DELETE FROM workout_session_sets WHERE deleted = 1 AND synced = 1');
+    const db = this.db;
+    await db.withTransactionAsync(async () => {
+      await db.runAsync('DELETE FROM foods WHERE deleted = 1 AND synced = 1');
+      await db.runAsync('DELETE FROM workouts WHERE deleted = 1 AND synced = 1');
+      // Workout session tables
+      await db.runAsync('DELETE FROM workout_templates WHERE deleted = 1 AND synced = 1');
+      await db.runAsync('DELETE FROM workout_template_exercises WHERE deleted = 1 AND synced = 1');
+      await db.runAsync('DELETE FROM workout_template_sets WHERE deleted = 1 AND synced = 1');
+      await db.runAsync('DELETE FROM workout_sessions WHERE deleted = 1 AND synced = 1');
+      await db.runAsync('DELETE FROM workout_session_exercises WHERE deleted = 1 AND synced = 1');
+      await db.runAsync('DELETE FROM workout_session_sets WHERE deleted = 1 AND synced = 1');
+    });
   }
 
   async clearSyncQueue(): Promise<void> {
@@ -1001,28 +1260,31 @@ class LocalDatabase {
         );
         if (existing.length > 0) continue;
 
-        // Create session
-        await db.runAsync(
-          `INSERT INTO workout_sessions (id, template_id, name, goal_profile, started_at, ended_at, timezone_offset_minutes, bodyweight_lb, notes, synced, deleted, updated_at, created_at)
-           VALUES (?, NULL, ?, 'hypertrophy', ?, ?, 0, NULL, '__legacy_migration__', 0, 0, ?, ?)`,
-          [sessionId, w.exercise, w.date || now, w.date || now, now, now]
-        );
+        // Wrap all three inserts for this workout in a single transaction
+        await db.withTransactionAsync(async () => {
+          // Create session
+          await db.runAsync(
+            `INSERT INTO workout_sessions (id, template_id, name, goal_profile, started_at, ended_at, timezone_offset_minutes, bodyweight_lb, notes, synced, deleted, updated_at, created_at)
+             VALUES (?, NULL, ?, 'hypertrophy', ?, ?, 0, NULL, '__legacy_migration__', 0, 0, ?, ?)`,
+            [sessionId, w.exercise, w.date || now, w.date || now, now, now]
+          );
 
-        // Create session exercise
-        const seId = `${sessionId}_ex0`;
-        await db.runAsync(
-          `INSERT INTO workout_session_exercises (id, session_id, exercise_id, sort_order, notes, synced, deleted, updated_at, created_at)
-           VALUES (?, ?, ?, 0, NULL, 0, 0, ?, ?)`,
-          [seId, sessionId, exerciseId, now, now]
-        );
+          // Create session exercise
+          const seId = `${sessionId}_ex0`;
+          await db.runAsync(
+            `INSERT INTO workout_session_exercises (id, session_id, exercise_id, sort_order, notes, synced, deleted, updated_at, created_at)
+             VALUES (?, ?, ?, 0, NULL, 0, 0, ?, ?)`,
+            [seId, sessionId, exerciseId, now, now]
+          );
 
-        // Create session set
-        const ssId = `${sessionId}_set0`;
-        await db.runAsync(
-          `INSERT INTO workout_session_sets (id, session_exercise_id, sort_order, set_type, actual_reps, actual_weight, actual_seconds, completed_at, tut_source, synced, deleted, updated_at, created_at, rest_skipped)
-           VALUES (?, ?, 0, 'normal', ?, ?, ?, ?, 'unknown', 0, 0, ?, ?, 0)`,
-          [ssId, seId, w.reps ?? null, w.weight ?? null, w.duration ?? null, w.date || now, now, now]
-        );
+          // Create session set
+          const ssId = `${sessionId}_set0`;
+          await db.runAsync(
+            `INSERT INTO workout_session_sets (id, session_exercise_id, sort_order, set_type, actual_reps, actual_weight, actual_seconds, completed_at, tut_source, synced, deleted, updated_at, created_at, rest_skipped)
+             VALUES (?, ?, 0, 'normal', ?, ?, ?, ?, 'unknown', 0, 0, ?, ?, 0)`,
+            [ssId, seId, w.reps ?? null, w.weight ?? null, w.duration ?? null, w.date || now, now, now]
+          );
+        });
       }
 
       logWithTs(`[LocalDB] Legacy workout migration complete`);
