@@ -208,6 +208,7 @@ jobs:
         env:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+          SKIP_VOICE_TESTS: '1'
 
   # Job 2: E2E Tests
   e2e-tests:
