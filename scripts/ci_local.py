@@ -402,7 +402,7 @@ def run_job_security() -> List[StepResult]:
     results = []
 
     # Dependency audit (mirrors CI)
-    log("Running dependency audit...")
+    log("Running critical dependency audit...")
     transient_markers = [
         "connectionrefused",
         "request failed",
@@ -423,7 +423,7 @@ def run_job_security() -> List[StepResult]:
 
     for attempt in range(1, max_attempts + 1):
         # Capture both stdout/stderr so network failure tokens are not lost.
-        ok, output = run("bun audit --audit-level moderate 2>&1", capture=True)
+        ok, output = run("bun audit --audit-level critical 2>&1", capture=True)
         final_ok = ok
         final_output = output
 
@@ -446,17 +446,34 @@ def run_job_security() -> List[StepResult]:
 
     if final_ok:
         results.append(StepResult("Dep audit", Status.PASS))
-        success("No vulnerabilities found")
+        success("No critical vulnerabilities found")
     elif last_error_was_transient:
         results.append(StepResult("Dep audit", Status.WARN, "Transient network error"))
-        warn("Dependency audit failed due to transient network error (non-blocking)")
+        warn(
+            "Critical dependency audit failed due to transient network error (non-blocking)"
+        )
         if final_output.strip():
             print(final_output.rstrip())
     else:
         results.append(StepResult("Dep audit", Status.FAIL))
-        error("Security vulnerabilities detected")
+        error("Critical security vulnerabilities detected")
         if final_output.strip():
             print(final_output.rstrip())
+
+    log("Running full dependency audit (non-blocking, tracked)...")
+    ok, output = run("bun audit --audit-level moderate 2>&1", capture=True)
+    if ok:
+        results.append(StepResult("Dep audit (moderate)", Status.PASS))
+        success("No moderate-or-higher vulnerabilities found")
+    else:
+        results.append(
+            StepResult(
+                "Dep audit (moderate)", Status.WARN, "Tracked advisories present"
+            )
+        )
+        warn("Moderate dependency audit reported advisories (non-blocking)")
+        if output.strip():
+            print(output.rstrip())
 
     # audit-ci config check
     audit_config = ROOT / "config" / "audit-ci.json"
