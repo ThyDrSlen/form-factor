@@ -651,6 +651,43 @@ export const styles = StyleSheet.create({
   partialTrackingComponentLabelMissing: {
     color: scanPalette.accentAlt,
   },
+  subjectSwitchBanner: {
+    position: 'absolute',
+    left: spacing.md,
+    right: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(239,68,68,0.92)',
+    borderRadius: 14,
+    zIndex: 12,
+  },
+  subjectSwitchText: {
+    flex: 1,
+  },
+  subjectSwitchTitle: {
+    color: '#F5F7FF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  subjectSwitchHint: {
+    color: '#FEF2F2',
+    fontSize: 11,
+    marginTop: 1,
+  },
+  subjectSwitchAction: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  subjectSwitchActionText: {
+    color: '#F5F7FF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   errorContainer: {
     flex: 1,
     alignItems: 'center',

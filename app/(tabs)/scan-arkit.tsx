@@ -81,6 +81,7 @@ import {
   type PullupScoringResult,
 } from '@/lib/tracking-quality';
 import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
+import { useSubjectIdentity } from '@/hooks/use-subject-identity';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
 import {
   DEFAULT_DETECTION_MODE,
@@ -368,6 +369,9 @@ export default function ScanARKitScreen() {
   const [recordPreview, setRecordPreview] = useState<RecordedPreview | null>(null);
   const [recordingQuality, setRecordingQuality] = useState<RecordingQuality>('medium');
   const [subjectLockEnabled, setSubjectLockEnabled] = useState(true);
+  const subjectIdentity = useSubjectIdentity({
+    enabled: subjectLockEnabled && !fixturePlaybackEnabled,
+  });
   const [gestureRecordingEnabled, setGestureRecordingEnabled] = useState(true);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -1421,6 +1425,14 @@ export default function ScanARKitScreen() {
     }
   }, [pose2D]);
 
+  // Feed the subject-identity tracker once per pose frame. The hook only
+  // re-renders on calibration / switch transitions so this is cheap.
+  const subjectIdentityStep = subjectIdentity.step;
+  useEffect(() => {
+    if (!pose2D || pose2D.joints.length === 0) return;
+    subjectIdentityStep(pose2D.joints);
+  }, [pose2D, subjectIdentityStep]);
+
   useEffect(() => {
     if (!pose2D || pose2D.joints.length === 0) {
       pose2DCacheRef.current = {};
@@ -2226,15 +2238,17 @@ export default function ScanARKitScreen() {
     setIsPreviewVisible(false);
   }, [recordPreview, cleanupLocalRecording, uploading, savingRecording]);
 
+  const subjectIdentityReset = subjectIdentity.reset;
   const handleReacquireSubject = useCallback(() => {
     BodyTracker.resetSubjectLock();
+    subjectIdentityReset();
     const message = 'Subject lock reset';
     if (Platform.OS === 'android') {
       ToastAndroid.show(message, ToastAndroid.SHORT);
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-  }, []);
+  }, [subjectIdentityReset]);
 
     const handleSaveOnlyRecording = useCallback(async () => {
       if (!recordPreview || uploading || savingRecording) return;
@@ -2737,7 +2751,7 @@ export default function ScanARKitScreen() {
       )}
 
       {shouldShowPartialTrackingBadge && (
-        <View style={[styles.partialTrackingBadge, { top: topBarBottom + 8 }]}> 
+        <View style={[styles.partialTrackingBadge, { top: topBarBottom + 8 }]}>
           <Text style={styles.partialTrackingBadgeText}>Partial tracking</Text>
           <View style={styles.partialTrackingComponentRow}>
             {partialTrackingComponents.map((component) => (
@@ -2761,6 +2775,28 @@ export default function ScanARKitScreen() {
               </View>
             ))}
           </View>
+        </View>
+      )}
+
+      {subjectLockEnabled && subjectIdentity.snapshot.switchDetected && !fixturePlaybackEnabled && (
+        <View
+          style={[styles.subjectSwitchBanner, { top: topBarBottom + 8 }]}
+          accessibilityRole="alert"
+          accessibilityLabel="Subject changed detected"
+        >
+          <Ionicons name="person-remove-outline" size={18} color="#F5F7FF" />
+          <View style={styles.subjectSwitchText}>
+            <Text style={styles.subjectSwitchTitle}>Subject changed</Text>
+            <Text style={styles.subjectSwitchHint}>Step back in frame</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.subjectSwitchAction}
+            onPress={handleReacquireSubject}
+            accessibilityRole="button"
+            accessibilityLabel="Reacquire subject"
+          >
+            <Text style={styles.subjectSwitchActionText}>Reset</Text>
+          </TouchableOpacity>
         </View>
       )}
 
