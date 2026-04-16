@@ -432,6 +432,11 @@ export default function ScanARKitScreen() {
   const [shadowModeEnabled, setShadowModeEnabled] = useState(true);
   const shadowModeEnabledRef = React.useRef(true);
   const shadowStatsRef = React.useRef(createShadowStatsAccumulator());
+  // Per-rep shadow-drift accumulator — reset at each rep-start phase
+  // transition so callers (realtime pipeline, UI, future telemetry) see a
+  // fresh drift window per rep rather than a cumulative session average
+  // that gets dominated by any single bad rep.
+  const shadowStatsPerRepRef = React.useRef(createShadowStatsAccumulator());
   const [shadowProviderRuntime, setShadowProviderRuntime] = useState<ShadowProvider>('mediapipe_proxy');
   const shadowProviderRuntimeRef = React.useRef<ShadowProvider>('mediapipe_proxy');
   const shadowProviderCountsRef = React.useRef(createShadowProviderCounts());
@@ -786,6 +791,7 @@ export default function ScanARKitScreen() {
     });
     resetFrameCounter();
     shadowStatsRef.current = createShadowStatsAccumulator();
+    shadowStatsPerRepRef.current = createShadowStatsAccumulator();
     shadowProviderCountsRef.current = createShadowProviderCounts();
     mediaPipePoseRef.current = null;
     realtimeFormEngineRef.current = createRealtimeEngineState();
@@ -867,6 +873,9 @@ export default function ScanARKitScreen() {
       }
       if (nextPhase === activeWorkoutDef.repBoundary.startPhase) {
         repIndexTrackerRef.current.startRep(repCount);
+        // Start of a new rep: clear the per-rep shadow-drift accumulator so
+        // the next rep's delta metrics are not polluted by the previous rep.
+        shadowStatsPerRepRef.current = createShadowStatsAccumulator();
       }
     },
     onRepComplete: (repNumber: number, fqi: number) => {
@@ -913,6 +922,7 @@ export default function ScanARKitScreen() {
     lastLivePartialBadgeRef.current = null;
     repIndexTrackerRef.current.reset();
     shadowStatsRef.current = createShadowStatsAccumulator();
+    shadowStatsPerRepRef.current = createShadowStatsAccumulator();
     shadowProviderCountsRef.current = createShadowProviderCounts();
     mediaPipePoseRef.current = null;
     realtimeFormEngineRef.current = createRealtimeEngineState();
@@ -1293,6 +1303,7 @@ export default function ScanARKitScreen() {
 
         if (shadowComparison) {
           accumulateShadowStats(shadowStatsRef.current, shadowComparison);
+          accumulateShadowStats(shadowStatsPerRepRef.current, shadowComparison);
           lastShadowMeanAbsDeltaRef.current = shadowComparison.meanAbsDelta;
           if (shadowFrame) {
             bumpShadowProviderCount(shadowProviderCountsRef.current, shadowFrame.provider);
