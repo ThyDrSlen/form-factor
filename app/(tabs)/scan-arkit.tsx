@@ -2531,7 +2531,16 @@ export default function ScanARKitScreen() {
         >
 
           {!showTelemetry && (
-            <Animated.View style={[styles.topGuide, { top: topBarBottom + 16, opacity: textOpacity }]}>
+            <Animated.View
+              style={[styles.topGuide, { top: topBarBottom + 16, opacity: textOpacity }]}
+              accessible
+              accessibilityRole="header"
+              accessibilityLabel={
+                isTracking
+                  ? `Tracking active. Real-world 3D joint tracking at ${fps} frames per second.`
+                  : 'Tracking inactive. Press Start to begin.'
+              }
+            >
               <Text style={styles.guideText}>
                 {isTracking ? 'Tracking Active' : 'Press Start to Begin'}
               </Text>
@@ -2553,6 +2562,11 @@ export default function ScanARKitScreen() {
               viewBox="0 0 1 1"
             preserveAspectRatio="none"
             pointerEvents="none"
+            accessible
+            accessibilityRole="image"
+            accessibilityLabel={`Body skeleton overlay showing ${
+              smoothedPose2DJoints.filter((j) => j.isTracked).length
+            } tracked joints`}
             >
               {(() => {
                 const jointsByName = new Map<string, Joint2D>();
@@ -2654,7 +2668,18 @@ export default function ScanARKitScreen() {
 
 	        {/* Workout telemetry display */}
 	        {showTelemetry && (
-          <View style={[styles.anglesDisplay, { top: topBarBottom + 8 }]}>
+          <View
+            style={[styles.anglesDisplay, { top: topBarBottom + 8 }]}
+            accessible
+            accessibilityRole="summary"
+            accessibilityLabel={
+              `${telemetryTitle} telemetry. ` +
+              `Reps ${telemetryReps}. ` +
+              `Phase ${telemetryPhaseLabel}. ` +
+              `${telemetryPrimaryLabel} ${telemetryPrimaryDisplay}. ` +
+              `${telemetrySecondaryLabel} ${telemetrySecondaryDisplay}.`
+            }
+          >
 	            <Text style={styles.anglesTitle}>{telemetryTitle}</Text>
 	            <View style={styles.anglesGrid}>
               <View style={styles.angleItem}>
@@ -2679,7 +2704,13 @@ export default function ScanARKitScreen() {
 
         {/* Form feedback */}
         {feedback && (
-          <View style={styles.feedbackContainer}>
+          <View
+            style={styles.feedbackContainer}
+            accessible
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+            accessibilityLabel={`Form feedback: ${feedback.join('. ')}`}
+          >
             {feedback.map((msg, idx) => (
               <Text key={idx} style={styles.feedbackText}>
                 {msg}
