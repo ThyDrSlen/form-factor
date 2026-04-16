@@ -1487,28 +1487,23 @@ export default function ScanARKitScreen() {
     }
     pose2DCacheKeysRef.current = cache.size;
 
-    const prevSmoothed = smoothedPose2DRef.current;
-    const changed =
-      !prevSmoothed ||
-      prevSmoothed.length !== nextJoints.length ||
-      nextJoints.some((joint, idx) => {
-        const prev = prevSmoothed[idx];
-        if (!prev) return true;
-        if (prev.name !== joint.name) return true;
-        if (joint.isTracked !== prev.isTracked) return true;
-        return (
-          Math.abs(prev.x - joint.x) > 0.001 ||
-          Math.abs(prev.y - joint.y) > 0.001
-        );
-      });
-
-    if (changed) {
-      smoothedPose2DRef.current = nextJoints;
-      let rafId = requestAnimationFrame(() => {
-        setSmoothedPose2DJoints(nextJoints);
-      });
-      return () => cancelAnimationFrame(rafId);
-    }
+    // The smoothed joints always live in a ref — the skeleton SVG below
+    // reads from the ref during render, and `pose` state changes each frame
+    // already force the containing component to re-render. We intentionally
+    // avoid bumping React state on every pose tick; only flip
+    // smoothedPose2DJoints state when the partial-tracking badge visibility
+    // (i.e. whether we have *any* renderable tracked joints) changes, so
+    // downstream gestureRecordingEnabled-style effects still fire on the
+    // visible/hidden transition without re-running each frame.
+    smoothedPose2DRef.current = nextJoints;
+    const hasAnyTracked = nextJoints.some((joint) => joint.isTracked);
+    setSmoothedPose2DJoints((prev) => {
+      const prevHasAny = prev !== null && prev.length > 0 && prev.some((j) => j.isTracked);
+      if (prevHasAny === hasAnyTracked) {
+        return prev;
+      }
+      return hasAnyTracked ? nextJoints : null;
+    });
 
     return undefined;
   }, [pose2D]);
@@ -2207,13 +2202,18 @@ export default function ScanARKitScreen() {
       return;
     }
 
-    if (!smoothedPose2DJoints || smoothedPose2DJoints.length === 0) {
+    // Read joints from the ref (kept fresh each frame) rather than from the
+    // smoothedPose2DJoints state, which now only flips on partial-tracking
+    // badge visibility change. Re-key the effect on `pose` so hand-hold
+    // detection still samples every frame.
+    const joints = smoothedPose2DRef.current;
+    if (!joints || joints.length === 0) {
       gestureHoldStartRef.current = null;
       return;
     }
 
     const findJoint = (needle: string) =>
-      smoothedPose2DJoints.find(
+      joints.find(
         (joint) => joint.isTracked && joint.name.toLowerCase().includes(needle)
       );
 
@@ -2253,7 +2253,7 @@ export default function ScanARKitScreen() {
     }
   }, [
     gestureRecordingEnabled,
-    smoothedPose2DJoints,
+    pose,
     isRecording,
     isFinalizingRecording,
     startRecordingVideo,
@@ -2579,8 +2579,12 @@ export default function ScanARKitScreen() {
             pointerEvents="none"
             >
               {(() => {
+                // Pull joints from the ref so per-frame pose updates paint
+                // the skeleton without needing a state bump. The outer gate
+                // above only flips when badge visibility changes.
+                const liveJoints = smoothedPose2DRef.current ?? smoothedPose2DJoints;
                 const jointsByName = new Map<string, Joint2D>();
-                smoothedPose2DJoints.forEach((joint) => {
+                liveJoints.forEach((joint) => {
                   jointsByName.set(joint.name.toLowerCase(), joint);
                 });
 
@@ -2658,20 +2662,22 @@ export default function ScanARKitScreen() {
                 );
               })()}
 
-              {/* Draw joints */}
-              {smoothedPose2DJoints.map((joint: Joint2D, index: number) => {
-                if (!joint.isTracked) return null;
-                return (
-                    <Circle
-                      key={`joint-${index}-${joint.name}`}
-                      cx={joint.x}
-                      cy={joint.y}
-                      r="0.006"
-                      fill="#FFFFFF"
-                      opacity={0.9}
-                    />
-                );
-              })}
+              {/* Draw joints — read from the same ref for consistency */}
+              {(smoothedPose2DRef.current ?? smoothedPose2DJoints).map(
+                (joint: Joint2D, index: number) => {
+                  if (!joint.isTracked) return null;
+                  return (
+                      <Circle
+                        key={`joint-${index}-${joint.name}`}
+                        cx={joint.x}
+                        cy={joint.y}
+                        r="0.006"
+                        fill="#FFFFFF"
+                        opacity={0.9}
+                      />
+                  );
+                }
+              )}
             </Svg>
           )}
         </View>
