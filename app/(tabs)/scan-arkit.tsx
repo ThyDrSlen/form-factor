@@ -39,6 +39,8 @@ import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type Medi
 import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
 import { audioSessionManager } from '@/lib/services/audio-session-manager';
 import { CrashBoundary } from '@/components/CrashBoundary';
+import { PreSetPreviewCard } from '@/components/form-tracking/PreSetPreviewCard';
+import { usePreSetPreview } from '@/hooks/use-pre-set-preview';
 import { generateSessionId, logCueEvent, upsertSessionMetrics } from '@/lib/services/cue-logger';
 import { logPoseSample, flushPoseBuffer, resetFrameCounter } from '@/lib/services/pose-logger';
 import { RepIndexTracker } from '@/lib/services/rep-index-tracker';
@@ -413,6 +415,8 @@ export default function ScanARKitScreen() {
   const lastGestureTriggerRef = React.useRef(0);
   const overlayLayout = React.useRef<{ width: number; height: number } | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [preSetPreviewVisible, setPreSetPreviewVisible] = useState(false);
+  const preSetPreview = usePreSetPreview();
   const isScreenFocused = useIsFocused();
   const sessionIdRef = React.useRef(generateSessionId());
   const sessionStartRef = React.useRef(new Date().toISOString());
@@ -2287,6 +2291,18 @@ export default function ScanARKitScreen() {
     startRecordingVideo,
   ]);
 
+  const handlePreSetPreviewCheck = useCallback(async () => {
+    setPreSetPreviewVisible(true);
+    const snapshot = await BodyTracker.getCurrentFrameSnapshot({
+      maxWidth: WATCH_MIRROR_MAX_WIDTH,
+      quality: WATCH_MIRROR_AR_QUALITY,
+    });
+    if (!snapshot || !jointAngles) {
+      return;
+    }
+    await preSetPreview.check(snapshot, activeWorkoutDef.displayName, jointAngles);
+  }, [activeWorkoutDef.displayName, jointAngles, preSetPreview]);
+
   const handleDiscardRecording = useCallback(async () => {
     if (uploading || savingRecording) return;
     if (!recordPreview) {
@@ -2536,6 +2552,16 @@ export default function ScanARKitScreen() {
                     ))}
                 </View>
               )}
+              <TouchableOpacity
+                style={styles.workoutSelectorButton}
+                onPress={handlePreSetPreviewCheck}
+                accessibilityRole="button"
+                accessibilityLabel="Check my stance"
+                testID="pre-set-preview-trigger"
+              >
+                <Ionicons name="sparkles-outline" size={14} color="#F5F7FF" />
+                <Text style={styles.workoutSelectorText}>Check my stance</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -3072,6 +3098,7 @@ export default function ScanARKitScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+      <PreSetPreviewCard visible={preSetPreviewVisible} isChecking={preSetPreview.isChecking} verdict={preSetPreview.verdict} error={preSetPreview.error} exerciseName={activeWorkoutDef.displayName} onRetry={handlePreSetPreviewCheck} onDismiss={() => { setPreSetPreviewVisible(false); preSetPreview.reset(); }} />
 </View>
     </CrashBoundary>
   );
