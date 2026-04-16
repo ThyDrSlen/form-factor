@@ -101,6 +101,7 @@ import occlusionLongFixture from '@/tests/fixtures/pullup-tracking/occlusion-lon
 import bounceNoiseFixture from '@/tests/fixtures/pullup-tracking/bounce-noise.json';
 import { styles } from '../../styles/tabs/_scan-arkit.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
+import { VoiceCommandFeedback } from '@/components/form-tracking/VoiceCommandFeedback';
 
 // Phase and detection mode types are now imported from lib/workouts
 type BaseUploadMetrics = Record<string, unknown> & {
@@ -2993,6 +2994,7 @@ export default function ScanARKitScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+      <VoiceCommandFeedback />
 </View>
     </CrashBoundary>
   );
