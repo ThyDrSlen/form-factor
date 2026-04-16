@@ -361,6 +361,9 @@ export default function ScanARKitScreen() {
   const [activePhase, setActivePhase] = useState<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
   const activePhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
+  // Tracks the current workout's resting/initial phase so timer callbacks can
+  // cheaply skip heavy work while the user is between reps.
+  const restPhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [activeMetrics, setActiveMetrics] = useState<WorkoutMetrics | null>(null);
   const [uploading, setUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -641,6 +644,12 @@ export default function ScanARKitScreen() {
         return;
       }
 
+      // Skip heavy native poll while the user is in the resting/idle phase
+      // between reps — shadow comparison only matters during the active rep.
+      if (activePhaseRef.current === restPhaseRef.current) {
+        return;
+      }
+
       mediaPipePollInFlightRef.current = true;
       try {
         const payload = await BodyTracker.getCurrentMediaPipePose2D();
@@ -881,6 +890,7 @@ export default function ScanARKitScreen() {
   useEffect(() => {
     const nextInitialPhase = getWorkoutByMode(detectionMode).initialPhase;
     activePhaseRef.current = nextInitialPhase;
+    restPhaseRef.current = nextInitialPhase;
     setActivePhase(nextInitialPhase);
     setRepCount(0);
     setActiveMetrics(null);
@@ -1896,8 +1906,18 @@ export default function ScanARKitScreen() {
         return;
       }
 
-      captureAndSendWatchMirror();
-      watchMirrorTimerRef.current = setInterval(captureAndSendWatchMirror, WATCH_MIRROR_INTERVAL_MS);
+      const tick = () => {
+        // Skip the mirror snapshot while the user is resting between reps —
+        // the watch already shows the last frame, and capturing another is
+        // pure battery waste during idle/setup phases.
+        if (activePhaseRef.current === restPhaseRef.current) {
+          return;
+        }
+        captureAndSendWatchMirror();
+      };
+
+      tick();
+      watchMirrorTimerRef.current = setInterval(tick, WATCH_MIRROR_INTERVAL_MS);
 
       return () => {
         if (watchMirrorTimerRef.current) {
