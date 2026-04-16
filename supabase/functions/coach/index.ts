@@ -39,8 +39,53 @@ const RATE_LIMIT_MAX_REQUESTS = 10;
 
 const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
 
+// Bounded rate-limiter memory (#417 finding #6).
+//
+// Previously rateLimitMap grew indefinitely — entries were only evicted on
+// a per-user hit after their window expired, so one-off users who never
+// came back left permanent residue in memory. On a long-running Deno
+// edge worker that's an unbounded leak.
+//
+// Policy:
+//   - Run a cleanup pass every CLEANUP_EVERY_N requests.
+//   - Evict entries whose windowStart is older than 2 × the limiter window
+//     (guaranteed stale — `isRateLimited` would have reset them on next hit).
+//   - Hard cap the map at MAX_RATE_LIMIT_ENTRIES; when reached, drop the
+//     oldest entries regardless of staleness so the worker can't OOM.
+const CLEANUP_EVERY_N = 500;
+const STALE_AGE_MS = RATE_LIMIT_WINDOW_MS * 2;
+const MAX_RATE_LIMIT_ENTRIES = 10_000;
+let rateLimitCheckCount = 0;
+
+function cleanupRateLimitMap(now: number): void {
+  // Pass 1: drop stale entries.
+  for (const [userId, entry] of rateLimitMap.entries()) {
+    if (now - entry.windowStart > STALE_AGE_MS) {
+      rateLimitMap.delete(userId);
+    }
+  }
+
+  // Pass 2: if still over the hard cap, evict oldest by windowStart.
+  if (rateLimitMap.size > MAX_RATE_LIMIT_ENTRIES) {
+    const overBy = rateLimitMap.size - MAX_RATE_LIMIT_ENTRIES;
+    const sorted = Array.from(rateLimitMap.entries()).sort(
+      (a, b) => a[1].windowStart - b[1].windowStart,
+    );
+    for (let i = 0; i < overBy && i < sorted.length; i += 1) {
+      rateLimitMap.delete(sorted[i][0]);
+    }
+  }
+}
+
 function isRateLimited(userId: string): boolean {
   const now = Date.now();
+
+  rateLimitCheckCount += 1;
+  if (rateLimitCheckCount >= CLEANUP_EVERY_N) {
+    rateLimitCheckCount = 0;
+    cleanupRateLimitMap(now);
+  }
+
   const entry = rateLimitMap.get(userId);
 
   if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
@@ -51,6 +96,21 @@ function isRateLimited(userId: string): boolean {
   entry.count += 1;
   return entry.count > RATE_LIMIT_MAX_REQUESTS;
 }
+
+// Exported for unit tests — Deno edge entry point doesn't tree-shake named
+// exports so this is safe.
+export const __rateLimitInternals = {
+  rateLimitMap,
+  cleanupRateLimitMap,
+  isRateLimited,
+  MAX_RATE_LIMIT_ENTRIES,
+  CLEANUP_EVERY_N,
+  STALE_AGE_MS,
+  resetForTests(): void {
+    rateLimitMap.clear();
+    rateLimitCheckCount = 0;
+  },
+};
 
 if (RAW_MODEL !== DEFAULT_MODEL) {
   console.warn(`[coach] COACH_MODEL "${RAW_MODEL}" is not in allowed list, falling back to "${DEFAULT_MODEL}"`);
