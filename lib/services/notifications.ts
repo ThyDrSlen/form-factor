@@ -274,6 +274,28 @@ export async function loadNotificationPreferences(userId: string): Promise<Notif
   return created as NotificationPreferences;
 }
 
+/**
+ * Schedule a local reminder notification bound to a workout template.
+ * Deep-link payload opens the scan tab with the templateId pre-selected.
+ *
+ * Stub in this commit — full implementation lands in the follow-up
+ * commit that extends notifications with trigger + category wiring
+ * (issue #447 W3-C item #4).
+ */
+export async function scheduleTemplatedReminder(
+  templateId: string,
+  scheduledAt: Date,
+): Promise<void> {
+  // Guard in case callers bypass the scheduler's input validation.
+  if (!templateId) return;
+  if (!(scheduledAt instanceof Date) || Number.isNaN(scheduledAt.getTime())) return;
+  // TODO: fully implement in the next commit — trigger + category below.
+  infoWithTs('[notifications] (stub) scheduleTemplatedReminder', {
+    templateId,
+    scheduledAt: scheduledAt.toISOString(),
+  });
+}
+
 export async function updateNotificationPreferences(
   userId: string,
   patch: Partial<Omit<NotificationPreferences, 'user_id'>>,
