@@ -1,6 +1,15 @@
 import { Platform, StyleSheet } from 'react-native';
-import { spacing, borderRadius } from './_theme-constants';
+import { spacing, borderRadius, MIN_FONT_SIZE } from './_theme-constants';
 import { tabColors } from './_tab-theme';
+import { scaled } from '@/lib/a11y/typography';
+
+/**
+ * Floor helper used for HUD strings that designers originally spec'd below
+ * 11pt (status badges, partial-tracking pills, angles grid, etc.). Routing
+ * them through `scaled` keeps them on the 11px floor even at 1x scale while
+ * still allowing them to grow up to MAX_FONT_SCALE for Dynamic Type users.
+ */
+const scaledMin = (px: number) => scaled(px, { min: MIN_FONT_SIZE });
 
 export const scanPalette = tabColors;
 
@@ -78,12 +87,12 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
   },
   guideText: {
-    fontSize: 16,
+    fontSize: scaled(16),
     fontWeight: '600',
     color: scanPalette.textPrimary,
   },
   guideSubtext: {
-    fontSize: 12,
+    fontSize: scaled(12),
     color: scanPalette.textSecondary,
     marginTop: 4,
   },
@@ -117,7 +126,7 @@ export const styles = StyleSheet.create({
     gap: 8,
   },
   workoutSelectorText: {
-    fontSize: 14,
+    fontSize: scaled(14),
     fontWeight: '600',
     color: scanPalette.textPrimary,
   },
@@ -144,7 +153,7 @@ export const styles = StyleSheet.create({
     borderRadius: 8,
   },
   dropdownItemText: {
-    fontSize: 14,
+    fontSize: scaled(14),
     color: scanPalette.textPrimary,
   },
   qualitySelector: {
@@ -152,7 +161,7 @@ export const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   qualityLabel: {
-    fontSize: 12,
+    fontSize: scaled(12),
     fontWeight: '600',
     color: scanPalette.textSecondary,
     marginBottom: spacing.xs,
@@ -184,7 +193,7 @@ export const styles = StyleSheet.create({
     opacity: 0.6,
   },
   qualityButtonText: {
-    fontSize: 12,
+    fontSize: scaled(12),
     fontWeight: '600',
     color: scanPalette.textSecondary,
   },
@@ -235,7 +244,7 @@ export const styles = StyleSheet.create({
     }),
   },
   controlButtonText: {
-    fontSize: 15,
+    fontSize: scaled(15),
     fontWeight: '700',
     color: scanPalette.textPrimary,
   },
@@ -253,7 +262,7 @@ export const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   gestureToggleLabel: {
-    fontSize: 12,
+    fontSize: scaled(12),
     fontWeight: '600',
     color: scanPalette.textSecondary,
   },
@@ -273,7 +282,7 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   lockLabel: {
-    fontSize: 12,
+    fontSize: scaled(12),
     fontWeight: '600',
     color: scanPalette.textSecondary,
   },
@@ -287,7 +296,7 @@ export const styles = StyleSheet.create({
     backgroundColor: scanPalette.overlayMuted,
   },
   lockButtonText: {
-    fontSize: 12,
+    fontSize: scaled(12),
     fontWeight: '600',
     color: scanPalette.textPrimary,
   },
@@ -345,7 +354,7 @@ export const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   settingsTitle: {
-    fontSize: 18,
+    fontSize: scaled(18),
     fontWeight: '700',
     color: scanPalette.textPrimary,
   },
@@ -369,7 +378,7 @@ export const styles = StyleSheet.create({
     gap: spacing.md,
   },
   settingsLabel: {
-    fontSize: 14,
+    fontSize: scaled(14),
     fontWeight: '600',
     color: scanPalette.textPrimary,
   },
@@ -378,7 +387,7 @@ export const styles = StyleSheet.create({
     gap: 2,
   },
   settingsHint: {
-    fontSize: 12,
+    fontSize: scaled(12),
     color: scanPalette.textSecondary,
   },
   settingsDivider: {
@@ -399,7 +408,7 @@ export const styles = StyleSheet.create({
     opacity: 0.5,
   },
   settingsButtonText: {
-    fontSize: 13,
+    fontSize: scaled(13),
     fontWeight: '600',
     color: scanPalette.textPrimary,
   },
@@ -435,7 +444,7 @@ export const styles = StyleSheet.create({
   zoomButtonRight: {},
   zoomButtonText: {
     color: scanPalette.textPrimary,
-    fontSize: 20,
+    fontSize: scaled(20),
     fontWeight: '700',
   },
   previewOverlay: {
@@ -482,7 +491,7 @@ export const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   previewTitle: {
-    fontSize: 20,
+    fontSize: scaled(20),
     fontWeight: '700',
     color: scanPalette.textPrimary,
   },
@@ -493,7 +502,7 @@ export const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   previewExerciseBadgeText: {
-    fontSize: 13,
+    fontSize: scaled(13),
     fontWeight: '600',
     color: scanPalette.textPrimary,
   },
@@ -514,19 +523,19 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   previewMetaLabel: {
-    fontSize: 11,
+    fontSize: scaled(11),
     color: scanPalette.textSecondary,
     marginBottom: 2,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   previewMetaValue: {
-    fontSize: 18,
+    fontSize: scaled(18),
     fontWeight: '700',
     color: scanPalette.textPrimary,
   },
   previewErrorText: {
-    fontSize: 12,
+    fontSize: scaled(12),
     color: scanPalette.error,
     marginTop: spacing.xs,
     paddingHorizontal: spacing.lg,
@@ -556,7 +565,7 @@ export const styles = StyleSheet.create({
     borderColor: scanPalette.border,
   },
   previewButtonText: {
-    fontSize: 14,
+    fontSize: scaled(14),
     fontWeight: '700',
   },
   previewButtonTextPrimary: {
@@ -593,12 +602,13 @@ export const styles = StyleSheet.create({
     backgroundColor: scanPalette.success,
   },
   statusText: {
-    fontSize: 10,
+    fontSize: scaledMin(10),
     color: scanPalette.textPrimary,
     fontWeight: '600',
   },
   statusSubtext: {
-    fontSize: 8,
+    // Raised from 8 to enforce the 11pt HIG minimum. See commit 3 in #428.
+    fontSize: scaledMin(8),
     color: scanPalette.textSecondary,
     marginTop: 1,
   },
@@ -616,7 +626,7 @@ export const styles = StyleSheet.create({
     gap: 6,
   },
   partialTrackingBadgeText: {
-    fontSize: 10,
+    fontSize: scaledMin(10),
     fontWeight: '700',
     color: scanPalette.textPrimary,
     textTransform: 'uppercase',
@@ -642,7 +652,7 @@ export const styles = StyleSheet.create({
     borderColor: 'rgba(255, 107, 107, 0.58)',
   },
   partialTrackingComponentLabel: {
-    fontSize: 9,
+    fontSize: scaledMin(9),
     fontWeight: '700',
   },
   partialTrackingComponentLabelAvailable: {
@@ -658,7 +668,7 @@ export const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   errorText: {
-    fontSize: 18,
+    fontSize: scaled(18),
     color: scanPalette.accentAlt,
     marginTop: spacing.md,
     textAlign: 'center',
@@ -706,7 +716,7 @@ export const styles = StyleSheet.create({
     maxWidth: 240,
   },
   anglesTitle: {
-    fontSize: 12,
+    fontSize: scaled(12),
     fontWeight: '700',
     color: scanPalette.textPrimary,
     marginBottom: 4,
@@ -720,12 +730,12 @@ export const styles = StyleSheet.create({
     minWidth: 60,
   },
   angleLabel: {
-    fontSize: 9,
+    fontSize: scaledMin(9),
     color: scanPalette.textSecondary,
     marginBottom: 1,
   },
   angleValue: {
-    fontSize: 14,
+    fontSize: scaled(14),
     fontWeight: '700',
     color: scanPalette.accent,
   },
@@ -741,7 +751,7 @@ export const styles = StyleSheet.create({
     borderColor: scanPalette.border,
   },
   feedbackText: {
-    fontSize: 14,
+    fontSize: scaled(14),
     color: scanPalette.textPrimary,
     marginBottom: 4,
     lineHeight: 20,
