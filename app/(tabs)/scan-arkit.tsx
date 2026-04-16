@@ -81,6 +81,7 @@ import {
   type PullupScoringResult,
 } from '@/lib/tracking-quality';
 import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
+import { useCameraPermissionGuard } from '@/hooks/use-camera-permission-guard';
 import { useSubjectIdentity } from '@/hooks/use-subject-identity';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
 import {
@@ -372,6 +373,7 @@ export default function ScanARKitScreen() {
   const subjectIdentity = useSubjectIdentity({
     enabled: subjectLockEnabled && !fixturePlaybackEnabled,
   });
+  const cameraPermission = useCameraPermissionGuard({ detectRevoke: true });
   const [gestureRecordingEnabled, setGestureRecordingEnabled] = useState(true);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -1631,6 +1633,14 @@ export default function ScanARKitScreen() {
     };
   }, [stopTracking]);
 
+  // Pause tracking immediately on mid-session camera permission revocation.
+  // The banner below offers a Settings deep-link and a retry affordance.
+  useEffect(() => {
+    if (cameraPermission.revoked && isTracking) {
+      stopTracking();
+    }
+  }, [cameraPermission.revoked, isTracking, stopTracking]);
+
   const handleOverlayLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     overlayLayout.current = { width, height };
@@ -2796,6 +2806,40 @@ export default function ScanARKitScreen() {
             accessibilityLabel="Reacquire subject"
           >
             <Text style={styles.subjectSwitchActionText}>Reset</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {cameraPermission.revoked && (
+        <View
+          style={[styles.cameraRevokedBanner, { top: topBarBottom + 8 }]}
+          accessibilityRole="alert"
+          accessibilityLabel="Camera permission revoked"
+        >
+          <Ionicons name="videocam-off-outline" size={18} color="#F5F7FF" />
+          <View style={styles.subjectSwitchText}>
+            <Text style={styles.subjectSwitchTitle}>Camera access turned off</Text>
+            <Text style={styles.subjectSwitchHint}>
+              {cameraPermission.canAskAgain
+                ? 'Grant access to keep tracking'
+                : 'Re-enable in Settings to resume'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.subjectSwitchAction}
+            onPress={() => {
+              if (cameraPermission.canAskAgain) {
+                void cameraPermission.request();
+              } else {
+                void cameraPermission.openSettings();
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={cameraPermission.canAskAgain ? 'Request camera access' : 'Open device settings'}
+          >
+            <Text style={styles.subjectSwitchActionText}>
+              {cameraPermission.canAskAgain ? 'Allow' : 'Settings'}
+            </Text>
           </TouchableOpacity>
         </View>
       )}
