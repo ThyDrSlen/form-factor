@@ -82,6 +82,13 @@ import {
 } from '@/lib/tracking-quality';
 import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
+import { useFrameLighting } from '@/hooks/use-frame-lighting';
+import { useDeviceThermalBattery } from '@/hooks/use-device-thermal-battery';
+import { usePreCalibrationStatus } from '@/hooks/use-pre-calibration-status';
+import { useRepCounterPosition } from '@/hooks/use-rep-counter-position';
+import { LightingWarningBadge } from '@/components/form-tracking/LightingWarningBadge';
+import { BatteryThermalBadge } from '@/components/form-tracking/BatteryThermalBadge';
+import { RepCounterOverlay } from '@/components/form-tracking/RepCounterOverlay';
 import {
   DEFAULT_DETECTION_MODE,
   getWorkoutByMode,
@@ -276,6 +283,36 @@ const formatDuration = (startIso: string | null | undefined, endIso: string | nu
   return `${min}m ${sec.toString().padStart(2, '0')}s`;
 };
 
+/**
+ * Internal helper for #464 — projects the latest skeleton joints into a
+ * `RepCounterOverlay` mounted inside the existing SVG layer. Kept colocated
+ * with `ScanARKitScreen` so the prop wiring stays explicit.
+ */
+function RepCounterOverlayBoundToHip({
+  repCount,
+  phase,
+  joints2D,
+}: {
+  repCount: number;
+  phase: string;
+  joints2D: Joint2D[] | null;
+}) {
+  const position = useRepCounterPosition({
+    repCount,
+    phase,
+    joints2D,
+  });
+  return (
+    <RepCounterOverlay
+      currentRep={position.repCount}
+      visible={position.visible}
+      x={position.x}
+      y={position.y}
+      opacity={position.opacity}
+    />
+  );
+}
+
 const PreviewPlayer = ({ uri }: { uri: string }) => {
   const player = useVideoPlayer(uri, (instance) => {
     instance.loop = false;
@@ -430,6 +467,19 @@ export default function ScanARKitScreen() {
   useEffect(() => {
     trackingDebugEnabledRef.current = trackingDebugEnabled;
   }, [trackingDebugEnabled]);
+
+  // Form-tracking visual polish (#464) — lighting, battery/thermal, and
+  // pre-calibration are wired via thin hooks so the existing scan-arkit
+  // logic remains the source of truth for tracking state.
+  const { reading: lightingReading } = useFrameLighting();
+  const {
+    batteryLevel,
+    thermalState,
+    badgeLevel: deviceBadgeLevel,
+    shouldPauseLowPower,
+  } = useDeviceThermalBattery();
+  const preCalibration = usePreCalibrationStatus();
+  const preCalibrationGateFiredRef = React.useRef(false);
 
   const logTrackingDebug = useCallback((event: string, payload: Record<string, unknown>) => {
     if (!trackingDebugEnabledRef.current) return;
@@ -869,6 +919,8 @@ export default function ScanARKitScreen() {
     sessionId: sessionIdRef.current,
     callbacks: workoutControllerCallbacks,
     enableHaptics: true,
+    // #464 — auto-pause when battery / thermal trip the critical bucket.
+    pauseTracking: shouldPauseLowPower,
   });
 
   const {
@@ -955,6 +1007,26 @@ export default function ScanARKitScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supportStatus, isTracking, cameraPosition, fixturePlaybackEnabled]);
+
+  // Pre-calibration gate (#464) — open the overlay modal once per workout
+  // when calibration is not yet ready. Suppression after two successful
+  // runs lives inside `usePreCalibrationStatus`.
+  useEffect(() => {
+    if (preCalibrationGateFiredRef.current) return;
+    if (fixturePlaybackEnabled) return;
+    if (!isTracking) return;
+    if (!preCalibration.status.shouldShow) return;
+    if (preCalibration.status.status === 'success') return;
+
+    preCalibrationGateFiredRef.current = true;
+    router.push('/(modals)/form-tracking-pre-calibration');
+  }, [
+    isTracking,
+    fixturePlaybackEnabled,
+    preCalibration.status.shouldShow,
+    preCalibration.status.status,
+    router,
+  ]);
 
   useEffect(() => {
     if (!fixturePlaybackEnabled || !fixtureFrames || fixtureFrames.length === 0) {
@@ -2627,6 +2699,12 @@ export default function ScanARKitScreen() {
                     />
                 );
               })}
+              {/* #464 — body-anchored rep counter overlay */}
+              <RepCounterOverlayBoundToHip
+                repCount={repCount}
+                phase={activePhase}
+                joints2D={smoothedPose2DJoints ?? null}
+              />
             </Svg>
           )}
         </View>
@@ -2763,6 +2841,26 @@ export default function ScanARKitScreen() {
           </View>
         </View>
       )}
+
+      {/* #464 — visual polish badges row (lighting + battery/thermal) */}
+      <View
+        pointerEvents="box-none"
+        style={{
+          position: 'absolute',
+          top: topBarBottom + 56,
+          right: 12,
+          flexDirection: 'column',
+          alignItems: 'flex-end',
+          gap: 8,
+        }}
+      >
+        <LightingWarningBadge bucket={lightingReading?.bucket ?? null} />
+        <BatteryThermalBadge
+          badgeLevel={deviceBadgeLevel}
+          batteryLevel={batteryLevel}
+          thermalState={thermalState}
+        />
+      </View>
 
       <Modal
         visible={isSettingsVisible}
