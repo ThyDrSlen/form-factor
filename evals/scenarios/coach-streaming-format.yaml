@@ -1,0 +1,54 @@
+- description: "[streaming] Long exercise list — keep bullet continuity"
+  vars:
+    user_name: "Alex"
+    focus: "fitness_coach"
+    message: "Give me a detailed upper body workout. List every exercise with sets and reps for chest, shoulders, back, and arms."
+  assert:
+    - type: llm-rubric
+      value: "Produces a clean, continuous list where each exercise occupies its own bullet or numbered line. No bullets are truncated mid-line. Sets/reps are consistently formatted."
+      threshold: 0.85
+      metric: Streaming/BulletContinuity
+
+- description: "[streaming] Long weekly plan — multi-day formatting stability"
+  vars:
+    user_name: "Jordan"
+    focus: "strength_training"
+    message: "Write me a 5-day strength plan with day-by-day workouts including warm-up, main lifts, accessories, and cooldown. Be specific."
+  assert:
+    - type: llm-rubric
+      value: "Each day is a distinct section with a clear header. Bullets or numbered lists inside each day are complete (no half-rendered items). Day-to-day format stays consistent."
+      threshold: 0.85
+      metric: Streaming/DayHeaderConsistency
+
+- description: "[streaming] Mixed content — narrative interleaved with bullets"
+  vars:
+    user_name: "Sam"
+    focus: "fitness_coach"
+    message: "Explain why progressive overload matters and give me a checklist of how to apply it to my next squat session."
+  assert:
+    - type: llm-rubric
+      value: "Narrative prose and checklist items are cleanly separated. The checklist appears as continuous bullets without any mid-item breaks or stray punctuation from partial-token streaming."
+      threshold: 0.85
+      metric: Streaming/MixedContentStability
+
+- description: "[streaming] Long macro guidance — numeric ranges formatted cleanly"
+  vars:
+    user_name: "Mia"
+    focus: "nutrition"
+    message: "What should my daily macros look like for a lean bulk at 75kg? Include ranges for protein, carbs, fats, and calories."
+  assert:
+    - type: llm-rubric
+      value: "Each macro (protein, carbs, fats, calories) is on its own line or bullet with a clean numeric range. Units do not break mid-number. Ranges are presented consistently (e.g., 'X-Y g') not 'X- Y g' or 'X — Y g'."
+      threshold: 0.85
+      metric: Streaming/NumericFormatting
+
+- description: "[streaming] Long recovery protocol — numbered-step continuity"
+  vars:
+    user_name: "Robin"
+    focus: "recovery"
+    message: "Walk me through a complete post-workout recovery routine with steps for cooldown, stretching, nutrition, and sleep."
+  assert:
+    - type: llm-rubric
+      value: "Steps are numbered sequentially with no duplicates or skips. Each step is a complete sentence or fragment ending in proper punctuation. No numbered item is left mid-sentence from streaming."
+      threshold: 0.85
+      metric: Streaming/NumberedStepContinuity
