@@ -65,6 +65,14 @@ export default function ModalsLayout() {
           contentStyle: { backgroundColor: '#050E1F' },
         }}
       />
+      <Stack.Screen
+        name="form-tracking-pre-calibration"
+        options={{
+          presentation: 'transparentModal',
+          gestureEnabled: false,
+          contentStyle: { backgroundColor: 'transparent' },
+        }}
+      />
     </Stack>
   );
 }
