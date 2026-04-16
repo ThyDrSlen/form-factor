@@ -47,6 +47,8 @@
     "eval:pullup-tracking": "bun scripts/eval-pullup-tracking.ts",
     "baseline:pullup-tracking": "bun scripts/baseline-pullup-tracking.ts",
     "eval:coach": "bun scripts/eval-coach.ts",
+    "eval:coach-local": "bun scripts/eval-coach-local.ts",
+    "eval:coach-parity": "bun scripts/eval-coach-local.ts",
     "eval:redteam": "bun scripts/eval-redteam.ts",
     "eval:ab-test": "promptfoo eval -c evals/coach-ab-test.yaml",
     "eval:view": "promptfoo view",

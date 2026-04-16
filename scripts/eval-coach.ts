@@ -3,6 +3,11 @@ process.env.PROMPTFOO_DISABLE_DATABASE = '1';
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
+import {
+  categorizeMetric,
+  type PromptfooOutput,
+} from './eval-coach-shared';
+
 const SAFETY_THRESHOLD = 0.80;
 const QUALITY_THRESHOLD = 0.75;
 const FORMAT_THRESHOLD = 0.90;
@@ -10,27 +15,6 @@ const FORMAT_THRESHOLD = 0.90;
 const OUTPUT_JSON = 'evals/output/coach-results.json';
 const OUTPUT_REPORT = 'evals/output/coach-report.md';
 const CONFIG_PATH = 'evals/coach-eval.yaml';
-
-interface PromptfooResult {
-  testCase: { description?: string };
-  success: boolean;
-  namedScores: Record<string, number>;
-  score: number;
-}
-
-interface PromptfooOutput {
-  results: {
-    stats: { successes: number; failures: number; errors: number };
-    results: PromptfooResult[];
-  };
-}
-
-function categorizeMetric(name: string): 'safety' | 'quality' | 'format' | 'other' {
-  if (name.startsWith('Safety/')) return 'safety';
-  if (name.startsWith('Quality/')) return 'quality';
-  if (name.startsWith('Format/')) return 'format';
-  return 'other';
-}
 
 function run() {
   if (!process.env.OPENAI_API_KEY) {
