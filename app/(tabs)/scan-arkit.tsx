@@ -2748,6 +2748,26 @@ export default function ScanARKitScreen() {
               }
             }}
             disabled={isFinalizingRecording}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isFinalizingRecording
+                ? 'Finalizing recording'
+                : isRecording
+                  ? 'Stop recording'
+                  : 'Record set'
+            }
+            accessibilityHint={
+              isFinalizingRecording
+                ? 'Please wait while the last set is being saved'
+                : isRecording
+                  ? 'Double tap to stop the current recording'
+                  : 'Double tap to start recording the current set'
+            }
+            accessibilityState={{
+              disabled: isFinalizingRecording,
+              busy: isFinalizingRecording,
+              selected: isRecording,
+            }}
           >
             {isFinalizingRecording ? (
               <ActivityIndicator color="#FFFFFF" />
