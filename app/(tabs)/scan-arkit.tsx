@@ -135,6 +135,10 @@ const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 // Upper bound for the 2D pose smoothing cache. ARKit exposes ~20 joints;
 // we allow modest alias headroom before LRU-evicting the oldest entry.
 export const POSE2D_CACHE_MAX_ENTRIES = 30;
+// Minimum wall-clock interval between FPS stat publishes. Frames can arrive
+// at up to 60Hz; publishing state + debug logs on every frame wastes both
+// render work and log bandwidth when only the smoothed average is useful.
+export const FPS_PUBLISH_INTERVAL_MS = 500;
 const WATCH_MIRROR_INTERVAL_MS = 750;
 const WATCH_MIRROR_AR_QUALITY = 0.25;
 const WATCH_MIRROR_MAX_WIDTH = 320;
@@ -414,6 +418,9 @@ export default function ScanARKitScreen() {
   const sessionStartRef = React.useRef(new Date().toISOString());
   const cueCountersRef = React.useRef({ total: 0, spoken: 0, droppedRepeat: 0, droppedDisabled: 0 });
   const fpsStatsRef = React.useRef<{ count: number; sum: number; min: number }>({ count: 0, sum: 0, min: Number.POSITIVE_INFINITY });
+  // Wall-clock of the last FPS publish so we can throttle to 500ms intervals
+  // independent of the ARKit frame timestamp clock.
+  const lastFpsPublishMsRef = React.useRef<number>(0);
   const [watchMirrorEnabled, setWatchMirrorEnabled] = useState(Platform.OS === 'ios');
   const [watchPaired, setWatchPaired] = useState(false);
   const [watchInstalled, setWatchInstalled] = useState(false);
@@ -1079,6 +1086,7 @@ export default function ScanARKitScreen() {
         incrementPoseLost();
       }
       frameStatsRef.current = { lastTimestamp: 0, frameCount: 0 };
+      lastFpsPublishMsRef.current = 0;
       setJointAngles(null);
       jointAnglesStateRef.current = null;
       realtimeFormEngineRef.current = createRealtimeEngineState();
@@ -1407,23 +1415,31 @@ export default function ScanARKitScreen() {
     frameStatsRef.current.frameCount += 1;
     if (frameStatsRef.current.lastTimestamp === 0) {
       frameStatsRef.current.lastTimestamp = pose.timestamp;
+      lastFpsPublishMsRef.current = Date.now();
       return;
     }
 
-    const elapsed = pose.timestamp - frameStatsRef.current.lastTimestamp;
-    if (elapsed >= 1) {
-      const newFps = Math.round(frameStatsRef.current.frameCount / elapsed);
-      if (baselineDebugEnabledRef.current) {
-        logWithTs('[ScanARKit] 🎯 Performance:', {
-          fps: newFps,
-          totalFrames: frameStatsRef.current.frameCount
-        });
+    // Publish FPS on a fixed 500ms wall-clock cadence instead of
+    // per-frame. Still use the pose timestamp delta to compute the rate so
+    // the reported number reflects actual frame arrival (not clock skew).
+    const nowWall = Date.now();
+    if (nowWall - lastFpsPublishMsRef.current >= FPS_PUBLISH_INTERVAL_MS) {
+      const elapsed = pose.timestamp - frameStatsRef.current.lastTimestamp;
+      if (elapsed > 0) {
+        const newFps = Math.round(frameStatsRef.current.frameCount / elapsed);
+        if (baselineDebugEnabledRef.current) {
+          logWithTs('[ScanARKit] 🎯 Performance:', {
+            fps: newFps,
+            totalFrames: frameStatsRef.current.frameCount
+          });
+        }
+        setFps(newFps);
+        fpsStatsRef.current.count += 1;
+        fpsStatsRef.current.sum += newFps;
+        fpsStatsRef.current.min = Math.min(fpsStatsRef.current.min, newFps);
+        frameStatsRef.current = { lastTimestamp: pose.timestamp, frameCount: 0 };
       }
-      setFps(newFps);
-      fpsStatsRef.current.count += 1;
-      fpsStatsRef.current.sum += newFps;
-      fpsStatsRef.current.min = Math.min(fpsStatsRef.current.min, newFps);
-      frameStatsRef.current = { lastTimestamp: pose.timestamp, frameCount: 0 };
+      lastFpsPublishMsRef.current = nowWall;
     }
   // Intentionally scoped to frame-driven inputs to avoid hot-path dependency churn.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1603,6 +1619,7 @@ export default function ScanARKitScreen() {
 
       stopNativeTracking();
       frameStatsRef.current = { lastTimestamp: 0, frameCount: 0 };
+      lastFpsPublishMsRef.current = 0;
       setJointAngles(null);
       setActiveMetrics(null);
       const nextInitialPhase = getWorkoutByMode(detectionMode).initialPhase;
