@@ -11,6 +11,13 @@ interface ChatMessage {
 interface CoachContext {
   profile?: { id?: string; name?: string | null; email?: string | null };
   focus?: string;
+  /**
+   * Optional cross-session memory clause assembled by the client
+   * (`synthesizeMemoryClause`) and re-injected here so the model sees the
+   * same text whether the client prepended it to `messages` or not. The
+   * value is sanitized with `sanitizeName` before being embedded.
+   */
+  memoryClause?: string | null;
 }
 
 interface RequestBody {
@@ -103,6 +110,16 @@ function sanitizeName(name: string): string {
   return name.replace(/[^\w\s'-]/g, '').slice(0, 100).trim();
 }
 
+/** Cap memory clause length — the client already synthesizes <= 5 sentences. */
+const MAX_MEMORY_CLAUSE_LEN = 600;
+
+function sanitizeMemoryClause(clause: string): string {
+  // Reuse the `sanitizeName` character whitelist but widen punctuation to
+  // cover normal prose (commas, periods, slashes, digits, colons, parens).
+  const permissive = clause.replace(/[^\w\s'.,:;/()\-+%]/g, '');
+  return permissive.slice(0, MAX_MEMORY_CLAUSE_LEN).trim();
+}
+
 function buildPrompt(context?: CoachContext) {
   const focus = context?.focus || 'fitness_coach';
   const rawName = context?.profile?.name;
@@ -111,22 +128,34 @@ function buildPrompt(context?: CoachContext) {
     ? `You are coaching ${safeName}.`
     : 'You are coaching the user.';
 
-  return [
-    {
-      role: 'system',
-      content: [
-        'You are Form Factor’s AI coach for strength, conditioning, mobility, and nutrition.',
-        userLine,
-        'Stay safe: avoid medical advice, do not invent injuries, and recommend seeing a physician for pain, dizziness, or medical issues.',
-        'Do not mention that you are an AI or language model.',
-        'Outputs must be concise (under ~180 words) and actionable with clear sets/reps, rest, tempo, or food swaps.',
-        'Prefer simple movements with minimal equipment unless the user specifies otherwise.',
-        'Offer 1-2 options max; avoid long lists.',
-        'If user asks for calorie/protein guidance, give estimates and ranges, not exact prescriptions.',
-        `Focus: ${focus}.`,
-      ].join(' '),
-    } satisfies ChatMessage,
-  ];
+  const baseSystem: ChatMessage = {
+    role: 'system',
+    content: [
+      'You are Form Factor’s AI coach for strength, conditioning, mobility, and nutrition.',
+      userLine,
+      'Stay safe: avoid medical advice, do not invent injuries, and recommend seeing a physician for pain, dizziness, or medical issues.',
+      'Do not mention that you are an AI or language model.',
+      'Outputs must be concise (under ~180 words) and actionable with clear sets/reps, rest, tempo, or food swaps.',
+      'Prefer simple movements with minimal equipment unless the user specifies otherwise.',
+      'Offer 1-2 options max; avoid long lists.',
+      'If user asks for calorie/protein guidance, give estimates and ranges, not exact prescriptions.',
+      `Focus: ${focus}.`,
+    ].join(' '),
+  };
+
+  const rawMemory = typeof context?.memoryClause === 'string' ? context.memoryClause : '';
+  if (rawMemory) {
+    const safeMemory = sanitizeMemoryClause(rawMemory);
+    if (safeMemory.length > 0) {
+      const memorySystem: ChatMessage = {
+        role: 'system',
+        content: `Prior-session memory (use as background only, do not quote verbatim): ${safeMemory}`,
+      };
+      return [baseSystem, memorySystem];
+    }
+  }
+
+  return [baseSystem];
 }
 
 async function generateReply(body: RequestBody) {
