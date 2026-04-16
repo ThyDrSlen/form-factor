@@ -17,6 +17,14 @@ import {
   SHOW_N_FRAMES,
   TRACKING_QUALITY_CONFIG,
 } from './config';
+import {
+  HumanValidationGuard,
+  type HumanValidationOptions,
+} from './human-validation';
+import {
+  SubjectIdentityTracker,
+  type SubjectIdentityOptions,
+} from './subject-identity';
 import type { TrackingPipelineFlags, TrackingPipelineMode, TrackingQualityPipeline } from './types';
 
 function parseBooleanFlag(value: string | undefined): boolean | null {
@@ -70,6 +78,60 @@ export function getTrackingPipelineFlags(): TrackingPipelineFlags {
   };
 }
 
+/**
+ * Read the EXPO_PUBLIC_TRACKING_GUARDS feature flag.
+ *
+ * Opts in to the stress-hardening guards (HumanValidationGuard +
+ * SubjectIdentityTracker) described in #451. Default OFF — the guards
+ * are defensive and should not be shipped to all users until their
+ * thresholds are validated against real ARKit captures via
+ * `scripts/eval-guards-from-supabase.ts`.
+ *
+ * Treats an unset, empty, or explicit '0' / 'false' / 'no' / 'off' value
+ * as disabled. Every other non-empty value is treated as enabled.
+ */
+export function readTrackingGuardsFlag(): boolean {
+  const raw = process.env.EXPO_PUBLIC_TRACKING_GUARDS;
+  if (raw === undefined) return false;
+  const parsed = parseBooleanFlag(raw);
+  if (parsed !== null) return parsed;
+  // Non-empty, unrecognised values count as enabled (defensive opt-in).
+  return raw.trim().length > 0;
+}
+
+/**
+ * Factory that returns ready-to-use guard instances when the feature flag
+ * is enabled, or `null` when disabled so call sites can skip the per-frame
+ * work entirely. Safe to call on every pipeline init.
+ *
+ * TODO(#451): wire these instances directly into the joint-processing
+ * path. The current `processTrackingQualityAngles` entry point receives
+ * derived angles rather than raw joints, so integration must happen at
+ * the ARKit frame boundary (scan-arkit.tsx / use-workout-controller.ts)
+ * where the joint map is still available. Until that integration lands,
+ * call sites should instantiate via `createTrackingGuards()` themselves.
+ */
+export function createTrackingGuards(options?: {
+  enabled?: boolean;
+  human?: HumanValidationOptions;
+  subject?: SubjectIdentityOptions;
+}): {
+  enabled: boolean;
+  human: HumanValidationGuard | null;
+  subject: SubjectIdentityTracker | null;
+} {
+  const enabled = options?.enabled ?? readTrackingGuardsFlag();
+  if (!enabled) {
+    return { enabled: false, human: null, subject: null };
+  }
+
+  return {
+    enabled: true,
+    human: new HumanValidationGuard(options?.human),
+    subject: new SubjectIdentityTracker(options?.subject),
+  };
+}
+
 export function createTrackingQualityPipelineState(): RealtimeFormEngineState {
   return createRealtimeFormEngineState();
 }
@@ -107,6 +169,19 @@ export {
 };
 
 export { clampVelocity, filterCoordinates, smoothAngleEMA, smoothCoordinateEMA } from './filters';
+
+export { HumanValidationGuard } from './human-validation';
+export type {
+  HumanValidationOptions,
+  HumanValidationResult,
+  Joint2D as HumanValidationJoint2D,
+} from './human-validation';
+
+export { SubjectIdentityTracker } from './subject-identity';
+export type {
+  SubjectIdentityOptions,
+  SubjectIdentitySnapshot,
+} from './subject-identity';
 
 export {
   calculateComponentScores,
