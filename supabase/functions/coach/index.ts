@@ -11,6 +11,10 @@ interface ChatMessage {
 interface CoachContext {
   profile?: { id?: string; name?: string | null; email?: string | null };
   focus?: string;
+  faultId?: string;
+  exerciseName?: string;
+  faultLabel?: string;
+  historySummary?: string;
 }
 
 interface RequestBody {
@@ -103,15 +107,113 @@ function sanitizeName(name: string): string {
   return name.replace(/[^\w\s'-]/g, '').slice(0, 100).trim();
 }
 
+/**
+ * Minimal inline port of lib/services/coach-injection-hardener.ts.
+ * The edge function runs Deno and cannot import from @/lib, so we
+ * duplicate the smallest working subset here. Keep the two in sync.
+ */
+const EDGE_PROMPT_BREAK_PATTERNS: RegExp[] = [
+  /\[\s*ignore\s+(?:all\s+)?(?:safety|previous|above|prior)[^\]]*\]/gi,
+  /\[\s*system\s*\]/gi,
+  /###\s*system\b/gi,
+  /###\s*instruction\b/gi,
+  /<\|im_start\|>/gi,
+  /<\|im_end\|>/gi,
+  /<\|start_of_turn\|>/gi,
+  /<\|end_of_turn\|>/gi,
+  /<start_of_turn>/gi,
+  /<end_of_turn>/gi,
+  /\bBEGIN\s+SYSTEM\s+PROMPT\b/gi,
+  /\bEND\s+SYSTEM\s+PROMPT\b/gi,
+  /\bnow\s+ignore\s+all\s+rules\b/gi,
+  /\bjailbreak\s*:/gi,
+  /\bDAN\s+mode\b/gi,
+];
+
+function hardenAgainstInjection(value: string | undefined | null, maxLength = 400): string {
+  if (value == null || typeof value !== 'string') return '';
+  let out = value.replace(/[\r\n\t\v\f\u0085\u2028\u2029]+/g, ' ');
+  for (const p of EDGE_PROMPT_BREAK_PATTERNS) {
+    out = out.replace(p, '[redacted]');
+  }
+  out = out
+    .replace(/```/g, '\u201C\u201D\u201C')
+    .replace(/`/g, '\u2018')
+    .replace(/</g, '\uFF1C')
+    .replace(/>/g, '\uFF1E')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (out.length > maxLength) out = out.slice(0, maxLength).trimEnd();
+  return out;
+}
+
+function hardenFaultId(raw: string | undefined | null): string {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/[^\w-]/g, '').slice(0, 64);
+}
+
+function hardenContext(ctx?: CoachContext): CoachContext {
+  if (!ctx) return {};
+  const out: CoachContext = { ...ctx };
+  if (typeof out.exerciseName === 'string') {
+    out.exerciseName = hardenAgainstInjection(out.exerciseName, 80);
+  }
+  if (typeof out.faultLabel === 'string') {
+    out.faultLabel = hardenAgainstInjection(out.faultLabel, 80);
+  }
+  if (typeof out.historySummary === 'string') {
+    out.historySummary = hardenAgainstInjection(out.historySummary, 400);
+  }
+  if (typeof out.faultId === 'string') {
+    out.faultId = hardenFaultId(out.faultId);
+  }
+  return out;
+}
+
+/**
+ * Minimal inline port of lib/services/coach-few-shots.ts. Returns up to
+ * one example per fault id for the edge function so the prompt stays
+ * compact. Keep in sync with the client-side library.
+ */
+const EDGE_FEW_SHOTS: Record<string, { q: string; a: string }> = {
+  'squat-knee-cave': {
+    q: 'My knees cave inward when I squat heavy. What do I do?',
+    a: 'Cue "spread the floor" by pushing your feet outward without letting them move. Warm up with banded squats and drop working weight by 10% this week.',
+  },
+  'pullup-kip': {
+    q: 'My pull-ups swing a lot. How do I stop kipping?',
+    a: 'Start from a dead hang with shoulders pulled down, squeeze glutes, and pull elbows to your ribs for 5 slow reps across 3 sets.',
+  },
+  'deadlift-rounded-back': {
+    q: 'My lower back rounds when I pull. How do I lock it in?',
+    a: 'Before the pull, take a big belly breath and wedge between bar and floor so lats are engaged. Drop 15% off working weight for 3x5.',
+  },
+  'bench-elbow-flare': {
+    q: 'My elbows flare way out on bench. Safer options?',
+    a: 'Tuck elbows to roughly 45 degrees and stack wrists over elbows. Warm up with dumbbell bench (3x8) to groove the path.',
+  },
+  'pushup-hip-sag': {
+    q: 'My hips drop on push-ups. How do I keep a straight line?',
+    a: 'Squeeze your glutes and brace your core before every rep. Add 3x30s plank holds before your push-up sets until the sag clears.',
+  },
+};
+
+function getFewShotForFaultEdge(faultId: string): { q: string; a: string } | null {
+  const key = faultId.trim().toLowerCase();
+  if (!key) return null;
+  return EDGE_FEW_SHOTS[key] ?? null;
+}
+
 function buildPrompt(context?: CoachContext) {
-  const focus = context?.focus || 'fitness_coach';
-  const rawName = context?.profile?.name;
+  const safeCtx = hardenContext(context);
+  const focus = safeCtx.focus || 'fitness_coach';
+  const rawName = safeCtx.profile?.name;
   const safeName = rawName ? sanitizeName(rawName) : '';
   const userLine = safeName
     ? `You are coaching ${safeName}.`
     : 'You are coaching the user.';
 
-  return [
+  const systemMessages: ChatMessage[] = [
     {
       role: 'system',
       content: [
@@ -125,8 +227,41 @@ function buildPrompt(context?: CoachContext) {
         'If user asks for calorie/protein guidance, give estimates and ranges, not exact prescriptions.',
         `Focus: ${focus}.`,
       ].join(' '),
-    } satisfies ChatMessage,
+    },
   ];
+
+  // Append hardened context fields when the enricher populated them. These
+  // strings have already passed through hardenContext() above.
+  const contextLines: string[] = [];
+  if (safeCtx.exerciseName) {
+    contextLines.push(`Current exercise: ${safeCtx.exerciseName}.`);
+  }
+  if (safeCtx.faultLabel) {
+    contextLines.push(`Detected form fault: ${safeCtx.faultLabel}.`);
+  }
+  if (safeCtx.historySummary) {
+    contextLines.push(`Recent history: ${safeCtx.historySummary}.`);
+  }
+  if (contextLines.length > 0) {
+    systemMessages.push({
+      role: 'system',
+      content: contextLines.join(' '),
+    });
+  }
+
+  // Append a single few-shot example when a matching fault id is known.
+  // Helps Gemma stay in-distribution without blowing the token budget.
+  if (safeCtx.faultId) {
+    const shot = getFewShotForFaultEdge(safeCtx.faultId);
+    if (shot) {
+      systemMessages.push({
+        role: 'system',
+        content: `Example Q: ${shot.q}\nExample A: ${shot.a}`,
+      });
+    }
+  }
+
+  return systemMessages;
 }
 
 async function generateReply(body: RequestBody) {
