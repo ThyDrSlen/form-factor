@@ -1,6 +1,14 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4?target=deno';
 
+// -----------------------------------------------------------------------------
+// NOTE on duplication: these helpers are intentionally kept in sync with the
+// pure module at `./translation.ts` (imported by `bun test`). Deno edge
+// functions resolve imports strictly and without an import map we cannot
+// share a relative `.ts` module cleanly between Deno runtime and the Bun test
+// runner. Any change here should be mirrored in `translation.ts`.
+// -----------------------------------------------------------------------------
+
 type Role = 'user' | 'assistant' | 'system';
 
 interface ChatMessage {
@@ -143,15 +151,7 @@ function buildSystemInstruction(context?: CoachContext): string {
   ].join(' ');
 }
 
-/**
- * Translate OpenAI-style chat messages into Gemini's `contents` shape.
- *
- * Gemini uses `role: 'user' | 'model'`. We collapse `assistant` -> `model`, and
- * merge any `system` messages into the first user turn with a `[System]:` prefix,
- * which is the safe cross-model default (Gemma instruct via Gemini honors
- * `systemInstruction`, but collapsing on empty user input preserves intent).
- */
-export function toGeminiContents(messages: ChatMessage[]): GeminiContent[] {
+function toGeminiContents(messages: ChatMessage[]): GeminiContent[] {
   const contents: GeminiContent[] = [];
   const pendingSystem: string[] = [];
 
@@ -180,7 +180,7 @@ export function toGeminiContents(messages: ChatMessage[]): GeminiContent[] {
   return contents;
 }
 
-export function buildGeminiPayload(
+function buildGeminiPayload(
   messages: ChatMessage[],
   context: CoachContext | undefined,
   opts: { temperature: number; maxOutputTokens: number },
@@ -197,7 +197,7 @@ export function buildGeminiPayload(
   };
 }
 
-export function extractGeminiText(data: GeminiResponse): string | null {
+function extractGeminiText(data: GeminiResponse): string | null {
   const blockReason = data?.promptFeedback?.blockReason;
   if (blockReason) return null;
 
@@ -212,7 +212,7 @@ export function extractGeminiText(data: GeminiResponse): string | null {
   return joined || null;
 }
 
-export function resolveRequestedModel(raw: unknown): string {
+function resolveRequestedModel(raw: unknown): string {
   if (typeof raw !== 'string') return DEFAULT_MODEL;
   const trimmed = raw.trim();
   if (!trimmed) return DEFAULT_MODEL;
@@ -231,18 +231,15 @@ async function generateReply(body: RequestBody) {
     return badRequest('messages array is required');
   }
 
-  // Per-request model override, still validated against the allowlist.
-  if (typeof body.model === 'string' && body.model.trim()) {
-    const trimmed = body.model.trim();
-    if (!ALLOWED_MODELS.has(trimmed)) {
-      return badRequest(
-        `Unsupported model "${trimmed}". Allowed: ${Array.from(ALLOWED_MODELS).join(', ')}.`,
-        { status: 400 },
-      );
-    }
+  const rawRequestedModel = typeof body.model === 'string' ? body.model.trim() : '';
+  if (rawRequestedModel && !ALLOWED_MODELS.has(rawRequestedModel)) {
+    return badRequest(
+      `Unsupported model "${rawRequestedModel}". Allowed: ${Array.from(ALLOWED_MODELS).join(', ')}.`,
+      { status: 400 },
+    );
   }
 
-  const model = resolveRequestedModel(body.model) || DEFAULT_MODEL;
+  const model = resolveRequestedModel(body.model);
   const payload = buildGeminiPayload(inputMessages, body.context, {
     temperature: TEMPERATURE,
     maxOutputTokens: MAX_TOKENS,
