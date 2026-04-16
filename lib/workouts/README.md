@@ -32,3 +32,8 @@ Each workout lives in its own file (for example `pullup.ts`, `pushup.ts`) and ex
 - Prefer keeping **all** workout-specific heuristics inside the workout file (not in `scan-arkit.tsx`).
 - Keep thresholds named and documented (avoid magic numbers sprinkled through the UI).
 - If you need a new metric for UI/telemetry, add it to that workout’s `Metrics` type and compute it in `calculateMetrics`.
+
+## Future work
+
+- **Drill population deferred until PR #434 merges.** The `FaultDefinition` type will gain an optional `drills[]` field on that branch, along with a first pass of per-fault drill suggestions for the existing 8 workouts. Until that lands we only define faults with their `id`, `displayName`, `condition`, `severity`, `dynamicCue`, and `fqiPenalty`.
+- Shared helpers in `lib/workouts/helpers.ts` (`asymmetryCheck`, `sequenceCheck`, `validateAngleInRange`, `clampedDelta`) are available for new workouts; refactoring the existing 8 workouts to use them is a follow-up PR once #434 is in `main`.
