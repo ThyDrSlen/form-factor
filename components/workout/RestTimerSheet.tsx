@@ -11,6 +11,7 @@ import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { sessionStyles as styles, colors } from '@/styles/workout-session.styles';
 import { useSessionRunner } from '@/lib/stores/session-runner';
 import { computeRemainingSeconds, formatRestTime } from '@/lib/services/rest-timer';
+import { useKeepAwakeSmart } from '@/lib/a11y/useKeepAwakeSmart';
 
 /**
  * Best-effort lazy import for the haptic bus. Wrapped in try/catch + delayed
@@ -68,6 +69,11 @@ const RestTimerSheet = forwardRef<BottomSheet, RestTimerSheetProps>(({ onClose }
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
   }, [restTimer]);
+
+  // Long rests (>60s) would otherwise let the phone lock and kill the
+  // next-up preview. Hold the screen awake until the visible countdown
+  // ticks below the 60s threshold.
+  useKeepAwakeSmart('rest-long', remaining > 60);
 
   // Find next set info
   let nextUpText = '';
