@@ -1,6 +1,9 @@
 import { supabase } from '@/lib/supabase';
 import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { createError, logError } from './ErrorHandler';
+import { shapeCoachResponse } from './coach-output-shaper';
+import { summarizeRollingWindow } from './coach-conversation-summarizer';
+import { getCachedTip, getOfflineFallback } from './coach-cache';
 
 export type CoachRole = 'user' | 'assistant' | 'system';
 
@@ -18,6 +21,23 @@ export interface CoachContext {
   };
   focus?: string;
   sessionId?: string;
+  /**
+   * Optional fault id. When set and EXPO_PUBLIC_COACH_CACHE=1, the cache
+   * layer may short-circuit the network round-trip by returning a canned
+   * tip. Populated by the context enricher (PR #431).
+   */
+  faultId?: string;
+  /**
+   * Optional exercise slug (e.g. "squat"). Fallback key for the cache
+   * layer when no fault id is available.
+   */
+  exerciseSlug?: string;
+  /**
+   * Optional online flag. When false and EXPO_PUBLIC_COACH_CACHE=1 we
+   * serve a cached tip without hitting the network. When omitted the
+   * service assumes online.
+   */
+  isOnline?: boolean;
 }
 
 interface RawCoachResponse {
@@ -29,13 +49,59 @@ interface RawCoachResponse {
 
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
 
+function isCacheFlagOn(): boolean {
+  return (process.env.EXPO_PUBLIC_COACH_CACHE || '').trim() === '1';
+}
+
+function isCompressFlagOn(): boolean {
+  return (process.env.EXPO_PUBLIC_COACH_MEMORY_COMPRESS || '').trim() === '1';
+}
+
+/**
+ * When the cache flag is on and we have a fault id or exercise slug, check
+ * the canned-tip cache before going to the network. This is skipped when
+ * the flag is off so existing behaviour is preserved.
+ */
+function maybeServeFromCache(context?: CoachContext): CoachMessage | null {
+  if (!isCacheFlagOn()) return null;
+
+  // When offline, always attempt cache (fault id / exercise / generic).
+  const offline = context?.isOnline === false;
+
+  const key = context?.faultId || context?.exerciseSlug;
+  if (key) {
+    const tip = getCachedTip(key);
+    if (tip) {
+      return { role: 'assistant', content: tip.text };
+    }
+  }
+
+  if (offline) {
+    // No specific tip — return the generic offline fallback rather than
+    // bubble up a network error.
+    const fallback = getOfflineFallback();
+    return { role: 'assistant', content: fallback.text };
+  }
+
+  return null;
+}
+
 export async function sendCoachPrompt(
   messages: CoachMessage[],
   context?: CoachContext
 ): Promise<CoachMessage> {
+  // Cache short-circuit (flag-gated, no-op by default).
+  const cached = maybeServeFromCache(context);
+  if (cached) return cached;
+
+  // Compress long histories when flag is on. Deterministic and zero-I/O.
+  const dispatchMessages = isCompressFlagOn()
+    ? summarizeRollingWindow(messages)
+    : messages;
+
   try {
     const { data, error } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
-      body: { messages, context },
+      body: { messages: dispatchMessages, context },
     });
 
     if (error) {
@@ -137,9 +203,13 @@ export async function sendCoachPrompt(
       });
     }
 
+    // Light markdown / emoji post-processor. Pure and idempotent; safe to
+    // run on every response.
+    const shaped = shapeCoachResponse(responseText);
+
     return {
       role: 'assistant',
-      content: responseText,
+      content: shaped,
     };
   } catch (err) {
     if (err && typeof err === 'object' && 'domain' in err) {
