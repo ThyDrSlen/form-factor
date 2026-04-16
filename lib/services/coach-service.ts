@@ -71,10 +71,16 @@ export async function sendCoachPrompt(
 ): Promise<CoachMessage> {
   // Back-compat: when no opts are provided, the original code path runs
   // verbatim. New behavior is only enabled when callers opt in.
-  // The failover and cache dispatch are wired in follow-up commits once
-  // those modules exist; this commit ships only the stream branch.
   if (opts?.stream) {
     return sendCoachPromptStreaming(messages, context, opts);
+  }
+  if (opts?.allowFailover) {
+    // Lazy import keeps the dep graph 1-way and avoids load-order issues.
+    const { sendCoachPromptWithFailover } = await import('./coach-failover');
+    return sendCoachPromptWithFailover(messages, context, {
+      primary: opts.provider ?? 'gemma',
+      secondary: opts.provider === 'openai' ? 'gemma' : 'openai',
+    });
   }
 
   return sendCoachPromptInner(messages, context);
