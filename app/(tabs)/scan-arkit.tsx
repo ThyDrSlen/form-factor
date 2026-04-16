@@ -503,6 +503,23 @@ export default function ScanARKitScreen() {
     errorWithTs(`[ScanARKit] processFrame(${source}) threw — degrading gracefully`, error);
   }, []);
 
+  // Consolidated engine / shadow-state lifecycle. Previously each lifecycle
+  // point (mount, detection-mode change, pose-loss, startTracking,
+  // stopTracking) inlined its own five-line reset, drifting over time. A
+  // single callback keeps the invariant "realtime engine is fresh whenever
+  // we reset shadow metrics" in one place.
+  const resetRealtimeEngine = useCallback(() => {
+    realtimeFormEngineRef.current = createRealtimeEngineState();
+    lastShadowMeanAbsDeltaRef.current = null;
+  }, [createRealtimeEngineState]);
+
+  const resetShadowTracking = useCallback(() => {
+    shadowStatsRef.current = createShadowStatsAccumulator();
+    shadowProviderCountsRef.current = createShadowProviderCounts();
+    mediaPipePoseRef.current = null;
+    resetRealtimeEngine();
+  }, [resetRealtimeEngine]);
+
   const updatePartialTrackingBadgeVisibility = useCallback((
     visibilityBadge: PullupScoringResult['visibility_badge'],
     source: 'frame-live' | 'onPullupScoring-rep-complete' | 'unknown' = 'unknown'
@@ -828,13 +845,9 @@ export default function ScanARKitScreen() {
       }
     });
     resetFrameCounter();
-    shadowStatsRef.current = createShadowStatsAccumulator();
-    shadowProviderCountsRef.current = createShadowProviderCounts();
-    mediaPipePoseRef.current = null;
-    realtimeFormEngineRef.current = createRealtimeEngineState();
-    lastShadowMeanAbsDeltaRef.current = null;
+    resetShadowTracking();
     resetBaselineDebugMetrics();
-  }, [createRealtimeEngineState, resetBaselineDebugMetrics]);
+  }, [resetShadowTracking, resetBaselineDebugMetrics]);
 
   useEffect(() => {
     const countersRef = cueCountersRef;
@@ -954,14 +967,10 @@ export default function ScanARKitScreen() {
     setLivePullupPartialStatus(null);
     lastLivePartialBadgeRef.current = null;
     repIndexTrackerRef.current.reset();
-    shadowStatsRef.current = createShadowStatsAccumulator();
-    shadowProviderCountsRef.current = createShadowProviderCounts();
-    mediaPipePoseRef.current = null;
-    realtimeFormEngineRef.current = createRealtimeEngineState();
-    lastShadowMeanAbsDeltaRef.current = null;
+    resetShadowTracking();
     resetBaselineDebugMetrics();
     setWorkoutController(detectionMode);
-  }, [createRealtimeEngineState, detectionMode, resetBaselineDebugMetrics, setWorkoutController]);
+  }, [detectionMode, resetBaselineDebugMetrics, resetShadowTracking, setWorkoutController]);
 
   useEffect(() => {
     if (DEV) {
@@ -1138,8 +1147,7 @@ export default function ScanARKitScreen() {
       frameStatsRef.current = { lastTimestamp: 0, frameCount: 0 };
       setJointAngles(null);
       jointAnglesStateRef.current = null;
-      realtimeFormEngineRef.current = createRealtimeEngineState();
-      lastShadowMeanAbsDeltaRef.current = null;
+      resetRealtimeEngine();
       setFps(0);
       setSmoothedPose2DJoints(null);
       smoothedPose2DRef.current = null;
@@ -1577,11 +1585,7 @@ export default function ScanARKitScreen() {
       resetCueHysteresis();
 
       const startTime = Date.now();
-      shadowStatsRef.current = createShadowStatsAccumulator();
-      shadowProviderCountsRef.current = createShadowProviderCounts();
-      mediaPipePoseRef.current = null;
-      realtimeFormEngineRef.current = createRealtimeEngineState();
-      lastShadowMeanAbsDeltaRef.current = null;
+      resetShadowTracking();
       await startNativeTracking();
       const elapsed = Date.now() - startTime;
       
@@ -1609,6 +1613,7 @@ export default function ScanARKitScreen() {
     resetWorkoutController,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
+    resetShadowTracking,
   ]);
 
   const stopRecordingCore = useCallback(async () => {
@@ -1661,11 +1666,7 @@ export default function ScanARKitScreen() {
       resetWorkoutController();
       setRepCount(0);
       setFps(0);
-      realtimeFormEngineRef.current = createRealtimeEngineState();
-      lastShadowMeanAbsDeltaRef.current = null;
-      shadowStatsRef.current = createShadowStatsAccumulator();
-      shadowProviderCountsRef.current = createShadowProviderCounts();
-      mediaPipePoseRef.current = null;
+      resetShadowTracking();
       setShadowProviderRuntime('mediapipe_proxy');
       resetBaselineDebugMetrics();
       resetCueHysteresis();
@@ -1689,6 +1690,7 @@ export default function ScanARKitScreen() {
     resetWorkoutController,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
+    resetShadowTracking,
   ]);
 
   // Cleanup on unmount
@@ -1983,22 +1985,45 @@ export default function ScanARKitScreen() {
       };
     }, [watchMirrorActive, captureAndSendWatchMirror]);
 
-    // Watch Connectivity: Listen for commands
+    // Watch Connectivity: Listen for commands.
+    //
+    // The listener reads current tracking state and callbacks via refs so it
+    // can stay subscribed once per mount instead of churning every time
+    // isTracking / supportStatus / startTracking / stopTracking change. A
+    // rapid start/stop toggle previously registered a brand new listener
+    // on every flip; with the ref-based approach the native bridge only
+    // ever sees a single subscription.
+    const watchCommandContextRef = React.useRef({
+      isTracking,
+      supportStatus,
+      startTracking,
+      stopTracking,
+    });
+    useEffect(() => {
+      watchCommandContextRef.current = {
+        isTracking,
+        supportStatus,
+        startTracking,
+        stopTracking,
+      };
+    }, [isTracking, supportStatus, startTracking, stopTracking]);
+
     useEffect(() => {
       const unsubscribe = watchEvents.addListener('message', (message: { command?: string }) => {
+        const ctx = watchCommandContextRef.current;
         if (message.command === 'start') {
-          if (!isTracking && supportStatus === 'supported') {
-            startTracking();
+          if (!ctx.isTracking && ctx.supportStatus === 'supported') {
+            ctx.startTracking();
           }
         } else if (message.command === 'stop') {
-          if (isTracking) {
-            stopTracking();
+          if (ctx.isTracking) {
+            ctx.stopTracking();
           }
         }
       });
 
       return () => unsubscribe();
-    }, [isTracking, supportStatus, startTracking, stopTracking]);
+    }, []);
 
     // Watch Connectivity: Sync state
     useEffect(() => {
