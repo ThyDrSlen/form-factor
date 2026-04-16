@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { createError, logError } from './ErrorHandler';
+import type { LiveSessionSnapshot } from './coach-live-snapshot';
 
 export type CoachRole = 'user' | 'assistant' | 'system';
 
@@ -18,6 +19,13 @@ export interface CoachContext {
   };
   focus?: string;
   sessionId?: string;
+  /**
+   * Optional in-session context passed to the coach edge function. When
+   * present, the edge function appends a short "live session context" clause
+   * to the system prompt. Purely additive — default call sites do not need to
+   * set this.
+   */
+  liveSession?: LiveSessionSnapshot;
 }
 
 interface RawCoachResponse {
