@@ -12,6 +12,7 @@ import { benchpressDefinition, type BenchPressPhase, type BenchPressMetrics } fr
 import { deadHangDefinition, type DeadHangPhase, type DeadHangMetrics } from './dead-hang';
 import { deadliftDefinition, type DeadliftPhase, type DeadliftMetrics } from './deadlift';
 import { farmersWalkDefinition, type FarmersWalkPhase, type FarmersWalkMetrics } from './farmers-walk';
+import { lungeDefinition, type LungePhase, type LungeMetrics } from './lunge';
 import { pullupDefinition, type PullUpPhase, type PullUpMetrics } from './pullup';
 import { pushupDefinition, type PushUpPhase, type PushUpMetrics } from './pushup';
 import { rdlDefinition, type RDLPhase, type RDLMetrics } from './rdl';
@@ -22,6 +23,7 @@ export const workoutsByMode = {
   dead_hang: deadHangDefinition,
   deadlift: deadliftDefinition,
   farmers_walk: farmersWalkDefinition,
+  lunge: lungeDefinition,
   pullup: pullupDefinition,
   pushup: pushupDefinition,
   rdl: rdlDefinition,
@@ -37,6 +39,7 @@ export { benchpressDefinition, BENCHPRESS_THRESHOLDS, type BenchPressPhase, type
 export { deadHangDefinition, DEAD_HANG_THRESHOLDS, type DeadHangPhase, type DeadHangMetrics } from './dead-hang';
 export { deadliftDefinition, DEADLIFT_THRESHOLDS, type DeadliftPhase, type DeadliftMetrics } from './deadlift';
 export { farmersWalkDefinition, FARMERS_WALK_THRESHOLDS, type FarmersWalkPhase, type FarmersWalkMetrics } from './farmers-walk';
+export { lungeDefinition, LUNGE_THRESHOLDS, type LungePhase, type LungeMetrics } from './lunge';
 export { pullupDefinition, PULLUP_THRESHOLDS, type PullUpPhase, type PullUpMetrics } from './pullup';
 export { pushupDefinition, PUSHUP_THRESHOLDS, type PushUpPhase, type PushUpMetrics } from './pushup';
 export { rdlDefinition, RDL_THRESHOLDS, type RDLPhase, type RDLMetrics } from './rdl';
@@ -62,6 +65,7 @@ export const workoutRegistry: WorkoutRegistry = {
   dead_hang: deadHangDefinition as unknown as WorkoutDefinition,
   deadlift: deadliftDefinition as unknown as WorkoutDefinition,
   farmers_walk: farmersWalkDefinition as unknown as WorkoutDefinition,
+  lunge: lungeDefinition as unknown as WorkoutDefinition,
   pullup: pullupDefinition as unknown as WorkoutDefinition,
   pushup: pushupDefinition as unknown as WorkoutDefinition,
   rdl: rdlDefinition as unknown as WorkoutDefinition,
