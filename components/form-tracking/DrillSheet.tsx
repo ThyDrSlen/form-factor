@@ -7,7 +7,7 @@
  *
  * Logs view/start/dismiss via drill-tracker.
  */
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { FaultDefinition, FaultDrill } from '@/lib/types/workout-definitions';
 import { drillTracker } from '@/lib/services/drill-tracker';
@@ -31,7 +31,7 @@ export function DrillSheet({
   onStartDrill,
   testID,
 }: DrillSheetProps) {
-  const drills = fault?.drills ?? [];
+  const drills = useMemo<FaultDrill[]>(() => fault?.drills ?? [], [fault]);
 
   useEffect(() => {
     if (!visible || !fault || !sessionId) return;
