@@ -8,6 +8,7 @@
 import * as Notifications from 'expo-notifications';
 import { GoalProfile, SetType } from '@/lib/types/workout-session';
 import { logWithTs, warnWithTs } from '@/lib/logger';
+import { hapticBus } from '@/lib/haptics/haptic-bus';
 
 // =============================================================================
 // Rest Duration Defaults
@@ -199,4 +200,58 @@ export function formatRestTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// =============================================================================
+// Foreground rest haptic companion
+// =============================================================================
+
+let foregroundInterval: ReturnType<typeof setInterval> | null = null;
+let lastTick10s = -1;
+
+/**
+ * Start a foreground polling companion that emits haptic-bus events while
+ * the app is in the foreground. Schedules a `rest.tick10s` event at the
+ * 30s/20s/10s marks and `rest.done` when the timer hits zero.
+ *
+ * Returns a `stop()` function. The local-notification flow still runs for
+ * the background case; this companion is purely additive for users who
+ * leave the app open during rest.
+ */
+export function startForegroundRestHapticCompanion(
+  restStartedAt: string | Date,
+  restTargetSeconds: number,
+): () => void {
+  stopForegroundRestHapticCompanion();
+  lastTick10s = -1;
+  let doneEmitted = false;
+
+  const tick = () => {
+    const remaining = computeRemainingSeconds(restStartedAt, restTargetSeconds);
+    if (remaining <= 0 && !doneEmitted) {
+      doneEmitted = true;
+      hapticBus.emit('rest.done');
+      stopForegroundRestHapticCompanion();
+      return;
+    }
+    // Every full 10-second threshold crossing under 30s.
+    if (remaining > 0 && remaining <= 30) {
+      const bucket = Math.floor(remaining / 10);
+      if (bucket !== lastTick10s) {
+        lastTick10s = bucket;
+        hapticBus.emit('rest.tick10s');
+      }
+    }
+  };
+
+  tick();
+  foregroundInterval = setInterval(tick, 1000);
+  return stopForegroundRestHapticCompanion;
+}
+
+export function stopForegroundRestHapticCompanion(): void {
+  if (foregroundInterval !== null) {
+    clearInterval(foregroundInterval);
+    foregroundInterval = null;
+  }
 }
