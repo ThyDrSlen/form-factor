@@ -118,6 +118,26 @@ export interface ScoringMetricDefinition {
 export type FaultSeverity = 1 | 2 | 3;
 
 /**
+ * Corrective drill suggested to a user whose rep triggered a specific
+ * fault. Authored alongside the fault definition so the coach UI can
+ * surface it without any extra plumbing.
+ */
+export interface FaultDrill {
+  /** Stable identifier (e.g., 'scap-pull-2x10') */
+  id: string;
+  /** Human-readable title ("Scapular Pull-Ups") */
+  title: string;
+  /** Suggested duration in seconds (null if rep-based) */
+  durationSec: number;
+  /** Optional target rep count (null if time-based) */
+  reps?: number;
+  /** Step-by-step plain-language instructions */
+  steps: string[];
+  /** Optional demo media uri (image or short clip) */
+  mediaUri?: string;
+}
+
+/**
  * Defines a detectable form fault
  */
 export interface FaultDefinition {
@@ -133,6 +153,11 @@ export interface FaultDefinition {
   dynamicCue: string;
   /** FQI penalty points (subtracted from score) */
   fqiPenalty: number;
+  /**
+   * Optional corrective drills surfaced by DrillSheet when this fault
+   * is detected. Ordered by recommended priority.
+   */
+  drills?: FaultDrill[];
 }
 
 // =============================================================================

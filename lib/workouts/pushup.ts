@@ -194,6 +194,18 @@ const faults: FaultDefinition[] = [
     severity: 2,
     dynamicCue: 'Squeeze glutes to stop hip sag.',
     fqiPenalty: 15,
+    drills: [
+      {
+        id: 'pushup-plank-hold',
+        title: 'Hollow-Body Planks',
+        durationSec: 90,
+        steps: [
+          'Get into a plank with hands under shoulders.',
+          'Squeeze glutes and brace; imagine tucking your ribs down.',
+          'Hold 3 rounds of 20–30 seconds with 30 seconds rest.',
+        ],
+      },
+    ],
   },
   {
     id: 'incomplete_lockout',
@@ -218,6 +230,19 @@ const faults: FaultDefinition[] = [
     severity: 2,
     dynamicCue: 'Lower deeper until elbows hit ~90°.',
     fqiPenalty: 12,
+    drills: [
+      {
+        id: 'pushup-eccentric-5s',
+        title: '5-Second Negative Push-Ups',
+        durationSec: 120,
+        reps: 5,
+        steps: [
+          'Start in a plank position, hands shoulder-width.',
+          'Lower over 5 seconds until your chest kisses the floor.',
+          'Reset and repeat. 3 sets of 5 with full rest.',
+        ],
+      },
+    ],
   },
   {
     id: 'asymmetric_press',
@@ -254,6 +279,19 @@ const faults: FaultDefinition[] = [
     severity: 2,
     dynamicCue: 'Keep elbows at ~45° to protect your shoulders.',
     fqiPenalty: 10,
+    drills: [
+      {
+        id: 'pushup-tempo-tucked',
+        title: 'Tucked-Elbow Tempo Push-Ups',
+        durationSec: 120,
+        reps: 8,
+        steps: [
+          'Set hands slightly narrower than shoulder width.',
+          'Keep elbows tucked ~45° from your torso as you descend.',
+          'Use a 3-1-1 tempo. 3 sets of 8.',
+        ],
+      },
+    ],
   },
 ];
 
