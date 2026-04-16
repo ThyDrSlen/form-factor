@@ -34,6 +34,9 @@ import ExerciseActionSheet from '@/components/workout/ExerciseActionSheet';
 import RestTimerSheet from '@/components/workout/RestTimerSheet';
 import ExercisePicker from '@/components/workout/ExercisePicker';
 import SetNotesModal from '@/components/workout/SetNotesModal';
+import PostSessionSummaryCard, {
+  type PostSessionMetric,
+} from '@/components/form-tracking/PostSessionSummaryCard';
 
 const GOAL_PROFILES: GoalProfile[] = ['hypertrophy', 'strength', 'power', 'endurance', 'mixed'];
 
@@ -214,6 +217,55 @@ export default function WorkoutSessionScreen() {
     : '';
 
   // =========================================================================
+  // Post-session summary metrics (rendered once the session has ended)
+  // =========================================================================
+  const summaryData = React.useMemo(() => {
+    if (!activeSession?.ended_at) return null;
+
+    const allSets = Object.values(sets).flat();
+    const completedSets = allSets.filter((s) => s.completed_at);
+    const totalReps = completedSets.reduce(
+      (acc, s) => acc + (s.actual_reps ?? 0),
+      0,
+    );
+    const totalVolume = completedSets.reduce(
+      (acc, s) => acc + (s.actual_reps ?? 0) * (s.actual_weight ?? 0),
+      0,
+    );
+
+    const startedAtMs = new Date(activeSession.started_at).getTime();
+    const endedAtMs = new Date(activeSession.ended_at).getTime();
+    const durationMinutes = Math.max(0, Math.round((endedAtMs - startedAtMs) / 60000));
+    const durationLabel =
+      durationMinutes >= 60
+        ? `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`
+        : `${durationMinutes}m`;
+
+    const metrics: PostSessionMetric[] = [
+      { label: 'DURATION', value: durationLabel },
+      { label: 'SETS', value: String(completedSets.length) },
+      { label: 'REPS', value: String(totalReps) },
+      {
+        label: 'VOLUME',
+        value: totalVolume > 0 ? Math.round(totalVolume).toLocaleString() : '0',
+        hint: 'lb',
+      },
+    ];
+
+    return {
+      durationLabel,
+      metrics,
+      // FQI aggregation happens on the insights screen; leave null here
+      // until a session-level FQI stream is wired in.
+      averageFqi: null as number | null,
+    };
+  }, [activeSession, sets]);
+
+  const handleViewFullAnalysis = useCallback(() => {
+    router.push('/workout-insights');
+  }, [router]);
+
+  // =========================================================================
   // Render
   // =========================================================================
 
@@ -265,6 +317,18 @@ export default function WorkoutSessionScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {/* Post-session summary (only after session ends) */}
+          {summaryData ? (
+            <PostSessionSummaryCard
+              style={{ marginBottom: 16 }}
+              title={activeSession.name ?? 'Workout complete'}
+              durationLabel={summaryData.durationLabel}
+              averageFqi={summaryData.averageFqi}
+              metrics={summaryData.metrics}
+              onAnalyze={handleViewFullAnalysis}
+            />
+          ) : null}
+
           {/* Session Meta Card */}
           <SessionMetaCard
             session={activeSession}
