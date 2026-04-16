@@ -1275,6 +1275,78 @@ describe('duplicateExercise', () => {
 });
 
 // ===========================================================================
+// swapExerciseByDetectionMode
+// ===========================================================================
+
+describe('swapExerciseByDetectionMode', () => {
+  beforeEach(async () => {
+    mockGenericLocalUpsert.mockResolvedValue(undefined);
+    mockGetAllAsync.mockResolvedValue([]);
+  });
+
+  it('returns null when no session is active', async () => {
+    const result = await state().swapExerciseByDetectionMode('pullup');
+    expect(result).toBeNull();
+  });
+
+  it('returns null when the local db cannot resolve an exercise for the mode', async () => {
+    await state().startSession();
+    mockGetAllAsync.mockResolvedValue([]);
+
+    const result = await state().swapExerciseByDetectionMode('pullup');
+    expect(result).toBeNull();
+  });
+
+  it('appends a new session exercise when a mode match exists', async () => {
+    await state().startSession();
+
+    // First call: find by id (returns the matched exercise id).
+    // Subsequent getAllAsync calls are for loadSessionExercises etc.
+    mockGetAllAsync.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM exercises WHERE LOWER')) {
+        return [{ id: 'ex-pullup-system' }];
+      }
+      if (sql.includes('FROM exercises WHERE id')) {
+        return [{ id: 'ex-pullup-system', name: 'Pull-Up', is_compound: 1, is_timed: 0, is_system: 1 }];
+      }
+      return [];
+    });
+
+    const existingCount = state().exercises.length;
+    const newSeId = await state().swapExerciseByDetectionMode('pullup', 'append');
+    expect(newSeId).toBeTruthy();
+    expect(state().exercises.length).toBe(existingCount + 1);
+    expect(state().exercises[state().exercises.length - 1].exercise_id).toBe('ex-pullup-system');
+  });
+
+  it('removes the current exercise then adds the new one on replace', async () => {
+    await state().startSession();
+
+    // Seed an existing exercise
+    mockGetAllAsync.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM exercises WHERE LOWER')) {
+        return [{ id: 'ex-squat' }];
+      }
+      if (sql.includes('FROM exercises WHERE id')) {
+        return [{ id: 'ex-squat', name: 'Squat', is_compound: 1, is_timed: 0, is_system: 1 }];
+      }
+      return [];
+    });
+    await state().addExercise('ex-first');
+
+    const beforeLen = state().exercises.length;
+    const firstId = state().exercises[beforeLen - 1].id;
+
+    const newSeId = await state().swapExerciseByDetectionMode('squat', 'replace');
+    expect(newSeId).toBeTruthy();
+    // removeExercise + addExercise: net 0 change, but id differs
+    expect(state().exercises.length).toBe(beforeLen);
+    expect(state().exercises.some((e) => e.id === firstId)).toBe(false);
+    expect(mockGenericSoftDelete).toHaveBeenCalledWith('workout_session_exercises', 'id', firstId);
+  });
+});
+
+// ===========================================================================
 // Integration: Full Session Lifecycle
 // ===========================================================================
 
