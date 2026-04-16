@@ -1,8 +1,9 @@
 import { supabase } from '@/lib/supabase';
 import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { createError, logError } from './ErrorHandler';
-import { isInCohort } from './coach-rollout';
+import { bucketFor, isInCohort } from './coach-rollout';
 import { COACH_LOCAL_NOT_AVAILABLE, sendCoachPromptLocal } from './coach-local';
+import { recordFallback, recordRolloutBucket } from './coach-telemetry';
 
 export type CoachRole = 'user' | 'assistant' | 'system';
 
@@ -49,6 +50,8 @@ export async function sendCoachPrompt(
   context?: CoachContext
 ): Promise<CoachMessage> {
   if (shouldAttemptLocal(context)) {
+    const uid = context?.profile?.id;
+    if (uid) recordRolloutBucket(bucketFor(uid));
     try {
       return await sendCoachPromptLocal(messages, context);
     } catch (localErr) {
@@ -58,6 +61,7 @@ export async function sendCoachPrompt(
           : undefined;
       if (code === COACH_LOCAL_NOT_AVAILABLE) {
         // Expected during scaffold phase — fall through to cloud.
+        recordFallback('local_not_available');
       } else {
         // Real failure (OOM / thermal / safety-reject); bubble up instead
         // of masking.

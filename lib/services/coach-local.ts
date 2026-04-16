@@ -16,6 +16,7 @@
 
 import { createError } from './ErrorHandler';
 import type { CoachMessage, CoachContext } from './coach-service';
+import { recordFallback } from './coach-telemetry';
 
 export const COACH_LOCAL_NOT_AVAILABLE = 'COACH_LOCAL_NOT_AVAILABLE';
 
@@ -23,6 +24,7 @@ export async function sendCoachPromptLocal(
   _messages: CoachMessage[],
   _context?: CoachContext
 ): Promise<CoachMessage> {
+  recordFallback('runtime_unavailable');
   throw createError(
     'ml',
     COACH_LOCAL_NOT_AVAILABLE,
