@@ -117,13 +117,14 @@ jest.mock('@/lib/logger', () => ({
 // Mock: ErrorHandler
 // ---------------------------------------------------------------------------
 
+const mockLogError = jest.fn();
 jest.mock('@/lib/services/ErrorHandler', () => ({
   createError: jest.fn((_domain: string, code: string, message: string) => ({
     domain: 'sync',
     code,
     message,
   })),
-  logError: jest.fn(),
+  logError: (...args: unknown[]) => mockLogError(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -1228,9 +1229,18 @@ describe('handleGenericRealtimeChange', () => {
       handleGenericRealtimeChange(makeConfig(), payload, notifyCb, conflictCb),
     ).resolves.toBeUndefined();
 
-    expect(errorWithTs).toHaveBeenCalledWith(
-      expect.stringContaining('Error handling realtime'),
-      expect.any(Error),
+    // Error path routes through ErrorHandler.logError with an AppError whose
+    // message describes the failed realtime operation. The ErrorHandler mock
+    // captures the call; verify shape rather than the raw logger.
+    expect(mockLogError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        domain: 'sync',
+        code: 'REALTIME_CHANGE_FAILED',
+        message: expect.stringContaining('Failed to apply realtime'),
+      }),
+      expect.objectContaining({
+        location: 'generic-sync.handleGenericRealtimeChange',
+      }),
     );
   });
 });
