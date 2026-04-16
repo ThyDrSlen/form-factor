@@ -634,17 +634,23 @@ export default function ScanARKitScreen() {
       return;
     }
 
-    let active = true;
+    // Use AbortController as the single source of truth for poll cancellation.
+    // `BodyTracker.getCurrentMediaPipePose2D()` is a native promise that we
+    // can't cancel directly, but we can guard every setState / ref mutation
+    // behind `controller.signal.aborted` so late arrivals never leak onto an
+    // unmounted or detached component.
+    const controller = new AbortController();
+    const { signal } = controller;
 
     const poll = async () => {
-      if (!active || mediaPipePollInFlightRef.current) {
+      if (signal.aborted || mediaPipePollInFlightRef.current) {
         return;
       }
 
       mediaPipePollInFlightRef.current = true;
       try {
         const payload = await BodyTracker.getCurrentMediaPipePose2D();
-        if (!active || !payload || payload.landmarks.length === 0) {
+        if (signal.aborted || !payload || payload.landmarks.length === 0) {
           return;
         }
         mediaPipePoseRef.current = payload;
@@ -652,6 +658,9 @@ export default function ScanARKitScreen() {
           mediaPipeModelVersionRef.current = payload.modelVersion;
         }
       } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
         if (DEV) {
           warnWithTs('[ScanARKit] MediaPipe shadow poll failed', error);
         }
@@ -662,11 +671,12 @@ export default function ScanARKitScreen() {
 
     void poll();
     mediaPipePollTimerRef.current = setInterval(() => {
+      if (signal.aborted) return;
       void poll();
     }, MEDIAPIPE_SHADOW_POLL_INTERVAL_MS);
 
     return () => {
-      active = false;
+      controller.abort();
       if (mediaPipePollTimerRef.current) {
         clearInterval(mediaPipePollTimerRef.current);
         mediaPipePollTimerRef.current = null;
