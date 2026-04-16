@@ -75,8 +75,11 @@ export async function sendCoachPrompt(
     return sendCoachPromptStreaming(messages, context, opts);
   }
   if (opts?.allowFailover) {
-    // Lazy import keeps the dep graph 1-way and avoids load-order issues.
-    const { sendCoachPromptWithFailover } = await import('./coach-failover');
+    // Lazy require keeps the dep graph 1-way and avoids load-order issues
+    // (await import() does not work in jest's CJS env without
+    // --experimental-vm-modules).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { sendCoachPromptWithFailover } = require('./coach-failover') as typeof import('./coach-failover');
     return sendCoachPromptWithFailover(messages, context, {
       primary: opts.provider ?? 'gemma',
       secondary: opts.provider === 'openai' ? 'gemma' : 'openai',
@@ -91,7 +94,8 @@ async function sendCoachPromptStreaming(
   context: CoachContext | undefined,
   opts: CoachSendOptions
 ): Promise<CoachMessage> {
-  const { streamCoachPrompt } = await import('./coach-streaming');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { streamCoachPrompt } = require('./coach-streaming') as typeof import('./coach-streaming');
   const onChunk =
     typeof opts.stream === 'function' ? opts.stream : () => undefined;
   const result = await streamCoachPrompt(messages, context, onChunk, {
