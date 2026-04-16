@@ -45,12 +45,13 @@ export const styles = StyleSheet.create({
     marginHorizontal: spacing.sm,
   },
   topBarButton: {
-    width: 32,
-    height: 32,
+    // Bumped from 32x32 to 44x44 per Apple HIG + WCAG 2.5.5 (issue #428).
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: scanPalette.overlayMuted,
-    borderRadius: 16,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: scanPalette.border,
   },
