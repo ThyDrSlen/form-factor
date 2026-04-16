@@ -132,6 +132,9 @@ type RecordedPreview = {
 // Thresholds are now imported from workout definitions (PULLUP_THRESHOLDS, PUSHUP_THRESHOLDS)
 
 const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
+// Upper bound for the 2D pose smoothing cache. ARKit exposes ~20 joints;
+// we allow modest alias headroom before LRU-evicting the oldest entry.
+export const POSE2D_CACHE_MAX_ENTRIES = 30;
 const WATCH_MIRROR_INTERVAL_MS = 750;
 const WATCH_MIRROR_AR_QUALITY = 0.25;
 const WATCH_MIRROR_MAX_WIDTH = 320;
@@ -390,7 +393,12 @@ export default function ScanARKitScreen() {
   const recordingStopInFlightRef = React.useRef(false);
   const [smoothedPose2DJoints, setSmoothedPose2DJoints] = useState<Joint2D[] | null>(null);
   const smoothedPose2DRef = React.useRef<Joint2D[] | null>(null);
-  const pose2DCacheRef = React.useRef<Record<string, { x: number; y: number }>>({});
+  // LRU cache keyed by lowercased joint name. Map preserves insertion order,
+  // so reinserting on update pushes the key to the most-recently-used tail
+  // and the head is always the oldest candidate for eviction.
+  const pose2DCacheRef = React.useRef<Map<string, { x: number; y: number }>>(new Map());
+  // Exposed via `__getPose2DCacheSizeForTests` for regression guards.
+  const pose2DCacheKeysRef = React.useRef<number | null>(null);
   const lastSpokenCueRef = React.useRef<{ cue: string; timestamp: number } | null>(null);
   const cueHysteresisControllerRef = React.useRef(
     new CueHysteresisController<string>({ showFrames: SHOW_N_FRAMES, hideFrames: HIDE_N_FRAMES })
@@ -1078,7 +1086,8 @@ export default function ScanARKitScreen() {
       setFps(0);
       setSmoothedPose2DJoints(null);
       smoothedPose2DRef.current = null;
-      pose2DCacheRef.current = {};
+      pose2DCacheRef.current.clear();
+      pose2DCacheKeysRef.current = null;
       setActiveMetrics(null);
       setLivePullupPartialStatus(null);
       lastLivePartialBadgeRef.current = null;
@@ -1433,7 +1442,8 @@ export default function ScanARKitScreen() {
 
   useEffect(() => {
     if (!pose2D || pose2D.joints.length === 0) {
-      pose2DCacheRef.current = {};
+      pose2DCacheRef.current.clear();
+      pose2DCacheKeysRef.current = null;
       smoothedPose2DRef.current = null;
       setSmoothedPose2DJoints(null);
       return;
@@ -1442,25 +1452,40 @@ export default function ScanARKitScreen() {
     const alpha = 0.55;
     const cache = pose2DCacheRef.current;
     const joints = pose2D.joints;
+    const seenKeys = new Set<string>();
     const nextJoints = joints.map((joint) => {
       if (!joint.isTracked) {
         return { ...joint };
       }
       const key = joint.name.toLowerCase();
-      const prev = cache[key];
+      seenKeys.add(key);
+      const prev = cache.get(key);
       const targetX = joint.x;
       const targetY = joint.y;
       const easedX = prev ? prev.x + (targetX - prev.x) * alpha : targetX;
       const easedY = prev ? prev.y + (targetY - prev.y) * alpha : targetY;
-      cache[key] = { x: easedX, y: easedY };
+      // Reinsert to move this key to the tail (most-recently-used) slot; Map
+      // preserves insertion order so the head is always the oldest entry.
+      if (prev) cache.delete(key);
+      cache.set(key, { x: easedX, y: easedY });
       return { ...joint, x: easedX, y: easedY };
     });
 
-    Object.keys(cache).forEach((key) => {
-      if (!joints.some((joint) => joint.name.toLowerCase() === key && joint.isTracked)) {
-        delete cache[key];
+    // Drop any untracked/stale aliases still lingering from a previous frame.
+    for (const key of Array.from(cache.keys())) {
+      if (!seenKeys.has(key)) {
+        cache.delete(key);
       }
-    });
+    }
+
+    // Hard cap: evict oldest insertions beyond the bound. 30 covers every
+    // joint we render on the skeleton overlay with room for alias spillover.
+    while (cache.size > POSE2D_CACHE_MAX_ENTRIES) {
+      const oldestKey = cache.keys().next().value;
+      if (oldestKey === undefined) break;
+      cache.delete(oldestKey);
+    }
+    pose2DCacheKeysRef.current = cache.size;
 
     const prevSmoothed = smoothedPose2DRef.current;
     const changed =
