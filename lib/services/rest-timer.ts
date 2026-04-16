@@ -1,11 +1,15 @@
 /**
  * Rest Timer Service
  *
- * Computes default rest durations, schedules local notifications,
- * and handles background resume for workout rest periods.
+ * Computes default rest durations, schedules local notifications, and
+ * exposes an AppState subscription so UIs can re-render the remaining
+ * seconds when the app returns from background. Consumers subscribe via
+ * `onRestTimerAppResume(fn)` and re-read the current rest via
+ * `computeRemainingSeconds(restStartedAt, restTargetSeconds)`.
  */
 
 import * as Notifications from 'expo-notifications';
+import { AppState, type AppStateStatus } from 'react-native';
 import { GoalProfile, SetType } from '@/lib/types/workout-session';
 import { logWithTs, warnWithTs } from '@/lib/logger';
 
@@ -199,4 +203,67 @@ export function formatRestTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// =============================================================================
+// AppState resume — background → active transition
+// =============================================================================
+
+type AppResumeListener = () => void;
+
+const appResumeListeners = new Set<AppResumeListener>();
+let lastAppStateForRest: AppStateStatus = AppState.currentState;
+let appStateSubscription: { remove: () => void } | null = null;
+
+function handleAppStateChange(next: AppStateStatus): void {
+  const prev = lastAppStateForRest;
+  lastAppStateForRest = next;
+  // Fire on any transition INTO 'active' (covers background, inactive, unknown).
+  if (next === 'active' && prev !== 'active') {
+    appResumeListeners.forEach((listener) => {
+      try {
+        listener();
+      } catch (error) {
+        warnWithTs('[RestTimer] AppState resume listener threw:', error);
+      }
+    });
+  }
+}
+
+function ensureAppStateSubscription(): void {
+  if (appStateSubscription) return;
+  appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
+}
+
+/**
+ * Register a callback invoked whenever the app returns to the foreground.
+ * Callers should re-compute `computeRemainingSeconds(...)` inside the
+ * callback and re-render their TimerPill / countdown UI.
+ *
+ * Returns an unsubscribe function. The underlying AppState listener is
+ * removed when the last subscriber unsubscribes.
+ */
+export function onRestTimerAppResume(listener: AppResumeListener): () => void {
+  appResumeListeners.add(listener);
+  ensureAppStateSubscription();
+  return () => {
+    appResumeListeners.delete(listener);
+    if (appResumeListeners.size === 0 && appStateSubscription) {
+      appStateSubscription.remove();
+      appStateSubscription = null;
+    }
+  };
+}
+
+/**
+ * Test-only reset — clears listeners + the AppState subscription so each
+ * test starts from a clean slate. Not exported from the public barrel.
+ */
+export function __resetRestTimerAppStateForTests(): void {
+  appResumeListeners.clear();
+  if (appStateSubscription) {
+    appStateSubscription.remove();
+    appStateSubscription = null;
+  }
+  lastAppStateForRest = AppState.currentState;
 }
