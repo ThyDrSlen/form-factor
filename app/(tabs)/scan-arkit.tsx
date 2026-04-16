@@ -84,6 +84,8 @@ import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
 import { usePRDetection } from '@/hooks/use-pr-detection';
 import { PRCelebrationBadge } from '@/components/form-tracking/PRCelebrationBadge';
+import { ProgressionSuggestionBadge } from '@/components/form-tracking/ProgressionSuggestionBadge';
+import { useProgressionSuggestion } from '@/hooks/use-progression-suggestion';
 import { useSessionRunner } from '@/lib/stores/session-runner';
 import type { FormTargets } from '@/lib/services/form-target-resolver';
 import {
@@ -319,6 +321,17 @@ export default function ScanARKitScreen() {
   const getFormTargetsFor = useSessionRunner((s) => s.getFormTargetsFor);
   // PR-detection surface (issue #447 W3-C item #2).
   const { pr: currentPR, clearPR: clearCurrentPR } = usePRDetection();
+  // Progression suggestion surface (issue #447 W3-C item #3).
+  // TODO(#434): wire lastSessionAvgFqi + lastWeight from session-runner
+  // history once PR #434 lands its history-panel query. Until then, keep
+  // the inputs null so the badge stays hidden. The hook + badge component
+  // are production-ready; only the data feed is deferred.
+  const progressionSuggestion = useProgressionSuggestion({
+    exerciseId: null,
+    lastSessionAvgFqi: null,
+    lastWeight: null,
+    unit: 'lb',
+  });
   const fixtureName = typeof params.fixture === 'string' ? params.fixture : FIXTURE_PLAYBACK_DEFAULT;
   const fixtureFrames = fixturePlaybackRequested ? FIXTURE_PLAYBACK_TRACES[fixtureName] ?? null : null;
   const fixturePlaybackEnabled = fixturePlaybackRequested && !!fixtureFrames;
@@ -2800,6 +2813,14 @@ export default function ScanARKitScreen() {
       {/* PR celebration badge (issue #447 W3-C #2). Surgical mount — renders
           only when usePRDetection has a hit. Safe no-op when pr is null. */}
       <PRCelebrationBadge pr={currentPR} onDismiss={clearCurrentPR} />
+
+      {/* Progression suggestion badge (issue #447 W3-C #3). Hidden until the
+          data-feed wiring lands (see TODO near useProgressionSuggestion). */}
+      {progressionSuggestion ? (
+        <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
+          <ProgressionSuggestionBadge suggestion={progressionSuggestion} />
+        </View>
+      ) : null}
 
       <Modal
         visible={isSettingsVisible}
