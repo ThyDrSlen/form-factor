@@ -65,6 +65,21 @@ export default function ModalsLayout() {
           contentStyle: { backgroundColor: '#050E1F' },
         }}
       />
+      <Stack.Screen
+        name="form-tracking-setup"
+        options={{
+          presentation: 'fullScreenModal',
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
+      <Stack.Screen
+        name="form-tracking-debrief"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
     </Stack>
   );
 }
