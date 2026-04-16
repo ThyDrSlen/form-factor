@@ -86,9 +86,22 @@ function computeShoulderHandGap(joints: RepDetectorPullupJoints): number | null 
     return null;
   }
 
-  const shoulderY = asFinite((leftShoulder.y + rightShoulder.y) / 2);
-  const handY = asFinite((leftHand.y + rightHand.y) / 2);
-  if (shoulderY === null || handY === null) return null;
+  // Guard each coordinate BEFORE averaging to prevent NaN/Infinity from one
+  // side poisoning the whole gap. Previously `(a + b) / 2` was computed first
+  // which could yield NaN (Infinity + -Infinity), or Infinity (any + Infinity),
+  // and the subsequent asFinite() would treat it as "unknown" even when the
+  // other side was actually trustworthy.
+  const leftShoulderY = asFinite(leftShoulder.y);
+  const rightShoulderY = asFinite(rightShoulder.y);
+  const leftHandY = asFinite(leftHand.y);
+  const rightHandY = asFinite(rightHand.y);
+  if (leftShoulderY === null || rightShoulderY === null || leftHandY === null || rightHandY === null) {
+    return null;
+  }
+
+  const shoulderY = (leftShoulderY + rightShoulderY) / 2;
+  const handY = (leftHandY + rightHandY) / 2;
+  if (!Number.isFinite(shoulderY) || !Number.isFinite(handY)) return null;
   return shoulderY - handY;
 }
 
@@ -181,7 +194,22 @@ export class RepDetectorPullup {
     }
 
     const delta = gap - this.baselineGap;
-    const avgElbow = (input.angles.leftElbow + input.angles.rightElbow) / 2;
+
+    // Guard angle inputs: a single NaN/Infinity reading (e.g. camera occlusion
+    // returning 0-division limb angles) would propagate through avgElbow and
+    // poison every subsequent comparison — `NaN >= threshold` is always false
+    // which silently stalls the FSM instead of freezing gracefully.
+    const leftElbow = asFinite(input.angles.leftElbow);
+    const rightElbow = asFinite(input.angles.rightElbow);
+    if (leftElbow === null || rightElbow === null) {
+      this.freezeOrTimeout();
+      return;
+    }
+    const avgElbow = (leftElbow + rightElbow) / 2;
+    if (!Number.isFinite(avgElbow)) {
+      this.freezeOrTimeout();
+      return;
+    }
 
     if (
       this.baselineGap !== null &&
