@@ -80,10 +80,30 @@ export async function sendCoachPrompt(
     // --experimental-vm-modules).
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { sendCoachPromptWithFailover } = require('./coach-failover') as typeof import('./coach-failover');
-    return sendCoachPromptWithFailover(messages, context, {
-      primary: opts.provider ?? 'gemma',
-      secondary: opts.provider === 'openai' ? 'gemma' : 'openai',
-    });
+    const failoverProducer = () =>
+      sendCoachPromptWithFailover(messages, context, {
+        primary: opts.provider ?? 'gemma',
+        secondary: opts.provider === 'openai' ? 'gemma' : 'openai',
+      });
+    if (typeof opts.cacheMs === 'number' && opts.cacheMs > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { withCoachCache } = require('./coach-cache') as typeof import('./coach-cache');
+      return withCoachCache(messages, context, opts.cacheMs, failoverProducer, {
+        shaper: opts.shaper,
+      });
+    }
+    return failoverProducer();
+  }
+  if (typeof opts?.cacheMs === 'number' && opts.cacheMs > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { withCoachCache } = require('./coach-cache') as typeof import('./coach-cache');
+    return withCoachCache(
+      messages,
+      context,
+      opts.cacheMs,
+      () => sendCoachPromptInner(messages, context),
+      { shaper: opts.shaper }
+    );
   }
 
   return sendCoachPromptInner(messages, context);
