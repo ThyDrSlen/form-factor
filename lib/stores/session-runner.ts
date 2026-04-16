@@ -85,6 +85,56 @@ export interface SessionRunnerState {
 }
 
 // =============================================================================
+// Session-finished subscription (additive — no existing behavior change)
+// =============================================================================
+
+/**
+ * Event payload delivered to `onSessionFinished` subscribers when
+ * `finishSession()` completes. Kept small and stable so downstream
+ * consumers (e.g. `coach-auto-debrief`) don't take a hard dep on
+ * SessionRunnerState.
+ */
+export interface SessionFinishedEvent {
+  sessionId: string;
+  startedAt: string;
+  endedAt: string;
+  goalProfile: GoalProfile;
+  /** Name as entered by the user, if any. */
+  name: string | null;
+}
+
+type SessionFinishedListener = (event: SessionFinishedEvent) => void | Promise<void>;
+
+const sessionFinishedListeners = new Set<SessionFinishedListener>();
+
+/**
+ * Subscribe to session-finished events. Returns an unsubscribe function.
+ * Safe to call before the store has mounted; listeners are fan-out
+ * module-scoped so React components can attach on mount.
+ */
+export function onSessionFinished(listener: SessionFinishedListener): () => void {
+  sessionFinishedListeners.add(listener);
+  return () => {
+    sessionFinishedListeners.delete(listener);
+  };
+}
+
+async function emitSessionFinished(event: SessionFinishedEvent): Promise<void> {
+  for (const listener of Array.from(sessionFinishedListeners)) {
+    try {
+      await listener(event);
+    } catch (err) {
+      errorWithTs('[SessionRunner] session-finished listener threw', err);
+    }
+  }
+}
+
+/** Test-only helper — clears all registered listeners. */
+export function __resetSessionFinishedListenersForTests(): void {
+  sessionFinishedListeners.clear();
+}
+
+// =============================================================================
 // Helpers
 // =============================================================================
 
@@ -615,6 +665,15 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
 
     await emitEvent(activeSession.id, 'session_completed');
 
+    // Capture details before store reset so subscribers see a stable snapshot.
+    const finishedEvent: SessionFinishedEvent = {
+      sessionId: activeSession.id,
+      startedAt: activeSession.started_at,
+      endedAt: now,
+      goalProfile: activeSession.goal_profile,
+      name: activeSession.name,
+    };
+
     set({
       activeSession: null,
       exercises: [],
@@ -625,6 +684,10 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
     });
 
     logWithTs(`[SessionRunner] Finished session ${activeSession.id}`);
+
+    // Fan out to onSessionFinished subscribers. Listener errors are logged
+    // inside emitSessionFinished and do not propagate to the caller.
+    await emitSessionFinished(finishedEvent);
   },
 
   // =========================================================================
