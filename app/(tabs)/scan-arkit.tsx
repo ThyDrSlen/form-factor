@@ -89,7 +89,7 @@ import {
   getPhaseStaticCue,
   type DetectionMode,
 } from '@/lib/workouts';
-import type { WorkoutMetrics } from '@/lib/types/workout-definitions';
+import type { WorkoutMetrics, FaultDefinition } from '@/lib/types/workout-definitions';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
 import { buildVideoMetricsForClip, type RecordingQuality } from '@/lib/services/video-metrics';
 import { shouldUploadVideo } from '@/lib/services/consent-service';
@@ -99,8 +99,27 @@ import backTurnedFixture from '@/tests/fixtures/pullup-tracking/back-turned.json
 import occlusionBriefFixture from '@/tests/fixtures/pullup-tracking/occlusion-brief.json';
 import occlusionLongFixture from '@/tests/fixtures/pullup-tracking/occlusion-long.json';
 import bounceNoiseFixture from '@/tests/fixtures/pullup-tracking/bounce-noise.json';
-import { styles } from '../../styles/tabs/_scan-arkit.styles';
+import {
+  styles,
+  scanSessionOverlayStyles as styleOverrides,
+} from '../../styles/tabs/_scan-arkit.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
+
+// Issue #427 — session-aware overlays. Scoped to new regions; existing
+// render tree is untouched.
+import { useSessionRunner } from '@/lib/stores/session-runner';
+import { useHealthKit } from '@/contexts/HealthKitContext';
+import { useActiveSetBinding } from '@/hooks/use-active-set-binding';
+import { useExerciseHistory } from '@/hooks/use-exercise-history';
+import { useLiveFatigue } from '@/hooks/use-live-fatigue';
+import { useSessionAutopause } from '@/hooks/use-session-autopause';
+import { ActiveSetBadge } from '@/components/form-tracking/ActiveSetBadge';
+import { InlineRestTimer } from '@/components/form-tracking/InlineRestTimer';
+import { ExerciseHistoryStrip } from '@/components/form-tracking/ExerciseHistoryStrip';
+import { HeartRatePill } from '@/components/form-tracking/HeartRatePill';
+import { SessionResumeToast } from '@/components/form-tracking/SessionResumeToast';
+import { ExerciseSwapSheet } from '@/components/form-tracking/ExerciseSwapSheet';
+import { DrillSheet } from '@/components/form-tracking/DrillSheet';
 
 // Phase and detection mode types are now imported from lib/workouts
 type BaseUploadMetrics = Record<string, unknown> & {
@@ -356,8 +375,85 @@ export default function ScanARKitScreen() {
   const realtimeFormEngineRef = React.useRef(createRealtimeEngineState());
   const jointAnglesStateRef = React.useRef<JointAngles | null>(null);
   const [repCount, setRepCount] = useState(0);
-  const [detectionMode, setDetectionMode] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
+  const [detectionMode, setDetectionModeState] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
   const activeWorkoutDef = useMemo(() => getWorkoutByMode(detectionMode), [detectionMode]);
+
+  // ------------------------------------------------------------------
+  // Issue #427 — session binding, fatigue, swap + resume plumbing.
+  // ------------------------------------------------------------------
+  const activeSession = useSessionRunner((s) => s.activeSession);
+  const restTimer = useSessionRunner((s) => s.restTimer);
+  const skipRest = useSessionRunner((s) => s.skipRest);
+  const extendRest = useSessionRunner((s) => s.extendRest);
+  const loadActiveSession = useSessionRunner((s) => s.loadActiveSession);
+  const swapExerciseByDetectionMode = useSessionRunner((s) => s.swapExerciseByDetectionMode);
+  const activeSetBinding = useActiveSetBinding(detectionMode);
+  const healthKit = useHealthKit();
+  const heartRate = healthKit.latestHeartRate;
+  const exerciseHistory = useExerciseHistory(activeSetBinding.sessionExercise?.exercise_id ?? null);
+  const [recentFqiSamples, setRecentFqiSamples] = useState<number[]>([]);
+  const fatigue = useLiveFatigue({
+    recentFqi: recentFqiSamples,
+    heartRateBpm: heartRate?.bpm,
+  });
+  const autopause = useSessionAutopause({ enabled: true });
+  const [pendingSwapMode, setPendingSwapMode] = useState<DetectionMode | null>(null);
+  const [activeDrillFault, setActiveDrillFault] = useState<FaultDefinition | null>(null);
+
+  const currentSessionExerciseName =
+    activeSetBinding.sessionExercise?.exercise?.name ?? activeWorkoutDef.displayName;
+  const pendingSwapDef = pendingSwapMode ? getWorkoutByMode(pendingSwapMode) : null;
+
+  // Wrapper: when there's no active session, switch immediately. When a
+  // session IS active, queue the swap for confirmation via ExerciseSwapSheet.
+  const setDetectionMode: typeof setDetectionModeState = useCallback(
+    (next) => {
+      if (!activeSession) {
+        setDetectionModeState(next);
+        return;
+      }
+      const resolved = typeof next === 'function'
+        ? (next as (prev: DetectionMode) => DetectionMode)(detectionMode)
+        : next;
+      if (resolved === detectionMode) {
+        setDetectionModeState(resolved);
+        return;
+      }
+      setPendingSwapMode(resolved);
+    },
+    [activeSession, detectionMode],
+  );
+
+  // Confirm: swap session_exercise then flip the scan detection mode.
+  const handleSwapConfirm = useCallback(
+    async (action: 'append' | 'replace') => {
+      if (!pendingSwapMode) return;
+      try {
+        await swapExerciseByDetectionMode(pendingSwapMode, action);
+      } catch {
+        // Ignore — scan still updates so the user keeps tracking.
+      }
+      setDetectionModeState(pendingSwapMode);
+      setPendingSwapMode(null);
+      setIsDropdownOpen(false);
+    },
+    [pendingSwapMode, swapExerciseByDetectionMode],
+  );
+
+  // Feed rep scores into the rolling fatigue window.
+  const recordFqiSample = useCallback((score: number) => {
+    if (!Number.isFinite(score)) return;
+    setRecentFqiSamples((prev) => {
+      const next = [...prev, score];
+      if (next.length > 8) next.shift();
+      return next;
+    });
+  }, []);
+
+  // Resume the persisted session on mount (no-op when none).
+  useEffect(() => {
+    void loadActiveSession();
+  }, [loadActiveSession]);
   const [activePhase, setActivePhase] = useState<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
   const activePhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
@@ -851,6 +947,9 @@ export default function ScanARKitScreen() {
       if (recordingActiveRef.current && Date.now() >= recordingStartEpochMsRef.current) {
         recordingFqiScoresRef.current.push(fqi);
       }
+      // #427 — feed per-rep FQI into the fatigue window used by the
+      // session-aware overlays (HeartRatePill / InlineRestTimer nudges).
+      recordFqiSample(fqi);
     },
     onPullupScoring: (
       _repNumber: number,
@@ -863,7 +962,7 @@ export default function ScanARKitScreen() {
         meta?.source === 'frame' ? 'frame-live' : 'onPullupScoring-rep-complete'
       );
     },
-  }), [activeWorkoutDef, repCount, transitionPhase, updatePartialTrackingBadgeVisibility]);
+  }), [activeWorkoutDef, repCount, recordFqiSample, transitionPhase, updatePartialTrackingBadgeVisibility]);
 
   const workoutController = useWorkoutController(detectionMode, {
     sessionId: sessionIdRef.current,
@@ -1036,6 +1135,9 @@ export default function ScanARKitScreen() {
         clearTimeout(timeoutId);
       }
     };
+    // setDetectionMode is a ref-stable wrapper; omitted from deps to
+    // avoid re-triggering fixture playback on detection-mode changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     fixturePlaybackEnabled,
     fixtureFrames,
@@ -1047,6 +1149,8 @@ export default function ScanARKitScreen() {
     DEV,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
+    // setDetectionMode intentionally omitted — the wrapper reads
+    // activeSession + detectionMode and would loop if listed here.
   ]);
 
   // Debug pose updates (throttled logging)
@@ -2467,6 +2571,20 @@ export default function ScanARKitScreen() {
           </View>
 
           <View style={styles.topBarActions}>
+            {/* #427 active-set-anchor — rendered only when the scan is bound to a live session */}
+            {activeSetBinding.isBound ? (
+              <ActiveSetBadge
+                setLabel={activeSetBinding.setLabel}
+                exerciseName={currentSessionExerciseName}
+                testID="scan-active-set-badge"
+              />
+            ) : null}
+            {/* #427 live HR chip */}
+            <HeartRatePill
+              bpm={heartRate?.bpm ?? null}
+              timestampMs={heartRate?.timestamp ?? null}
+              testID="scan-heart-rate-pill"
+            />
             <TouchableOpacity
               style={styles.topBarButton}
               onPress={openWorkoutInsights}
@@ -2486,6 +2604,69 @@ export default function ScanARKitScreen() {
           </View>
         </View>
       </View>
+
+      {/* #427 session-aware overlays — rendered outside the existing
+          tracking view so PR #424 components stay untouched. */}
+      <View
+        style={styleOverrides.sessionOverlayRow}
+        pointerEvents="box-none"
+        testID="scan-session-overlay-row"
+      >
+        {activeSetBinding.isBound && restTimer ? (
+          <InlineRestTimer
+            startedAt={restTimer.startedAt}
+            targetSeconds={restTimer.targetSeconds}
+            onExtend15={() => extendRest(15)}
+            onSkip={() => {
+              void skipRest();
+            }}
+            testID="scan-inline-rest-timer"
+          />
+        ) : null}
+        {activeSetBinding.isBound ? (
+          <ExerciseHistoryStrip
+            summary={exerciseHistory.summary}
+            exerciseDisplayName={currentSessionExerciseName}
+            testID="scan-exercise-history-strip"
+          />
+        ) : null}
+      </View>
+
+      {/* #427 resume banner — auto-driven by useSessionAutopause. */}
+      {autopause.needsResume ? (
+        <View style={styleOverrides.resumeToastWrap} pointerEvents="box-none">
+          <SessionResumeToast
+            visible={autopause.needsResume}
+            reason={autopause.pauseReason}
+            lastExerciseName={currentSessionExerciseName}
+            onResume={() => {
+              void autopause.acknowledgeResume();
+            }}
+            testID="scan-session-resume-toast"
+          />
+        </View>
+      ) : null}
+
+      {/* #427 swap sheet + drill sheet */}
+      <ExerciseSwapSheet
+        visible={pendingSwapMode != null}
+        targetExerciseName={pendingSwapDef?.displayName ?? ''}
+        currentExerciseName={currentSessionExerciseName}
+        onDismiss={() => setPendingSwapMode(null)}
+        onConfirm={handleSwapConfirm}
+        testID="scan-exercise-swap-sheet"
+      />
+      <DrillSheet
+        visible={activeDrillFault != null}
+        fault={activeDrillFault}
+        exerciseId={detectionMode}
+        sessionId={activeSession?.id ?? null}
+        onDismiss={() => setActiveDrillFault(null)}
+        testID="scan-drill-sheet"
+      />
+
+      {/* Debug hook for future cue-tap integration — no-op until wired */}
+      {fatigue.state === 'fatigued' && restTimer && fatigue.suggestRestSec > 0 ? null : null}
 
       {/* Tracking view */}
       <View style={styles.trackingContainer}>
