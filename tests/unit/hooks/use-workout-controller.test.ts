@@ -882,4 +882,101 @@ describe('useWorkoutController', () => {
       expect(mockImpactAsync).toHaveBeenCalledWith('Light');
     });
   });
+
+  // =========================================================================
+  // Rep-write failure queue + UI callback (issue #418)
+  // =========================================================================
+
+  describe('rep-write failure queue', () => {
+    const driveOneRep = (hook: ReturnType<typeof renderHook>) => {
+      (fakeWorkoutDef.getNextPhase as jest.Mock).mockReturnValue('down');
+      act(() => { jest.setSystemTime(1000); (hook.result.current as any).processFrame(makeAngles(90)); });
+      act(() => { jest.setSystemTime(1001); (hook.result.current as any).processFrame(makeAngles(90)); });
+      (fakeWorkoutDef.getNextPhase as jest.Mock).mockReturnValue('up');
+      act(() => { jest.setSystemTime(3000); (hook.result.current as any).processFrame(makeAngles(90)); });
+      act(() => { jest.setSystemTime(3001); (hook.result.current as any).processFrame(makeAngles(90)); });
+    };
+
+    it('invokes onRepLogFailure with the error and queue depth when logRep rejects', async () => {
+      const onRepLogFailure = jest.fn();
+      mockLogRep.mockRejectedValueOnce(new Error('supabase 503'));
+
+      const hook = renderHook(() =>
+        useWorkoutController('pullup' as any, {
+          sessionId: 'test-session',
+          enableHaptics: false,
+          callbacks: { onRepLogFailure },
+        })
+      );
+
+      driveOneRep(hook);
+      // Let the logRep awaiter settle.
+      await act(async () => { await Promise.resolve(); });
+
+      expect(onRepLogFailure).toHaveBeenCalledTimes(1);
+      const [errArg, depthArg] = onRepLogFailure.mock.calls[0];
+      expect(errArg).toBeInstanceOf(Error);
+      expect(depthArg).toBe(1);
+    });
+
+    it('drains the queue on the next successful logRep call', async () => {
+      const onRepLogFailure = jest.fn();
+      // First rep fails, second succeeds.
+      mockLogRep
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValue('rep-id-1');
+
+      const hook = renderHook(() =>
+        useWorkoutController('pullup' as any, {
+          sessionId: 'test-session',
+          enableHaptics: false,
+          callbacks: { onRepLogFailure },
+        })
+      );
+
+      driveOneRep(hook);
+      await act(async () => { await Promise.resolve(); });
+      expect(onRepLogFailure).toHaveBeenCalledTimes(1);
+      expect(mockLogRep).toHaveBeenCalledTimes(1);
+
+      // Drive a second rep — on entry it should drain the queued first rep
+      // before logging the new one.
+      (fakeWorkoutDef.getNextPhase as jest.Mock).mockReturnValue('down');
+      act(() => { jest.setSystemTime(5000); (hook.result.current as any).processFrame(makeAngles(90)); });
+      act(() => { jest.setSystemTime(5001); (hook.result.current as any).processFrame(makeAngles(90)); });
+      (fakeWorkoutDef.getNextPhase as jest.Mock).mockReturnValue('up');
+      act(() => { jest.setSystemTime(7000); (hook.result.current as any).processFrame(makeAngles(90)); });
+      act(() => { jest.setSystemTime(7001); (hook.result.current as any).processFrame(makeAngles(90)); });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // 1 failed + 1 drain + 1 new = 3 calls, no new failure callback.
+      expect(mockLogRep).toHaveBeenCalledTimes(3);
+      expect(onRepLogFailure).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not crash if onRepLogFailure itself throws', async () => {
+      const onRepLogFailure = jest.fn(() => { throw new Error('ui exploded'); });
+      mockLogRep.mockRejectedValueOnce(new Error('network'));
+
+      const hook = renderHook(() =>
+        useWorkoutController('pullup' as any, {
+          sessionId: 'test-session',
+          enableHaptics: false,
+          callbacks: { onRepLogFailure },
+        })
+      );
+
+      driveOneRep(hook);
+      await act(async () => { await Promise.resolve(); });
+
+      // Rep still counts, callback still invoked, no uncaught error.
+      expect(hook.result.current.state.repCount).toBe(1);
+      expect(onRepLogFailure).toHaveBeenCalled();
+    });
+  });
 });
