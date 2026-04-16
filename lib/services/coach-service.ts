@@ -20,6 +20,41 @@ export interface CoachContext {
   sessionId?: string;
 }
 
+/**
+ * Optional behaviors for `sendCoachPrompt`. All fields are additive and the
+ * existing two-arg call shape (`sendCoachPrompt(messages, ctx?)`) keeps the
+ * exact behavior it had before #465 landed.
+ */
+export interface CoachSendOptions {
+  /**
+   * Streaming mode (#465 Item 1).
+   * - `true`: stream and return the full text once complete (no per-chunk callback).
+   * - function: stream and invoke the callback for every delta.
+   * - omitted/false: synchronous (default).
+   */
+  stream?: boolean | ((chunk: string) => void);
+  /**
+   * If true and the primary call returns 429/5xx, automatically retry against
+   * the secondary provider (#465 Item 2).
+   */
+  allowFailover?: boolean;
+  /**
+   * Provider hint for streaming and for failover routing (`gemma`|`openai`).
+   */
+  provider?: 'gemma' | 'openai';
+  /**
+   * Response cache TTL in ms (#465 Item 3). 0 disables caching; omitted means
+   * cache lookups are not consulted. Defaults are picked at the call site
+   * (e.g. auto-debrief uses 12h).
+   */
+  cacheMs?: number;
+  /**
+   * Used by the cache integration to flag that the cached payload is the
+   * already-shaped response (#465 Item 5). Internal; callers shouldn't need it.
+   */
+  shaper?: boolean;
+}
+
 interface RawCoachResponse {
   message?: string;
   content?: string;
@@ -30,6 +65,36 @@ interface RawCoachResponse {
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
 
 export async function sendCoachPrompt(
+  messages: CoachMessage[],
+  context?: CoachContext,
+  opts?: CoachSendOptions
+): Promise<CoachMessage> {
+  // Back-compat: when no opts are provided, the original code path runs
+  // verbatim. New behavior is only enabled when callers opt in.
+  // The failover and cache dispatch are wired in follow-up commits once
+  // those modules exist; this commit ships only the stream branch.
+  if (opts?.stream) {
+    return sendCoachPromptStreaming(messages, context, opts);
+  }
+
+  return sendCoachPromptInner(messages, context);
+}
+
+async function sendCoachPromptStreaming(
+  messages: CoachMessage[],
+  context: CoachContext | undefined,
+  opts: CoachSendOptions
+): Promise<CoachMessage> {
+  const { streamCoachPrompt } = await import('./coach-streaming');
+  const onChunk =
+    typeof opts.stream === 'function' ? opts.stream : () => undefined;
+  const result = await streamCoachPrompt(messages, context, onChunk, {
+    provider: opts.provider,
+  });
+  return { role: 'assistant', content: result.text };
+}
+
+async function sendCoachPromptInner(
   messages: CoachMessage[],
   context?: CoachContext
 ): Promise<CoachMessage> {
