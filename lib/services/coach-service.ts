@@ -1,6 +1,8 @@
 import { supabase } from '@/lib/supabase';
 import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { createError, logError } from './ErrorHandler';
+import { isInCohort } from './coach-rollout';
+import { COACH_LOCAL_NOT_AVAILABLE, sendCoachPromptLocal } from './coach-local';
 
 export type CoachRole = 'user' | 'assistant' | 'system';
 
@@ -29,10 +31,41 @@ interface RawCoachResponse {
 
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
 
+/**
+ * Dispatcher — decides between the on-device Gemma path and the cloud
+ * Edge Function. Local path requires BOTH `EXPO_PUBLIC_COACH_LOCAL === '1'`
+ * AND the user being in the hashed cohort. Falls back to cloud on the
+ * `COACH_LOCAL_NOT_AVAILABLE` sentinel; rethrows every other local error
+ * so real OOM / thermal / safety-reject issues surface instead of being
+ * silently absorbed.
+ */
+function shouldAttemptLocal(context?: CoachContext): boolean {
+  if (process.env.EXPO_PUBLIC_COACH_LOCAL !== '1') return false;
+  return isInCohort(context?.profile?.id);
+}
+
 export async function sendCoachPrompt(
   messages: CoachMessage[],
   context?: CoachContext
 ): Promise<CoachMessage> {
+  if (shouldAttemptLocal(context)) {
+    try {
+      return await sendCoachPromptLocal(messages, context);
+    } catch (localErr) {
+      const code =
+        localErr && typeof localErr === 'object' && 'code' in localErr
+          ? (localErr as { code?: string }).code
+          : undefined;
+      if (code === COACH_LOCAL_NOT_AVAILABLE) {
+        // Expected during scaffold phase — fall through to cloud.
+      } else {
+        // Real failure (OOM / thermal / safety-reject); bubble up instead
+        // of masking.
+        throw localErr;
+      }
+    }
+  }
+
   try {
     const { data, error } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
       body: { messages, context },

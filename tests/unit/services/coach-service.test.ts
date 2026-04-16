@@ -354,4 +354,78 @@ describe('coach-service', () => {
       expect.objectContaining({ turn_index: 0 })
     );
   });
+
+  // ---------------------------------------------------------------------------
+  // Dispatcher: on-device path gated by flag + cohort (issue #429)
+  // ---------------------------------------------------------------------------
+
+  describe('on-device path dispatcher', () => {
+    const ENV_FLAG = 'EXPO_PUBLIC_COACH_LOCAL';
+    const ENV_PCT = 'EXPO_PUBLIC_COACH_LOCAL_COHORT_PCT';
+
+    beforeEach(() => {
+      delete process.env[ENV_FLAG];
+      delete process.env[ENV_PCT];
+    });
+
+    afterEach(() => {
+      delete process.env[ENV_FLAG];
+      delete process.env[ENV_PCT];
+    });
+
+    it('does not attempt local path when flag is unset (cloud-only)', async () => {
+      await sendCoachPrompt(baseMessages, { profile: { id: 'user-42' } });
+      expect(mockInvoke).toHaveBeenCalled();
+    });
+
+    it('does not attempt local path when flag is set but cohort pct is 0', async () => {
+      process.env[ENV_FLAG] = '1';
+      // pct defaults to 0
+      await sendCoachPrompt(baseMessages, { profile: { id: 'user-42' } });
+      expect(mockInvoke).toHaveBeenCalled();
+    });
+
+    it('attempts local path then falls back to cloud on COACH_LOCAL_NOT_AVAILABLE sentinel', async () => {
+      process.env[ENV_FLAG] = '1';
+      process.env[ENV_PCT] = '100'; // everyone in cohort
+      const result = await sendCoachPrompt(baseMessages, {
+        profile: { id: 'user-42' },
+      });
+      // Stub throws sentinel, dispatcher falls back, cloud invoke succeeds.
+      expect(mockInvoke).toHaveBeenCalled();
+      expect(result.role).toBe('assistant');
+    });
+
+    it('skips local when userId is missing even with flag+100% cohort', async () => {
+      process.env[ENV_FLAG] = '1';
+      process.env[ENV_PCT] = '100';
+      await sendCoachPrompt(baseMessages);
+      expect(mockInvoke).toHaveBeenCalled();
+    });
+
+    it('rethrows non-sentinel local errors instead of masking them', async () => {
+      process.env[ENV_FLAG] = '1';
+      process.env[ENV_PCT] = '100';
+
+      // Hijack the local module to throw a non-sentinel (e.g. OOM).
+      jest.resetModules();
+      jest.doMock('@/lib/services/coach-local', () => ({
+        COACH_LOCAL_NOT_AVAILABLE: 'COACH_LOCAL_NOT_AVAILABLE',
+        sendCoachPromptLocal: jest.fn().mockRejectedValue({
+          domain: 'ml',
+          code: 'COACH_LOCAL_OOM',
+          message: 'oom',
+          retryable: false,
+        }),
+      }));
+      const { sendCoachPrompt: isolated } = require('@/lib/services/coach-service');
+
+      await expect(
+        isolated(baseMessages, { profile: { id: 'user-42' } })
+      ).rejects.toMatchObject({ code: 'COACH_LOCAL_OOM' });
+
+      jest.dontMock('@/lib/services/coach-local');
+      jest.resetModules();
+    });
+  });
 });
