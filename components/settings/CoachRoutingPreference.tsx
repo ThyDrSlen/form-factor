@@ -1,4 +1,4 @@
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { RadioButton, Text } from 'react-native-paper';
 import type { CoachRoutingPreference as RoutingPref } from '@/lib/services/coach-dispatch';
 
@@ -58,18 +58,20 @@ export function CoachRoutingPreference(props: CoachRoutingPreferenceProps) {
           const disabled = localDisabled && opt.key === 'local_only';
           const testId = `coach-routing-preference-${opt.key}`;
           return (
-            <View
+            <TouchableOpacity
               key={opt.key}
               style={styles.row}
               testID={testId}
               accessibilityLabel={opt.label}
               accessibilityRole="radio"
               accessibilityState={{ checked: value === opt.key, disabled }}
+              disabled={disabled}
+              onPress={() => {
+                if (!disabled) onChange(opt.key);
+              }}
+              activeOpacity={0.7}
             >
-              <RadioButton
-                value={opt.key}
-                disabled={disabled}
-              />
+              <RadioButton value={opt.key} disabled={disabled} />
               <View style={styles.labelWrap}>
                 <Text variant="bodyMedium" style={disabled ? styles.labelDisabled : undefined}>
                   {opt.label}
@@ -78,7 +80,7 @@ export function CoachRoutingPreference(props: CoachRoutingPreferenceProps) {
                   {opt.description}
                 </Text>
               </View>
-            </View>
+            </TouchableOpacity>
           );
         })}
       </RadioButton.Group>
