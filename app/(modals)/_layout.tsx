@@ -44,6 +44,22 @@ export default function ModalsLayout() {
         }}
       />
       <Stack.Screen
+        name="rep-pain-journal"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
+      <Stack.Screen
+        name="session-timeline"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
+      <Stack.Screen
         name="coach-history"
         options={{
           presentation: 'modal',
