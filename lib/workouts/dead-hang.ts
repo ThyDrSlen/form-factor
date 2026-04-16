@@ -58,6 +58,12 @@ export const DEAD_HANG_THRESHOLDS = {
   shoulderElevation: 115,
   /** Minimum hold duration to count as a rep */
   minHoldMs: 1500,
+  /** Shoulder angle below which we flag scapular retraction (arms not packed) */
+  scapularRetractionMin: 80,
+  /** Min oscillation between start / max hip (or shoulder) to flag kipping */
+  kippingOscillationMin: 15,
+  /** Max allowed left/right wrist angle delta before flagging grip-shift */
+  gripShiftMaxDiff: 20,
 } as const;
 
 // =============================================================================
@@ -192,6 +198,64 @@ const faults: FaultDefinition[] = [
     severity: 1,
     dynamicCue: 'Hold a little longer to build grip and control.',
     fqiPenalty: 5,
+  },
+  // ---------------------------------------------------------------------------
+  // Additional faults (issue #438): scapular_retraction, kipping_swing, grip_shift
+  // ---------------------------------------------------------------------------
+  {
+    id: 'scapular_retraction',
+    displayName: 'No Scapular Engagement',
+    condition: (ctx: RepContext) => {
+      // A packed dead hang expects the shoulder-to-torso angle to stay at/below
+      // the scapularRetractionMin threshold (shoulders "pulled down"). A reading
+      // well above this indicates the hanger never engaged the scaps and simply
+      // dangled from the bar.
+      const left = ctx.maxAngles.leftShoulder;
+      const right = ctx.maxAngles.rightShoulder;
+      if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
+      const minShoulder = Math.min(left, right);
+      return minShoulder < DEAD_HANG_THRESHOLDS.scapularRetractionMin;
+    },
+    severity: 2,
+    dynamicCue: 'Pack your shoulders — pull them down and back into the sockets.',
+    fqiPenalty: 10,
+  },
+  {
+    id: 'kipping_swing',
+    displayName: 'Kipping Swing',
+    condition: (ctx: RepContext) => {
+      // Hip-oscillation proxy: if the difference between start-hip and max-hip
+      // (or start-shoulder vs max-shoulder) exceeds kippingOscillationMin on
+      // either side, the athlete swung their body weight through the hold
+      // instead of holding statically.
+      const leftHipDelta = Math.abs(ctx.maxAngles.leftHip - ctx.startAngles.leftHip);
+      const rightHipDelta = Math.abs(ctx.maxAngles.rightHip - ctx.startAngles.rightHip);
+      const leftShoulderDelta = Math.abs(ctx.maxAngles.leftShoulder - ctx.startAngles.leftShoulder);
+      const rightShoulderDelta = Math.abs(ctx.maxAngles.rightShoulder - ctx.startAngles.rightShoulder);
+      const deltas = [leftHipDelta, rightHipDelta, leftShoulderDelta, rightShoulderDelta];
+      if (deltas.some((d) => !Number.isFinite(d))) return false;
+      return deltas.some((d) => d > DEAD_HANG_THRESHOLDS.kippingOscillationMin);
+    },
+    severity: 2,
+    dynamicCue: 'Stay still — resist the urge to swing or kip.',
+    fqiPenalty: 10,
+  },
+  {
+    id: 'grip_shift',
+    displayName: 'Grip Shift',
+    condition: (ctx: RepContext) => {
+      // JointAngles does not expose wrist angles directly; at a dead hang the
+      // left/right ELBOW angle at maximum extension is the closest upstream
+      // proxy for grip stability (a wrist re-grip twists the forearm and
+      // perturbs elbow extension). Threshold tuned to gripShiftMaxDiff.
+      const left = ctx.maxAngles.leftElbow;
+      const right = ctx.maxAngles.rightElbow;
+      if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
+      return Math.abs(left - right) > DEAD_HANG_THRESHOLDS.gripShiftMaxDiff;
+    },
+    severity: 1,
+    dynamicCue: 'Hold your grip steady — avoid re-gripping mid-hang.',
+    fqiPenalty: 6,
   },
 ];
 
