@@ -50,6 +50,16 @@ export default function TabsLayout() {
           }}
         />
         <Tabs.Screen
+          name="form"
+          options={{
+            title: 'Form',
+            tabBarAccessibilityLabel: 'Form',
+            tabBarIcon: ({ color }) => (
+              <Ionicons name="trending-up-outline" size={20} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="food"
           options={{
             title: 'Food',
