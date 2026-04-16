@@ -1,5 +1,5 @@
-import { sendCoachPrompt } from './coach-service';
-import type { CoachMessage } from './coach-service';
+import { sendCoachPrompt } from '@/lib/services/coach-service';
+import type { CoachMessage } from '@/lib/services/coach-service';
 
 export type DrillExplainerProvider = 'cloud' | 'gemma' | 'openai';
 
