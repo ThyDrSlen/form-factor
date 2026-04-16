@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { createError, logError } from './ErrorHandler';
+import { synthesizeMemoryClause } from './coach-memory-context';
 
 export type CoachRole = 'user' | 'assistant' | 'system';
 
@@ -18,6 +19,12 @@ export interface CoachContext {
   };
   focus?: string;
   sessionId?: string;
+  /**
+   * Optional pre-composed memory clause. When provided, skips the
+   * AsyncStorage/Supabase lookup inside sendCoachPrompt() — useful for
+   * callers (e.g. auto-debrief) that already built their own memory.
+   */
+  memoryClause?: string | null;
 }
 
 interface RawCoachResponse {
@@ -29,13 +36,54 @@ interface RawCoachResponse {
 
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
 
+/**
+ * Feature-flag gate for prepending cross-session memory to coach prompts.
+ * Defaults to ON (value 'true' or unset). Any other value disables the
+ * memory clause so the coach behaves as before.
+ */
+function isMemoryEnabled(): boolean {
+  const raw = (process.env.EXPO_PUBLIC_COACH_MEMORY ?? 'true').trim().toLowerCase();
+  return raw === '' || raw === 'true' || raw === '1' || raw === 'on';
+}
+
+async function resolveMemoryClause(context?: CoachContext): Promise<string | null> {
+  if (!isMemoryEnabled()) return null;
+  if (context?.memoryClause !== undefined) return context.memoryClause ?? null;
+  try {
+    const clause = await synthesizeMemoryClause();
+    return clause.text;
+  } catch (err) {
+    warnWithTs('[coach-service] memory clause synth failed; continuing without memory', err);
+    return null;
+  }
+}
+
+function applyMemoryClause(
+  messages: CoachMessage[],
+  memoryClause: string | null,
+): CoachMessage[] {
+  if (!memoryClause) return messages;
+  const memoryMessage: CoachMessage = {
+    role: 'system',
+    content: `Athlete memory (recent sessions): ${memoryClause}`,
+  };
+  return [memoryMessage, ...messages];
+}
+
 export async function sendCoachPrompt(
   messages: CoachMessage[],
   context?: CoachContext
 ): Promise<CoachMessage> {
   try {
+    const memoryClause = await resolveMemoryClause(context);
+    const outgoingMessages = applyMemoryClause(messages, memoryClause);
+    const outgoingContext =
+      memoryClause !== null
+        ? { ...(context ?? {}), memoryClause }
+        : context;
+
     const { data, error } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
-      body: { messages, context },
+      body: { messages: outgoingMessages, context: outgoingContext },
     });
 
     if (error) {
