@@ -131,6 +131,13 @@ function createHapticBus(): HapticBus {
     const debounce = EVENT_DEBOUNCE_MS[event] ?? 250;
     const last = lastEmit.get(event) ?? 0;
     const now = Date.now();
+    // If the clock moved backward (e.g. fake timers reset in a test harness
+    // or a system-clock correction in the wild), drop the stale mark so we
+    // don't suppress legitimate emits.
+    if (now < last) {
+      lastEmit.set(event, now);
+      return true;
+    }
     if (now - last < debounce) return false;
     lastEmit.set(event, now);
     return true;

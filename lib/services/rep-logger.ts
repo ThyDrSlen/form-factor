@@ -10,7 +10,30 @@ import { supabase } from '@/lib/supabase';
 import { ensureUserId } from '@/lib/auth-utils';
 import { errorWithTs, logWithTs } from '@/lib/logger';
 import { getTelemetryContext } from './telemetry-context';
+import { hapticBus } from '@/lib/haptics/haptic-bus';
 import type { RepEvent, SetSummary, RepLabel, EmittedCue, RepFeatures } from '@/lib/types/telemetry';
+
+/**
+ * Detect whether a completed set represents a new personal record and emit
+ * a `pr.hit` haptic if so. Exposed as a small pure helper so the caller can
+ * decide how to source the baseline (e.g. cached workout history vs a
+ * Supabase query) — this lets us wire emissions without blocking on the
+ * PR-detection refactor.
+ */
+export function emitPrHitIfRecord(opts: {
+  currentMetric: number;
+  baselineMetric: number | null | undefined;
+  higherIsBetter?: boolean;
+}): boolean {
+  const { currentMetric, baselineMetric, higherIsBetter = true } = opts;
+  if (baselineMetric == null || !Number.isFinite(baselineMetric)) return false;
+  if (!Number.isFinite(currentMetric)) return false;
+  const isPr = higherIsBetter
+    ? currentMetric > baselineMetric
+    : currentMetric < baselineMetric;
+  if (isPr) hapticBus.emit('pr.hit');
+  return isPr;
+}
 
 /**
  * Generate a UUID for rep/set IDs

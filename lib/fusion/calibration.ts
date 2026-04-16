@@ -1,4 +1,5 @@
 import type { Vec3 } from '@/lib/fusion/contracts';
+import { hapticBus } from '@/lib/haptics/haptic-bus';
 
 export type CalibrationPhase = 'idle' | 'collecting' | 'calibrated' | 'recalibration_required';
 
@@ -117,6 +118,7 @@ export function collectCalibrationSample(state: CalibrationState, sample: Calibr
 
 export function finalizeCalibration(state: CalibrationState, completedAtMs: number): CalibrationResult | null {
   if (state.phase !== 'collecting' || state.startedAtMs === null || state.samples.length === 0) {
+    hapticBus.emit('calibration.failed');
     return null;
   }
 
@@ -127,6 +129,8 @@ export function finalizeCalibration(state: CalibrationState, completedAtMs: numb
 
   state.phase = 'calibrated';
   state.completedAtMs = completedAtMs;
+
+  hapticBus.emit('calibration.complete');
 
   return {
     phase: state.phase,
