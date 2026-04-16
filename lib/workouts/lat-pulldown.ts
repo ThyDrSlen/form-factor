@@ -246,9 +246,13 @@ const faults: FaultDefinition[] = [
     id: 'elbows_flare',
     displayName: 'Elbows Flared',
     condition: (ctx: RepContext) => {
-      const maxShoulder = Math.max(ctx.maxAngles.leftShoulder, ctx.maxAngles.rightShoulder);
-      if (!Number.isFinite(maxShoulder)) return false;
-      return maxShoulder > LAT_PULLDOWN_THRESHOLDS.elbowsFlareShoulderMax;
+      // Evaluate the shoulder angle at the BOTTOM of the pull (minAngles)
+      // — arms overhead at the "top" naturally have high shoulder abduction
+      // so checking maxAngles would always fire. At the bottom the shoulder
+      // should be tucked below elbowsFlareShoulderMax; above it = flared.
+      const bottomShoulder = Math.max(ctx.minAngles.leftShoulder, ctx.minAngles.rightShoulder);
+      if (!Number.isFinite(bottomShoulder)) return false;
+      return bottomShoulder > LAT_PULLDOWN_THRESHOLDS.elbowsFlareShoulderMax;
     },
     severity: 2,
     dynamicCue: 'Keep elbows in line with the wrists — no chicken-winging.',

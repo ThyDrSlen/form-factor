@@ -174,14 +174,14 @@ describe('lat-pulldown fault: asymmetric_pull', () => {
 describe('lat-pulldown fault: elbows_flare', () => {
   const f = fault('elbows_flare');
 
-  test('positive: peak shoulder-abduction above threshold fires', () => {
-    // elbowsFlareShoulderMax = 125; max shoulder 140 > 125 ⇒ fault
-    const c = ctx({ max: { leftShoulder: 140, rightShoulder: 120 } });
+  test('positive: shoulder-abduction at bottom-of-pull above threshold fires', () => {
+    // elbowsFlareShoulderMax = 125; min-state shoulder 140 > 125 ⇒ fault
+    const c = ctx({ min: { leftElbow: 80, rightElbow: 80, leftShoulder: 140, rightShoulder: 120 } });
     expect(f.condition(c)).toBe(true);
   });
 
-  test('negative: shoulder at optimal path does not fire', () => {
-    const c = ctx({ max: { leftShoulder: 120, rightShoulder: 115 } });
+  test('negative: shoulder tucked at the bottom does not fire', () => {
+    const c = ctx({ min: { leftElbow: 80, rightElbow: 80, leftShoulder: 115, rightShoulder: 110 } });
     expect(f.condition(c)).toBe(false);
   });
 
