@@ -102,6 +102,14 @@ import bounceNoiseFixture from '@/tests/fixtures/pullup-tracking/bounce-noise.js
 import { styles } from '../../styles/tabs/_scan-arkit.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
 
+// Form-tracking UX overhaul components (#416).
+import FqiGauge from '@/components/form-tracking/FqiGauge';
+import CueCard, { classifyCue, type CueEntry } from '@/components/form-tracking/CueCard';
+import TrackingLossBanner from '@/components/form-tracking/TrackingLossBanner';
+import RepPulse from '@/components/form-tracking/RepPulse';
+import TrackingOnboardingOverlay from '@/components/form-tracking/TrackingOnboardingOverlay';
+import { useTrackingLoss } from '@/hooks/use-tracking-loss';
+
 // Phase and detection mode types are now imported from lib/workouts
 type BaseUploadMetrics = Record<string, unknown> & {
   mode: DetectionMode;
@@ -359,6 +367,13 @@ export default function ScanARKitScreen() {
   const realtimeFormEngineRef = React.useRef(createRealtimeEngineState());
   const jointAnglesStateRef = React.useRef<JointAngles | null>(null);
   const [repCount, setRepCount] = useState(0);
+  // Live FQI surfaced in the new FqiGauge overlay (#416). Refreshed on
+  // each rep completion so users can see their form score drift in real
+  // time. Null until the first rep lands in the current set.
+  const [liveFqi, setLiveFqi] = useState<number | null>(null);
+  // Manual dismissal of the tracking-loss banner; resets whenever the
+  // hook reports a recovery to healthy confidence (#416).
+  const [trackingLossDismissed, setTrackingLossDismissed] = useState(false);
   const [detectionMode, setDetectionMode] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
   const activeWorkoutDef = useMemo(() => getWorkoutByMode(detectionMode), [detectionMode]);
   const [activePhase, setActivePhase] = useState<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
@@ -867,6 +882,8 @@ export default function ScanARKitScreen() {
     },
     onRepComplete: (repNumber: number, fqi: number) => {
       setRepCount(repNumber);
+      // Surface the latest FQI in the new live gauge overlay (#416).
+      setLiveFqi(fqi);
       repIndexTrackerRef.current.endRep();
       if (recordingActiveRef.current && Date.now() >= recordingStartEpochMsRef.current) {
         recordingFqiScoresRef.current.push(fqi);
@@ -903,6 +920,7 @@ export default function ScanARKitScreen() {
     activePhaseRef.current = nextInitialPhase;
     setActivePhase(nextInitialPhase);
     setRepCount(0);
+    setLiveFqi(null);
     setActiveMetrics(null);
     setLivePullupPartialStatus(null);
     lastLivePartialBadgeRef.current = null;
@@ -1702,6 +1720,36 @@ export default function ScanARKitScreen() {
 	      () => feedback?.filter((cue): cue is string => !!cue) ?? [],
 	      [feedback]
 	    );
+	    // Top-priority cue for the CueCard overlay (#416). We classify each
+	    // feedback message with classifyCue(), then surface the highest-
+	    // priority one (critical > warning > advisory).
+	    const topPriorityCue: CueEntry | null = useMemo(() => {
+	      if (!feedback || feedback.length === 0) return null;
+	      const classified = feedback.map((msg) => classifyCue(msg));
+	      const byPriority = (p: CueEntry['priority']): number =>
+	        p === 'critical' ? 0 : p === 'warning' ? 1 : 2;
+	      return [...classified].sort(
+	        (a, b) => byPriority(a.priority) - byPriority(b.priority),
+	      )[0] ?? null;
+	    }, [feedback]);
+	    // Tracking confidence proxy driving the TrackingLossBanner (#416):
+	    // ratio of tracked joints to the total the native module returned.
+	    // Null when tracking is off so the hook stays idle.
+	    const trackingConfidence: number | null = useMemo(() => {
+	      if (!isTracking || !pose?.joints || pose.joints.length === 0) {
+	        return null;
+	      }
+	      const tracked = pose.joints.filter((j) => j.isTracked).length;
+	      return tracked / pose.joints.length;
+	    }, [isTracking, pose]);
+	    const { isLost: trackingLost, lostForMs: trackingLostForMs } =
+	      useTrackingLoss(trackingConfidence);
+	    // Clear the user's manual dismissal once confidence recovers.
+	    useEffect(() => {
+	      if (!trackingLost) {
+	        setTrackingLossDismissed(false);
+	      }
+	    }, [trackingLost]);
 	    const poseTimestamp = pose?.timestamp ?? null;
 	    const primaryCue = useMemo(() => {
 	      if (!isTracking) {
@@ -2684,7 +2732,9 @@ export default function ScanARKitScreen() {
 	            <View style={styles.anglesGrid}>
               <View style={styles.angleItem}>
                 <Text style={styles.angleLabel}>Reps</Text>
-                <Text style={styles.angleValue}>{telemetryReps}</Text>
+                <RepPulse repCount={telemetryReps}>
+                  <Text style={styles.angleValue}>{telemetryReps}</Text>
+                </RepPulse>
               </View>
               <View style={styles.angleItem}>
                 <Text style={styles.angleLabel}>Phase</Text>
@@ -2702,22 +2752,51 @@ export default function ScanARKitScreen() {
 	          </View>
 	        )}
 
-        {/* Form feedback */}
-        {feedback && (
+        {/* Form feedback — new CueCard overlay (#416).
+            Falls back to the plain feedback list when multiple cues
+            are present so nothing is lost to classification heuristics. */}
+        {topPriorityCue ? (
           <View
             style={styles.feedbackContainer}
-            accessible
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-            accessibilityLabel={`Form feedback: ${feedback.join('. ')}`}
+            accessible={false}
+            pointerEvents="box-none"
           >
-            {feedback.map((msg, idx) => (
-              <Text key={idx} style={styles.feedbackText}>
-                {msg}
-              </Text>
-            ))}
+            <CueCard cue={topPriorityCue} />
           </View>
-        )}
+        ) : null}
+
+        {/* Tracking-loss banner — sits below the top bar when confidence
+            has been poor for >500ms (#416). */}
+        <View
+          style={[styles.trackingLossSlot, { top: topBarBottom + 8 }]}
+          pointerEvents="box-none"
+        >
+          <TrackingLossBanner
+            visible={trackingLost && !trackingLossDismissed}
+            lostForMs={trackingLostForMs}
+            onDismiss={() => setTrackingLossDismissed(true)}
+          />
+        </View>
+
+        {/* Live FQI gauge — anchored to the bottom-right of the overlay
+            so it never occludes the user's body (#416). */}
+        {isTracking ? (
+          <View
+            style={[styles.fqiGaugeSlot, { bottom: insets.bottom + 100 }]}
+            pointerEvents="none"
+          >
+            <FqiGauge score={liveFqi} />
+          </View>
+        ) : null}
+
+        {/* First-use onboarding panel — shown once, persists via
+            AsyncStorage (#249 + #416). */}
+        <View
+          style={[styles.onboardingSlot, { top: topBarBottom + 12 }]}
+          pointerEvents="box-none"
+        >
+          <TrackingOnboardingOverlay />
+        </View>
       </View>
 
       {/* Controls */}
