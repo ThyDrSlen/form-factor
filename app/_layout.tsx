@@ -15,6 +15,7 @@ import { NetworkProvider } from '../contexts/NetworkContext';
 import { SocialProvider } from '../contexts/SocialContext';
 import { useFonts, Lexend_400Regular, Lexend_500Medium, Lexend_700Bold } from '@expo-google-fonts/lexend';
 import { ToastProvider } from '../contexts/ToastContext';
+import { HapticPreferencesProvider } from '../contexts/HapticPreferencesContext';
 import { logWithTs, warnWithTs } from '@/lib/logger';
 import { isOnboardingCompleted } from '@/lib/services/onboarding';
 import { hasSeenWelcome } from '@/app/(onboarding)/welcome';
@@ -90,29 +91,31 @@ function RootLayoutNav() {
       <RootErrorBoundary>
         <BottomSheetModalProvider>
           <ToastProvider>
-            <AuthProvider>
-              <NetworkProvider>
-                <UnitsProvider>
-                  <HealthKitProvider>
-                    <WorkoutsProvider>
-                      <NutritionGoalsProvider>
-                        <SocialProvider>
-                          <FoodProvider>
-                            {!fontsLoaded ? (
-                              <View style={styles.splash}>
-                                <ActivityIndicator color="#4C8CFF" />
-                              </View>
-                            ) : (
-                              <InitialLayout />
-                            )}
-                          </FoodProvider>
-                        </SocialProvider>
-                      </NutritionGoalsProvider>
-                    </WorkoutsProvider>
-                  </HealthKitProvider>
-                </UnitsProvider>
-              </NetworkProvider>
-            </AuthProvider>
+            <HapticPreferencesProvider>
+              <AuthProvider>
+                <NetworkProvider>
+                  <UnitsProvider>
+                    <HealthKitProvider>
+                      <WorkoutsProvider>
+                        <NutritionGoalsProvider>
+                          <SocialProvider>
+                            <FoodProvider>
+                              {!fontsLoaded ? (
+                                <View style={styles.splash}>
+                                  <ActivityIndicator color="#4C8CFF" />
+                                </View>
+                              ) : (
+                                <InitialLayout />
+                              )}
+                            </FoodProvider>
+                          </SocialProvider>
+                        </NutritionGoalsProvider>
+                      </WorkoutsProvider>
+                    </HealthKitProvider>
+                  </UnitsProvider>
+                </NetworkProvider>
+              </AuthProvider>
+            </HapticPreferencesProvider>
           </ToastProvider>
         </BottomSheetModalProvider>
       </RootErrorBoundary>
