@@ -18,7 +18,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { Svg, Circle, Line } from 'react-native-svg';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -33,6 +32,7 @@ import {
 } from '@/lib/watch-connectivity';
 import { buildWatchTrackingPayload } from '@/lib/watch-connectivity/tracking-payload';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
+import { safeHaptic } from '@/lib/utils/safe-haptic';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type MediaPipePose2D } from '@/lib/arkit/ARKitBodyTracker';
@@ -1509,7 +1509,7 @@ export default function ScanARKitScreen() {
       if (DEV) logWithTs('[ScanARKit] Tracking started successfully in', elapsed, 'ms');
 
       if (Platform.OS === 'ios') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        safeHaptic.notification('success');
       }
     } catch (error) {
       errorWithTs('[ScanARKit] ❌ Failed to start tracking:', error);
@@ -1594,7 +1594,7 @@ export default function ScanARKitScreen() {
       if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
       if (Platform.OS === 'ios') {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        safeHaptic.impact('medium');
       }
     } catch (error) {
       errorWithTs('[ScanARKit] ❌ Error stopping tracking:', error);
@@ -2200,7 +2200,7 @@ export default function ScanARKitScreen() {
         if (Platform.OS === 'android') {
           ToastAndroid.show(message, ToastAndroid.SHORT);
         } else {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          safeHaptic.notification('success');
         }
       }
     } else {
@@ -2232,7 +2232,7 @@ export default function ScanARKitScreen() {
     if (Platform.OS === 'android') {
       ToastAndroid.show(message, ToastAndroid.SHORT);
     } else {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      safeHaptic.notification('success');
     }
   }, []);
 
