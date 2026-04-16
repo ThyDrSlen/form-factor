@@ -446,6 +446,19 @@ export default function ScanARKitScreen() {
     stablePrimaryCueRef.current = null;
   }, []);
 
+  // Frame-callback error reporter. ARKit frame callbacks run async on the
+  // native side — unhandled throws bypass CrashBoundary (which only wraps
+  // the JSX tree) and surface as unhandled promise rejections. Route all
+  // frame-time failures here so we degrade gracefully and log once per
+  // session per source rather than on every bad frame.
+  const processFrameFailureLoggedRef = React.useRef<Set<string>>(new Set());
+  const reportProcessFrameFailure = useCallback((source: string, error: unknown) => {
+    const logged = processFrameFailureLoggedRef.current;
+    if (logged.has(source)) return;
+    logged.add(source);
+    errorWithTs(`[ScanARKit] processFrame(${source}) threw — degrading gracefully`, error);
+  }, []);
+
   const updatePartialTrackingBadgeVisibility = useCallback((
     visibilityBadge: PullupScoringResult['visibility_badge'],
     source: 'frame-live' | 'onPullupScoring-rep-complete' | 'unknown' = 'unknown'
@@ -1019,12 +1032,19 @@ export default function ScanARKitScreen() {
       lastPoseTimestampRef.current = frame.timestampSec;
       jointAnglesStateRef.current = frame.angles;
       setJointAngles(frame.angles);
-      const metrics = getWorkoutByMode('pullup').calculateMetrics(frame.angles, joints) as WorkoutMetrics;
-      setActiveMetrics(metrics);
-      processWorkoutFrame(frame.angles, joints, {
-        trackingQuality: 1,
-        shadowMeanAbsDelta: 0,
-      });
+      // Guard per-frame processing so one bad fixture frame can't tear the
+      // whole playback down; errors are reported once per session to avoid
+      // log floods, and the component continues on the next frame.
+      try {
+        const metrics = getWorkoutByMode('pullup').calculateMetrics(frame.angles, joints) as WorkoutMetrics;
+        setActiveMetrics(metrics);
+        processWorkoutFrame(frame.angles, joints, {
+          trackingQuality: 1,
+          shadowMeanAbsDelta: 0,
+        });
+      } catch (error) {
+        reportProcessFrameFailure('fixture-playback', error);
+      }
       setFixturePlaybackFramesProcessed(index + 1);
 
       const next = fixtureFrames[index + 1];
@@ -1057,6 +1077,7 @@ export default function ScanARKitScreen() {
     DEV,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
+    reportProcessFrameFailure,
   ]);
 
   // Debug pose updates (throttled logging)
@@ -1362,10 +1383,14 @@ export default function ScanARKitScreen() {
           lastLivePartialBadgeRef.current = null;
         }
 
-        processWorkoutFrame(next, jointsMap, {
-          trackingQuality: smoothingResult?.trackingQuality,
-          shadowMeanAbsDelta: shadowComparison?.meanAbsDelta,
-        });
+        try {
+          processWorkoutFrame(next, jointsMap, {
+            trackingQuality: smoothingResult?.trackingQuality,
+            shadowMeanAbsDelta: shadowComparison?.meanAbsDelta,
+          });
+        } catch (error) {
+          reportProcessFrameFailure('live-frame', error);
+        }
       } else {
         repIndexTrackerRef.current.reset();
         resetWorkoutController({ preserveRepCount: true });
@@ -1376,7 +1401,7 @@ export default function ScanARKitScreen() {
         transitionPhase(activeWorkoutDef.initialPhase);
       }
     } catch (error) {
-      errorWithTs('[ScanARKit] ❌ Error calculating angles:', error);
+      reportProcessFrameFailure('angle-calculation', error);
     } finally {
       if (frameProcessStartMs !== null) {
         const elapsedMs = Math.max(0, nowMs() - frameProcessStartMs);
