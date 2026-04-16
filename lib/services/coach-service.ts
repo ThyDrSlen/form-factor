@@ -29,10 +29,53 @@ interface RawCoachResponse {
 
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
 
+/**
+ * Flag check is a function (not a module-level constant) so tests and runtime
+ * overrides can toggle `process.env.EXPO_PUBLIC_COACH_LOCAL` between calls.
+ */
+function isLocalCoachEnabled(): boolean {
+  return (process.env.EXPO_PUBLIC_COACH_LOCAL || '').trim() === '1';
+}
+
+/**
+ * Recognise the sentinel error thrown by `coach-local.ts` so we can fall back
+ * to the cloud path without swallowing other errors. Kept duck-typed so we
+ * don't circularly import the local provider (it imports `CoachMessage` from
+ * here).
+ */
+function isLocalUnavailableError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code: unknown }).code === 'COACH_LOCAL_NOT_AVAILABLE'
+  );
+}
+
 export async function sendCoachPrompt(
   messages: CoachMessage[],
   context?: CoachContext
 ): Promise<CoachMessage> {
+  // Feature-flagged on-device path. When the flag is off, this branch is
+  // skipped entirely and behavior matches the pre-flag implementation.
+  if (isLocalCoachEnabled()) {
+    try {
+      // Lazy require so the bundler does not pull the local provider (and its
+      // future ExecuTorch native dep) into builds where the flag is off.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { sendCoachPromptLocal } = require('./coach-local') as typeof import('./coach-local');
+      return await sendCoachPromptLocal(messages, context);
+    } catch (localErr) {
+      if (!isLocalUnavailableError(localErr)) {
+        // A real local-coach failure (e.g. OOM) should surface to the caller
+        // rather than silently escape to cloud.
+        throw localErr;
+      }
+      warnWithTs('[coach] Local coach unavailable, falling back to cloud');
+      // fall through to cloud path below
+    }
+  }
+
   try {
     const { data, error } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
       body: { messages, context },
