@@ -14,6 +14,7 @@ import { sessionStyles as styles, colors } from '@/styles/workout-session.styles
 import { useSessionRunner } from '@/lib/stores/session-runner';
 import { computeRemainingSeconds, formatRestTime } from '@/lib/services/rest-timer';
 import { useBetweenSetsCoach } from '@/hooks/use-between-sets-coach';
+import { useKeepAwakeSmart } from '@/lib/a11y/useKeepAwakeSmart';
 import RestActiveRecoveryPanel from './RestActiveRecoveryPanel';
 import SetReadyButton from './SetReadyButton';
 
@@ -74,6 +75,8 @@ const RestTimerSheet = forwardRef<BottomSheet, RestTimerSheetProps>(({ onClose }
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
   }, [restTimer]);
+
+  useKeepAwakeSmart('rest-long', remaining > 60);
 
   let nextUpText = '';
   if (restTimer) {
