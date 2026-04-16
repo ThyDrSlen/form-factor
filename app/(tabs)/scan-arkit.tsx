@@ -93,6 +93,11 @@ import type { WorkoutMetrics } from '@/lib/types/workout-definitions';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
 import { buildVideoMetricsForClip, type RecordingQuality } from '@/lib/services/video-metrics';
 import { shouldUploadVideo } from '@/lib/services/consent-service';
+// Issue #479 — first-session confidence surface. All three below are
+// additive and pulled in at the call sites marked with `// issue/479`.
+import ExerciseCameraGuide from '@/components/form-tracking/ExerciseCameraGuide';
+import type { CalibrationPhase, CalibrationState } from '@/lib/fusion/calibration';
+import { useCalibrationFailureHandler } from '@/hooks/use-calibration-failure-handler';
 import type { PullupFixtureFrame } from '@/lib/debug/pullup-fixture-corpus';
 import cameraFacingFixture from '@/tests/fixtures/pullup-tracking/camera-facing.json';
 import backTurnedFixture from '@/tests/fixtures/pullup-tracking/back-turned.json';
@@ -358,6 +363,46 @@ export default function ScanARKitScreen() {
   const [repCount, setRepCount] = useState(0);
   const [detectionMode, setDetectionMode] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
   const activeWorkoutDef = useMemo(() => getWorkoutByMode(detectionMode), [detectionMode]);
+
+  // Issue #479 — calibration failure recovery wiring. The calibration phase
+  // and state stream are not currently routed through this screen; we keep
+  // the handler inert with `'idle'` until the fusion wiring in a future PR
+  // surfaces the real phase. Once wired, the handler opens a recovery modal
+  // when calibration sits in `recalibration_required` for > 8s.
+  const [calibrationPhase, setCalibrationPhase] = useState<CalibrationPhase>('idle');
+  const [calibrationStateSnapshot, setCalibrationStateSnapshot] =
+    useState<CalibrationState | null>(null);
+  const [calibrationNowMs, setCalibrationNowMs] = useState<number>(() => nowMs());
+  const calibrationFailure = useCalibrationFailureHandler({
+    phase: calibrationPhase,
+    state: calibrationStateSnapshot,
+    nowMs: calibrationNowMs,
+  });
+
+  useEffect(() => {
+    // When the handler surfaces a failure, route to the recovery modal once.
+    // Consuming the failure clears the hook's latch so repeated failures
+    // re-trigger navigation.
+    if (!calibrationFailure.hasFailure || !calibrationFailure.analysis) return;
+    const a = calibrationFailure.analysis;
+    const query = new URLSearchParams({
+      reason: a.reason,
+      title: a.title,
+      remediation: a.remediation,
+      sampleCount: String(a.metrics.sampleCount),
+      avgStability: String(a.metrics.avgStability),
+      driftDeg: String(a.metrics.headDriftDegApprox),
+      ...(a.metrics.elapsedMs != null ? { elapsedMs: String(a.metrics.elapsedMs) } : {}),
+      ...(a.suggestedExercise ? { suggestedExercise: a.suggestedExercise } : {}),
+    }).toString();
+    router.push(`/(modals)/calibration-failure-recovery?${query}`);
+    calibrationFailure.consume();
+  }, [calibrationFailure, router]);
+
+  // Silence unused setter warnings until future wiring consumes these.
+  void setCalibrationPhase;
+  void setCalibrationStateSnapshot;
+  void setCalibrationNowMs;
   const [activePhase, setActivePhase] = useState<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
   const activePhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
@@ -2467,6 +2512,15 @@ export default function ScanARKitScreen() {
           </View>
 
           <View style={styles.topBarActions}>
+            {/* issue/479 — practice-mode entry point */}
+            <TouchableOpacity
+              style={styles.topBarButton}
+              onPress={() => router.push('/(modals)/practice-mode')}
+              accessibilityRole="button"
+              accessibilityLabel="Open practice mode"
+            >
+              <Ionicons name="ribbon-outline" size={18} color="#FAB05C" />
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.topBarButton}
               onPress={openWorkoutInsights}
@@ -2523,6 +2577,22 @@ export default function ScanARKitScreen() {
                 </View>
               )}
             </Animated.View>
+          )}
+
+          {/* issue/479 — camera placement guide for the active exercise.
+              Renders below the exercise dropdown when tracking isn't running. */}
+          {!isTracking && !isDropdownOpen && !showTelemetry && (
+            <View
+              style={{
+                position: 'absolute',
+                top: topBarBottom + 96,
+                left: 16,
+                right: 16,
+              }}
+              pointerEvents="box-none"
+            >
+              <ExerciseCameraGuide exerciseKey={detectionMode} />
+            </View>
           )}
 
           {/* Skeleton Overlay (2D projected) */}
