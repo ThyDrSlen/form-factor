@@ -81,6 +81,7 @@ import {
   type PullupScoringResult,
 } from '@/lib/tracking-quality';
 import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
+import { useAppStatePause } from '@/hooks/use-app-state-pause';
 import { useCameraPermissionGuard } from '@/hooks/use-camera-permission-guard';
 import { useSubjectIdentity } from '@/hooks/use-subject-identity';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
@@ -374,6 +375,9 @@ export default function ScanARKitScreen() {
     enabled: subjectLockEnabled && !fixturePlaybackEnabled,
   });
   const cameraPermission = useCameraPermissionGuard({ detectRevoke: true });
+  const appStatePause = useAppStatePause({
+    enabled: !fixturePlaybackEnabled,
+  });
   const [gestureRecordingEnabled, setGestureRecordingEnabled] = useState(true);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -1641,6 +1645,15 @@ export default function ScanARKitScreen() {
     }
   }, [cameraPermission.revoked, isTracking, stopTracking]);
 
+  // AppState pause: when the app leaves 'active' we stop the native
+  // tracker. The hook flips needsResume on return so the user must
+  // opt-in via the Resume? prompt before rep counting starts again.
+  useEffect(() => {
+    if (appStatePause.isPaused && isTracking) {
+      stopTracking();
+    }
+  }, [appStatePause.isPaused, isTracking, stopTracking]);
+
   const handleOverlayLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     overlayLayout.current = { width, height };
@@ -2840,6 +2853,31 @@ export default function ScanARKitScreen() {
             <Text style={styles.subjectSwitchActionText}>
               {cameraPermission.canAskAgain ? 'Allow' : 'Settings'}
             </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {appStatePause.needsResume && !cameraPermission.revoked && (
+        <View
+          style={[styles.resumePromptBanner, { top: topBarBottom + 8 }]}
+          accessibilityRole="alert"
+          accessibilityLabel="Session paused, resume tracking"
+        >
+          <Ionicons name="pause-circle-outline" size={18} color="#F5F7FF" />
+          <View style={styles.subjectSwitchText}>
+            <Text style={styles.subjectSwitchTitle}>Session paused</Text>
+            <Text style={styles.subjectSwitchHint}>Tap resume when you&apos;re ready</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.subjectSwitchAction}
+            onPress={() => {
+              appStatePause.resume();
+              void startTracking();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Resume tracking"
+          >
+            <Text style={styles.subjectSwitchActionText}>Resume</Text>
           </TouchableOpacity>
         </View>
       )}
