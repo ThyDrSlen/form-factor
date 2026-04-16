@@ -108,6 +108,46 @@ type BaseUploadMetrics = Record<string, unknown> & {
   reps: number;
 };
 
+/**
+ * Workout UI adapter callers — centralise the base-vs-specific metrics
+ * variance handoff so call sites don't need `as never` casts.
+ *
+ * Each workout's `WorkoutUiAdapter` is generic over its own `TMetrics`,
+ * but at runtime we hold `WorkoutMetrics | null` (the base shape) and
+ * the def travels with its metrics for the same mode, so a narrowed
+ * "has a ui adapter" shape is enough to describe what we need at the
+ * call site. The cast to `BaseUiAdapter` happens exactly once, here.
+ */
+type BaseUiAdapter = {
+  buildUploadMetrics?: (metrics: WorkoutMetrics | null) => Record<string, number | null>;
+  buildWatchMetrics?: (metrics: WorkoutMetrics | null) => Record<string, number | null>;
+  getRealtimeCues?: (args: { phaseId: string; metrics: WorkoutMetrics }) => string[] | null;
+};
+
+type DefWithUi = { ui?: unknown };
+
+const baseUiAdapter = (def: DefWithUi): BaseUiAdapter | undefined =>
+  def.ui as BaseUiAdapter | undefined;
+
+const callBuildUploadMetrics = (
+  def: DefWithUi,
+  metrics: WorkoutMetrics | null,
+): Record<string, number | null> =>
+  baseUiAdapter(def)?.buildUploadMetrics?.(metrics) ?? {};
+
+const callBuildWatchMetrics = (
+  def: DefWithUi,
+  metrics: WorkoutMetrics | null,
+): Record<string, number | null> =>
+  baseUiAdapter(def)?.buildWatchMetrics?.(metrics) ?? {};
+
+const callGetRealtimeCues = (
+  def: DefWithUi,
+  phaseId: string,
+  metrics: WorkoutMetrics,
+): string[] | null =>
+  baseUiAdapter(def)?.getRealtimeCues?.({ phaseId, metrics }) ?? null;
+
 type ClipMetaMetrics = {
   avgFqi: number | null;
   formScore: number | null;
@@ -237,7 +277,11 @@ const SKELETON_JOINT_ALIASES: Record<string, string[]> = {
   right_foot_joint: ['right_foot_joint'],
 };
 
-let ARKitView: any = View;
+// On iOS we bind the native ARKit view component; on every other platform
+// we fall back to a plain <View /> so the JSX shape stays identical. Both
+// satisfy React.ComponentType<ViewProps>, so we type the binding that way
+// instead of escaping to `any`.
+let ARKitView: React.ComponentType<React.ComponentProps<typeof View>> = View;
 if (Platform.OS === 'ios') {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   ARKitView = require('@/lib/arkit/ARKitBodyView').default;
@@ -1701,10 +1745,7 @@ export default function ScanARKitScreen() {
 	      return messages;
 	    }
 
-	    const realtimeCues = activeWorkoutDef.ui?.getRealtimeCues?.({
-	      phaseId: activePhase,
-	      metrics: activeMetrics as never,
-	    });
+	    const realtimeCues = callGetRealtimeCues(activeWorkoutDef, activePhase, activeMetrics);
 	    if (realtimeCues?.length) {
 	      messages.push(...realtimeCues);
 	    }
@@ -1747,7 +1788,7 @@ export default function ScanARKitScreen() {
 	      () => ({
 	        mode: detectionMode,
 	        reps: repCount,
-	        ...(activeWorkoutDef.ui?.buildUploadMetrics(activeMetrics as never) ?? {}),
+	        ...callBuildUploadMetrics(activeWorkoutDef, activeMetrics),
 	      }),
 	      [activeWorkoutDef, activeMetrics, detectionMode, repCount]
 	    );
@@ -1975,7 +2016,7 @@ export default function ScanARKitScreen() {
 
 	      const reps = repCount;
 	      const phase = activePhase;
-	      const metrics = activeWorkoutDef.ui?.buildWatchMetrics(activeMetrics as never) ?? {};
+	      const metrics = callBuildWatchMetrics(activeWorkoutDef, activeMetrics);
 
 	      const payload = buildWatchTrackingPayload({
 	        now,
@@ -2383,7 +2424,7 @@ export default function ScanARKitScreen() {
 	    activeWorkoutDef.phases.find((phase) => phase.id === telemetryPhaseId)?.displayName ??
 	    String(telemetryPhaseId);
 	  const telemetryUi = activeWorkoutDef.ui;
-	  const telemetryMetricValues = telemetryUi?.buildWatchMetrics(activeMetrics as never) ?? {};
+	  const telemetryMetricValues = callBuildWatchMetrics(activeWorkoutDef, activeMetrics);
 	  const telemetryPrimaryMetric = telemetryUi?.primaryMetric;
 	  const telemetrySecondaryMetric = telemetryUi?.secondaryMetric;
 	  const telemetryPrimaryLabel = telemetryPrimaryMetric?.label ?? '--';
@@ -2469,7 +2510,7 @@ export default function ScanARKitScreen() {
                 onPress={() => setIsDropdownOpen(!isDropdownOpen)}
               >
                 <Ionicons
-                  name={(activeWorkoutDef.ui?.iconName ?? 'barbell-outline') as any}
+                  name={activeWorkoutDef.ui?.iconName ?? 'barbell-outline'}
                   size={16}
                   color="#F5F7FF"
                 />

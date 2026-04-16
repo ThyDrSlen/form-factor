@@ -8,7 +8,16 @@
  * to define its specific logic for tracking form.
  */
 
+import type { ComponentProps } from 'react';
+import type { Ionicons } from '@expo/vector-icons';
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
+
+/**
+ * Valid Ionicons icon names (typed union derived from @expo/vector-icons).
+ * Using this type lets UI adapters declare icon names without escaping
+ * into `as any`.
+ */
+export type IoniconsName = ComponentProps<typeof Ionicons>['name'];
 
 // =============================================================================
 // Angle Ranges
@@ -197,7 +206,7 @@ export interface WorkoutUiMetric {
 
 export interface WorkoutUiAdapter<TMetrics extends WorkoutMetrics = WorkoutMetrics> {
   /** Icon name for the workout selector (Ionicons) */
-  iconName: string;
+  iconName: IoniconsName;
   /** Primary metric displayed in telemetry/preview */
   primaryMetric: WorkoutUiMetric;
   /** Secondary metric displayed in telemetry/preview (optional) */
