@@ -137,7 +137,10 @@ const WATCH_MIRROR_AR_QUALITY = 0.25;
 const WATCH_MIRROR_MAX_WIDTH = 320;
 const MEDIAPIPE_SHADOW_POLL_INTERVAL_MS = 100;
 const MEDIAPIPE_MAX_TIMESTAMP_SKEW_SEC = 0.4;
-const PARTIAL_TRACKING_BADGE_MIN_VISIBLE_MS = 900;
+// Minimum time the "Partial tracking" badge must stay on-screen once
+// surfaced. Kept long enough (2s) for users to actually read the missing
+// component labels — the previous 900ms was too short (#416).
+const PARTIAL_TRACKING_BADGE_MIN_VISIBLE_MS = 2000;
 const PARTIAL_TRACKING_BADGE_HIDE_DELAY_MS = 350;
 const FIXTURE_PLAYBACK_DEFAULT = 'camera-facing';
 const FIXTURE_PLAYBACK_TRACES: Record<string, PullupFixtureFrame[]> = {
@@ -380,6 +383,10 @@ export default function ScanARKitScreen() {
   >(null);
   const lastLivePartialBadgeRef = React.useRef<PullupScoringResult['visibility_badge'] | null>(null);
   const [showPartialTrackingBadge, setShowPartialTrackingBadge] = useState(false);
+  // When the user taps the badge close button we suppress it until the
+  // tracker recovers to 'full' at least once — avoids the badge nagging
+  // while they intentionally step out of frame (#416).
+  const [isPartialTrackingBadgeDismissed, setIsPartialTrackingBadgeDismissed] = useState(false);
   const baselineDebugEnabled = DEV && showDebugStats;
   const baselineDebugEnabledRef = React.useRef(baselineDebugEnabled);
   const baselineDebugMetricsRef = React.useRef<BaselineDebugMetrics>(createBaselineDebugMetrics());
@@ -471,12 +478,25 @@ export default function ScanARKitScreen() {
       return;
     }
 
+    // Recovered to a non-partial state — clear any user dismissal so the
+    // next partial event is surfaced again.
+    setIsPartialTrackingBadgeDismissed(false);
+
     const hideInMs = Math.max(0, partialTrackingVisibleUntilMsRef.current - now) + PARTIAL_TRACKING_BADGE_HIDE_DELAY_MS;
     partialTrackingHideTimerRef.current = setTimeout(() => {
       setShowPartialTrackingBadge(false);
       partialTrackingHideTimerRef.current = null;
     }, hideInMs);
   }, [fixturePlaybackEnabled, logTrackingDebug, repCount]);
+
+  const handleDismissPartialTrackingBadge = useCallback(() => {
+    if (partialTrackingHideTimerRef.current) {
+      clearTimeout(partialTrackingHideTimerRef.current);
+      partialTrackingHideTimerRef.current = null;
+    }
+    setShowPartialTrackingBadge(false);
+    setIsPartialTrackingBadgeDismissed(true);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -2393,6 +2413,7 @@ export default function ScanARKitScreen() {
     detectionMode === 'pullup' &&
     (isTracking || fixturePlaybackEnabled) &&
     showPartialTrackingBadge &&
+    !isPartialTrackingBadgeDismissed &&
     effectivePartialStatus?.visibility_badge === 'partial';
   const missingComponentSet = new Set(effectivePartialStatus?.missing_components ?? []);
   const partialTrackingComponents = PULLUP_COMPONENT_INDICATORS.map((item) => ({
@@ -2737,8 +2758,25 @@ export default function ScanARKitScreen() {
       )}
 
       {shouldShowPartialTrackingBadge && (
-        <View style={[styles.partialTrackingBadge, { top: topBarBottom + 8 }]}> 
-          <Text style={styles.partialTrackingBadgeText}>Partial tracking</Text>
+        <View
+          style={[styles.partialTrackingBadge, { top: topBarBottom + 8 }]}
+          accessible
+          accessibilityRole="alert"
+          accessibilityLabel="Partial tracking — some joints are out of frame"
+        >
+          <View style={styles.partialTrackingHeader}>
+            <Text style={styles.partialTrackingBadgeText}>Partial tracking</Text>
+            <TouchableOpacity
+              onPress={handleDismissPartialTrackingBadge}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss partial tracking badge"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.partialTrackingCloseButton}
+              testID="partial-tracking-badge-close"
+            >
+              <Ionicons name="close" size={12} color="#F5F7FF" />
+            </TouchableOpacity>
+          </View>
           <View style={styles.partialTrackingComponentRow}>
             {partialTrackingComponents.map((component) => (
               <View

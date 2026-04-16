@@ -622,6 +622,20 @@ export const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
+  partialTrackingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  partialTrackingCloseButton: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(245, 247, 255, 0.14)',
+  },
   partialTrackingComponentRow: {
     flexDirection: 'row',
     alignItems: 'center',
