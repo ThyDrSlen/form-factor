@@ -14,6 +14,35 @@ const DEFAULT_MAX_THUMBNAIL_BYTES = 80 * 1024 * 1024;
 const SIGNED_URL_MAX_RETRIES = 2;
 const SIGNED_URL_RETRY_DELAY_MS = 500;
 
+const SESSION_ID_METRICS_KEY = 'sessionId';
+
+/**
+ * Embed a workout-session id into the video metrics bag without clobbering
+ * existing fields. Returns a new object so the original `metrics` ref stays
+ * intact. Returns `null` (the video row's default) when there is nothing to
+ * persist.
+ */
+export function bindSessionIdToMetrics(
+  metrics: Record<string, any> | null | undefined,
+  sessionId: string | null | undefined,
+): Record<string, any> | null {
+  if (!sessionId) {
+    return metrics ?? null;
+  }
+  return { ...(metrics ?? {}), [SESSION_ID_METRICS_KEY]: sessionId };
+}
+
+/**
+ * Pull the bound session id out of a stored video metrics blob.
+ */
+export function extractSessionIdFromMetrics(
+  metrics: Record<string, any> | null | undefined,
+): string | null {
+  if (!metrics) return null;
+  const value = metrics[SESSION_ID_METRICS_KEY];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
 async function withRetry<T>(fn: () => Promise<T>, maxRetries = SIGNED_URL_MAX_RETRIES, delayMs = SIGNED_URL_RETRY_DELAY_MS): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -264,6 +293,14 @@ export async function uploadWorkoutVideo(opts: {
   fileUri: string;
   durationSeconds?: number;
   exercise?: string;
+  /**
+   * Optional workout-session id to bind this video to. The id is embedded
+   * into `metrics.sessionId` so post-session drills, fault-recovery, and
+   * longitudinal analytics can correlate video artifacts back to the
+   * session that produced them. A follow-up migration can promote this
+   * into a first-class column; callers can start threading the id now.
+   */
+  sessionId?: string;
   maxUploadBytes?: number;
   maxThumbnailBytes?: number;
   thumbnailTimeMs?: number;
@@ -275,6 +312,7 @@ export async function uploadWorkoutVideo(opts: {
     fileUri,
     durationSeconds,
     exercise,
+    sessionId,
     maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES,
     maxThumbnailBytes = DEFAULT_MAX_THUMBNAIL_BYTES,
     thumbnailTimeMs = 500,
@@ -282,6 +320,7 @@ export async function uploadWorkoutVideo(opts: {
     metrics,
     analysisOnly = false,
   } = opts;
+  const boundMetrics = bindSessionIdToMetrics(metrics, sessionId);
 
   // Validate env before auth/upload calls so failures are explicit and actionable.
   getSupabaseUrl();
@@ -343,7 +382,7 @@ export async function uploadWorkoutVideo(opts: {
       thumbnail_path: thumbnailPath,
       duration_seconds: durationSeconds ?? null,
       exercise: exercise ?? null,
-      metrics: metrics ?? null,
+      metrics: boundMetrics,
       analysis_only: analysisOnly,
     })
     .select()
