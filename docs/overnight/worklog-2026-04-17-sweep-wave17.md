@@ -139,4 +139,84 @@ so that if a downstream ripple forces a revert, it's a one-commit undo.
 
 ## Outcome
 
-_TBD — filled in at end of sweep._
+- **One large-scoped PR** against `main` with **26 atomic commits** —
+  each feature paired with its own test commit so that if a single unit
+  needs revert, it's a one-commit undo.
+- **26 files added, 3,136 insertions, 0 deletions**, 0 files modified
+  in any existing location. Zero file overlap with the 30 open PRs.
+- **143 new tests across 12 suites** — 0 failures, 0 regressions. Full
+  repo test suite on this branch: 1,287 passing / 1,312 total. The 15
+  failures are all from untracked stress-hardening test files carried
+  over from wave-12's worktree and are not part of this PR (they need
+  fixtures from PR #452).
+- **Lint and type-check clean** (`bun run lint`, `bun run check:types`).
+  2 pre-existing warnings in `template-builder.tsx` unrelated to this
+  branch.
+
+### What Gemma progress looks like in this wave
+
+- Helper (`gemma-prompt-format.ts`) renders messages for **both Gemma 3
+  and Gemma 4** chat templates, with a `validateGemmaFormat` round-trip
+  guard that catches the common drift cases (system on Gemma 3,
+  unbalanced turn markers, missing trailing model turn, unexpected
+  roles).
+- `coach-session-signals.ts` + `formatSignalsForPrompt` produces a
+  tight block the coach can prepend to user turns — the piece every
+  in-flight Gemma PR needs to personalize suggestions with live FQI,
+  faults, and trend. The format is provider-agnostic (works for OpenAI
+  today, unchanged for Gemma cloud or on-device tomorrow).
+- `coach-fallback-responses.ts` gives Gemma on-device and rate-limit
+  paths graceful degradation text — avoids the silent "Coach failed to
+  respond" toast when the network or the model hiccups.
+- `evals/scenarios/coach-gemma-format.yaml` locks in five Gemma-drift
+  scenarios (system adherence, signals digest vs echo, single-cue
+  length, multi-turn consistency, safety stop). Runs under any
+  provider — the moment PR #457 lands and a Gemma provider is
+  registered, we can diff behavior against the OpenAI baseline without
+  changing the test corpus.
+
+### Commit log (in order)
+
+```
+372289f test(evals): add Gemma format parity scenarios for coach eval
+4ab9347 feat(form-tracking): add rep-timeline modal screen
+ccdeb6f test(form-tracking): component coverage for LiveJointConfidenceBadge
+3c0d70d feat(form-tracking): add LiveJointConfidenceBadge component
+5fceae4 test(form-tracking): component coverage for RepTimelineCard
+0c44f9c feat(form-tracking): add RepTimelineCard component
+1d4a4e1 test(form-tracking): component coverage for RepQualityDot
+12951eb feat(form-tracking): add RepQualityDot component
+f1a83df test(coach): hook coverage for useCoachSessionSignals
+9a5b726 feat(coach): add useCoachSessionSignals hook
+786a960 test(form-tracking): hook coverage for useRepQualityTimeline
+168fed9 feat(form-tracking): add useRepQualityTimeline hook
+a29ed15 test(form-tracking): hook coverage for useRepQualityLog
+c7d0662 feat(form-tracking): add useRepQualityLog hook
+a165a21 test(coach): unit coverage for Gemma prompt format helper
+e66d2e3 feat(coach): add Gemma 3 / Gemma 4 prompt format helper and validator
+09e7103 test(coach): unit coverage for fallback responses
+39addc9 feat(coach): add offline and rate-limit fallback responses
+6810a35 test(coach): unit coverage for session-signals digest
+d89e777 feat(coach): add session-signals digest for live coach context
+1d5f2af test(form-tracking): unit coverage for rep-quality timeline
+2726288 feat(form-tracking): add rep-quality timeline aggregator
+eac2ee7 test(form-tracking): unit coverage for rep-quality log
+fa11724 feat(form-tracking): add rep-quality log service
+86f852e docs(worklog): wave-17 plan — rep-quality timeline + coach signals + Gemma-4 format
+```
+
+### Follow-ups (unblocked by this PR)
+
+- Wire `useRepQualityLog` into `scan-arkit.tsx` so per-rep entries
+  land in the log in real time. The log's `append()` is intentionally
+  side-effect free — one line in the `onRepComplete` callback is
+  enough. Contested file, deferred.
+- Mount `<RepTimelineCard />` inside the form-quality-recovery modal
+  (PR #482) once it merges. Single `<RepTimelineCard timeline={…} />`
+  import.
+- Wire `formatSignalsForPrompt` into `coach-service.ts` inside the
+  `context.sessionId` branch so live signals land on cloud coach
+  calls. Contested file (PR #431 / #457 / #448 all touch it).
+- Extend `validateGemmaFormat` with multimodal-image checks once Gemma
+  4 image input is wired. Needs the Gemini API dispatcher (PR #457).
+
