@@ -1,0 +1,553 @@
+{
+  "schemaVersion": 1,
+  "source": "hand-authored",
+  "generatedAt": "2026-04-17T00:00:00.000Z",
+  "entries": [
+    {
+      "exerciseId": "squat",
+      "faultId": "shallow_depth",
+      "displayName": "Shallow Depth",
+      "shortExplanation": "You are not descending low enough in the squat.",
+      "fullExplanation": "A full-depth squat brings your hip crease below the top of your knee. Stopping short reduces the amount of work your glutes and hamstrings do and masks real strength with momentum.",
+      "whyItMatters": "Shallow squats under-train the glutes and can create imbalances between quad-dominant and hip-dominant strength.",
+      "fixTips": [
+        "Warm up your hip mobility — box-assisted squats or ankle rockers for 90s before your working sets.",
+        "Use a bench or box at your target depth as a tactile cue until depth becomes automatic.",
+        "Drop the weight 10–15% for two sessions and rebuild depth before chasing numbers again."
+      ],
+      "relatedFaults": ["forward_lean", "hip_shift"]
+    },
+    {
+      "exerciseId": "squat",
+      "faultId": "knee_valgus",
+      "displayName": "Knees Caving In",
+      "shortExplanation": "Your knees track inward toward each other during the descent or ascent.",
+      "fullExplanation": "Knee valgus is when the knees collapse toward the midline under load. It usually comes from weak external rotators at the hip, not weak knees themselves.",
+      "whyItMatters": "Repeated valgus loading stresses the medial knee ligaments and ACL, especially under heavy weight.",
+      "fixTips": [
+        "Add banded clamshells and side-plank hip abduction to your warmup.",
+        "Cue: 'spread the floor apart' with your feet on every rep.",
+        "Briefly stop pushing the weights heavier until the valgus cleans up."
+      ],
+      "relatedFaults": ["hip_shift", "shallow_depth"]
+    },
+    {
+      "exerciseId": "squat",
+      "faultId": "forward_lean",
+      "displayName": "Excessive Forward Lean",
+      "shortExplanation": "Your torso pitches forward more than the hip/knee angles require.",
+      "fullExplanation": "Some forward lean is normal in a low-bar squat, but excessive lean usually points to weak core bracing or tight ankles that force you onto your toes.",
+      "whyItMatters": "A torso dumped forward shifts load to the lumbar spine and makes it hard to hit depth without rounding.",
+      "fixTips": [
+        "Test ankle dorsiflexion — if it's limited, use heeled lifting shoes or a plate under the heels.",
+        "Practice pause squats at mid-depth to reinforce an upright torso.",
+        "Brace harder before you unrack — breath in, tighten, then descend."
+      ],
+      "relatedFaults": ["shallow_depth", "hip_shift"]
+    },
+    {
+      "exerciseId": "squat",
+      "faultId": "hip_shift",
+      "displayName": "Hip Shift",
+      "shortExplanation": "Your hips drift to one side out of the hole.",
+      "fullExplanation": "Hip shift means one side contributes more than the other coming up from the bottom. It's a strength or mobility asymmetry showing up under load.",
+      "whyItMatters": "Chronic hip shifts load one knee and SI joint harder than the other — a durability risk over many sets.",
+      "fixTips": [
+        "Test single-leg strength (B-stance or split squats) to find the weaker side.",
+        "Add one extra set to the weaker side for 3–4 weeks.",
+        "Film from the front and replay to catch the shift you can't feel."
+      ],
+      "relatedFaults": ["knee_valgus", "forward_lean"]
+    },
+    {
+      "exerciseId": "squat",
+      "faultId": "incomplete_lockout",
+      "displayName": "Incomplete Lockout",
+      "shortExplanation": "You stop short of fully extending the hips at the top.",
+      "fullExplanation": "Incomplete lockout means you re-descend before the glutes finish extending the hips. It shaves range of motion off every rep.",
+      "whyItMatters": "Missing the lockout under-develops the glutes and teaches bad patterns you'll carry into heavier sets.",
+      "fixTips": [
+        "Add a half-second pause standing tall on each rep.",
+        "Cue: 'squeeze the glutes' at the top.",
+        "Use lighter back-off sets to drill full extension without the stimulus of a heavy load."
+      ],
+      "relatedFaults": []
+    },
+    {
+      "exerciseId": "squat",
+      "faultId": "fast_rep",
+      "displayName": "Fast Rep",
+      "shortExplanation": "Rep cadence is faster than your targeted tempo.",
+      "fullExplanation": "Bouncing out of the hole or racing down can reduce time-under-tension and make reps less stable.",
+      "whyItMatters": "Faster reps leak tension and can hide control problems that surface when you add weight.",
+      "fixTips": [
+        "Count 3 seconds down, 1 second pause, explosive up.",
+        "Use lighter sets to practice slow controlled eccentrics.",
+        "Film yourself and compare tempos."
+      ],
+      "relatedFaults": []
+    },
+    {
+      "exerciseId": "pushup",
+      "faultId": "hip_sag",
+      "displayName": "Hips Sagging",
+      "shortExplanation": "Your hips drop toward the floor during the rep.",
+      "fullExplanation": "A sagging hip line means your core is not maintaining a straight plank position. The shoulders do more work while the trunk leaks force.",
+      "whyItMatters": "Sagging hips shift load into the lumbar spine and make the rep feel harder without actually training the triceps/chest more.",
+      "fixTips": [
+        "Squeeze glutes and brace abs before every rep.",
+        "Regress to elevated pushups (hands on a bench) until you hold a straight line.",
+        "Add 2 sets of deadbugs to your warmup."
+      ],
+      "relatedFaults": ["shallow_depth"]
+    },
+    {
+      "exerciseId": "pushup",
+      "faultId": "shallow_depth",
+      "displayName": "Shallow Depth",
+      "shortExplanation": "Your chest doesn't get close enough to the floor.",
+      "fullExplanation": "Depth in the pushup is measured by chest-to-floor distance. Most people cheat depth as fatigue sets in — the rep looks fine, but the range shrinks.",
+      "whyItMatters": "Partial reps leave work on the table. Chest and triceps under-train relative to the rep count you logged.",
+      "fixTips": [
+        "Place a foam block under your chest as a depth marker.",
+        "Pause 1 second at the bottom on every rep.",
+        "If you fail a set, stop and note which rep lost depth — don't just grind more partials."
+      ],
+      "relatedFaults": ["hip_sag", "asymmetric_press"]
+    },
+    {
+      "exerciseId": "pushup",
+      "faultId": "incomplete_lockout",
+      "displayName": "Incomplete Lockout",
+      "shortExplanation": "You don't fully extend the elbows at the top of the rep.",
+      "fullExplanation": "Bending the arms between reps keeps the triceps loaded but also skips the top half of the lift.",
+      "whyItMatters": "Skipping full extension misses end-range strength and makes the rep count misleading.",
+      "fixTips": [
+        "Push to full elbow lockout on every rep.",
+        "Briefly pause at the top before the next rep.",
+        "If you can't lock out, reduce reps — form trumps volume."
+      ],
+      "relatedFaults": []
+    },
+    {
+      "exerciseId": "pushup",
+      "faultId": "asymmetric_press",
+      "displayName": "Uneven Press",
+      "shortExplanation": "One arm extends before the other.",
+      "fullExplanation": "Asymmetric pressing means one side finishes the rep while the other is still mid-push. It's usually a side-dominance pattern — your stronger arm takes over.",
+      "whyItMatters": "Chronic asymmetry creates imbalanced shoulder development and masks weakness on one side.",
+      "fixTips": [
+        "Switch to alternating one-arm or elevated pushups to force the weak side to work.",
+        "Pause at lockout and feel both arms finish together.",
+        "Film from the head-on angle to see the asymmetry you can't feel."
+      ],
+      "relatedFaults": ["hip_sag"]
+    },
+    {
+      "exerciseId": "pushup",
+      "faultId": "elbow_flare",
+      "displayName": "Elbow Flare",
+      "shortExplanation": "Your elbows flare out to roughly 90° from the torso.",
+      "fullExplanation": "A wide elbow angle (close to 90°) puts the shoulder in a vulnerable impingement zone. A 45° angle is more shoulder-friendly.",
+      "whyItMatters": "Repeated flared elbows aggravate the rotator cuff and can lead to AC joint pain over time.",
+      "fixTips": [
+        "Cue: 'tuck elbows toward ribs' on the descent.",
+        "Move hands slightly narrower than shoulder-width.",
+        "Strengthen scapular control with band pull-aparts between sets."
+      ],
+      "relatedFaults": ["asymmetric_press"]
+    },
+    {
+      "exerciseId": "pushup",
+      "faultId": "fast_rep",
+      "displayName": "Fast Rep",
+      "shortExplanation": "Rep tempo is faster than your target.",
+      "fullExplanation": "Racing through pushups trades control for bigger-looking set numbers.",
+      "whyItMatters": "Fast eccentrics skip productive time under tension and normalize momentum-driven reps.",
+      "fixTips": [
+        "Count 3 seconds down, 1 second hold, 1 second up.",
+        "Lower rep targets in exchange for tempo adherence.",
+        "Pair fast and slow sets to feel the difference."
+      ],
+      "relatedFaults": []
+    },
+    {
+      "exerciseId": "pullup",
+      "faultId": "incomplete_rom",
+      "displayName": "Incomplete Range",
+      "shortExplanation": "Chin never clears the bar at the top.",
+      "fullExplanation": "A complete pullup brings the chin over the bar at the top of every rep. Stopping short gives you a half-rep that undercounts the effort — and under-trains the upper back.",
+      "whyItMatters": "Partial pullups leave stretch and peak contraction strength undeveloped, and they count as full reps in your log.",
+      "fixTips": [
+        "Use a resistance band for assistance until chin-over is automatic.",
+        "Drop reps — 3 perfect reps beat 8 partial reps.",
+        "Add scap pullups to your warmup to groove the pattern."
+      ],
+      "relatedFaults": ["incomplete_extension", "shoulder_elevation"]
+    },
+    {
+      "exerciseId": "pullup",
+      "faultId": "incomplete_extension",
+      "displayName": "Short Extension (Dead Hang)",
+      "shortExplanation": "You don't return to a full dead hang between reps.",
+      "fullExplanation": "A full dead hang between reps resets the lats and preserves range. Short extensions let you use momentum and under-develop the bottom half of the strength curve.",
+      "whyItMatters": "Skipping the dead hang hides weakness in the stretched position and teaches a rep pattern that won't survive fatigue.",
+      "fixTips": [
+        "Pause 1 second at the bottom, arms fully extended, before the next pull.",
+        "Drop rep count if needed — quality over quantity.",
+        "Do dead-hang holds on off days to build comfort in the bottom position."
+      ],
+      "relatedFaults": ["incomplete_rom"]
+    },
+    {
+      "exerciseId": "pullup",
+      "faultId": "shoulder_elevation",
+      "displayName": "Shrugged Shoulders",
+      "shortExplanation": "Shoulders pull up toward the ears instead of back and down.",
+      "fullExplanation": "Shrugging during a pullup means your traps are taking over from your lats. A dialed pullup starts with the scapula depressing, then the arms pulling.",
+      "whyItMatters": "Shrugging under-trains the lats and can irritate the neck and upper traps under volume.",
+      "fixTips": [
+        "Initiate each rep with scap pullups — pull shoulder blades down first, then bend elbows.",
+        "Think 'pull chest to bar' rather than 'pull chin up'.",
+        "Add band lat pulldowns for volume that reinforces the right pattern."
+      ],
+      "relatedFaults": ["incomplete_rom"]
+    },
+    {
+      "exerciseId": "pullup",
+      "faultId": "asymmetric_pull",
+      "displayName": "Uneven Pull",
+      "shortExplanation": "One side clears the bar before the other.",
+      "fullExplanation": "Asymmetric pulling is a side-dominance pattern — your stronger side takes more of the work.",
+      "whyItMatters": "Long-term asymmetry creates side-to-side strength gaps and skews posture.",
+      "fixTips": [
+        "Add archer pullups or single-arm assisted pullups for the weak side.",
+        "Pause briefly at the top to feel both sides finish together.",
+        "Test with single-arm rows — the side that can do fewer reps is the weak side."
+      ],
+      "relatedFaults": []
+    },
+    {
+      "exerciseId": "pullup",
+      "faultId": "fast_descent",
+      "displayName": "Fast Descent",
+      "shortExplanation": "You drop too quickly from the top.",
+      "fullExplanation": "Dropping through the descent phase skips eccentric work — the portion where your lats are stretched under load and getting the strongest stimulus.",
+      "whyItMatters": "Eccentric work drives muscle growth. Skipping it on every rep leaves strength and hypertrophy gains on the table.",
+      "fixTips": [
+        "Count 3 seconds down on every rep.",
+        "Drop reps if you can't control the descent.",
+        "Negatives-only sessions: jump to the top, descend slowly, repeat for 5 reps."
+      ],
+      "relatedFaults": ["incomplete_extension"]
+    },
+    {
+      "exerciseId": "deadlift",
+      "faultId": "rounded_back",
+      "displayName": "Rounded Back",
+      "shortExplanation": "Your upper or lower back rounds under the load.",
+      "fullExplanation": "Any significant lumbar rounding under a deadlift is a red flag. The spine's neutral curve is what protects the discs when the glutes and hamstrings pull.",
+      "whyItMatters": "Repeated rounded-back deadlifting is a disc-injury pathway — even at moderate weights, it normalizes a pattern that will fail at heavier weights.",
+      "fixTips": [
+        "Deload 30% and rebuild the hinge pattern before chasing numbers.",
+        "Add heavy rows and back extensions to strengthen the upper back.",
+        "Brace hard before every rep — breath in, rib cage down, tight lats."
+      ],
+      "relatedFaults": ["hips_rise_first"]
+    },
+    {
+      "exerciseId": "deadlift",
+      "faultId": "hips_rise_first",
+      "displayName": "Hips Rise First",
+      "shortExplanation": "Hips shoot up before the bar leaves the floor.",
+      "fullExplanation": "When the hips rise first, the lift becomes a stiff-leg deadlift by default — your glutes and hamstrings have to do the whole pull while your back is already horizontal.",
+      "whyItMatters": "It's a leading indicator for lumbar rounding and suggests the weight is too heavy for your current pulling strength.",
+      "fixTips": [
+        "Drop the weight 15–20% and practice pushing the floor away with your legs on the initial pull.",
+        "Add pause deadlifts (1s pause just off the floor).",
+        "Strengthen quads with front squats — they help the initial pull."
+      ],
+      "relatedFaults": ["rounded_back"]
+    },
+    {
+      "exerciseId": "deadlift",
+      "faultId": "incomplete_lockout",
+      "displayName": "Incomplete Lockout",
+      "shortExplanation": "Hips don't finish extending at the top.",
+      "fullExplanation": "A complete deadlift lockout has you standing tall with hips fully extended and glutes squeezed. Short lockouts leave work undone.",
+      "whyItMatters": "Short lockouts under-train the glutes at their top range and normalize partial reps that won't survive a competition or a 1RM test.",
+      "fixTips": [
+        "Pause 1 second standing tall on every rep.",
+        "Add glute bridges and hip thrusts for top-range strength.",
+        "Cue: 'squeeze glutes until it hurts' at lockout."
+      ],
+      "relatedFaults": []
+    },
+    {
+      "exerciseId": "deadlift",
+      "faultId": "asymmetric_pull",
+      "displayName": "Uneven Pull",
+      "shortExplanation": "One side of the bar comes up faster than the other.",
+      "fullExplanation": "Asymmetric pulls mean one side (usually your dominant) is taking more of the load, often paired with a hip shift.",
+      "whyItMatters": "Uneven pulling torques the spine asymmetrically — durable trouble over many sets.",
+      "fixTips": [
+        "Add single-leg RDLs to find and strengthen the weaker side.",
+        "Film from directly in front — the shift is invisible from the side.",
+        "Reduce weight temporarily until both sides move together."
+      ],
+      "relatedFaults": ["rounded_back"]
+    },
+    {
+      "exerciseId": "rdl",
+      "faultId": "rounded_back",
+      "displayName": "Rounded Back",
+      "shortExplanation": "Spine rounds during the hinge.",
+      "fullExplanation": "In an RDL, neutral spine is non-negotiable. If the lower back rounds, you've exceeded your hamstring flexibility for the current weight.",
+      "whyItMatters": "Rounding under the load turns the RDL from a hamstring exercise into a lumbar-loading exercise — a disc-injury pathway.",
+      "fixTips": [
+        "Stop the hinge where your spine would start to round, not where you run out of flexibility with a bend.",
+        "Add active hamstring mobility (Jefferson curls with no load, then light load).",
+        "Cue: 'push hips back' not 'bend forward'."
+      ],
+      "relatedFaults": ["knee_bend_excessive", "shallow_hinge"]
+    },
+    {
+      "exerciseId": "rdl",
+      "faultId": "knee_bend_excessive",
+      "displayName": "Excessive Knee Bend",
+      "shortExplanation": "Knees bend too much, turning the RDL into a partial deadlift.",
+      "fullExplanation": "An RDL is a hip-hinge-dominant lift — knees should stay only slightly bent. Over-bending shifts the work off your hamstrings onto your quads.",
+      "whyItMatters": "Too much knee bend defeats the purpose of the lift. You're deadlifting, not RDL'ing.",
+      "fixTips": [
+        "Start each rep with knees soft but locked in a fixed angle.",
+        "Cue: 'push hips back against a wall'.",
+        "Film from the side to see if knees track past their starting position."
+      ],
+      "relatedFaults": ["shallow_hinge"]
+    },
+    {
+      "exerciseId": "rdl",
+      "faultId": "shallow_hinge",
+      "displayName": "Shallow Hinge",
+      "shortExplanation": "You don't hinge far enough to stretch the hamstrings.",
+      "fullExplanation": "The point of the RDL is the hamstring stretch at the bottom. A shallow hinge skips the most productive part of the lift.",
+      "whyItMatters": "Short hinges under-train the hamstrings at length — the position where they grow.",
+      "fixTips": [
+        "Use a plate to tap the floor at each rep's bottom.",
+        "Check hamstring mobility — if it's tight, add 2 sets of dynamic hip flows to the warmup.",
+        "Lower the weight until you hit full depth consistently."
+      ],
+      "relatedFaults": ["knee_bend_excessive"]
+    },
+    {
+      "exerciseId": "rdl",
+      "faultId": "asymmetric_hinge",
+      "displayName": "Uneven Hinge",
+      "shortExplanation": "One hip hinges deeper or faster than the other.",
+      "fullExplanation": "Asymmetric hinges reveal hamstring length differences between sides. It's common but worth fixing.",
+      "whyItMatters": "Long-term side dominance creates compensatory patterns up the chain (hip, SI, low back).",
+      "fixTips": [
+        "Swap in single-leg RDLs for 3–4 sessions.",
+        "Work hamstring mobility on the tighter side first in warmup.",
+        "Brace core harder — a soft trunk lets the asymmetry surface."
+      ],
+      "relatedFaults": ["rounded_back"]
+    },
+    {
+      "exerciseId": "rdl",
+      "faultId": "fast_rep",
+      "displayName": "Fast Rep",
+      "shortExplanation": "The hinge is too fast to control the stretch.",
+      "fullExplanation": "RDLs benefit hugely from slow eccentrics. Rushing kills the hamstring stretch reflex benefit.",
+      "whyItMatters": "Fast reps in the RDL miss the slow-stretch hypertrophy stimulus, which is the reason you do the lift.",
+      "fixTips": [
+        "3 seconds down, 1 second pause, 1 second up.",
+        "Pick a weight that forces tempo compliance, not a weight that survives it.",
+        "Use a metronome for 2 sessions to internalize the tempo."
+      ],
+      "relatedFaults": []
+    },
+    {
+      "exerciseId": "benchpress",
+      "faultId": "shallow_depth",
+      "displayName": "Shallow Depth",
+      "shortExplanation": "Bar doesn't touch the chest.",
+      "fullExplanation": "Depth in the bench is a touch at the chest. Stopping short turns full-range bench into a half-range press.",
+      "whyItMatters": "Partial-range benching under-trains the pecs at length and teaches a rep pattern that skips their hardest point.",
+      "fixTips": [
+        "Pause 1 second at the chest on every rep.",
+        "Use a foam-roller or Swiss-ball as a depth check until it's automatic.",
+        "Lower the weight 10% for two sessions and rebuild depth."
+      ],
+      "relatedFaults": ["asymmetric_press"]
+    },
+    {
+      "exerciseId": "benchpress",
+      "faultId": "asymmetric_press",
+      "displayName": "Uneven Press",
+      "shortExplanation": "One side locks out before the other.",
+      "fullExplanation": "Asymmetric benches almost always come from a dominant side — the stronger side finishes first and then the weak side catches up.",
+      "whyItMatters": "A side-dominant bench compounds over years into an imbalance that limits your top weights.",
+      "fixTips": [
+        "Swap 1 session/month to dumbbell bench to force per-side balance.",
+        "Film from head-on to see the asymmetry.",
+        "Add single-arm dumbbell floor press for the weak side."
+      ],
+      "relatedFaults": ["elbow_flare"]
+    },
+    {
+      "exerciseId": "benchpress",
+      "faultId": "elbow_flare",
+      "displayName": "Elbow Flare",
+      "shortExplanation": "Elbows flare wide (close to 90°) during the press.",
+      "fullExplanation": "Wide elbows put the shoulder in a vulnerable impingement position. Tucked elbows (~45° from torso) are shoulder-friendly.",
+      "whyItMatters": "Repeated flared benching is a leading cause of rotator-cuff irritation and AC joint problems.",
+      "fixTips": [
+        "Cue: 'bend the bar apart' to activate lats and tuck elbows.",
+        "Narrower grip — just outside shoulder-width.",
+        "Add face pulls and band pull-aparts between pressing days."
+      ],
+      "relatedFaults": ["asymmetric_press"]
+    },
+    {
+      "exerciseId": "benchpress",
+      "faultId": "fast_rep",
+      "displayName": "Fast Rep",
+      "shortExplanation": "Bar cadence is faster than the target tempo.",
+      "fullExplanation": "Fast benching usually means bouncing off the chest or racing the descent.",
+      "whyItMatters": "Bouncing and fast eccentrics hide weakness and train momentum, not strength.",
+      "fixTips": [
+        "3-second descent, 1-second pause, explosive press.",
+        "Drop the weight 10% to enforce tempo.",
+        "Pause-bench day every 2 weeks."
+      ],
+      "relatedFaults": []
+    },
+    {
+      "exerciseId": "dead_hang",
+      "faultId": "bent_arms",
+      "displayName": "Bent Arms",
+      "shortExplanation": "Arms don't fully extend during the hang.",
+      "fullExplanation": "A true dead hang has arms fully extended. Bending them shortens the hang and engages biceps to help support the load.",
+      "whyItMatters": "Bent arms shortcut the grip and shoulder stability benefits — the whole point of the hang.",
+      "fixTips": [
+        "Lower hang duration and prioritize fully extended arms.",
+        "Use a lower bar where you can hold your full body weight without assistance.",
+        "Scapular pullups between hangs to reinforce proper positioning."
+      ],
+      "relatedFaults": ["shrugged_shoulders"]
+    },
+    {
+      "exerciseId": "dead_hang",
+      "faultId": "shrugged_shoulders",
+      "displayName": "Shrugged Shoulders",
+      "shortExplanation": "Shoulders pull up toward the ears.",
+      "fullExplanation": "A passive hang lets shoulders rise toward the ears. An active hang depresses the scapula — shoulders pulled down and back.",
+      "whyItMatters": "Passive hangs stress the shoulder capsule; active hangs train the shoulder girdle and build real carryover.",
+      "fixTips": [
+        "Think: 'pull shoulders into back pockets' at the bottom.",
+        "Do active scap pullups to groove the pattern before hangs.",
+        "Reduce hang time if you can't maintain depression."
+      ],
+      "relatedFaults": ["bent_arms"]
+    },
+    {
+      "exerciseId": "dead_hang",
+      "faultId": "short_hold",
+      "displayName": "Short Hold",
+      "shortExplanation": "Hang duration is shorter than your target.",
+      "fullExplanation": "Hangs build grip endurance through time under tension. Short holds miss the adaptation.",
+      "whyItMatters": "Short hangs feel easy but don't build the grip capacity that longer hangs do.",
+      "fixTips": [
+        "Set a target time before starting and honor it.",
+        "Practice one hang per day to the max, tracking time.",
+        "Don't chain together short hangs — one long hold is better."
+      ],
+      "relatedFaults": []
+    },
+    {
+      "exerciseId": "farmers_walk",
+      "faultId": "lateral_lean",
+      "displayName": "Lateral Lean",
+      "shortExplanation": "Torso leans to one side under the load.",
+      "fullExplanation": "The stronger or heavier-loaded side pulls your torso sideways. A proper farmers walk keeps the torso upright, compensating with core bracing.",
+      "whyItMatters": "A leaning walk trains the obliques asymmetrically and reduces the core-bracing benefit.",
+      "fixTips": [
+        "Brace the side where weight is pulling you toward.",
+        "Drop 10% and focus on upright posture.",
+        "Add side planks to warmup to wake the obliques."
+      ],
+      "relatedFaults": ["asymmetric_shoulders"]
+    },
+    {
+      "exerciseId": "farmers_walk",
+      "faultId": "shoulder_shrug",
+      "displayName": "Shrugged Shoulders",
+      "shortExplanation": "Shoulders rise toward ears under the load.",
+      "fullExplanation": "Shrugged shoulders under heavy loads fatigue the upper traps fast and create neck tension.",
+      "whyItMatters": "Chronic shrug-carrying irritates the upper traps and neck — not what the farmers walk is training.",
+      "fixTips": [
+        "Depress shoulders actively — think 'long neck, shoulders down'.",
+        "Lower load until you can maintain shoulder position for the full distance.",
+        "Add face pulls to strengthen scap retractors."
+      ],
+      "relatedFaults": ["asymmetric_shoulders"]
+    },
+    {
+      "exerciseId": "farmers_walk",
+      "faultId": "forward_lean",
+      "displayName": "Forward Lean",
+      "shortExplanation": "Torso leans forward under the load.",
+      "fullExplanation": "A forward lean puts weight onto the quads and lower back. A proper carry is upright — head stacked over hips.",
+      "whyItMatters": "Forward lean loads the lumbar spine unnecessarily and reduces the core-training value of the carry.",
+      "fixTips": [
+        "Brace core before picking up the weights.",
+        "Cue: 'stack head over hips'.",
+        "Lower load if upright posture slips in the last 10 meters."
+      ],
+      "relatedFaults": ["lateral_lean"]
+    },
+    {
+      "exerciseId": "farmers_walk",
+      "faultId": "asymmetric_shoulders",
+      "displayName": "Uneven Shoulders",
+      "shortExplanation": "One shoulder sits higher than the other.",
+      "fullExplanation": "Asymmetric shoulder height under load often reveals a side dominance — the stronger side naturally lifts higher.",
+      "whyItMatters": "Long-term asymmetry can create shoulder impingement on the high side.",
+      "fixTips": [
+        "Film from directly behind to see it.",
+        "Use a mirror or camera feedback during the first few steps.",
+        "Lower load to the weaker side's capacity."
+      ],
+      "relatedFaults": ["lateral_lean", "shoulder_shrug"]
+    },
+    {
+      "exerciseId": "farmers_walk",
+      "faultId": "short_carry",
+      "displayName": "Short Carry",
+      "shortExplanation": "Distance is shorter than your target.",
+      "fullExplanation": "Farmers walks build capacity through distance or time. Short carries miss the stimulus.",
+      "whyItMatters": "Cutting the carry short skips the fatigue-resistance adaptation.",
+      "fixTips": [
+        "Set a distance goal before picking up the weights — and commit.",
+        "Drop weight to finish the target distance.",
+        "Track distance in a log to see progression."
+      ],
+      "relatedFaults": []
+    },
+    {
+      "exerciseId": "farmers_walk",
+      "faultId": "rushed_pickup",
+      "displayName": "Rushed Pickup",
+      "shortExplanation": "You jerk the weights off the floor instead of deadlifting them.",
+      "fullExplanation": "The pickup matters — it's a mini-deadlift. Yanking the weights with a rounded back or split stance is a real injury path.",
+      "whyItMatters": "Most farmers-walk injuries happen on the pickup and setdown, not during the carry itself.",
+      "fixTips": [
+        "Treat the pickup like a deadlift — brace, neutral spine, push the floor away.",
+        "Pause 1 second standing tall before starting to walk.",
+        "Set the weights down with the same care."
+      ],
+      "relatedFaults": []
+    }
+  ]
+}
