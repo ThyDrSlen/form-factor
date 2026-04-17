@@ -6,7 +6,7 @@
  * (both params required). Shows a baseline card when no prior session exists.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -27,21 +27,17 @@ export default function FormComparisonModal() {
   const { user } = useAuth();
   const params = useLocalSearchParams<{ sessionId?: string; exerciseId?: string }>();
   const sessionId = typeof params.sessionId === 'string' ? params.sessionId : null;
-  const exerciseIdParam = typeof params.exerciseId === 'string' ? params.exerciseId : null;
-
-  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
-    exerciseIdParam,
-  );
+  const exerciseId = typeof params.exerciseId === 'string' ? params.exerciseId : null;
 
   const { comparison, loading, error, reload } = useSessionComparisonQuery({
     currentSessionId: sessionId,
-    exerciseId: selectedExerciseId,
+    exerciseId,
     userId: user?.id ?? null,
   });
 
   const paramsValid = useMemo(
-    () => Boolean(sessionId && selectedExerciseId && user?.id),
-    [sessionId, selectedExerciseId, user?.id],
+    () => Boolean(sessionId && exerciseId && user?.id),
+    [sessionId, exerciseId, user?.id],
   );
 
   return (
@@ -107,7 +103,7 @@ export default function FormComparisonModal() {
             <Ionicons name="pulse-outline" size={32} color="#8B97B3" />
             <Text style={styles.emptyTitle}>Nothing to compare yet</Text>
             <Text style={styles.emptyBody}>
-              No reps recorded for {selectedExerciseId ?? 'this exercise'} in
+              No reps recorded for {exerciseId ?? 'this exercise'} in
               the current session.
             </Text>
           </View>
