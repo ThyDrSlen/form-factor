@@ -1,6 +1,13 @@
 import { supabase } from '@/lib/supabase';
 import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { createError, logError } from './ErrorHandler';
+import {
+  inferCoachProvider,
+  type CoachProvider,
+  type CoachProviderSignal,
+} from './coach-provider-types';
+
+export type { CoachProvider } from './coach-provider-types';
 
 export type CoachRole = 'user' | 'assistant' | 'system';
 
@@ -8,6 +15,11 @@ export interface CoachMessage {
   role: CoachRole;
   content: string;
   id?: string;
+  /**
+   * The AI backend that produced this message. Set only on assistant replies
+   * returned by `sendCoachPrompt`. Absent on user / system turns.
+   */
+  provider?: CoachProvider;
 }
 
 export interface CoachContext {
@@ -25,8 +37,15 @@ interface RawCoachResponse {
   content?: string;
   reply?: string;
   error?: string;
+  /** Provider discriminator — optional; may be absent from legacy responses. */
+  provider?: CoachProvider | string;
+  /** Model name (e.g. `gpt-5.4-mini`, `gemma-2b`). Used to infer provider. */
+  model?: string;
+  /** Coarse origin marker for cache / local-fallback paths. */
+  source?: 'cache' | 'local' | 'remote';
 }
 
+const DEFAULT_MODEL_ID = 'gpt-5.4-mini';
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
 
 export async function sendCoachPrompt(
@@ -101,6 +120,18 @@ export async function sendCoachPrompt(
       );
     }
 
+    // WHY: the edge function today only returns text (no provider field). We
+    // infer the provider from whatever signal it does emit (model name +
+    // optional `source`) so the UI can still show a badge. Once the edge
+    // function starts returning `provider` explicitly, that wins.
+    const signal: CoachProviderSignal = {
+      provider: data?.provider,
+      model: data?.model ?? DEFAULT_MODEL_ID,
+      source: data?.source,
+    };
+    const provider = inferCoachProvider(signal);
+    const modelId = signal.model ?? DEFAULT_MODEL_ID;
+
     if (context?.profile?.id && context.sessionId) {
       const userTurns = messages.filter(m => m.role === 'user');
       const insertPayload = {
@@ -111,7 +142,7 @@ export async function sendCoachPrompt(
         assistant_message: responseText,
         input_messages: messages,
         context: { focus: context.focus },
-        metadata: { model: 'gpt-5.4-mini', timestamp: new Date().toISOString() },
+        metadata: { model: modelId, provider, timestamp: new Date().toISOString() },
       };
       supabase.from('coach_conversations').insert(insertPayload).then(({ error: insertErr }) => {
         if (!insertErr) return;
@@ -137,10 +168,18 @@ export async function sendCoachPrompt(
       });
     }
 
-    return {
-      role: 'assistant',
-      content: responseText,
-    };
+    // WHY non-enumerable: `provider` is a supplementary annotation on the
+    // assistant reply. Keeping it non-enumerable preserves backward-compatible
+    // equality semantics for existing consumers that shallow-compare replies,
+    // while still letting TypeScript + the UI read `msg.provider`.
+    const reply: CoachMessage = { role: 'assistant', content: responseText };
+    Object.defineProperty(reply, 'provider', {
+      value: provider,
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    });
+    return reply;
   } catch (err) {
     if (err && typeof err === 'object' && 'domain' in err) {
       throw err;
