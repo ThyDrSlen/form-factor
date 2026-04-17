@@ -60,12 +60,18 @@ export async function sendCoachPrompt(
     if (error) {
       // Check for specific error types based on error message or context
       const errorMessage = error.message || '';
-      const isConfigError = errorMessage.includes('not configured') || 
+      const isConfigError = errorMessage.includes('not configured') ||
                            errorMessage.includes('OPENAI_API_KEY') ||
                            errorMessage.includes('missing');
       const hasStatus = typeof error === 'object' && error !== null && 'status' in error;
-      const isNotFound = (hasStatus && (error as { status: unknown }).status === 404) || errorMessage.includes('404');
-      
+      const status = hasStatus ? (error as { status: unknown }).status : undefined;
+      const isNotFound = (status === 404) || errorMessage.includes('404');
+      const isRateLimited =
+        status === 429 ||
+        /\b429\b/.test(errorMessage) ||
+        /rate.?limit/i.test(errorMessage) ||
+        /too many requests/i.test(errorMessage);
+
       if (isNotFound) {
         throw createError(
           'validation',
@@ -74,7 +80,7 @@ export async function sendCoachPrompt(
           { details: error, retryable: false }
         );
       }
-      
+
       if (isConfigError) {
         throw createError(
           'validation',
@@ -83,7 +89,16 @@ export async function sendCoachPrompt(
           { details: error, retryable: false }
         );
       }
-      
+
+      if (isRateLimited) {
+        throw createError(
+          'network',
+          'COACH_RATE_LIMITED',
+          'Coach is rate-limited — try again in a moment.',
+          { details: error, retryable: true }
+        );
+      }
+
       throw createError(
         'network',
         'COACH_INVOKE_FAILED',
@@ -97,8 +112,22 @@ export async function sendCoachPrompt(
 
     // Check if the response itself contains an error field
     if (data?.error) {
-      const isConfigError = data.error.includes('not configured') || 
+      const isConfigError = data.error.includes('not configured') ||
                            data.error.includes('OPENAI_API_KEY');
+      const isRateLimitedPayload =
+        /\b429\b/.test(data.error) ||
+        /rate.?limit/i.test(data.error) ||
+        /too many requests/i.test(data.error);
+
+      if (isRateLimitedPayload) {
+        throw createError(
+          'network',
+          'COACH_RATE_LIMITED',
+          'Coach is rate-limited — try again in a moment.',
+          { details: data.error, retryable: true }
+        );
+      }
+
       throw createError(
         isConfigError ? 'validation' : 'network',
         isConfigError ? 'COACH_NOT_CONFIGURED' : 'COACH_ERROR',

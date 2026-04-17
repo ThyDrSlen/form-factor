@@ -34,6 +34,11 @@ export function createError(
 }
 
 export function mapToUserMessage(err: AppError): string {
+  // Specific codes can override the domain-default copy.
+  if (err.code === 'COACH_RATE_LIMITED') {
+    return 'Coach is rate-limited — try again in a moment.';
+  }
+
   switch (err.domain) {
     case 'network':
       return 'Connection issue. Please check your internet and try again.';
