@@ -424,6 +424,10 @@ export async function handleGenericRealtimeChange(
       notifyCallback();
     }
   } catch (error) {
+    errorWithTs(
+      `[GenericSync] Error handling realtime ${label} change:`,
+      error instanceof Error ? error : new Error(String(error)),
+    );
     const appError = createError(
       'sync',
       'REALTIME_CHANGE_FAILED',
