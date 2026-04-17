@@ -171,11 +171,44 @@ once merged, independently of which other PRs have merged.
   glossary schema, filter corpus, cost accumulator
 - No regressions expected — all pure services + new UI
 
-## Outcome (filled in on completion)
+## Outcome
 
-- **PR #TBD** — opened against main with atomic commits above
-- **TBD** new unit tests, 0 regressions across the wave-19 baseline
-- No migrations, no native code, no new dependencies
+- Branch `feat/overnight-wave20-form-intel-gemma` opened off `main`
+  (commit `b30516a`). 7 atomic commits — 1 worklog + 5 feature
+  subsystems + 1 lint cleanup.
+- **126 new unit tests** added across 12 files, all green. Full suite
+  1412 passed / 10 skipped (matches wave-19 baseline — 0 regressions).
+- Lint: only 2 pre-existing template-builder warnings (unchanged by
+  this wave). `bun run check:types` clean.
+- No migrations, no native code, no new dependencies, no modifications
+  to any file currently contested by an open PR.
+
+### Final commit ledger
+
+| # | Commit | Summary |
+|---|--------|---------|
+| 1 | `597288f` | `docs(worklog)` — wave-20 plan |
+| 2 | `3ec8f2e` | `feat(form-intel)` — session comparison (service+hook+card+modal+32 tests) |
+| 3 | `831a0a7` | `feat(form-intel)` — fatigue detector + deload suggester + hook (23 tests) |
+| 4 | `af39444` | `feat(form-tracking)` — offline fault glossary + chip (20 tests) |
+| 5 | `da57a2e` | `feat(coach)` — request-scope filter (42 tests) |
+| 6 | `e950414` | `feat(coach)` — token-usage cost tracker (12 tests) |
+| 7 | `6683000` | `chore(form-comparison)` — drop unused exercise-picker state |
+
+### Gemma integration — final summary
+
+- **Cloud path** (PR #457 `gemma-3` via Google Gemini REST): unblocked,
+  awaiting merge + secrets. No work duplicated this wave.
+- **On-device path**: still blocked on `react-native-executorch` +
+  `expo prebuild` + native rebuild (see `docs/OVERNIGHT_CHANGELOG.md`).
+  Q3 2026+ target.
+- **Infrastructure readiness shipped this wave**:
+  - `coach-request-filter.ts` — cheap guard so off-topic prompts don't
+    burn Gemma tokens once it's live.
+  - `coach-cost-tracker.ts` — budget/cost visibility works identically
+    for OpenAI, Gemma cloud, Gemma on-device, or the stub provider.
+  - `fault-glossary.json` — schema-compatible with a future Gemma
+    regenerator; today's hand-authored entries are a drop-in baseline.
 
 ## Audit findings deferred (next waves)
 
