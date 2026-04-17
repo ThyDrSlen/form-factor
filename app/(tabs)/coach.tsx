@@ -10,6 +10,7 @@ import { useToast } from '@/contexts/ToastContext';
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { fetchTodaySession, fetchCoachSessionMessages } from '@/lib/services/coach-history-service';
 import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
+import { CoachProviderBadge } from '@/components/coach/CoachProviderBadge';
 import { styles } from '../../styles/tabs/_index.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
 import { tabColors } from '@/styles/tabs/_tab-theme';
@@ -335,6 +336,9 @@ export default function CoachScreen() {
                   >
                     <Text style={styles.coachBubbleText}>{item.content}</Text>
                     <Text style={styles.coachBubbleMeta}>{isUser ? 'You' : 'Coach'}</Text>
+                    {!isUser && item.provider && (
+                      <CoachProviderBadge provider={item.provider} />
+                    )}
                   </View>
                 </View>
               );
