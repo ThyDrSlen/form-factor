@@ -224,17 +224,17 @@ const faults: FaultDefinition[] = [
     id: 'kipping_swing',
     displayName: 'Kipping Swing',
     condition: (ctx: RepContext) => {
-      // Hip-oscillation proxy: if the difference between start-hip and max-hip
-      // (or start-shoulder vs max-shoulder) exceeds kippingOscillationMin on
-      // either side, the athlete swung their body weight through the hold
-      // instead of holding statically.
+      // Hip-oscillation only. Shoulder angle naturally varies during a static
+      // hang as the scapulae engage/disengage, so using shoulder delta as a
+      // kipping proxy false-positives on clean holds. If hip joints aren't
+      // tracked, skip the fault rather than fall back to a misleading signal.
       const leftHipDelta = Math.abs(ctx.maxAngles.leftHip - ctx.startAngles.leftHip);
       const rightHipDelta = Math.abs(ctx.maxAngles.rightHip - ctx.startAngles.rightHip);
-      const leftShoulderDelta = Math.abs(ctx.maxAngles.leftShoulder - ctx.startAngles.leftShoulder);
-      const rightShoulderDelta = Math.abs(ctx.maxAngles.rightShoulder - ctx.startAngles.rightShoulder);
-      const deltas = [leftHipDelta, rightHipDelta, leftShoulderDelta, rightShoulderDelta];
-      if (deltas.some((d) => !Number.isFinite(d))) return false;
-      return deltas.some((d) => d > DEAD_HANG_THRESHOLDS.kippingOscillationMin);
+      if (!Number.isFinite(leftHipDelta) || !Number.isFinite(rightHipDelta)) return false;
+      return (
+        leftHipDelta > DEAD_HANG_THRESHOLDS.kippingOscillationMin ||
+        rightHipDelta > DEAD_HANG_THRESHOLDS.kippingOscillationMin
+      );
     },
     severity: 2,
     dynamicCue: 'Stay still — resist the urge to swing or kip.',
