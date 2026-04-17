@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 import { supabase } from '@/lib/supabase';
 import { ensureUser } from '@/lib/auth-utils';
 import { warnWithTs } from '@/lib/logger';
+import { createError } from '@/lib/services/ErrorHandler';
 
 const VIDEO_BUCKET = 'videos';
 const THUMBNAIL_BUCKET = 'video-thumbnails';
@@ -283,6 +284,19 @@ export async function uploadWorkoutVideo(opts: {
     analysisOnly = false,
   } = opts;
 
+  // Validate exercise and metrics fields before any I/O.
+  if (exercise !== undefined) {
+    if (typeof exercise !== 'string' || exercise.length > 255) {
+      throw createError('validation', 'INVALID_INPUT', 'Exercise name exceeds maximum length');
+    }
+  }
+  if (metrics !== undefined) {
+    const metricsJson = JSON.stringify(metrics);
+    if (new TextEncoder().encode(metricsJson).byteLength > 10240) {
+      throw createError('validation', 'INVALID_INPUT', 'Metrics payload exceeds maximum size');
+    }
+  }
+
   // Validate env before auth/upload calls so failures are explicit and actionable.
   getSupabaseUrl();
   getSupabaseAnonKey();
@@ -434,12 +448,25 @@ export async function addVideoComment(videoId: string, comment: string) {
   return data as CommentRecord;
 }
 
+const _activeCommentChannels = new Map<string, ReturnType<typeof supabase.channel>>();
+
 export function subscribeToVideoComments(
   videoId: string,
   onInsert: (comment: CommentRecord) => void
 ) {
+  const channelName = `video-comments-${videoId}`;
+
+  // Remove any pre-existing channel for this videoId before creating a new one.
+  // This prevents duplicate Realtime channels when the hook re-runs (e.g. React
+  // Strict Mode double-invoke, or rapid mount/unmount cycles).
+  const existing = _activeCommentChannels.get(videoId);
+  if (existing) {
+    supabase.removeChannel(existing);
+    _activeCommentChannels.delete(videoId);
+  }
+
   const channel = supabase
-    .channel(`video-comments-${videoId}`)
+    .channel(channelName)
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'video_comments', filter: `video_id=eq.${videoId}` },
@@ -449,8 +476,14 @@ export function subscribeToVideoComments(
     )
     .subscribe();
 
+  _activeCommentChannels.set(videoId, channel);
+
   return () => {
     supabase.removeChannel(channel);
+    // Only remove from the map if this is still the active channel for the videoId.
+    if (_activeCommentChannels.get(videoId) === channel) {
+      _activeCommentChannels.delete(videoId);
+    }
   };
 }
 
