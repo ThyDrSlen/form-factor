@@ -1,16 +1,18 @@
 /**
- * Parametric fault harness — issue #438
+ * Parametric fault harness — combined #441 + #459
  *
- * Exercises every registered fault in every workout definition under two
+ * Exercises every registered fault in every workout definition under three
  * synthetic conditions:
  *
  *   1. A per-workout "ideal rep" `RepContext` is handed to every fault; each
  *      fault must return `false`. This is a sanity baseline — if any fault
  *      mis-fires on a good rep, it needs thresholds re-tuned.
- *   2. For a named subset of faults with well-defined biomechanical triggers,
- *      a minimal "triggering" RepContext asserts that the fault returns
- *      `true`. This includes all 6 lunge faults + 6 dead-hang faults, plus
- *      a curated set of high-signal faults from other workouts.
+ *   2. For every fault with a well-defined biomechanical trigger, a minimal
+ *      "triggering" RepContext asserts that the fault returns `true`. Covers
+ *      all 6 lunge faults + 6 dead-hang faults + 24 faults across the 6
+ *      movements added by #459, plus a curated set from the original 8.
+ *   3. NaN-angles guard — every fault must return `false` on fully-NaN input
+ *      (duration-only faults are filtered since they don't read angle data).
  */
 
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
@@ -113,6 +115,48 @@ const IDEAL_PROFILES: Record<DetectionMode, IdealProfile> = {
     max: joints({ leftKnee: 175, rightKnee: 175, leftHip: 175, rightHip: 175 }),
     durationMs: 2500,
   },
+  hip_thrust: {
+    start: joints({ leftHip: 95, rightHip: 95, leftKnee: 95, rightKnee: 95 }),
+    end: joints({ leftHip: 175, rightHip: 175, leftKnee: 95, rightKnee: 95 }),
+    min: joints({ leftHip: 95, rightHip: 95, leftKnee: 95, rightKnee: 95 }),
+    max: joints({ leftHip: 175, rightHip: 175, leftKnee: 95, rightKnee: 95 }),
+    durationMs: 2500,
+  },
+  bulgarian_split_squat: {
+    start: joints({ leftKnee: 170, rightKnee: 170, leftHip: 170, rightHip: 170 }),
+    end: joints({ leftKnee: 170, rightKnee: 170, leftHip: 170, rightHip: 170 }),
+    min: joints({ leftKnee: 95, rightKnee: 120, leftHip: 115, rightHip: 125 }),
+    max: joints({ leftKnee: 175, rightKnee: 175, leftHip: 175, rightHip: 175 }),
+    durationMs: 2500,
+  },
+  barbell_row: {
+    start: joints({ leftElbow: 165, rightElbow: 165, leftHip: 105, rightHip: 105, leftShoulder: 95, rightShoulder: 95 }),
+    end: joints({ leftElbow: 165, rightElbow: 165, leftHip: 105, rightHip: 105, leftShoulder: 95, rightShoulder: 95 }),
+    min: joints({ leftElbow: 80, rightElbow: 80, leftHip: 105, rightHip: 105, leftShoulder: 95, rightShoulder: 95 }),
+    max: joints({ leftElbow: 165, rightElbow: 165, leftHip: 110, rightHip: 110, leftShoulder: 100, rightShoulder: 100 }),
+    durationMs: 2000,
+  },
+  lat_pulldown: {
+    start: joints({ leftElbow: 165, rightElbow: 165, leftShoulder: 150, rightShoulder: 150 }),
+    end: joints({ leftElbow: 165, rightElbow: 165, leftShoulder: 150, rightShoulder: 150 }),
+    min: joints({ leftElbow: 80, rightElbow: 80, leftShoulder: 115, rightShoulder: 115 }),
+    max: joints({ leftElbow: 170, rightElbow: 170, leftShoulder: 160, rightShoulder: 160 }),
+    durationMs: 2200,
+  },
+  overhead_press: {
+    start: joints({ leftElbow: 95, rightElbow: 95, leftHip: 175, rightHip: 175 }),
+    end: joints({ leftElbow: 95, rightElbow: 95, leftHip: 175, rightHip: 175 }),
+    min: joints({ leftElbow: 95, rightElbow: 95, leftHip: 172, rightHip: 174 }),
+    max: joints({ leftElbow: 170, rightElbow: 170, leftHip: 178, rightHip: 178 }),
+    durationMs: 1800,
+  },
+  dumbbell_curl: {
+    start: joints({ leftElbow: 170, rightElbow: 170, leftHip: 175, rightHip: 175 }),
+    end: joints({ leftElbow: 170, rightElbow: 170, leftHip: 175, rightHip: 175 }),
+    min: joints({ leftElbow: 60, rightElbow: 60, leftHip: 173, rightHip: 174 }),
+    max: joints({ leftElbow: 172, rightElbow: 172, leftHip: 175, rightHip: 175 }),
+    durationMs: 1500,
+  },
 };
 
 function ctxFromProfile(id: DetectionMode): RepContext {
@@ -163,8 +207,9 @@ describe('parametric fault baseline — ideal rep fires no faults', () => {
 
 // ---------------------------------------------------------------------------
 // Targeted positives — hand-crafted RepContexts that SHOULD trigger each
-// listed fault. Covers all 6 lunge + 6 dead-hang faults + a curated subset
-// of other-workout faults.
+// listed fault. Covers all 6 lunge + 6 dead-hang faults + 24 #459 faults
+// (hip-thrust 5, BSS 4, barbell-row 4, lat-pulldown 4, OHP 4, DB-curl 3) +
+// a curated subset from the original 8 movements.
 // ---------------------------------------------------------------------------
 
 interface PositiveCase {
@@ -302,6 +347,166 @@ const POSITIVE_CASES: PositiveCase[] = [
     workout: 'farmers_walk', fault: 'lateral_lean',
     build: () => positiveCtx('farmers_walk', { minAngles: joints({ leftHip: 150, rightHip: 175, leftShoulder: 90, rightShoulder: 90 }) }),
   },
+
+  // ---- hip-thrust (5) — from #459 ----
+  {
+    workout: 'hip_thrust', fault: 'shallow_depth',
+    build: () => positiveCtx('hip_thrust', {
+      minAngles: joints({ leftHip: 130, rightHip: 130, leftKnee: 95, rightKnee: 95 }),
+    }),
+  },
+  {
+    workout: 'hip_thrust', fault: 'heel_liftoff',
+    build: () => positiveCtx('hip_thrust', {
+      maxAngles: joints({ leftHip: 175, rightHip: 175, leftKnee: 85, rightKnee: 160 }),
+    }),
+  },
+  {
+    workout: 'hip_thrust', fault: 'incomplete_lockout',
+    build: () => positiveCtx('hip_thrust', {
+      maxAngles: joints({ leftHip: 140, rightHip: 140, leftKnee: 95, rightKnee: 95 }),
+    }),
+  },
+  {
+    workout: 'hip_thrust', fault: 'asymmetric_extension',
+    build: () => positiveCtx('hip_thrust', {
+      maxAngles: joints({ leftHip: 140, rightHip: 175, leftKnee: 95, rightKnee: 95 }),
+    }),
+  },
+  {
+    workout: 'hip_thrust', fault: 'hyperextension',
+    build: () => positiveCtx('hip_thrust', {
+      maxAngles: joints({ leftHip: 190, rightHip: 175, leftKnee: 95, rightKnee: 95 }),
+    }),
+  },
+
+  // ---- bulgarian-split-squat (4) — from #459 ----
+  {
+    workout: 'bulgarian_split_squat', fault: 'shallow_depth',
+    build: () => positiveCtx('bulgarian_split_squat', {
+      minAngles: joints({ leftKnee: 130, rightKnee: 140, leftHip: 130, rightHip: 135 }),
+    }),
+  },
+  {
+    workout: 'bulgarian_split_squat', fault: 'forward_knee',
+    build: () => positiveCtx('bulgarian_split_squat', {
+      minAngles: joints({ leftKnee: 55, rightKnee: 100, leftHip: 115, rightHip: 125 }),
+    }),
+  },
+  {
+    workout: 'bulgarian_split_squat', fault: 'asymmetric_drive',
+    build: () => positiveCtx('bulgarian_split_squat', {
+      minAngles: joints({ leftKnee: 95, rightKnee: 120, leftHip: 70, rightHip: 130 }),
+    }),
+  },
+  {
+    workout: 'bulgarian_split_squat', fault: 'heel_collapse',
+    build: () => positiveCtx('bulgarian_split_squat', {
+      minAngles: joints({ leftKnee: 40, rightKnee: 100, leftHip: 115, rightHip: 125 }),
+    }),
+  },
+
+  // ---- barbell-row (4) — from #459 ----
+  {
+    workout: 'barbell_row', fault: 'incomplete_lockout',
+    build: () => positiveCtx('barbell_row', {
+      minAngles: joints({ leftElbow: 120, rightElbow: 120, leftHip: 105, rightHip: 105, leftShoulder: 95, rightShoulder: 95 }),
+    }),
+  },
+  {
+    workout: 'barbell_row', fault: 'rounded_back',
+    build: () => positiveCtx('barbell_row', {
+      minAngles: joints({ leftElbow: 80, rightElbow: 80, leftHip: 105, rightHip: 105, leftShoulder: 85, rightShoulder: 85 }),
+      maxAngles: joints({ leftElbow: 165, rightElbow: 165, leftHip: 108, rightHip: 108, leftShoulder: 125, rightShoulder: 120 }),
+    }),
+  },
+  {
+    workout: 'barbell_row', fault: 'asymmetric_pull',
+    build: () => positiveCtx('barbell_row', {
+      minAngles: joints({ leftElbow: 70, rightElbow: 120, leftHip: 105, rightHip: 105, leftShoulder: 95, rightShoulder: 95 }),
+    }),
+  },
+  {
+    workout: 'barbell_row', fault: 'elbows_high',
+    build: () => positiveCtx('barbell_row', {
+      maxAngles: joints({ leftElbow: 165, rightElbow: 165, leftHip: 110, rightHip: 110, leftShoulder: 130, rightShoulder: 115 }),
+    }),
+  },
+
+  // ---- lat-pulldown (4) — from #459 ----
+  {
+    workout: 'lat_pulldown', fault: 'incomplete_lockout',
+    build: () => positiveCtx('lat_pulldown', {
+      minAngles: joints({ leftElbow: 115, rightElbow: 115, leftShoulder: 120, rightShoulder: 120 }),
+    }),
+  },
+  {
+    workout: 'lat_pulldown', fault: 'excessive_lean',
+    build: () => positiveCtx('lat_pulldown', {
+      startAngles: joints({ leftElbow: 165, rightElbow: 165, leftShoulder: 150, rightShoulder: 150 }),
+      minAngles: joints({ leftElbow: 80, rightElbow: 80, leftShoulder: 80, rightShoulder: 80 }),
+    }),
+  },
+  {
+    workout: 'lat_pulldown', fault: 'asymmetric_pull',
+    build: () => positiveCtx('lat_pulldown', {
+      minAngles: joints({ leftElbow: 75, rightElbow: 120, leftShoulder: 115, rightShoulder: 115 }),
+    }),
+  },
+  {
+    workout: 'lat_pulldown', fault: 'elbows_flare',
+    build: () => positiveCtx('lat_pulldown', {
+      minAngles: joints({ leftElbow: 80, rightElbow: 80, leftShoulder: 140, rightShoulder: 120 }),
+    }),
+  },
+
+  // ---- overhead-press (4) — from #459 ----
+  {
+    workout: 'overhead_press', fault: 'incomplete_lockout',
+    build: () => positiveCtx('overhead_press', {
+      maxAngles: joints({ leftElbow: 140, rightElbow: 140, leftHip: 175, rightHip: 175 }),
+    }),
+  },
+  {
+    workout: 'overhead_press', fault: 'excessive_lean',
+    build: () => positiveCtx('overhead_press', {
+      startAngles: joints({ leftElbow: 95, rightElbow: 95, leftHip: 175, rightHip: 175 }),
+      minAngles: joints({ leftElbow: 95, rightElbow: 95, leftHip: 150, rightHip: 175 }),
+    }),
+  },
+  {
+    workout: 'overhead_press', fault: 'asymmetric_press',
+    build: () => positiveCtx('overhead_press', {
+      maxAngles: joints({ leftElbow: 140, rightElbow: 170, leftHip: 175, rightHip: 175 }),
+    }),
+  },
+  {
+    workout: 'overhead_press', fault: 'core_hyperextension',
+    build: () => positiveCtx('overhead_press', {
+      maxAngles: joints({ leftElbow: 170, rightElbow: 170, leftHip: 195, rightHip: 180 }),
+    }),
+  },
+
+  // ---- dumbbell-curl (3) — from #459 ----
+  {
+    workout: 'dumbbell_curl', fault: 'swinging',
+    build: () => positiveCtx('dumbbell_curl', {
+      startAngles: joints({ leftElbow: 170, rightElbow: 170, leftHip: 175, rightHip: 175 }),
+      minAngles: joints({ leftElbow: 60, rightElbow: 60, leftHip: 150, rightHip: 175 }),
+    }),
+  },
+  {
+    workout: 'dumbbell_curl', fault: 'incomplete_lockout',
+    build: () => positiveCtx('dumbbell_curl', {
+      minAngles: joints({ leftElbow: 100, rightElbow: 100, leftHip: 173, rightHip: 174 }),
+    }),
+  },
+  {
+    workout: 'dumbbell_curl', fault: 'asymmetric_curl',
+    build: () => positiveCtx('dumbbell_curl', {
+      minAngles: joints({ leftElbow: 55, rightElbow: 120, leftHip: 173, rightHip: 174 }),
+    }),
+  },
 ];
 
 describe('parametric fault harness — targeted positive triggers', () => {
@@ -316,8 +521,8 @@ describe('parametric fault harness — targeted positive triggers', () => {
     });
   }
 
-  test('at least 20 targeted positive cases registered', () => {
-    expect(POSITIVE_CASES.length).toBeGreaterThanOrEqual(20);
+  test('at least 44 targeted positive cases registered (12 #441 + 24 #459 + 8 curated)', () => {
+    expect(POSITIVE_CASES.length).toBeGreaterThanOrEqual(44);
   });
 });
 
