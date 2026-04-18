@@ -198,69 +198,16 @@ function sanitizeSetContext(raw: unknown): SetContext | undefined {
 }
 
 // =============================================================================
-// Prompt builder — we structure so Gemma returns JSON we can parse.
-//
-// Canonical source of truth: lib/services/fault-synthesis-prompt.ts
-// This inline copy exists because Deno's path resolution makes reaching
-// outside the function dir fragile. Any edit below MUST also land in the
-// canonical module, and the snapshot test at
-// tests/unit/services/fault-synthesis-prompt.test.ts will catch client-side
-// drift. Server-side drift is caught at review time — diff both files.
+// Prompt builder — imported from supabase/functions/_shared/.
+// That file must remain byte-identical to lib/services/fault-synthesis-prompt.ts;
+// `bun scripts/check-supabase-shared-in-sync.ts` (wired into `bun run ci:local`)
+// enforces the invariant before push.
 // =============================================================================
 
-const SYSTEM_INSTRUCTION = [
-  'You are a concise strength-and-form coach for Form Factor.',
-  'Given a cluster of co-occurring form faults, you identify the most likely single root cause and write one user-facing sentence that collapses the cluster into a clear corrective.',
-  'You receive glossary snippets for each fault. Treat them as reference only — do not quote them verbatim; synthesize.',
-  'Never invent fault ids beyond those in the input.',
-  'No medical advice. No mentions of AI, models, or being an assistant.',
-  'Return ONLY the JSON object described in the user message — no prose, no markdown fences.',
-].join(' ');
-
-function buildUserPrompt(
-  exerciseId: string,
-  faultIds: string[],
-  snippets: GlossarySnippet[],
-  history: FaultFrequencyHint[],
-  setContext: SetContext | undefined,
-): string {
-  const snippetBlock = snippets
-    .map((s) => {
-      const tips = s.fixTips.length ? s.fixTips.join(' | ') : '(no tips)';
-      return `- ${s.faultId} (${s.displayName}): "${s.shortExplanation}" | why: ${s.whyItMatters} | fix tips: ${tips} | related: ${s.relatedFaults.join(',') || 'none'}`;
-    })
-    .join('\n');
-
-  const historyBlock =
-    history.length > 0
-      ? history
-          .map((h) => `- ${h.faultId}: seen in ${h.occurrencesInLastNSessions} recent sessions (${h.sessionsSince} ago)`)
-          .join('\n')
-      : '- (no recent history)';
-
-  const contextBlock = setContext
-    ? `- rep ${setContext.repNumber ?? '?'} of set ${setContext.setNumber ?? '?'}${setContext.rpe ? `, rpe ${setContext.rpe}` : ''}`
-    : '- (no set context)';
-
-  return [
-    `Exercise: ${exerciseId}`,
-    `Co-occurring fault ids: ${faultIds.join(', ')}`,
-    'Glossary snippets:',
-    snippetBlock || '- (no snippets provided)',
-    'Recent history:',
-    historyBlock,
-    'Set context:',
-    contextBlock,
-    '',
-    'Return a single JSON object with these keys:',
-    '  "synthesizedExplanation": one user-facing sentence (<= 35 words) that explains the likely root cause and gives one corrective action. Reference fault names naturally, do not list them.',
-    '  "primaryFaultId": the fault id you believe is the primary driver — must be one of the co-occurring ids above.',
-    '  "rootCauseHypothesis": 1-4 words naming the underlying cause (e.g. "ankle mobility", "grip fatigue"), or null if unclear.',
-    '  "confidence": a number in [0, 1] reflecting how sure you are. Use 0.5 when the cluster is ambiguous.',
-    '',
-    'Respond with the JSON object ONLY.',
-  ].join('\n');
-}
+import {
+  SYSTEM_INSTRUCTION,
+  buildFaultSynthesisUserPrompt,
+} from '../_shared/fault-synthesis-prompt.ts';
 
 // =============================================================================
 // Gemini (Gemma) call
@@ -428,7 +375,13 @@ async function handleSynthesis(body: RequestBody): Promise<Response> {
     return errorResponse('fault-synthesis is not configured (missing GEMINI_API_KEY)', 500);
   }
 
-  const prompt = buildUserPrompt(exerciseId, faultIds, snippets, history, setContext);
+  const prompt = buildFaultSynthesisUserPrompt({
+    exerciseId,
+    faultIds,
+    snippets,
+    history,
+    setContext,
+  });
   const raw = await callGemma(prompt);
   if (!raw) return errorResponse('fault-synthesis upstream unavailable', 502);
 
