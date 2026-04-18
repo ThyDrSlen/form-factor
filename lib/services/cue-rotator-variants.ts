@@ -158,69 +158,88 @@ export const CUE_ROTATION_VARIANTS: CueVariantMap = {
   // ---- Lat pulldown ----
   'Elbows in — drive them down, not out.': [
     'Drive elbows down and keep them tucked.',
+    'Tuck the elbows and drive to the ribs.',
   ],
   'Let the arms extend fully — feel the stretch.': [
     'Full stretch at the top before pulling.',
+    'Reach long at the top and feel the stretch.',
   ],
   'Smooth pull — lats lead, no swinging.': [
     'Lead with the lats, no body swing.',
+    'Pull with the lats and keep the torso quiet.',
   ],
 
   // ---- Dumbbell curl ----
   'Stop swinging — hips stay locked.': [
     'Lock the hips and kill the swing.',
+    'Still hips, strict curl.',
   ],
   'Squeeze all the way up — full biceps contraction.': [
     'Curl higher and squeeze the biceps hard.',
+    'Top squeeze — crush the curl.',
   ],
   'Slow tempo — elbows pinned, control the descent.': [
     'Pin the elbows and lower with control.',
+    'Keep elbows pinned and lower slower.',
   ],
 
   // ---- Hip thrust ----
   'Ribs down — finish with the glutes, not the lower back.': [
     'Keep ribs down and squeeze the glutes.',
+    'Brace the ribs and finish with glutes.',
   ],
   'Drive higher — aim for full hip extension.': [
     'Drive through to full hip lockout.',
+    'Lift higher until the hips fully lock.',
   ],
   'Controlled tempo — squeeze at the top.': [
     'Control the rep and pause at lockout.',
+    'Steady rep — squeeze at the top.',
   ],
 
   // ---- Barbell row ----
   'Tuck elbows down — pull to the lower ribs.': [
     'Keep elbows tucked and row to the ribs.',
+    'Drive elbows down and row low.',
   ],
   'Stay hinged — resist the urge to stand up.': [
     'Hold the hinge and resist standing tall.',
+    'Keep the hinge and fight the urge to rise.',
   ],
   'Smooth pull — squeeze the shoulder blades at the top.': [
     'Pull smooth and pinch the shoulder blades.',
+    'Row smooth and squeeze the upper back.',
   ],
 
   // ---- Bulgarian split squat ----
   'Drop deeper — front thigh parallel to the floor.': [
     'Sink deeper until the front thigh is parallel.',
+    'Go lower until the front thigh is level.',
   ],
   'Shift weight back — keep the front shin vertical.': [
     'Sit back and keep the front shin stacked.',
+    'Move back into the heel and stack the shin.',
   ],
   'Reset your stance, breathe, then repeat.': [
     'Reset the stance, breathe, then go again.',
+    'Rebuild the stance, breathe, repeat.',
   ],
   'Sit into the front leg — stay tall through the hips.': [
     'Load the front leg and stay tall.',
+    'Sink into the front leg and keep hips tall.',
   ],
 
   // ---- Overhead press ----
   'Ribs down — stop arching the lower back.': [
     'Stack the ribs and stop the back arch.',
+    'Keep ribs tucked and press without arching.',
   ],
   'Punch through — arms straight at the top.': [
     'Punch overhead until the elbows lock.',
+    'Finish tall and lock the arms overhead.',
   ],
   'Brace hard — vertical bar path, stay stacked.': [
     'Brace hard and keep the bar vertical.',
+    'Stay braced and keep the bar stacked.',
   ],
 };
