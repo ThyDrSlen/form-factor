@@ -51,6 +51,7 @@
     "eval:ab-test": "promptfoo eval -c evals/coach-ab-test.yaml",
     "eval:view": "promptfoo view",
     "eval:export-conversations": "bun scripts/export-coach-conversations.ts",
+    "gemma:reports": "bun scripts/gemma-reports.ts",
     "generate:cue-audio": "bun scripts/generate-cue-audio.ts",
     "prepare": "command -v husky >/dev/null 2>&1 && husky || true",
     "postinstall": "node -e \"let r; try{r=require.resolve('patch-package')}catch(e){process.exit(0)}; require('child_process').execSync('patch-package',{stdio:'inherit'})\"",
