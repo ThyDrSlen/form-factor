@@ -49,6 +49,8 @@ import { logWithTs, errorWithTs } from '@/lib/logger';
 // Types
 // =============================================================================
 
+export type PauseReason = 'user' | 'system';
+
 export interface SessionRunnerState {
   // Session data
   activeSession: WorkoutSession | null;
@@ -68,6 +70,20 @@ export interface SessionRunnerState {
     setId: string;
   } | null;
   restTimerCompletionTimeout: ReturnType<typeof setTimeout> | null;
+
+  // Pause state — additive, never nullifies existing behavior
+  isPaused: boolean;
+  pausedAt: number | null;
+  totalPausedMs: number;
+  /**
+   * Remembered rest-timer snapshot so we can resume with the exact remaining
+   * seconds the user had when they paused (instead of the original duration).
+   */
+  pausedRestTimer: {
+    targetSeconds: number;
+    remainingSeconds: number;
+    setId: string;
+  } | null;
 
   // Status
   isLoading: boolean;
@@ -89,6 +105,8 @@ export interface SessionRunnerState {
   completeSet: (setId: string) => Promise<void>;
   skipRest: () => Promise<void>;
   extendRest: (seconds: number) => void;
+  pauseSession: (reason?: PauseReason) => void;
+  resumeSession: () => void;
   finishSession: () => Promise<void>;
   loadActiveSession: () => Promise<void>;
   duplicateSet: (setId: string, count?: number) => Promise<void>;
@@ -204,6 +222,10 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
   formTargetsByExercise: {},
   restTimer: null,
   restTimerCompletionTimeout: null,
+  isPaused: false,
+  pausedAt: null,
+  totalPausedMs: 0,
+  pausedRestTimer: null,
   isLoading: false,
   isWorkoutInProgress: false,
   error: null,
@@ -265,6 +287,10 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
         formTargetsByExercise,
         restTimer: null,
         restTimerCompletionTimeout: null,
+        isPaused: false,
+        pausedAt: null,
+        totalPausedMs: 0,
+        pausedRestTimer: null,
         isWorkoutInProgress: true,
       });
       clearRestTimerCompletionTimeout();
@@ -627,13 +653,105 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
   },
 
   // =========================================================================
+  // Pause Session
+  // =========================================================================
+  pauseSession: (reason = 'user') => {
+    const { activeSession, isPaused, restTimer } = get();
+    if (!activeSession || isPaused) return;
+
+    // Snapshot the rest timer so we can restore it with the same amount of
+    // remaining time when the user resumes. The raw `restTimer.startedAt`
+    // can't stay valid across the pause gap because it's a wall-clock stamp.
+    let pausedRestTimer: SessionRunnerState['pausedRestTimer'] = null;
+    if (restTimer) {
+      const remaining = Math.max(
+        0,
+        computeRemainingSeconds(restTimer.startedAt, restTimer.targetSeconds),
+      );
+      pausedRestTimer = {
+        targetSeconds: restTimer.targetSeconds,
+        remainingSeconds: remaining,
+        setId: restTimer.setId,
+      };
+    }
+
+    clearRestTimerCompletionTimeout();
+    // Fire-and-forget: we don't want to block UI on notification scheduling.
+    void cancelRestNotification();
+
+    set({
+      isPaused: true,
+      pausedAt: Date.now(),
+      pausedRestTimer,
+      restTimer: null,
+    });
+
+    logWithTs(`[SessionRunner] Paused session ${activeSession.id} (reason=${reason})`);
+  },
+
+  // =========================================================================
+  // Resume Session
+  // =========================================================================
+  resumeSession: () => {
+    const {
+      activeSession,
+      isPaused,
+      pausedAt,
+      totalPausedMs,
+      pausedRestTimer,
+    } = get();
+    if (!activeSession || !isPaused || pausedAt == null) return;
+
+    const pausedMsForThisSegment = Math.max(0, Date.now() - pausedAt);
+    const nextTotalPausedMs = totalPausedMs + pausedMsForThisSegment;
+
+    // Reconstruct the rest timer from the remaining-seconds snapshot so the
+    // visible countdown continues from exactly where the user left it.
+    let nextRestTimer: SessionRunnerState['restTimer'] = null;
+    if (pausedRestTimer && pausedRestTimer.remainingSeconds > 0) {
+      const resumedAt = new Date().toISOString();
+      nextRestTimer = {
+        targetSeconds: pausedRestTimer.remainingSeconds,
+        startedAt: resumedAt,
+        setId: pausedRestTimer.setId,
+      };
+    }
+
+    set({
+      isPaused: false,
+      pausedAt: null,
+      totalPausedMs: nextTotalPausedMs,
+      pausedRestTimer: null,
+      restTimer: nextRestTimer,
+    });
+
+    if (nextRestTimer) {
+      // Reschedule the background notification + completion haptic for the
+      // recomputed remaining window.
+      scheduleRestNotification(nextRestTimer.targetSeconds).catch(() => {});
+      scheduleRestTimerCompletionHaptic(nextRestTimer.startedAt, nextRestTimer.targetSeconds);
+      scheduleRestTimerCompletion(nextRestTimer);
+    }
+
+    logWithTs(
+      `[SessionRunner] Resumed session ${activeSession.id} (+${pausedMsForThisSegment}ms paused)`,
+    );
+  },
+
+  // =========================================================================
   // Finish Session
   // =========================================================================
   finishSession: async () => {
-    const { activeSession } = get();
+    const { activeSession, isPaused, pausedAt, totalPausedMs } = get();
     if (!activeSession) return;
 
     const now = nowIso();
+
+    // If we finish while paused, flush the in-flight pause segment into the
+    // accumulator so elapsed-time consumers can subtract a complete total.
+    const finalPausedMs = isPaused && pausedAt != null
+      ? totalPausedMs + Math.max(0, Date.now() - pausedAt)
+      : totalPausedMs;
 
     clearRestTimerCompletionTimeout();
     await cancelRestNotification();
@@ -646,7 +764,9 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       [now, now, activeSession.id],
     );
 
-    await emitEvent(activeSession.id, 'session_completed');
+    await emitEvent(activeSession.id, 'session_completed', null, null, {
+      paused_ms: finalPausedMs,
+    });
 
     set({
       activeSession: null,
@@ -655,10 +775,16 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       formTargetsByExercise: {},
       restTimer: null,
       restTimerCompletionTimeout: null,
+      isPaused: false,
+      pausedAt: null,
+      totalPausedMs: 0,
+      pausedRestTimer: null,
       isWorkoutInProgress: false,
     });
 
-    logWithTs(`[SessionRunner] Finished session ${activeSession.id}`);
+    logWithTs(
+      `[SessionRunner] Finished session ${activeSession.id} (paused_ms=${finalPausedMs})`,
+    );
   },
 
   // =========================================================================
@@ -684,6 +810,10 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
           formTargetsByExercise: {},
           restTimer: null,
           restTimerCompletionTimeout: null,
+          isPaused: false,
+          pausedAt: null,
+          totalPausedMs: 0,
+          pausedRestTimer: null,
           isWorkoutInProgress: false,
         });
         return;
@@ -722,6 +852,10 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
         sets,
         formTargetsByExercise,
         restTimer,
+        isPaused: false,
+        pausedAt: null,
+        totalPausedMs: 0,
+        pausedRestTimer: null,
         isWorkoutInProgress: true,
       });
       if (restTimer) {
