@@ -1017,6 +1017,20 @@ Generated: ${new Date().toISOString()}
               </LinearGradient>
             </TouchableOpacity>
 
+            <TouchableOpacity onPress={() => router.push('/labs/gemma')} activeOpacity={0.7}>
+              <LinearGradient
+                colors={['rgba(147, 197, 253, 0.2)', 'rgba(147, 197, 253, 0.1)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.debugButton}
+              >
+                <Ionicons name="sparkles-outline" size={18} color="#93C5FD" />
+                <Text style={[styles.debugButtonText, { color: '#93C5FD' }]}>
+                  Gemma Labs
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
             <TouchableOpacity onPress={handleClearDatabase} disabled={isClearing} activeOpacity={0.7}>
               <LinearGradient
                 colors={['rgba(255, 59, 48, 0.2)', 'rgba(255, 59, 48, 0.1)']}
