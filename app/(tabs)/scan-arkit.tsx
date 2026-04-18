@@ -756,6 +756,15 @@ export default function ScanARKitScreen() {
     }
   }, [isScreenFocused, stopSpeech]);
 
+  // Each new tracking session starts cue rotation at variant 0 so support
+  // debugging is deterministic and users always hear the most familiar
+  // phrasing first.
+  useEffect(() => {
+    if (isTracking) {
+      cueRotatorRef.current.reset();
+    }
+  }, [isTracking]);
+
   // Initialize telemetry context on mount
   useEffect(() => {
     initSessionContext().catch((error) => {

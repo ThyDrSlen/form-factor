@@ -90,5 +90,27 @@ describe('cue-rotator', () => {
       expect(first).not.toBe(second);
       expect(first).not.toBe(hipSag);
     });
+
+    it('covers the live workout cue surface (floor check)', () => {
+      // Every base string in lib/workouts/*.ts should have a variant set
+      // here. Exact match matters — the rotator is a strict lookup. Bump
+      // this floor whenever coverage expands so accidental deletions fail.
+      expect(Object.keys(CUE_ROTATION_VARIANTS).length).toBeGreaterThanOrEqual(25);
+    });
+
+    it('covers a representative cue from each supported workout', () => {
+      const mustCover = [
+        'Squeeze glutes to stop hip sag.', // pushup
+        'Stand all the way up between reps.', // squat
+        'Finish each rep with full hip extension.', // deadlift
+        'Hinge deeper — feel the hamstring stretch.', // rdl
+        'Fully extend your arms before the next rep.', // pullup
+        'Straighten your arms for a true dead hang.', // dead-hang
+        'Keep shoulders level — balance the load.', // farmers-walk
+      ];
+      for (const cue of mustCover) {
+        expect(CUE_ROTATION_VARIANTS[cue]?.length ?? 0).toBeGreaterThanOrEqual(2);
+      }
+    });
   });
 });

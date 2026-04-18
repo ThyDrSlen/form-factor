@@ -83,4 +83,75 @@ export const CUE_ROTATION_VARIANTS: CueVariantMap = {
     'Drive the hips back — keep the chest proud.',
     'Controlled hinge: hips back, chest forward.',
   ],
+  "Keep knees soft but fixed — this isn't a squat.": [
+    'Soft knees, fixed angle — hinge from the hips.',
+    'Knees stay soft, hips do the work.',
+    'Lock the knee bend — drive from the hips.',
+  ],
+
+  // ---- Pull-up ----
+  'Fully extend your arms before the next rep.': [
+    'Drop to full hang between reps.',
+    'Straighten the arms fully at the bottom.',
+    'Full extension before pulling again.',
+  ],
+  'Pull higher to bring your chin past the bar.': [
+    'Chin clears the bar on every rep.',
+    'Pull until the chin is over the bar.',
+    'Higher — get the chin past the bar.',
+  ],
+  'Draw your shoulders down to keep your lats engaged.': [
+    'Pull shoulders down away from the ears.',
+    'Pack the shoulders — lats stay engaged.',
+    'Shoulders down first, then pull.',
+  ],
+  'Strong reps — keep the descent smooth.': [
+    'Strong pull, controlled descent.',
+    'Own the lower — no dropping.',
+    'Smooth on the way down, strong on the way up.',
+  ],
+
+  // ---- Dead hang ----
+  'Straighten your arms for a true dead hang.': [
+    'Arms fully extended — let the bar carry you.',
+    'Relax the elbows — pure hang.',
+    'Fully straight arms for a clean hang.',
+  ],
+  'Pack shoulders down away from your ears.': [
+    'Shoulders away from the ears — pack them down.',
+    'Depress the shoulders, long neck.',
+    'Pull shoulders down — stop shrugging.',
+  ],
+  'Stay tall — breathe and hold steady.': [
+    'Long body, steady breath.',
+    'Hold tall, breathe through the hang.',
+    'Stay long — exhale slowly.',
+  ],
+
+  // ---- Farmer's walk ----
+  'Keep shoulders level — balance the load.': [
+    'Level shoulders — even load side to side.',
+    'Shoulders square — balance the weights.',
+    'Keep both shoulders at the same height.',
+  ],
+  "Stay centered — don't lean to one side.": [
+    'Hips centered — no side lean.',
+    'Stack over the hips — stay tall.',
+    'Center of mass straight — no leaning.',
+  ],
+  "Stand tall — don't hunch forward.": [
+    'Chest up, shoulders back.',
+    'Tall spine — no forward hunch.',
+    'Stand proud — open the chest.',
+  ],
+  'Strong posture — own every step.': [
+    'Proud chest, steady steps.',
+    'Carry tall — step with intent.',
+    'Own the walk — tight posture, each step.',
+  ],
+  'Brace your core, grip tight.': [
+    'Tight core, crushing grip.',
+    'Brace the midsection — grip the handles hard.',
+    'Core locked, hands crushing the load.',
+  ],
 };
