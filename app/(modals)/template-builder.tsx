@@ -48,12 +48,12 @@ type TemplateDraftSnapshot = {
   name: string;
   description: string;
   goalProfile: GoalProfile;
-  exercises: Array<{
+  exercises: {
     exercise_id: string;
     notes: string | null;
     default_rest_seconds: number | null;
     default_tempo: string | null;
-    sets: Array<{
+    sets: {
       set_type: WorkoutTemplateSet['set_type'];
       target_reps: number | null;
       target_seconds: number | null;
@@ -61,8 +61,8 @@ type TemplateDraftSnapshot = {
       target_rpe: number | null;
       rest_seconds_override: number | null;
       notes: string | null;
-    }>;
-  }>;
+    }[];
+  }[];
 };
 
 type BeforeRemoveEvent = EventArg<'beforeRemove', true, { action: NavigationAction }>;
