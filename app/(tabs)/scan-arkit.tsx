@@ -84,6 +84,12 @@ import {
 } from '@/lib/tracking-quality';
 import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
+import { usePRDetection } from '@/hooks/use-pr-detection';
+import { PRCelebrationBadge } from '@/components/form-tracking/PRCelebrationBadge';
+import { ProgressionSuggestionBadge } from '@/components/form-tracking/ProgressionSuggestionBadge';
+import { useProgressionSuggestion } from '@/hooks/use-progression-suggestion';
+import { useSessionRunner } from '@/lib/stores/session-runner';
+import type { FormTargets } from '@/lib/services/form-target-resolver';
 import {
   DEFAULT_DETECTION_MODE,
   getWorkoutByMode,
@@ -307,8 +313,27 @@ const PreviewPlayer = ({ uri }: { uri: string }) => {
 export default function ScanARKitScreen() {
   const DEV = __DEV__;
   const router = useRouter();
-  const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string; trackingDebug?: string }>();
+  const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string; trackingDebug?: string; templateId?: string }>();
   const fixturePlaybackRequested = params.fixturePlayback === '1';
+  // Issue #447 — deep-link / scheduled-workout template binding.
+  // Reads form-targets from the session-runner store (populated when the
+  // session was started from this templateId by `materializeTemplate`).
+  // No side-effects when no templateId is present.
+  const deepLinkTemplateId = typeof params.templateId === 'string' ? params.templateId : null;
+  const getFormTargetsFor = useSessionRunner((s) => s.getFormTargetsFor);
+  // PR-detection surface (issue #447 W3-C item #2).
+  const { pr: currentPR, clearPR: clearCurrentPR } = usePRDetection();
+  // Progression suggestion surface (issue #447 W3-C item #3).
+  // TODO(#434): wire lastSessionAvgFqi + lastWeight from session-runner
+  // history once PR #434 lands its history-panel query. Until then, keep
+  // the inputs null so the badge stays hidden. The hook + badge component
+  // are production-ready; only the data feed is deferred.
+  const progressionSuggestion = useProgressionSuggestion({
+    exerciseId: null,
+    lastSessionAvgFqi: null,
+    lastWeight: null,
+    unit: 'lb',
+  });
   const fixtureName = typeof params.fixture === 'string' ? params.fixture : FIXTURE_PLAYBACK_DEFAULT;
   const fixtureFrames = fixturePlaybackRequested ? FIXTURE_PLAYBACK_TRACES[fixtureName] ?? null : null;
   const fixturePlaybackEnabled = fixturePlaybackRequested && !!fixtureFrames;
@@ -360,6 +385,27 @@ export default function ScanARKitScreen() {
   const [repCount, setRepCount] = useState(0);
   const [detectionMode, setDetectionMode] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
   const activeWorkoutDef = useMemo(() => getWorkoutByMode(detectionMode), [detectionMode]);
+  // Active form targets — resolved from session-runner (template override)
+  // with a fall-through to per-exercise defaults. Exposed as a ref so the
+  // cue-engine / FQI gauge can read without retriggering the whole render.
+  // Issue #447 W3-C item #1.
+  const activeFormTargets: FormTargets = useMemo(
+    () => getFormTargetsFor(detectionMode),
+    [getFormTargetsFor, detectionMode],
+  );
+  const activeFormTargetsRef = React.useRef<FormTargets>(activeFormTargets);
+  useEffect(() => {
+    activeFormTargetsRef.current = activeFormTargets;
+    if (deepLinkTemplateId) {
+      logWithTs('[ScanARKit] Active form targets', {
+        exerciseId: detectionMode,
+        templateId: deepLinkTemplateId,
+        fqiMin: activeFormTargets.fqiMin,
+        romMin: activeFormTargets.romMin,
+        romMax: activeFormTargets.romMax,
+      });
+    }
+  }, [activeFormTargets, detectionMode, deepLinkTemplateId]);
   const [activePhase, setActivePhase] = useState<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
   const activePhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
@@ -2778,6 +2824,18 @@ export default function ScanARKitScreen() {
           </View>
         </View>
       )}
+
+      {/* PR celebration badge (issue #447 W3-C #2). Surgical mount — renders
+          only when usePRDetection has a hit. Safe no-op when pr is null. */}
+      <PRCelebrationBadge pr={currentPR} onDismiss={clearCurrentPR} />
+
+      {/* Progression suggestion badge (issue #447 W3-C #3). Hidden until the
+          data-feed wiring lands (see TODO near useProgressionSuggestion). */}
+      {progressionSuggestion ? (
+        <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
+          <ProgressionSuggestionBadge suggestion={progressionSuggestion} />
+        </View>
+      ) : null}
 
       <Modal
         visible={isSettingsVisible}
