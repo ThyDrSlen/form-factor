@@ -26,6 +26,11 @@ function loadFixture(dir: string, name: string): PullupFixtureFrame[] {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+function fixtureExists(dir: string, name: string): boolean {
+  const filePath = path.join(process.cwd(), 'tests', 'fixtures', dir, `${name}.json`);
+  return fs.existsSync(filePath);
+}
+
 type GuardPassRates = {
   totalFrames: number;
   humanPassRate: number;
@@ -76,14 +81,22 @@ function runGuards(frames: PullupFixtureFrame[]): GuardPassRates {
 const PULLUP_FIXTURES = [
   'camera-facing',
   'back-turned',
+  'back-turned-multi',
+  'back-turned-no-deadhang',
   'bounce-noise',
+  'fatigue-degradation',
   'occlusion-brief',
   'occlusion-long',
+  'side-angle',
+  'tracking-dropout-recovery',
+  'vertical-displacement',
 ] as const;
 
 describe('guard regression — pullup fixtures', () => {
   for (const name of PULLUP_FIXTURES) {
-    test(`${name}: guards pass >90% of frames`, () => {
+    const exists = fixtureExists('pullup-tracking', name);
+    const runner = exists ? test : test.skip;
+    runner(`${name}: guards pass >90% of frames`, () => {
       const frames = loadFixture('pullup-tracking', name);
       const rates = runGuards(frames);
 
@@ -102,22 +115,70 @@ describe('guard regression — pullup fixtures', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Aggregate sanity check — pullup fixtures on main
+// Pushup fixtures — 4 scenarios
+// ---------------------------------------------------------------------------
+
+const PUSHUP_FIXTURES = ['camera-facing', 'fast-reps', 'partial-rom', 'side-angle'] as const;
+
+describe('guard regression — pushup fixtures', () => {
+  for (const name of PUSHUP_FIXTURES) {
+    const exists = fixtureExists('pushup-tracking', name);
+    const runner = exists ? test : test.skip;
+    runner(`${name}: guards pass >90% of frames`, () => {
+      const frames = loadFixture('pushup-tracking', name);
+      const rates = runGuards(frames);
+
+      expect(rates.humanPassRate).toBeGreaterThanOrEqual(0.90);
+      expect(rates.subjectPassRate).toBeGreaterThanOrEqual(0.95);
+      expect(rates.bothPassRate).toBeGreaterThanOrEqual(0.88);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Squat fixtures — 4 scenarios
+// ---------------------------------------------------------------------------
+
+const SQUAT_FIXTURES = ['camera-facing', 'back-facing', 'heavy-slow', 'partial-rom'] as const;
+
+describe('guard regression — squat fixtures', () => {
+  for (const name of SQUAT_FIXTURES) {
+    const exists = fixtureExists('squat-tracking', name);
+    const runner = exists ? test : test.skip;
+    runner(`${name}: guards pass >90% of frames`, () => {
+      const frames = loadFixture('squat-tracking', name);
+      const rates = runGuards(frames);
+
+      expect(rates.humanPassRate).toBeGreaterThanOrEqual(0.90);
+      expect(rates.subjectPassRate).toBeGreaterThanOrEqual(0.95);
+      expect(rates.bothPassRate).toBeGreaterThanOrEqual(0.88);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Aggregate sanity check
 // ---------------------------------------------------------------------------
 
 describe('guard regression — aggregate', () => {
-  test('average pass rate across all pullup fixtures is >90%', () => {
+  test('average pass rate across all fixtures is >95%', () => {
+    const allFixtures = [
+      ...PULLUP_FIXTURES.map((n) => ({ dir: 'pullup-tracking', name: n })),
+      ...PUSHUP_FIXTURES.map((n) => ({ dir: 'pushup-tracking', name: n })),
+      ...SQUAT_FIXTURES.map((n) => ({ dir: 'squat-tracking', name: n })),
+    ].filter((f) => fixtureExists(f.dir, f.name));
+
     let totalBothPass = 0;
     let totalWithJoints = 0;
 
-    for (const name of PULLUP_FIXTURES) {
-      const frames = loadFixture('pullup-tracking', name);
+    for (const { dir, name } of allFixtures) {
+      const frames = loadFixture(dir, name);
       const rates = runGuards(frames);
       totalBothPass += rates.bothPassRate * rates.framesWithJoints;
       totalWithJoints += rates.framesWithJoints;
     }
 
     const avgPassRate = totalWithJoints > 0 ? totalBothPass / totalWithJoints : 0;
-    expect(avgPassRate).toBeGreaterThanOrEqual(0.90);
+    expect(avgPassRate).toBeGreaterThanOrEqual(0.95);
   });
 });

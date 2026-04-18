@@ -26,6 +26,21 @@ function makeRng(seed: number): () => number {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
+/** Default joint layout for a person hanging from a bar (front-facing). */
+function baseHangingJoints(xCenter: number, jitter: number, rng: () => number) {
+  return {
+    head: { x: r4(xCenter + jit(rng, jitter)), y: 0.34, isTracked: true, confidence: 0.95 },
+    neck: { x: r4(xCenter + jit(rng, jitter)), y: 0.39, isTracked: true, confidence: 0.94 },
+    left_shoulder: { x: r4(xCenter - 0.1 + jit(rng, jitter)), y: 0.45, isTracked: true, confidence: 0.93 },
+    right_shoulder: { x: r4(xCenter + 0.1 + jit(rng, jitter)), y: 0.45, isTracked: true, confidence: 0.93 },
+    left_hand: { x: r4(xCenter - 0.16 + jit(rng, jitter)), y: 0.61, isTracked: true, confidence: 0.92 },
+    right_hand: { x: r4(xCenter + 0.16 + jit(rng, jitter)), y: 0.61, isTracked: true, confidence: 0.92 },
+    left_hip: { x: r4(xCenter - 0.08 + jit(rng, jitter)), y: 0.68, isTracked: true, confidence: 0.91 },
+    right_hip: { x: r4(xCenter + 0.08 + jit(rng, jitter)), y: 0.68, isTracked: true, confidence: 0.91 },
+    left_knee: { x: r4(xCenter - 0.07 + jit(rng, jitter)), y: 0.82, isTracked: true, confidence: 0.90 },
+    right_knee: { x: r4(xCenter + 0.07 + jit(rng, jitter)), y: 0.82, isTracked: true, confidence: 0.90 },
+  };
+}
 function r4(v: number): number {
   return Number(v.toFixed(4));
 }
