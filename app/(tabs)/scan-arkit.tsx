@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createCueRotator } from '@/lib/services/cue-rotator';
+import { CUE_ROTATION_VARIANTS } from '@/lib/services/cue-rotator-variants';
 import {
   ActivityIndicator,
   Alert,
@@ -435,6 +437,7 @@ export default function ScanARKitScreen() {
   const smoothedPose2DRef = React.useRef<Joint2D[] | null>(null);
   const pose2DCacheRef = React.useRef<Record<string, { x: number; y: number }>>({});
   const lastSpokenCueRef = React.useRef<{ cue: string; timestamp: number } | null>(null);
+  const cueRotatorRef = useRef(createCueRotator(CUE_ROTATION_VARIANTS));
   const cueHysteresisControllerRef = React.useRef(
     new CueHysteresisController<string>({ showFrames: SHOW_N_FRAMES, hideFrames: HIDE_N_FRAMES })
   );
@@ -798,6 +801,15 @@ export default function ScanARKitScreen() {
       stopSpeech();
     }
   }, [isScreenFocused, stopSpeech]);
+
+  // Each new tracking session starts cue rotation at variant 0 so support
+  // debugging is deterministic and users always hear the most familiar
+  // phrasing first.
+  useEffect(() => {
+    if (isTracking) {
+      cueRotatorRef.current.reset();
+    }
+  }, [isTracking]);
 
   // Initialize telemetry context on mount
   useEffect(() => {
@@ -1773,7 +1785,10 @@ export default function ScanARKitScreen() {
       return;
     }
     lastSpokenCueRef.current = { cue: primaryCue, timestamp: now };
-    speakCue(primaryCue);
+    // Rotate to a varied phrasing just before TTS so the user doesn't hear
+    // the same wording across reps. Dedupe + logging keep the base string
+    // so the 5s repeat-guard and analytics stay coherent.
+    speakCue(cueRotatorRef.current.rotate(primaryCue));
 
     addWorkoutRepCue(primaryCue);
   }, [primaryCue, audioFeedbackEnabled, speakCue, addWorkoutRepCue]);
