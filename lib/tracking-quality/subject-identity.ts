@@ -70,6 +70,14 @@ export type SubjectIdentityOptions = {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+const SIGNATURE_JOINTS = [
+  'left_shoulder',
+  'right_shoulder',
+  'left_hip',
+  'right_hip',
+  'left_hand',
+  'right_hand',
+] as const;
 const MIN_TRACKED_JOINTS_FOR_CENTROID = 3;
 
 function dist(ax: number, ay: number, bx: number, by: number): number {
@@ -78,6 +86,11 @@ function dist(ax: number, ay: number, bx: number, by: number): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+function ema(prev: number, next: number, alpha: number): number {
+  return prev + alpha * (next - alpha * prev - (1 - alpha) * prev);
+}
+
+// Simpler formulation: EMA = alpha * next + (1 - alpha) * prev
 function emaSimple(prev: number, next: number, alpha: number): number {
   return alpha * next + (1 - alpha) * prev;
 }

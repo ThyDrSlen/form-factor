@@ -113,10 +113,11 @@ function main() {
   console.log(`  Calibrated: ${subjectTracker.getSnapshot().isCalibrated}`);
   if (subjectTracker.getSnapshot().signature) {
     const sig = subjectTracker.getSnapshot().signature!;
-    console.log(`  Baseline signature: shoulder=${sig.shoulderWidth.toFixed(4)} torso=${sig.torsoLength.toFixed(4)} arm=${sig.armRatio.toFixed(4)}`);
+  console.log(`  Baseline signature: shoulder=${sig.shoulderWidth.toFixed(4)} torso=${sig.torsoLength.toFixed(4)} arm=${sig.armRatio.toFixed(4)}`);
   }
 
   console.log('\n--- Verdict ---');
+  const bothPassRate = (humanPass / total) * (subjectPass / total);
   if (humanPass / total >= 0.9 && subjectPass / total >= 0.95) {
     console.log('PASS: Guards would not interfere with normal tracking.');
   } else {
