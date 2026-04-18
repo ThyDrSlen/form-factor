@@ -148,21 +148,23 @@ describe('deadlift: fault conditions', () => {
 
   test('hips_rise_first: hipChange > kneeChange + 30', () => {
     const fault = faultById('hips_rise_first');
-    // start: hip=80, knee=80. max: hip=160, knee=90 -> hipChange=80, kneeChange=10. Diff=70 > 30 -> fire.
+    // Bilateral/min-delta path: both hips rise 60°, knees rise 20°.
+    // minHipChange=60, minKneeChange=20 => 60 > 20 + 30 -> fire.
     expect(
       fault!.condition(
         baseRepContext({
-          startAngles: angles({ leftHip: 80, leftKnee: 80 }),
-          maxAngles: angles({ leftHip: 160, leftKnee: 90 }),
+          startAngles: angles({ leftHip: 80, rightHip: 80, leftKnee: 140, rightKnee: 140 }),
+          maxAngles: angles({ leftHip: 140, rightHip: 140, leftKnee: 160, rightKnee: 160 }),
         })
       )
     ).toBe(true);
-    // Balanced: hipChange=50, kneeChange=40. Diff=10 not > 30 -> no fire.
+    // Symmetric good form: hips rise 20°, knees rise 30°.
+    // minHipChange=20, minKneeChange=30 => 20 > 30 + 30? No.
     expect(
       fault!.condition(
         baseRepContext({
-          startAngles: angles({ leftHip: 80, leftKnee: 80 }),
-          maxAngles: angles({ leftHip: 130, leftKnee: 120 }),
+          startAngles: angles({ leftHip: 120, rightHip: 120, leftKnee: 130, rightKnee: 130 }),
+          maxAngles: angles({ leftHip: 140, rightHip: 140, leftKnee: 160, rightKnee: 160 }),
         })
       )
     ).toBe(false);
