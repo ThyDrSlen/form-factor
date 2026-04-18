@@ -12,7 +12,20 @@ export interface CueRule {
   cooldownMs: number;
   /** Lower numbers are higher priority. Priority 1 beats priority 3. */
   priority: number;
+  /**
+   * Primary cue text. Used when `messageVariants` is absent or empty.
+   * Kept as the required field so existing rules authored before the
+   * variant rotation landed continue to work unchanged.
+   */
   message: string;
+  /**
+   * Optional rotation set. When present, the engine cycles through these
+   * strings in order across repeated emissions of this rule — first
+   * emission uses index 0, next uses index 1, wrapping at the end. This
+   * breaks the "same phrasing 5 times in a session" retention tax
+   * without any LLM involvement.
+   */
+  messageVariants?: string[];
   channels?: CueChannel[];
 }
 
@@ -75,6 +88,17 @@ export interface CueEmission {
 interface RuleRuntimeState {
   violationSinceMs: number | null;
   lastEmitMs: number | null;
+  /** Index into `messageVariants`. Ignored when no variants are set. */
+  variantIndex: number;
+}
+
+function pickCueMessage(rule: CueRule, runtimeState: RuleRuntimeState): string {
+  const variants = rule.messageVariants;
+  if (!variants || variants.length === 0) return rule.message;
+  const idx = runtimeState.variantIndex % variants.length;
+  const picked = variants[idx] ?? rule.message;
+  runtimeState.variantIndex = (runtimeState.variantIndex + 1) % variants.length;
+  return picked;
 }
 
 interface PlayingCueState {
@@ -95,7 +119,7 @@ class DefaultCueEngine implements CueEngine {
 
   constructor(private readonly rules: CueRule[], private readonly options: CueEngineOptions) {
     for (const rule of rules) {
-      this.runtime.set(rule.id, { violationSinceMs: null, lastEmitMs: null });
+      this.runtime.set(rule.id, { violationSinceMs: null, lastEmitMs: null, variantIndex: 0 });
     }
   }
 
@@ -144,7 +168,7 @@ class DefaultCueEngine implements CueEngine {
       runtimeState.lastEmitMs = input.timestampMs;
       emissions.push({
         ruleId: rule.id,
-        message: rule.message,
+        message: pickCueMessage(rule, runtimeState),
         priority: rule.priority,
         delta: Math.max(deltaLow, deltaHigh, 0),
         channels: rule.channels ?? ['speech'],
