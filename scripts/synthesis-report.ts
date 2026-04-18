@@ -96,6 +96,13 @@ function parseModelJson(raw: string): Partial<SynthesisResult> | null {
   if (text.startsWith('```')) {
     text = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
   }
+  // Some models prepend a conversational preamble ("Here is the JSON …")
+  // before the object. Extract the outermost {…} span so JSON.parse lands.
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace > 0 && lastBrace > firstBrace) {
+    text = text.slice(firstBrace, lastBrace + 1);
+  }
   try {
     const parsed = JSON.parse(text) as Record<string, unknown>;
     return {
@@ -138,13 +145,19 @@ async function callGemmaApi(
 
   const prompt = buildFaultSynthesisUserPrompt({ exerciseId, faultIds, snippets });
 
+  // Gemma models on the public Gemini API reject the `systemInstruction`
+  // field ("Developer instruction is not enabled for models/gemma-*").
+  // Prepend it to the user prompt for portable behavior across
+  // gemini-* and gemma-* targets.
+  const fullUserText = `${SYSTEM_INSTRUCTION}\n\n${prompt}`;
+  // Gemma models on the public API don't accept responseMimeType either
+  // ("JSON mode is not enabled for models/gemma-*"). Rely on the prompt's
+  // JSON-only contract and the lenient parser below.
   const body = {
-    systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    contents: [{ role: 'user', parts: [{ text: fullUserText }] }],
     generationConfig: {
       temperature: TEMPERATURE,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
-      responseMimeType: 'application/json',
     },
   };
 
