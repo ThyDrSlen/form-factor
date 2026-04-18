@@ -11,7 +11,6 @@
 
 import type {
   WorkoutDefinition,
-  FQIWeights,
   FaultDefinition,
   RepContext,
   AngleRange,
@@ -77,10 +76,8 @@ function calculateRomScore(
       const avgMin = (left.min + right.min) / 2;
       const avgMax = (left.max + right.max) / 2;
       const actualRom = Math.abs(avgMax - avgMin);
-      const targetRom = range.max - range.min;
-
-      const romPercentage = Math.min(1, actualRom / targetRom);
-      scores.push(romPercentage * 100);
+      const score = scoreRomAgainstRange(actualRom, range);
+      if (score !== null) scores.push(score);
     }
 
     if (scores.length === 0) return 100;
@@ -92,14 +89,9 @@ function calculateRomScore(
     const range = angleRanges.elbow;
     const avgMinElbow = (repAngles.min.leftElbow + repAngles.min.rightElbow) / 2;
     const avgMaxElbow = (repAngles.max.leftElbow + repAngles.max.rightElbow) / 2;
-
-    // Calculate actual ROM achieved
     const actualRom = Math.abs(avgMaxElbow - avgMinElbow);
-    const targetRom = range.max - range.min;
-
-    // Score based on percentage of target ROM achieved
-    const romPercentage = Math.min(1, actualRom / targetRom);
-    scores.push(romPercentage * 100);
+    const score = scoreRomAgainstRange(actualRom, range);
+    if (score !== null) scores.push(score);
   }
 
   // Check shoulder ROM if defined
@@ -107,12 +99,9 @@ function calculateRomScore(
     const range = angleRanges.shoulder;
     const avgMinShoulder = (repAngles.min.leftShoulder + repAngles.min.rightShoulder) / 2;
     const avgMaxShoulder = (repAngles.max.leftShoulder + repAngles.max.rightShoulder) / 2;
-
     const actualRom = Math.abs(avgMaxShoulder - avgMinShoulder);
-    const targetRom = range.max - range.min;
-
-    const romPercentage = Math.min(1, actualRom / targetRom);
-    scores.push(romPercentage * 100);
+    const score = scoreRomAgainstRange(actualRom, range);
+    if (score !== null) scores.push(score);
   }
 
   // Check knee ROM if defined
@@ -120,17 +109,27 @@ function calculateRomScore(
     const range = angleRanges.knee;
     const avgMinKnee = (repAngles.min.leftKnee + repAngles.min.rightKnee) / 2;
     const avgMaxKnee = (repAngles.max.leftKnee + repAngles.max.rightKnee) / 2;
-
     const actualRom = Math.abs(avgMaxKnee - avgMinKnee);
-    const targetRom = range.max - range.min;
-
-    const romPercentage = Math.min(1, actualRom / targetRom);
-    scores.push(romPercentage * 100);
+    const score = scoreRomAgainstRange(actualRom, range);
+    if (score !== null) scores.push(score);
   }
 
   // Return average of all ROM scores, or 100 if no ranges defined
   if (scores.length === 0) return 100;
   return scores.reduce((a, b) => a + b, 0) / scores.length;
+}
+
+/**
+ * Score an actualRom against a target AngleRange. Returns null when the range
+ * is degenerate (max <= min) or when the inputs are non-finite — the caller
+ * should skip the metric in either case rather than emit a misleading score.
+ */
+function scoreRomAgainstRange(actualRom: number, range: AngleRange): number | null {
+  if (!Number.isFinite(actualRom)) return null;
+  const targetRom = range.max - range.min;
+  if (!Number.isFinite(targetRom) || targetRom <= 0) return null;
+  const romPercentage = Math.min(1, actualRom / targetRom);
+  return romPercentage * 100;
 }
 
 // =============================================================================
@@ -163,15 +162,8 @@ function calculateDepthScore(
       }
 
       const avgMin = (left.min + right.min) / 2;
-      const deviation = Math.abs(avgMin - range.optimal);
-      const tolerance = range.tolerance;
-
-      if (deviation <= tolerance) {
-        scores.push(100);
-      } else {
-        const penalty = (deviation - tolerance) * 2;
-        scores.push(Math.max(0, 100 - penalty));
-      }
+      const score = scoreDepthAgainstRange(avgMin, range);
+      if (score !== null) scores.push(score);
     }
 
     if (scores.length === 0) return 100;
@@ -182,40 +174,35 @@ function calculateDepthScore(
   if (angleRanges.elbow) {
     const range = angleRanges.elbow;
     const avgMinElbow = (repAngles.min.leftElbow + repAngles.min.rightElbow) / 2;
-
-    // How close to optimal? (lower is usually better for pulling/pressing)
-    const deviation = Math.abs(avgMinElbow - range.optimal);
-    const tolerance = range.tolerance;
-
-    // Score: 100 if within tolerance, decreasing beyond that
-    if (deviation <= tolerance) {
-      scores.push(100);
-    } else {
-      // Decrease score by 2 points per degree beyond tolerance
-      const penalty = (deviation - tolerance) * 2;
-      scores.push(Math.max(0, 100 - penalty));
-    }
+    const score = scoreDepthAgainstRange(avgMinElbow, range);
+    if (score !== null) scores.push(score);
   }
 
   // For squats/lunges, check hip and knee depth
   if (angleRanges.hip) {
     const range = angleRanges.hip;
     const avgMinHip = (repAngles.min.leftHip + repAngles.min.rightHip) / 2;
-
-    const deviation = Math.abs(avgMinHip - range.optimal);
-    const tolerance = range.tolerance;
-
-    if (deviation <= tolerance) {
-      scores.push(100);
-    } else {
-      const penalty = (deviation - tolerance) * 2;
-      scores.push(Math.max(0, 100 - penalty));
-    }
+    const score = scoreDepthAgainstRange(avgMinHip, range);
+    if (score !== null) scores.push(score);
   }
 
   // Return average of all depth scores, or 100 if no ranges defined
   if (scores.length === 0) return 100;
   return scores.reduce((a, b) => a + b, 0) / scores.length;
+}
+
+/**
+ * Score the deviation from an AngleRange.optimal, capped at 100 and floored
+ * at 0. Returns null on non-finite inputs or non-positive tolerance — the
+ * caller should skip the metric instead of treating it as a perfect score.
+ */
+function scoreDepthAgainstRange(actual: number, range: AngleRange): number | null {
+  if (!Number.isFinite(actual) || !Number.isFinite(range.optimal)) return null;
+  if (!Number.isFinite(range.tolerance) || range.tolerance <= 0) return null;
+  const deviation = Math.abs(actual - range.optimal);
+  if (deviation <= range.tolerance) return 100;
+  const penalty = (deviation - range.tolerance) * 2;
+  return Math.max(0, 100 - penalty);
 }
 
 // =============================================================================
