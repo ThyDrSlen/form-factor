@@ -218,7 +218,6 @@ export const CUE_ROTATION_VARIANTS: CueVariantMap = {
     'Load the front leg and stay tall.',
     'Sink into the front leg and keep hips tall.',
   ],
-
   // ---- Barbell row ----
   'Tuck elbows down — pull to the lower ribs.': [
     'Keep elbows tucked and row to the ribs.',
