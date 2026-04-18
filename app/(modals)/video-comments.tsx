@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   ActivityIndicator,
@@ -145,11 +145,26 @@ export default function VideoCommentsModal() {
     };
   }, [videoId]);
 
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     if (!videoId || typeof videoId !== 'string') return;
-    return subscribeToVideoComments(videoId, (incoming) => {
+
+    // Always clean up any previously registered subscription before creating a
+    // new one. This guards against rapid videoId changes or React Strict Mode
+    // double-invocations where the cleanup from the previous run may not have
+    // fired yet before the next run starts.
+    unsubscribeRef.current?.();
+
+    const unsubscribe = subscribeToVideoComments(videoId, (incoming) => {
       setComments((prev) => (prev.some((comment) => comment.id === incoming.id) ? prev : [...prev, incoming]));
     });
+    unsubscribeRef.current = unsubscribe;
+
+    return () => {
+      unsubscribe();
+      unsubscribeRef.current = null;
+    };
   }, [videoId]);
 
   const handleSend = useCallback(async () => {
