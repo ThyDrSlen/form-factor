@@ -18,7 +18,7 @@
     "check:types": "tsc --noEmit",
     "ci:push": "python3 scripts/ci_local.py --quick",
     "ci:full": "python3 scripts/ci_local.py",
-    "ci:local": "bun run lint && bun run check:types",
+    "ci:local": "bun run lint && bun run check:types && bun scripts/check-supabase-shared-in-sync.ts && bun scripts/check-cue-variants-coverage.ts",
     "ci:policy": "python3 scripts/ci/policy_check.py",
     "ci:deploy-preflight": "python3 scripts/ci/deploy_preflight.py",
     "kill": "lsof -ti :8081 | xargs kill -9 && lsof -ti :8082 | xargs kill -9 && lsof -ti :8083 | xargs kill -9 && lsof -ti :8084 | xargs kill -9 && lsof -ti :8085 | xargs kill -9",
@@ -51,6 +51,12 @@
     "eval:ab-test": "promptfoo eval -c evals/coach-ab-test.yaml",
     "eval:view": "promptfoo view",
     "eval:export-conversations": "bun scripts/export-coach-conversations.ts",
+    "gemma:reports": "bun scripts/gemma-reports.ts",
+    "gemma:preflight": "bun scripts/fault-synthesis-preflight.ts",
+    "gemma:smoke": "bun scripts/fault-synthesis-smoke.ts",
+    "gemma:check-sync": "bun scripts/check-supabase-shared-in-sync.ts",
+    "gemma:check-coverage": "bun scripts/check-cue-variants-coverage.ts",
+    "gemma:status": "bun scripts/gemma-status.ts",
     "generate:cue-audio": "bun scripts/generate-cue-audio.ts",
     "prepare": "command -v husky >/dev/null 2>&1 && husky || true",
     "postinstall": "node -e \"let r; try{r=require.resolve('patch-package')}catch(e){process.exit(0)}; require('child_process').execSync('patch-package',{stdio:'inherit'})\"",
@@ -72,7 +78,8 @@
     "tar": "7.5.11",
     "flatted": "3.4.2",
     "undici": "7.24.1",
-    "minimatch": "10.2.3"
+    "minimatch": "10.2.3",
+    "protobufjs": "^7.5.5"
   },
   "expo": {
     "install": {
@@ -184,6 +191,7 @@
   "overrides": {
     "@eslint/eslintrc>minimatch": "9.0.5",
     "flatted": "3.4.2",
-    "axios": "^1.15.0"
+    "axios": "^1.15.0",
+    "protobufjs": "^7.5.5"
   }
 }
