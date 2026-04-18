@@ -19,6 +19,7 @@ beforeEach(() => {
   // Reset singleton internal state between tests
   (manager as any).currentMode = 'idle';
   (manager as any).listeners = new Set();
+  (manager as any).cancelListeners = new Set();
 });
 
 // =============================================================================
@@ -119,5 +120,50 @@ describe('onModeChange', () => {
     await manager.setMode('coaching');
 
     expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// cancel / onCancelRequested
+// =============================================================================
+
+describe('cancel', () => {
+  it('invokes every registered cancel listener', () => {
+    const a = jest.fn();
+    const b = jest.fn();
+    manager.onCancelRequested(a);
+    manager.onCancelRequested(b);
+
+    manager.cancel();
+
+    expect(a).toHaveBeenCalledTimes(1);
+    expect(b).toHaveBeenCalledTimes(1);
+  });
+
+  it('unsubscribing a cancel listener stops future cancel() fan-out', () => {
+    const listener = jest.fn();
+    const unsubscribe = manager.onCancelRequested(listener);
+    unsubscribe();
+
+    manager.cancel();
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('isolates throwing listeners so later listeners still run', () => {
+    const throwing = jest.fn(() => {
+      throw new Error('boom');
+    });
+    const healthy = jest.fn();
+    manager.onCancelRequested(throwing);
+    manager.onCancelRequested(healthy);
+
+    expect(() => manager.cancel()).not.toThrow();
+    expect(throwing).toHaveBeenCalledTimes(1);
+    expect(healthy).toHaveBeenCalledTimes(1);
+  });
+
+  it('no-ops when no cancel listeners are registered', () => {
+    expect(() => manager.cancel()).not.toThrow();
   });
 });
