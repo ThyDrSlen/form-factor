@@ -113,4 +113,67 @@ describe('cue-rotator', () => {
       }
     });
   });
+
+  describe('authored variants content safety', () => {
+    // Spoken via TTS. Catches authoring mistakes before they reach users.
+    // All iteration below walks every variant across every entry.
+    const allVariants: Array<{ base: string; variant: string }> = [];
+    for (const [base, variants] of Object.entries(CUE_ROTATION_VARIANTS)) {
+      for (const variant of variants) {
+        allVariants.push({ base, variant });
+      }
+    }
+
+    it('has no exclamation points (TTS reads them flat — adds no energy)', () => {
+      for (const { base, variant } of allVariants) {
+        if (variant.includes('!')) {
+          throw new Error(`"${variant}" (variant of "${base}") contains an exclamation`);
+        }
+      }
+    });
+
+    it('has no shouted ALL-CAPS words of 3+ characters', () => {
+      // Allow acronyms/abbreviations up to 2 chars. Multi-cap runs usually
+      // signal a typo or a test-yelling accident.
+      const yellRegex = /\b[A-Z]{3,}\b/;
+      for (const { base, variant } of allVariants) {
+        if (yellRegex.test(variant)) {
+          throw new Error(`"${variant}" (variant of "${base}") contains an ALL-CAPS run`);
+        }
+      }
+    });
+
+    it('has no medical-diagnosis or treatment verbs', () => {
+      // Form Factor is a coaching app, not a clinic. Keep language
+      // movement-focused.
+      const medical = /\b(diagnose|diagnosis|treat|cure|prescribe|therapy|medicate)\b/i;
+      for (const { base, variant } of allVariants) {
+        if (medical.test(variant)) {
+          throw new Error(
+            `"${variant}" (variant of "${base}") uses medical-diagnosis language`,
+          );
+        }
+      }
+    });
+
+    it('has no leading or trailing whitespace', () => {
+      for (const { base, variant } of allVariants) {
+        expect(variant).toBe(variant.trim());
+        if (variant.length === 0) {
+          throw new Error(`empty variant for "${base}"`);
+        }
+      }
+    });
+
+    it('has no collapsed punctuation runs (e.g. "..", "??", "—— ")', () => {
+      const runs = /[.!?]{2,}|——/;
+      for (const { base, variant } of allVariants) {
+        if (runs.test(variant)) {
+          throw new Error(
+            `"${variant}" (variant of "${base}") has a collapsed punctuation run`,
+          );
+        }
+      }
+    });
+  });
 });
