@@ -199,6 +199,13 @@ function sanitizeSetContext(raw: unknown): SetContext | undefined {
 
 // =============================================================================
 // Prompt builder — we structure so Gemma returns JSON we can parse.
+//
+// Canonical source of truth: lib/services/fault-synthesis-prompt.ts
+// This inline copy exists because Deno's path resolution makes reaching
+// outside the function dir fragile. Any edit below MUST also land in the
+// canonical module, and the snapshot test at
+// tests/unit/services/fault-synthesis-prompt.test.ts will catch client-side
+// drift. Server-side drift is caught at review time — diff both files.
 // =============================================================================
 
 const SYSTEM_INSTRUCTION = [
