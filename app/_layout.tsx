@@ -18,6 +18,7 @@ import { ToastProvider } from '../contexts/ToastContext';
 import { logWithTs, warnWithTs } from '@/lib/logger';
 import { isOnboardingCompleted } from '@/lib/services/onboarding';
 import { hasSeenWelcome } from '@/app/(onboarding)/welcome';
+import '@/lib/services/fault-explainer-bootstrap';
 
 // Error boundary to catch crashes in the provider tree or layout
 interface ErrorBoundaryState {
