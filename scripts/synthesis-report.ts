@@ -25,6 +25,11 @@ import rawGlossary from '@/lib/data/fault-glossary.json';
 import { staticFallbackExplainer } from '@/lib/services/fault-explainer';
 import type { FaultGlossaryEntry } from '@/lib/services/fault-glossary-store';
 import { getGlossaryEntry } from '@/lib/services/fault-glossary-store';
+import {
+  SYSTEM_INSTRUCTION,
+  buildFaultSynthesisUserPrompt,
+  type FaultGlossarySnippet,
+} from '@/lib/services/fault-synthesis-prompt';
 
 interface Glossary {
   schemaVersion: number;
@@ -60,19 +65,13 @@ function parseArgs(argv: string[]): { out: string; gemma: boolean; model: string
 
 // =============================================================================
 // Gemma integration
-// NOTE: The prompt builder and SYSTEM_INSTRUCTION below are intentionally
-// copied from supabase/functions/fault-synthesis/index.ts (buildUserPrompt +
-// SYSTEM_INSTRUCTION). Keep the two in sync if the prompt logic changes.
+// SYSTEM_INSTRUCTION + buildFaultSynthesisUserPrompt come from
+// lib/services/fault-synthesis-prompt.ts — the single source of truth the
+// Edge Function also tracks (keep-in-sync enforced by the snapshot test at
+// tests/unit/services/fault-synthesis-prompt.test.ts).
 // =============================================================================
 
-interface GlossarySnippet {
-  faultId: string;
-  displayName: string;
-  shortExplanation: string;
-  whyItMatters: string;
-  fixTips: string[];
-  relatedFaults: string[];
-}
+type GlossarySnippet = FaultGlossarySnippet;
 
 interface SynthesisResult {
   synthesizedExplanation: string;
@@ -89,47 +88,6 @@ interface GeminiContent {
 interface GeminiResponse {
   candidates?: { content?: GeminiContent; finishReason?: string }[];
   error?: { message?: string };
-}
-
-const SYSTEM_INSTRUCTION = [
-  'You are a concise strength-and-form coach for Form Factor.',
-  'Given a cluster of co-occurring form faults, you identify the most likely single root cause and write one user-facing sentence that collapses the cluster into a clear corrective.',
-  'You receive glossary snippets for each fault. Treat them as reference only — do not quote them verbatim; synthesize.',
-  'Never invent fault ids beyond those in the input.',
-  'No medical advice. No mentions of AI, models, or being an assistant.',
-  'Return ONLY the JSON object described in the user message — no prose, no markdown fences.',
-].join(' ');
-
-function buildUserPrompt(
-  exerciseId: string,
-  faultIds: string[],
-  snippets: GlossarySnippet[],
-): string {
-  const snippetBlock = snippets
-    .map((s) => {
-      const tips = s.fixTips.length ? s.fixTips.join(' | ') : '(no tips)';
-      return `- ${s.faultId} (${s.displayName}): "${s.shortExplanation}" | why: ${s.whyItMatters} | fix tips: ${tips} | related: ${s.relatedFaults.join(',') || 'none'}`;
-    })
-    .join('\n');
-
-  return [
-    `Exercise: ${exerciseId}`,
-    `Co-occurring fault ids: ${faultIds.join(', ')}`,
-    'Glossary snippets:',
-    snippetBlock || '- (no snippets provided)',
-    'Recent history:',
-    '- (no recent history)',
-    'Set context:',
-    '- (no set context)',
-    '',
-    'Return a single JSON object with these keys:',
-    '  "synthesizedExplanation": one user-facing sentence (<= 35 words) that explains the likely root cause and gives one corrective action. Reference fault names naturally, do not list them.',
-    '  "primaryFaultId": the fault id you believe is the primary driver — must be one of the co-occurring ids above.',
-    '  "rootCauseHypothesis": 1-4 words naming the underlying cause (e.g. "ankle mobility", "grip fatigue"), or null if unclear.',
-    '  "confidence": a number in [0, 1] reflecting how sure you are. Use 0.5 when the cluster is ambiguous.',
-    '',
-    'Respond with the JSON object ONLY.',
-  ].join('\n');
 }
 
 function parseModelJson(raw: string): Partial<SynthesisResult> | null {
@@ -178,7 +136,7 @@ async function callGemmaApi(
     modelId,
   )}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
-  const prompt = buildUserPrompt(exerciseId, faultIds, snippets);
+  const prompt = buildFaultSynthesisUserPrompt({ exerciseId, faultIds, snippets });
 
   const body = {
     systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
