@@ -149,6 +149,7 @@ import {
 } from '@/lib/services/database/generic-sync';
 import { localDB } from '@/lib/services/database/local-db';
 import { warnWithTs, errorWithTs } from '@/lib/logger';
+import { logError } from '@/lib/services/ErrorHandler';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -1228,9 +1229,14 @@ describe('handleGenericRealtimeChange', () => {
       handleGenericRealtimeChange(makeConfig(), payload, notifyCb, conflictCb),
     ).resolves.toBeUndefined();
 
-    expect(errorWithTs).toHaveBeenCalledWith(
-      expect.stringContaining('Error handling realtime'),
-      expect.any(Error),
+    expect(logError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'REALTIME_CHANGE_FAILED',
+        message: expect.stringContaining('Failed to apply realtime'),
+      }),
+      expect.objectContaining({
+        location: 'generic-sync.handleGenericRealtimeChange',
+      }),
     );
   });
 });
