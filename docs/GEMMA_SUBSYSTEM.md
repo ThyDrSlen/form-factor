@@ -67,12 +67,12 @@ via `setFooRunner` and every call site picks them up.
 ## Deploy flow — Phase 0 Edge Function
 
 ```
-bun scripts/fault-synthesis-preflight.ts     # ✓ / warn / ✗ checklist
+bun run gemma:preflight                      # ✓ / warn / ✗ checklist
 supabase link --project-ref <ref>            # if not already linked
 supabase functions deploy fault-synthesis    # ships the Deno handler
 supabase secrets set GEMINI_API_KEY=<key>    # grab at aistudio.google.com/apikey
 SUPABASE_URL=… SUPABASE_ANON_KEY=… \
-  bun scripts/fault-synthesis-smoke.ts        # end-to-end verification
+  bun run gemma:smoke                        # end-to-end verification
 ```
 
 Preflight verifies local invariants (Supabase CLI, file shape, `_shared`
@@ -109,14 +109,16 @@ Entry in `app/(tabs)/profile.tsx` under the `__DEV__`-gated debug row.
 
 ## Scripts (one-command tooling)
 
+Everything lives under the `bun run gemma:*` namespace — see `package.json`.
+
 | Command | Purpose |
 |---|---|
 | `bun run gemma:reports` | Regenerate all 4 eval reports in one pass |
-| `bun scripts/synthesis-report.ts` | Single report (static-only) |
+| `bun run gemma:preflight` | "Am I ready to deploy?" checklist |
+| `bun run gemma:smoke` | "Did my deploy work?" end-to-end test (requires `SUPABASE_URL` + `SUPABASE_ANON_KEY`) |
+| `bun run gemma:check-sync` | Drift check for mirrored modules (runs in `ci:local`) |
+| `bun run gemma:check-coverage` | Variant-coverage check for live workout cues (runs in `ci:local`) |
 | `bun scripts/synthesis-report.ts --gemma` | Side-by-side static + Gemma (requires `GEMINI_API_KEY`) |
-| `bun scripts/fault-synthesis-preflight.ts` | "Am I ready to deploy?" checklist |
-| `bun scripts/fault-synthesis-smoke.ts` | "Did my deploy work?" end-to-end test |
-| `bun scripts/check-supabase-shared-in-sync.ts` | Drift check for mirrored modules (runs in `ci:local`) |
 
 ## Eval reports
 
