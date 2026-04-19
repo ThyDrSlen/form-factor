@@ -248,7 +248,13 @@ export async function sendCoachPrompt(
 
   // No advanced opts: pick cloud provider (explicit hint, dispatcher, user pref, env, or openai default).
   const provider = opts?.provider ?? routedProvider ?? (await resolveCloudProvider());
-  if (provider === 'gemma') {
+  // Dispatch-flag gate (#536): route to the Gemma edge function only when the
+  // global dispatch flag is on. When off, even an explicit `provider: 'gemma'`
+  // hint falls through to the OpenAI path so we never silently hit the
+  // coach-gemma function during a rollout pause. The pipeline-v2 dispatcher
+  // branch above is already gated, so this check only matters for the explicit
+  // / env-resolved paths.
+  if (provider === 'gemma' && isDispatchEnabled()) {
     return sendCoachGemmaPrompt(messages, context);
   }
   return sendCoachPromptInner(messages, context);

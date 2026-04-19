@@ -17,6 +17,7 @@
 import type { FrameSnapshot, JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 import { sendCoachPrompt, type CoachMessage } from './coach-service';
 import { sendCoachGemmaPrompt } from './coach-gemma-service';
+import { isDispatchEnabled } from './coach-model-dispatch-flag';
 
 export type PreSetPreviewProvider = 'gemma' | 'openai';
 
@@ -79,7 +80,11 @@ function interpretVerdict(raw: string): { verdict: string; isFormGood: boolean }
 
 function isGemmaEnabled(): boolean {
   // Evaluated at call-time so tests can mutate process.env between cases.
-  return process.env[GEMMA_PROVIDER_ENV] === 'gemma';
+  // Dispatch-flag gate (#536): both the env-level provider choice and the
+  // global dispatch flag must be on before we try Gemma. This keeps the
+  // Gemma path cleanly pausable via `EXPO_PUBLIC_COACH_DISPATCH=off` even
+  // when env already points at Gemma.
+  return process.env[GEMMA_PROVIDER_ENV] === 'gemma' && isDispatchEnabled();
 }
 
 async function callGemma(prompt: string): Promise<string> {

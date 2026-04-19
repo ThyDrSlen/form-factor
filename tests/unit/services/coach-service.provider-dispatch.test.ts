@@ -49,6 +49,12 @@ let sendCoachPrompt: typeof import('@/lib/services/coach-service')['sendCoachPro
 
 describe('coach-service provider dispatch', () => {
   const baseMessages = [{ role: 'user' as const, content: 'Help me deadlift' }];
+  // Dispatch-flag gate (#536): Gemma dispatch now requires
+  // `EXPO_PUBLIC_COACH_DISPATCH=on`. These tests assert end-to-end routing
+  // to the Gemma path, so the flag is set on in beforeEach and cleared in
+  // afterEach. The off-by-default case (Gemma collapses to OpenAI) is
+  // covered by coach-service.dispatch-flag.test.ts.
+  const ORIGINAL_DISPATCH = process.env.EXPO_PUBLIC_COACH_DISPATCH;
 
   beforeAll(() => {
     ({ sendCoachPrompt } = require('@/lib/services/coach-service'));
@@ -56,6 +62,7 @@ describe('coach-service provider dispatch', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.EXPO_PUBLIC_COACH_DISPATCH = 'on';
     mockInvoke.mockResolvedValue({
       data: { message: 'Hinge at the hips.' },
       error: null,
@@ -70,6 +77,11 @@ describe('coach-service provider dispatch', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+    if (ORIGINAL_DISPATCH === undefined) {
+      delete process.env.EXPO_PUBLIC_COACH_DISPATCH;
+    } else {
+      process.env.EXPO_PUBLIC_COACH_DISPATCH = ORIGINAL_DISPATCH;
+    }
   });
 
   // ---------------------------------------------------------------------------
