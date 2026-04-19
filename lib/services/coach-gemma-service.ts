@@ -1,7 +1,12 @@
 import { supabase } from '@/lib/supabase';
+import { warnWithTs } from '@/lib/logger';
 import { createError } from './ErrorHandler';
 import type { CoachContext, CoachMessage } from './coach-service';
 import type { CoachProvider } from './coach-provider-types';
+import {
+  recordCoachUsage,
+  type CoachTaskKind as TrackerTaskKind,
+} from './coach-cost-tracker';
 
 interface RawCoachGemmaResponse {
   message?: string;
@@ -9,6 +14,36 @@ interface RawCoachGemmaResponse {
   reply?: string;
   error?: string;
   model?: string;
+}
+
+/**
+ * STUB: char/4 token estimator used when the coach-gemma edge function
+ * doesn't return usage counts. Replace when real `usage` plumbing lands.
+ */
+function estimateGemmaTokens(text: string): number {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
+function mapGemmaTaskKind(input?: string): TrackerTaskKind {
+  switch (input) {
+    case 'debrief':
+    case 'multi_turn_debrief':
+    case 'post_session_debrief':
+      return 'debrief';
+    case 'drill_explainer':
+    case 'fault_explainer':
+      return 'drill_explainer';
+    case 'session_generator':
+      return 'session_generator';
+    case 'program_design':
+      return 'progression_planner';
+    case undefined:
+    case '':
+      return 'chat';
+    default:
+      return 'chat';
+  }
 }
 
 const DEFAULT_FUNCTION_NAME = 'coach-gemma';
@@ -29,7 +64,7 @@ function functionName(): string {
 export async function sendCoachGemmaPrompt(
   messages: CoachMessage[],
   context?: CoachContext,
-  opts?: { model?: string },
+  opts?: { model?: string; taskKind?: string },
 ): Promise<CoachMessage> {
   try {
     const body: Record<string, unknown> = { messages, context };
@@ -130,6 +165,18 @@ export async function sendCoachGemmaPrompt(
         writable: true,
       });
     }
+
+    // Cost-tracker wiring (#537). Fire-and-forget; never block the reply.
+    const promptText = messages.map((m) => m.content ?? '').join('\n');
+    void recordCoachUsage({
+      provider: 'gemma_cloud',
+      taskKind: mapGemmaTaskKind(opts?.taskKind),
+      tokensIn: estimateGemmaTokens(promptText),
+      tokensOut: estimateGemmaTokens(responseText),
+    }).catch((err) => {
+      warnWithTs('[coach-gemma-service] recordCoachUsage failed', err);
+    });
+
     return reply;
   } catch (err) {
     if (err && typeof err === 'object' && 'domain' in err) {

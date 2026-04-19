@@ -28,6 +28,12 @@ jest.mock('@/lib/services/coach-memory-context', () => ({
   synthesizeMemoryClause: (...args: unknown[]) => mockSynth(...args),
 }));
 
+// ---- cost-guard mock (#537) ------------------------------------------------
+const mockAssertUnderWeeklyCap = jest.fn().mockResolvedValue(undefined);
+jest.mock('./coach-cost-guard', () => ({
+  assertUnderWeeklyCap: (...args: unknown[]) => mockAssertUnderWeeklyCap(...args),
+}));
+
 import {
   AUTO_DEBRIEF_KEY_PREFIX,
   cacheAutoDebrief,
@@ -62,6 +68,8 @@ describe('coach-auto-debrief', () => {
     mockSendCoachPrompt.mockReset();
     mockSendCoachGemmaPrompt.mockReset();
     mockSynth.mockReset();
+    mockAssertUnderWeeklyCap.mockReset();
+    mockAssertUnderWeeklyCap.mockResolvedValue(undefined);
     mockSynth.mockResolvedValue({ text: null, lastBrief: null, weekSummary: null });
     delete process.env.EXPO_PUBLIC_COACH_AUTO_DEBRIEF_ENABLED;
     delete process.env.EXPO_PUBLIC_COACH_CLOUD_PROVIDER;
@@ -299,6 +307,34 @@ describe('coach-auto-debrief', () => {
       // provider annotation on result is the *resolved* provider preference,
       // not the path actually taken — keep the existing shape.
       expect(result.provider).toBe('gemma');
+    });
+
+    it('falls back to OpenAI when weekly Gemma cap is exceeded (#537)', async () => {
+      // Dispatch flag is on, but assertUnderWeeklyCap throws — dispatch()
+      // catches and switches to the generic OpenAI path without invoking
+      // sendCoachGemmaPrompt at all.
+      process.env.EXPO_PUBLIC_COACH_DISPATCH = 'on';
+      mockAssertUnderWeeklyCap.mockRejectedValueOnce({
+        domain: 'validation',
+        code: 'COACH_COST_CAP_EXCEEDED',
+        message: 'cap blown',
+      });
+      mockSendCoachPrompt.mockResolvedValueOnce({
+        role: 'assistant',
+        content: 'OpenAI fallback.',
+      });
+      jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const result = await generateAutoDebrief({
+        sessionId: 'sess-cap',
+        analytics: analytics(),
+        provider: 'gemma',
+      });
+
+      expect(mockAssertUnderWeeklyCap).toHaveBeenCalledTimes(1);
+      expect(mockSendCoachGemmaPrompt).not.toHaveBeenCalled();
+      expect(mockSendCoachPrompt).toHaveBeenCalledTimes(1);
+      expect(result.brief).toBe('OpenAI fallback.');
     });
   });
 });
