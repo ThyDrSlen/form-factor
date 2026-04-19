@@ -1,12 +1,24 @@
 import { supabase } from '@/lib/supabase';
 import { warnWithTs } from '@/lib/logger';
-import { createError } from './ErrorHandler';
+import { createError, logError } from './ErrorHandler';
 import type { CoachContext, CoachMessage } from './coach-service';
 import type { CoachProvider } from './coach-provider-types';
 import {
   recordCoachUsage,
   type CoachTaskKind as TrackerTaskKind,
 } from './coach-cost-tracker';
+
+/** Fallback model identifier emitted when the coach-gemma edge function
+ * does not return a `model` field. Per the fold of Gemma-4 we always emit
+ * a non-empty `model` annotation on the reply so downstream telemetry and
+ * provider badges always have *something* to display. */
+export const UNKNOWN_GEMMA_MODEL = 'gemma-unknown';
+let hasWarnedAboutMissingGemmaModel = false;
+
+/** Test-only hook for resetting the once-per-process warn flag. */
+export function __resetMissingModelWarnForTests(): void {
+  hasWarnedAboutMissingGemmaModel = false;
+}
 
 interface RawCoachGemmaResponse {
   message?: string;
@@ -157,13 +169,47 @@ export async function sendCoachGemmaPrompt(
       configurable: true,
       writable: true,
     });
-    if (typeof data?.model === 'string' && data.model.trim().length > 0) {
-      Object.defineProperty(reply, 'model', {
-        value: data.model.trim(),
-        enumerable: false,
-        configurable: true,
-        writable: true,
-      });
+    // Always emit the `model` annotation (fold of Gemma-4). When the edge
+    // function returns a model, we use that; when it doesn't we tag the
+    // reply with UNKNOWN_GEMMA_MODEL so callers never have to null-check
+    // — that simplifies downstream telemetry / UI badges. The first time
+    // we fall back, emit a once-per-process warn-level structured log
+    // so the server-side gap is visible without spamming on every reply.
+    const rawModel =
+      typeof data?.model === 'string' && data.model.trim().length > 0
+        ? data.model.trim()
+        : undefined;
+    const modelValue = rawModel ?? UNKNOWN_GEMMA_MODEL;
+    Object.defineProperty(reply, 'model', {
+      value: modelValue,
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    });
+    if (!rawModel && !hasWarnedAboutMissingGemmaModel) {
+      hasWarnedAboutMissingGemmaModel = true;
+      try {
+        logError(
+          createError(
+            'coach',
+            'COACH_GEMMA_MODEL_MISSING',
+            'coach-gemma edge function did not return a model field; tagged reply as gemma-unknown',
+            {
+              retryable: false,
+              severity: 'warning',
+              details: { responseKeys: data ? Object.keys(data) : [] },
+            },
+          ),
+          {
+            feature: 'coach',
+            location: 'coach-gemma-service.sendCoachGemmaPrompt',
+          },
+        );
+      } catch {
+        // logError never throws in prod; swallow defensively so a test
+        // env that misconfigures expo-constants can't cascade into a
+        // coach failure.
+      }
     }
 
     // Cost-tracker wiring (#537). Fire-and-forget; never block the reply.
