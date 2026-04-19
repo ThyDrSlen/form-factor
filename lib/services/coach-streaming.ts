@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { createError } from './ErrorHandler';
 import { sendCoachGemmaPrompt } from './coach-gemma-service';
 import type { CoachContext, CoachMessage } from './coach-service';
+import type { CoachProvider } from './coach-provider-types';
 
 export interface StreamCoachOptions {
   /** Provider hint forwarded as `?provider=` (gemma|openai). */
@@ -53,6 +54,18 @@ export interface StreamCoachResult {
   durationMs: number;
   /** finishReason from the upstream provider, when present. */
   finishReason?: string;
+  /**
+   * Provider that generated the stream. Optional — set when the stream
+   * source can be attributed (e.g. Gemma non-streaming fallback returns
+   * `'gemma-cloud'`, SSE frames with a `provider` tail-frame). Absent for
+   * older NDJSON sources that don't emit provider info (#538).
+   */
+  provider?: CoachProvider;
+  /**
+   * Model identifier from the upstream source, if available. Absent when
+   * the upstream doesn't surface a model name (#538).
+   */
+  model?: string;
 }
 
 interface StreamFrame {
@@ -60,6 +73,10 @@ interface StreamFrame {
   done?: boolean;
   finishReason?: string;
   error?: string;
+  /** Optional provider annotation emitted by the upstream server. */
+  provider?: CoachProvider | string;
+  /** Optional model annotation emitted by the upstream server. */
+  model?: string;
 }
 
 const DEFAULT_FUNCTION_NAME = (
@@ -156,6 +173,13 @@ export async function streamCoachPrompt(
   let ttftMs = 0;
   let text = '';
   let finishReason: string | undefined;
+  // Provider / model annotations are optional (#538). We collect them
+  // from any frame that emits them (the HTTP path's SSE producer or
+  // Gemma's NDJSON tail frame). Fall back to the hint passed by the
+  // caller (opts.provider) if the server never tells us — better than
+  // leaving it undefined in the common case.
+  let streamProvider: CoachProvider | undefined;
+  let streamModel: string | undefined;
 
   for await (const frame of readNdjsonFrames(response.body)) {
     if (frame.error) {
@@ -172,10 +196,26 @@ export async function streamCoachPrompt(
       text += frame.delta;
       onChunk(frame.delta);
     }
+    // Tail-frame annotations: a frame can carry provider/model either
+    // inline with a delta or on the `{done:true}` frame. Merge either.
+    if (typeof frame.provider === 'string' && frame.provider.trim()) {
+      streamProvider = frame.provider as CoachProvider;
+    }
+    if (typeof frame.model === 'string' && frame.model.trim()) {
+      streamModel = frame.model.trim();
+    }
     if (frame.done) {
       finishReason = frame.finishReason;
       break;
     }
+  }
+
+  // If the server did not emit a provider tail-frame, fall back to the
+  // caller's hint so the result is still attributable. When the hint is
+  // 'gemma' we upgrade it to the fully-qualified 'gemma-cloud' provider
+  // value so downstream UI / telemetry uses the same enum everywhere.
+  if (!streamProvider && opts?.provider) {
+    streamProvider = opts.provider === 'gemma' ? 'gemma-cloud' : 'openai';
   }
 
   return {
@@ -184,6 +224,8 @@ export async function streamCoachPrompt(
     ttftMs,
     durationMs: Date.now() - startedAt,
     finishReason,
+    provider: streamProvider,
+    model: streamModel,
   };
 }
 
@@ -299,10 +341,19 @@ async function streamGemmaViaNonStreamingFallback(
     onChunk(text);
   }
 
+  // Provider/model propagation (#538). sendCoachGemmaPrompt annotates the
+  // reply with `provider: 'gemma-cloud'` and optionally `model` as
+  // non-enumerable properties — read them here so the streaming result
+  // carries attribution consistent with the non-streaming path.
+  const replyProvider = (reply as CoachMessage & { provider?: CoachProvider }).provider;
+  const replyModel = (reply as CoachMessage & { model?: string }).model;
+
   return {
     text,
     chunkCount: text.length > 0 ? 1 : 0,
     ttftMs,
     durationMs: Date.now() - startedAt,
+    provider: replyProvider ?? 'gemma-cloud',
+    model: replyModel,
   };
 }

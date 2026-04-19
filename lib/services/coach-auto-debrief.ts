@@ -28,6 +28,8 @@ import {
 import { synthesizeMemoryClause } from './coach-memory-context';
 import { getExercisePreferences, type CuePreference } from './coach-cue-feedback';
 import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
+import { isDispatchEnabled } from './coach-model-dispatch-flag';
+import { assertUnderWeeklyCap } from './coach-cost-guard';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -214,14 +216,33 @@ async function dispatch(
   messages: CoachMessage[],
   context: CoachContext,
 ): Promise<CoachMessage> {
-  // Direct-call routing: the gemma branch now targets the coach-gemma edge
+  // Direct-call routing: the gemma branch targets the coach-gemma edge
   // function directly so Gemma-specific parameters (model, etc.) flow
   // through without going through the generic `coach` function. Failures
   // on the Gemma path still fall back to OpenAI via sendCoachPrompt so a
   // transient Gemma outage doesn't break the auto-debrief.
-  if (provider === 'gemma') {
+  //
+  // Dispatch-flag gate (#536): when `EXPO_PUBLIC_COACH_DISPATCH` is off we
+  // skip the Gemma direct call entirely and fall through to the generic
+  // OpenAI path. This lets the ops team pause Gemma rollouts without
+  // redeploying — any caller that resolved `provider: 'gemma'` via env
+  // still lands on OpenAI.
+  //
+  // Cost-guard (#537): before attempting Gemma, check the weekly cap — if
+  // this user has blown past their budget, silently switch to the OpenAI
+  // path. The guard is a no-op when the env cap is unset.
+  if (provider === 'gemma' && isDispatchEnabled()) {
     try {
-      return await sendCoachGemmaPrompt(messages, context);
+      await assertUnderWeeklyCap('gemma_cloud');
+    } catch (capErr) {
+      warnWithTs(
+        '[coach-auto-debrief] weekly Gemma cap hit, falling back to openai',
+        capErr,
+      );
+      return sendCoachPrompt(messages, { ...context, focus: 'post_session_debrief' });
+    }
+    try {
+      return await sendCoachGemmaPrompt(messages, context, { taskKind: 'debrief' });
     } catch (err) {
       warnWithTs('[coach-auto-debrief] gemma dispatch failed, falling back to openai', err);
       return sendCoachPrompt(messages, { ...context, focus: 'post_session_debrief' });

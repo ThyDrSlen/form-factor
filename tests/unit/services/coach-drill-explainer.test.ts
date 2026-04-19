@@ -107,6 +107,8 @@ describe('coach-drill-explainer', () => {
     const result = await explainDrill(baseInput);
     expect(result.explanation).toBe('');
     expect(result.error).toBe('Coach down');
+    // Pipeline-v2 flag is OFF in this test (not set in env), so legacy
+    // 'cloud' label applies.
     expect(result.provider).toBe('cloud');
   });
 
