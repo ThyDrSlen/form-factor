@@ -194,6 +194,19 @@ const faults: FaultDefinition[] = [
     severity: 2,
     dynamicCue: 'Squat deeper — aim for hip crease below knees.',
     fqiPenalty: 15,
+    drills: [
+      {
+        id: 'squat-goblet-ankle-mob',
+        title: 'Goblet Pause Squats',
+        durationSec: 120,
+        reps: 8,
+        steps: [
+          'Hold a dumbbell at chest height.',
+          'Squat as deep as you comfortably can and pause 3 seconds.',
+          'Drive up powerfully; 3 sets of 8 with full rest.',
+        ],
+      },
+    ],
   },
   {
     id: 'incomplete_lockout',
@@ -218,6 +231,19 @@ const faults: FaultDefinition[] = [
     severity: 2,
     dynamicCue: 'Push your knees out over your toes.',
     fqiPenalty: 12,
+    drills: [
+      {
+        id: 'squat-band-knee-out',
+        title: 'Banded Knee-Out Squats',
+        durationSec: 90,
+        reps: 12,
+        steps: [
+          'Loop a light band just above your knees.',
+          'Stand in your squat stance; press knees outward into the band.',
+          'Squat keeping tension — 2 sets of 12.',
+        ],
+      },
+    ],
   },
   {
     id: 'fast_rep',
@@ -238,6 +264,19 @@ const faults: FaultDefinition[] = [
     severity: 2,
     dynamicCue: 'Keep your hips level — don\'t shift to one side.',
     fqiPenalty: 10,
+    drills: [
+      {
+        id: 'squat-single-leg-glute-bridge',
+        title: 'Single-Leg Glute Bridges',
+        durationSec: 90,
+        reps: 10,
+        steps: [
+          'Lie on your back, one foot planted, the other lifted.',
+          'Drive through the planted heel to lift hips level.',
+          'Hold 2 seconds at the top. 2 sets of 10 per side.',
+        ],
+      },
+    ],
   },
   {
     id: 'forward_lean',

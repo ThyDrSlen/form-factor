@@ -1,6 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { createCueRotator } from '@/lib/services/cue-rotator';
-import { CUE_ROTATION_VARIANTS } from '@/lib/services/cue-rotator-variants';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,6 +18,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { Svg, Circle, Line } from 'react-native-svg';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -34,11 +33,9 @@ import {
 } from '@/lib/watch-connectivity';
 import { buildWatchTrackingPayload } from '@/lib/watch-connectivity/tracking-payload';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
-import { safeHaptic } from '@/lib/utils/safe-haptic';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type MediaPipePose2D } from '@/lib/arkit/ARKitBodyTracker';
-import { useKeepAwakeSmart } from '@/lib/a11y/useKeepAwakeSmart';
 import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
 import { audioSessionManager } from '@/lib/services/audio-session-manager';
 import { CrashBoundary } from '@/components/CrashBoundary';
@@ -85,12 +82,6 @@ import {
 } from '@/lib/tracking-quality';
 import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
-import { usePRDetection } from '@/hooks/use-pr-detection';
-import { PRCelebrationBadge } from '@/components/form-tracking/PRCelebrationBadge';
-import { ProgressionSuggestionBadge } from '@/components/form-tracking/ProgressionSuggestionBadge';
-import { useProgressionSuggestion } from '@/hooks/use-progression-suggestion';
-import { useSessionRunner } from '@/lib/stores/session-runner';
-import type { FormTargets } from '@/lib/services/form-target-resolver';
 import {
   DEFAULT_DETECTION_MODE,
   getWorkoutByMode,
@@ -98,7 +89,7 @@ import {
   getPhaseStaticCue,
   type DetectionMode,
 } from '@/lib/workouts';
-import type { WorkoutMetrics } from '@/lib/types/workout-definitions';
+import type { WorkoutMetrics, FaultDefinition } from '@/lib/types/workout-definitions';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
 import { buildVideoMetricsForClip, type RecordingQuality } from '@/lib/services/video-metrics';
 import { shouldUploadVideo } from '@/lib/services/consent-service';
@@ -108,62 +99,33 @@ import backTurnedFixture from '@/tests/fixtures/pullup-tracking/back-turned.json
 import occlusionBriefFixture from '@/tests/fixtures/pullup-tracking/occlusion-brief.json';
 import occlusionLongFixture from '@/tests/fixtures/pullup-tracking/occlusion-long.json';
 import bounceNoiseFixture from '@/tests/fixtures/pullup-tracking/bounce-noise.json';
-import { styles } from '../../styles/tabs/_scan-arkit.styles';
+import {
+  styles,
+  scanSessionOverlayStyles as styleOverrides,
+} from '../../styles/tabs/_scan-arkit.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
 
-// Form-tracking UX overhaul components (#416).
-import FqiGauge from '@/components/form-tracking/FqiGauge';
-import CueCard, { classifyCue, type CueEntry } from '@/components/form-tracking/CueCard';
-import TrackingLossBanner from '@/components/form-tracking/TrackingLossBanner';
-import RepPulse from '@/components/form-tracking/RepPulse';
-import TrackingOnboardingOverlay from '@/components/form-tracking/TrackingOnboardingOverlay';
-import { useTrackingLoss } from '@/hooks/use-tracking-loss';
+// Issue #427 — session-aware overlays. Scoped to new regions; existing
+// render tree is untouched.
+import { useSessionRunner } from '@/lib/stores/session-runner';
+import { useHealthKit } from '@/contexts/HealthKitContext';
+import { useActiveSetBinding } from '@/hooks/use-active-set-binding';
+import { useExerciseHistory } from '@/hooks/use-exercise-history';
+import { useLiveFatigue } from '@/hooks/use-live-fatigue';
+import { useSessionAutopause } from '@/hooks/use-session-autopause';
+import { ActiveSetBadge } from '@/components/form-tracking/ActiveSetBadge';
+import { InlineRestTimer } from '@/components/form-tracking/InlineRestTimer';
+import { ExerciseHistoryStrip } from '@/components/form-tracking/ExerciseHistoryStrip';
+import { HeartRatePill } from '@/components/form-tracking/HeartRatePill';
+import { SessionResumeToast } from '@/components/form-tracking/SessionResumeToast';
+import { ExerciseSwapSheet } from '@/components/form-tracking/ExerciseSwapSheet';
+import { DrillSheet } from '@/components/form-tracking/DrillSheet';
 
 // Phase and detection mode types are now imported from lib/workouts
 type BaseUploadMetrics = Record<string, unknown> & {
   mode: DetectionMode;
   reps: number;
 };
-
-/**
- * Workout UI adapter callers — centralise the base-vs-specific metrics
- * variance handoff so call sites don't need `as never` casts.
- *
- * Each workout's `WorkoutUiAdapter` is generic over its own `TMetrics`,
- * but at runtime we hold `WorkoutMetrics | null` (the base shape) and
- * the def travels with its metrics for the same mode, so a narrowed
- * "has a ui adapter" shape is enough to describe what we need at the
- * call site. The cast to `BaseUiAdapter` happens exactly once, here.
- */
-type BaseUiAdapter = {
-  buildUploadMetrics?: (metrics: WorkoutMetrics | null) => Record<string, number | null>;
-  buildWatchMetrics?: (metrics: WorkoutMetrics | null) => Record<string, number | null>;
-  getRealtimeCues?: (args: { phaseId: string; metrics: WorkoutMetrics }) => string[] | null;
-};
-
-type DefWithUi = { ui?: unknown };
-
-const baseUiAdapter = (def: DefWithUi): BaseUiAdapter | undefined =>
-  def.ui as BaseUiAdapter | undefined;
-
-const callBuildUploadMetrics = (
-  def: DefWithUi,
-  metrics: WorkoutMetrics | null,
-): Record<string, number | null> =>
-  baseUiAdapter(def)?.buildUploadMetrics?.(metrics) ?? {};
-
-const callBuildWatchMetrics = (
-  def: DefWithUi,
-  metrics: WorkoutMetrics | null,
-): Record<string, number | null> =>
-  baseUiAdapter(def)?.buildWatchMetrics?.(metrics) ?? {};
-
-const callGetRealtimeCues = (
-  def: DefWithUi,
-  phaseId: string,
-  metrics: WorkoutMetrics,
-): string[] | null =>
-  baseUiAdapter(def)?.getRealtimeCues?.({ phaseId, metrics }) ?? null;
 
 type ClipMetaMetrics = {
   avgFqi: number | null;
@@ -194,10 +156,7 @@ const WATCH_MIRROR_AR_QUALITY = 0.25;
 const WATCH_MIRROR_MAX_WIDTH = 320;
 const MEDIAPIPE_SHADOW_POLL_INTERVAL_MS = 100;
 const MEDIAPIPE_MAX_TIMESTAMP_SKEW_SEC = 0.4;
-// Minimum time the "Partial tracking" badge must stay on-screen once
-// surfaced. Kept long enough (2s) for users to actually read the missing
-// component labels — the previous 900ms was too short (#416).
-const PARTIAL_TRACKING_BADGE_MIN_VISIBLE_MS = 2000;
+const PARTIAL_TRACKING_BADGE_MIN_VISIBLE_MS = 900;
 const PARTIAL_TRACKING_BADGE_HIDE_DELAY_MS = 350;
 const FIXTURE_PLAYBACK_DEFAULT = 'camera-facing';
 const FIXTURE_PLAYBACK_TRACES: Record<string, PullupFixtureFrame[]> = {
@@ -297,11 +256,7 @@ const SKELETON_JOINT_ALIASES: Record<string, string[]> = {
   right_foot_joint: ['right_foot_joint'],
 };
 
-// On iOS we bind the native ARKit view component; on every other platform
-// we fall back to a plain <View /> so the JSX shape stays identical. Both
-// satisfy React.ComponentType<ViewProps>, so we type the binding that way
-// instead of escaping to `any`.
-let ARKitView: React.ComponentType<React.ComponentProps<typeof View>> = View;
+let ARKitView: any = View;
 if (Platform.OS === 'ios') {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   ARKitView = require('@/lib/arkit/ARKitBodyView').default;
@@ -369,27 +324,8 @@ const PreviewPlayer = ({ uri }: { uri: string }) => {
 export default function ScanARKitScreen() {
   const DEV = __DEV__;
   const router = useRouter();
-  const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string; trackingDebug?: string; templateId?: string }>();
+  const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string; trackingDebug?: string }>();
   const fixturePlaybackRequested = params.fixturePlayback === '1';
-  // Issue #447 — deep-link / scheduled-workout template binding.
-  // Reads form-targets from the session-runner store (populated when the
-  // session was started from this templateId by `materializeTemplate`).
-  // No side-effects when no templateId is present.
-  const deepLinkTemplateId = typeof params.templateId === 'string' ? params.templateId : null;
-  const getFormTargetsFor = useSessionRunner((s) => s.getFormTargetsFor);
-  // PR-detection surface (issue #447 W3-C item #2).
-  const { pr: currentPR, clearPR: clearCurrentPR } = usePRDetection();
-  // Progression suggestion surface (issue #447 W3-C item #3).
-  // TODO(#434): wire lastSessionAvgFqi + lastWeight from session-runner
-  // history once PR #434 lands its history-panel query. Until then, keep
-  // the inputs null so the badge stays hidden. The hook + badge component
-  // are production-ready; only the data feed is deferred.
-  const progressionSuggestion = useProgressionSuggestion({
-    exerciseId: null,
-    lastSessionAvgFqi: null,
-    lastWeight: null,
-    unit: 'lb',
-  });
   const fixtureName = typeof params.fixture === 'string' ? params.fixture : FIXTURE_PLAYBACK_DEFAULT;
   const fixtureFrames = fixturePlaybackRequested ? FIXTURE_PLAYBACK_TRACES[fixtureName] ?? null : null;
   const fixturePlaybackEnabled = fixturePlaybackRequested && !!fixtureFrames;
@@ -422,11 +358,6 @@ export default function ScanARKitScreen() {
     startTracking: startNativeTracking,
     stopTracking: stopNativeTracking,
   } = useBodyTracking(60);
-
-  // Keep the screen awake while the user is actively tracking a set so the
-  // ARKit session isn't killed by the device locking mid-rep (#428).
-  useKeepAwakeSmart('tracking-active', isTracking);
-
   const [supportStatus, setSupportStatus] = useState<'unknown' | 'supported' | 'unsupported'>('unknown');
   const [jointAngles, setJointAngles] = useState<JointAngles | null>(null);
   const [fps, setFps] = useState(0);
@@ -444,36 +375,85 @@ export default function ScanARKitScreen() {
   const realtimeFormEngineRef = React.useRef(createRealtimeEngineState());
   const jointAnglesStateRef = React.useRef<JointAngles | null>(null);
   const [repCount, setRepCount] = useState(0);
-  // Live FQI surfaced in the new FqiGauge overlay (#416). Refreshed on
-  // each rep completion so users can see their form score drift in real
-  // time. Null until the first rep lands in the current set.
-  const [liveFqi, setLiveFqi] = useState<number | null>(null);
-  // Manual dismissal of the tracking-loss banner; resets whenever the
-  // hook reports a recovery to healthy confidence (#416).
-  const [trackingLossDismissed, setTrackingLossDismissed] = useState(false);
-  const [detectionMode, setDetectionMode] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
+  const [detectionMode, setDetectionModeState] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
   const activeWorkoutDef = useMemo(() => getWorkoutByMode(detectionMode), [detectionMode]);
-  // Active form targets — resolved from session-runner (template override)
-  // with a fall-through to per-exercise defaults. Exposed as a ref so the
-  // cue-engine / FQI gauge can read without retriggering the whole render.
-  // Issue #447 W3-C item #1.
-  const activeFormTargets: FormTargets = useMemo(
-    () => getFormTargetsFor(detectionMode),
-    [getFormTargetsFor, detectionMode],
+
+  // ------------------------------------------------------------------
+  // Issue #427 — session binding, fatigue, swap + resume plumbing.
+  // ------------------------------------------------------------------
+  const activeSession = useSessionRunner((s) => s.activeSession);
+  const restTimer = useSessionRunner((s) => s.restTimer);
+  const skipRest = useSessionRunner((s) => s.skipRest);
+  const extendRest = useSessionRunner((s) => s.extendRest);
+  const loadActiveSession = useSessionRunner((s) => s.loadActiveSession);
+  const swapExerciseByDetectionMode = useSessionRunner((s) => s.swapExerciseByDetectionMode);
+  const activeSetBinding = useActiveSetBinding(detectionMode);
+  const healthKit = useHealthKit();
+  const heartRate = healthKit.latestHeartRate;
+  const exerciseHistory = useExerciseHistory(activeSetBinding.sessionExercise?.exercise_id ?? null);
+  const [recentFqiSamples, setRecentFqiSamples] = useState<number[]>([]);
+  const fatigue = useLiveFatigue({
+    recentFqi: recentFqiSamples,
+    heartRateBpm: heartRate?.bpm,
+  });
+  const autopause = useSessionAutopause({ enabled: true });
+  const [pendingSwapMode, setPendingSwapMode] = useState<DetectionMode | null>(null);
+  const [activeDrillFault, setActiveDrillFault] = useState<FaultDefinition | null>(null);
+
+  const currentSessionExerciseName =
+    activeSetBinding.sessionExercise?.exercise?.name ?? activeWorkoutDef.displayName;
+  const pendingSwapDef = pendingSwapMode ? getWorkoutByMode(pendingSwapMode) : null;
+
+  // Wrapper: when there's no active session, switch immediately. When a
+  // session IS active, queue the swap for confirmation via ExerciseSwapSheet.
+  const setDetectionMode: typeof setDetectionModeState = useCallback(
+    (next) => {
+      if (!activeSession) {
+        setDetectionModeState(next);
+        return;
+      }
+      const resolved = typeof next === 'function'
+        ? (next as (prev: DetectionMode) => DetectionMode)(detectionMode)
+        : next;
+      if (resolved === detectionMode) {
+        setDetectionModeState(resolved);
+        return;
+      }
+      setPendingSwapMode(resolved);
+    },
+    [activeSession, detectionMode],
   );
-  const activeFormTargetsRef = React.useRef<FormTargets>(activeFormTargets);
+
+  // Confirm: swap session_exercise then flip the scan detection mode.
+  const handleSwapConfirm = useCallback(
+    async (action: 'append' | 'replace') => {
+      if (!pendingSwapMode) return;
+      try {
+        await swapExerciseByDetectionMode(pendingSwapMode, action);
+      } catch {
+        // Ignore — scan still updates so the user keeps tracking.
+      }
+      setDetectionModeState(pendingSwapMode);
+      setPendingSwapMode(null);
+      setIsDropdownOpen(false);
+    },
+    [pendingSwapMode, swapExerciseByDetectionMode],
+  );
+
+  // Feed rep scores into the rolling fatigue window.
+  const recordFqiSample = useCallback((score: number) => {
+    if (!Number.isFinite(score)) return;
+    setRecentFqiSamples((prev) => {
+      const next = [...prev, score];
+      if (next.length > 8) next.shift();
+      return next;
+    });
+  }, []);
+
+  // Resume the persisted session on mount (no-op when none).
   useEffect(() => {
-    activeFormTargetsRef.current = activeFormTargets;
-    if (deepLinkTemplateId) {
-      logWithTs('[ScanARKit] Active form targets', {
-        exerciseId: detectionMode,
-        templateId: deepLinkTemplateId,
-        fqiMin: activeFormTargets.fqiMin,
-        romMin: activeFormTargets.romMin,
-        romMax: activeFormTargets.romMax,
-      });
-    }
-  }, [activeFormTargets, detectionMode, deepLinkTemplateId]);
+    void loadActiveSession();
+  }, [loadActiveSession]);
   const [activePhase, setActivePhase] = useState<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
   const activePhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
@@ -496,10 +476,6 @@ export default function ScanARKitScreen() {
   >(null);
   const lastLivePartialBadgeRef = React.useRef<PullupScoringResult['visibility_badge'] | null>(null);
   const [showPartialTrackingBadge, setShowPartialTrackingBadge] = useState(false);
-  // When the user taps the badge close button we suppress it until the
-  // tracker recovers to 'full' at least once — avoids the badge nagging
-  // while they intentionally step out of frame (#416).
-  const [isPartialTrackingBadgeDismissed, setIsPartialTrackingBadgeDismissed] = useState(false);
   const baselineDebugEnabled = DEV && showDebugStats;
   const baselineDebugEnabledRef = React.useRef(baselineDebugEnabled);
   const baselineDebugMetricsRef = React.useRef<BaselineDebugMetrics>(createBaselineDebugMetrics());
@@ -509,7 +485,6 @@ export default function ScanARKitScreen() {
   const smoothedPose2DRef = React.useRef<Joint2D[] | null>(null);
   const pose2DCacheRef = React.useRef<Record<string, { x: number; y: number }>>({});
   const lastSpokenCueRef = React.useRef<{ cue: string; timestamp: number } | null>(null);
-  const cueRotatorRef = useRef(createCueRotator(CUE_ROTATION_VARIANTS));
   const cueHysteresisControllerRef = React.useRef(
     new CueHysteresisController<string>({ showFrames: SHOW_N_FRAMES, hideFrames: HIDE_N_FRAMES })
   );
@@ -567,36 +542,6 @@ export default function ScanARKitScreen() {
     stablePrimaryCueRef.current = null;
   }, []);
 
-  // Frame-callback error reporter. ARKit frame callbacks run async on the
-  // native side — unhandled throws bypass CrashBoundary (which only wraps
-  // the JSX tree) and surface as unhandled promise rejections. Route all
-  // frame-time failures here so we degrade gracefully and log once per
-  // session per source rather than on every bad frame.
-  const processFrameFailureLoggedRef = React.useRef<Set<string>>(new Set());
-  const reportProcessFrameFailure = useCallback((source: string, error: unknown) => {
-    const logged = processFrameFailureLoggedRef.current;
-    if (logged.has(source)) return;
-    logged.add(source);
-    errorWithTs(`[ScanARKit] processFrame(${source}) threw — degrading gracefully`, error);
-  }, []);
-
-  // Consolidated engine / shadow-state lifecycle. Previously each lifecycle
-  // point (mount, detection-mode change, pose-loss, startTracking,
-  // stopTracking) inlined its own five-line reset, drifting over time. A
-  // single callback keeps the invariant "realtime engine is fresh whenever
-  // we reset shadow metrics" in one place.
-  const resetRealtimeEngine = useCallback(() => {
-    realtimeFormEngineRef.current = createRealtimeEngineState();
-    lastShadowMeanAbsDeltaRef.current = null;
-  }, [createRealtimeEngineState]);
-
-  const resetShadowTracking = useCallback(() => {
-    shadowStatsRef.current = createShadowStatsAccumulator();
-    shadowProviderCountsRef.current = createShadowProviderCounts();
-    mediaPipePoseRef.current = null;
-    resetRealtimeEngine();
-  }, [resetRealtimeEngine]);
-
   const updatePartialTrackingBadgeVisibility = useCallback((
     visibilityBadge: PullupScoringResult['visibility_badge'],
     source: 'frame-live' | 'onPullupScoring-rep-complete' | 'unknown' = 'unknown'
@@ -622,25 +567,12 @@ export default function ScanARKitScreen() {
       return;
     }
 
-    // Recovered to a non-partial state — clear any user dismissal so the
-    // next partial event is surfaced again.
-    setIsPartialTrackingBadgeDismissed(false);
-
     const hideInMs = Math.max(0, partialTrackingVisibleUntilMsRef.current - now) + PARTIAL_TRACKING_BADGE_HIDE_DELAY_MS;
     partialTrackingHideTimerRef.current = setTimeout(() => {
       setShowPartialTrackingBadge(false);
       partialTrackingHideTimerRef.current = null;
     }, hideInMs);
   }, [fixturePlaybackEnabled, logTrackingDebug, repCount]);
-
-  const handleDismissPartialTrackingBadge = useCallback(() => {
-    if (partialTrackingHideTimerRef.current) {
-      clearTimeout(partialTrackingHideTimerRef.current);
-      partialTrackingHideTimerRef.current = null;
-    }
-    setShowPartialTrackingBadge(false);
-    setIsPartialTrackingBadgeDismissed(true);
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -798,23 +730,17 @@ export default function ScanARKitScreen() {
       return;
     }
 
-    // Use AbortController as the single source of truth for poll cancellation.
-    // `BodyTracker.getCurrentMediaPipePose2D()` is a native promise that we
-    // can't cancel directly, but we can guard every setState / ref mutation
-    // behind `controller.signal.aborted` so late arrivals never leak onto an
-    // unmounted or detached component.
-    const controller = new AbortController();
-    const { signal } = controller;
+    let active = true;
 
     const poll = async () => {
-      if (signal.aborted || mediaPipePollInFlightRef.current) {
+      if (!active || mediaPipePollInFlightRef.current) {
         return;
       }
 
       mediaPipePollInFlightRef.current = true;
       try {
         const payload = await BodyTracker.getCurrentMediaPipePose2D();
-        if (signal.aborted || !payload || payload.landmarks.length === 0) {
+        if (!active || !payload || payload.landmarks.length === 0) {
           return;
         }
         mediaPipePoseRef.current = payload;
@@ -822,9 +748,6 @@ export default function ScanARKitScreen() {
           mediaPipeModelVersionRef.current = payload.modelVersion;
         }
       } catch (error) {
-        if (signal.aborted) {
-          return;
-        }
         if (DEV) {
           warnWithTs('[ScanARKit] MediaPipe shadow poll failed', error);
         }
@@ -835,12 +758,11 @@ export default function ScanARKitScreen() {
 
     void poll();
     mediaPipePollTimerRef.current = setInterval(() => {
-      if (signal.aborted) return;
       void poll();
     }, MEDIAPIPE_SHADOW_POLL_INTERVAL_MS);
 
     return () => {
-      controller.abort();
+      active = false;
       if (mediaPipePollTimerRef.current) {
         clearInterval(mediaPipePollTimerRef.current);
         mediaPipePollTimerRef.current = null;
@@ -927,15 +849,6 @@ export default function ScanARKitScreen() {
     }
   }, [isScreenFocused, stopSpeech]);
 
-  // Each new tracking session starts cue rotation at variant 0 so support
-  // debugging is deterministic and users always hear the most familiar
-  // phrasing first.
-  useEffect(() => {
-    if (isTracking) {
-      cueRotatorRef.current.reset();
-    }
-  }, [isTracking]);
-
   // Initialize telemetry context on mount
   useEffect(() => {
     initSessionContext().catch((error) => {
@@ -944,9 +857,13 @@ export default function ScanARKitScreen() {
       }
     });
     resetFrameCounter();
-    resetShadowTracking();
+    shadowStatsRef.current = createShadowStatsAccumulator();
+    shadowProviderCountsRef.current = createShadowProviderCounts();
+    mediaPipePoseRef.current = null;
+    realtimeFormEngineRef.current = createRealtimeEngineState();
+    lastShadowMeanAbsDeltaRef.current = null;
     resetBaselineDebugMetrics();
-  }, [resetShadowTracking, resetBaselineDebugMetrics]);
+  }, [createRealtimeEngineState, resetBaselineDebugMetrics]);
 
   useEffect(() => {
     const countersRef = cueCountersRef;
@@ -1026,12 +943,13 @@ export default function ScanARKitScreen() {
     },
     onRepComplete: (repNumber: number, fqi: number) => {
       setRepCount(repNumber);
-      // Surface the latest FQI in the new live gauge overlay (#416).
-      setLiveFqi(fqi);
       repIndexTrackerRef.current.endRep();
       if (recordingActiveRef.current && Date.now() >= recordingStartEpochMsRef.current) {
         recordingFqiScoresRef.current.push(fqi);
       }
+      // #427 — feed per-rep FQI into the fatigue window used by the
+      // session-aware overlays (HeartRatePill / InlineRestTimer nudges).
+      recordFqiSample(fqi);
     },
     onPullupScoring: (
       _repNumber: number,
@@ -1044,7 +962,7 @@ export default function ScanARKitScreen() {
         meta?.source === 'frame' ? 'frame-live' : 'onPullupScoring-rep-complete'
       );
     },
-  }), [activeWorkoutDef, repCount, transitionPhase, updatePartialTrackingBadgeVisibility]);
+  }), [activeWorkoutDef, repCount, recordFqiSample, transitionPhase, updatePartialTrackingBadgeVisibility]);
 
   const workoutController = useWorkoutController(detectionMode, {
     sessionId: sessionIdRef.current,
@@ -1064,15 +982,18 @@ export default function ScanARKitScreen() {
     activePhaseRef.current = nextInitialPhase;
     setActivePhase(nextInitialPhase);
     setRepCount(0);
-    setLiveFqi(null);
     setActiveMetrics(null);
     setLivePullupPartialStatus(null);
     lastLivePartialBadgeRef.current = null;
     repIndexTrackerRef.current.reset();
-    resetShadowTracking();
+    shadowStatsRef.current = createShadowStatsAccumulator();
+    shadowProviderCountsRef.current = createShadowProviderCounts();
+    mediaPipePoseRef.current = null;
+    realtimeFormEngineRef.current = createRealtimeEngineState();
+    lastShadowMeanAbsDeltaRef.current = null;
     resetBaselineDebugMetrics();
     setWorkoutController(detectionMode);
-  }, [detectionMode, resetBaselineDebugMetrics, resetShadowTracking, setWorkoutController]);
+  }, [createRealtimeEngineState, detectionMode, resetBaselineDebugMetrics, setWorkoutController]);
 
   useEffect(() => {
     if (DEV) {
@@ -1187,19 +1108,12 @@ export default function ScanARKitScreen() {
       lastPoseTimestampRef.current = frame.timestampSec;
       jointAnglesStateRef.current = frame.angles;
       setJointAngles(frame.angles);
-      // Guard per-frame processing so one bad fixture frame can't tear the
-      // whole playback down; errors are reported once per session to avoid
-      // log floods, and the component continues on the next frame.
-      try {
-        const metrics = getWorkoutByMode('pullup').calculateMetrics(frame.angles, joints) as WorkoutMetrics;
-        setActiveMetrics(metrics);
-        processWorkoutFrame(frame.angles, joints, {
-          trackingQuality: 1,
-          shadowMeanAbsDelta: 0,
-        });
-      } catch (error) {
-        reportProcessFrameFailure('fixture-playback', error);
-      }
+      const metrics = getWorkoutByMode('pullup').calculateMetrics(frame.angles, joints) as WorkoutMetrics;
+      setActiveMetrics(metrics);
+      processWorkoutFrame(frame.angles, joints, {
+        trackingQuality: 1,
+        shadowMeanAbsDelta: 0,
+      });
       setFixturePlaybackFramesProcessed(index + 1);
 
       const next = fixtureFrames[index + 1];
@@ -1221,6 +1135,9 @@ export default function ScanARKitScreen() {
         clearTimeout(timeoutId);
       }
     };
+    // setDetectionMode is a ref-stable wrapper; omitted from deps to
+    // avoid re-triggering fixture playback on detection-mode changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     fixturePlaybackEnabled,
     fixtureFrames,
@@ -1232,7 +1149,8 @@ export default function ScanARKitScreen() {
     DEV,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
-    reportProcessFrameFailure,
+    // setDetectionMode intentionally omitted — the wrapper reads
+    // activeSession + detectionMode and would loop if listed here.
   ]);
 
   // Debug pose updates (throttled logging)
@@ -1249,7 +1167,8 @@ export default function ScanARKitScreen() {
       frameStatsRef.current = { lastTimestamp: 0, frameCount: 0 };
       setJointAngles(null);
       jointAnglesStateRef.current = null;
-      resetRealtimeEngine();
+      realtimeFormEngineRef.current = createRealtimeEngineState();
+      lastShadowMeanAbsDeltaRef.current = null;
       setFps(0);
       setSmoothedPose2DJoints(null);
       smoothedPose2DRef.current = null;
@@ -1537,14 +1456,10 @@ export default function ScanARKitScreen() {
           lastLivePartialBadgeRef.current = null;
         }
 
-        try {
-          processWorkoutFrame(next, jointsMap, {
-            trackingQuality: smoothingResult?.trackingQuality,
-            shadowMeanAbsDelta: shadowComparison?.meanAbsDelta,
-          });
-        } catch (error) {
-          reportProcessFrameFailure('live-frame', error);
-        }
+        processWorkoutFrame(next, jointsMap, {
+          trackingQuality: smoothingResult?.trackingQuality,
+          shadowMeanAbsDelta: shadowComparison?.meanAbsDelta,
+        });
       } else {
         repIndexTrackerRef.current.reset();
         resetWorkoutController({ preserveRepCount: true });
@@ -1555,7 +1470,7 @@ export default function ScanARKitScreen() {
         transitionPhase(activeWorkoutDef.initialPhase);
       }
     } catch (error) {
-      reportProcessFrameFailure('angle-calculation', error);
+      errorWithTs('[ScanARKit] ❌ Error calculating angles:', error);
     } finally {
       if (frameProcessStartMs !== null) {
         const elapsedMs = Math.max(0, nowMs() - frameProcessStartMs);
@@ -1687,14 +1602,18 @@ export default function ScanARKitScreen() {
       resetCueHysteresis();
 
       const startTime = Date.now();
-      resetShadowTracking();
+      shadowStatsRef.current = createShadowStatsAccumulator();
+      shadowProviderCountsRef.current = createShadowProviderCounts();
+      mediaPipePoseRef.current = null;
+      realtimeFormEngineRef.current = createRealtimeEngineState();
+      lastShadowMeanAbsDeltaRef.current = null;
       await startNativeTracking();
       const elapsed = Date.now() - startTime;
       
       if (DEV) logWithTs('[ScanARKit] Tracking started successfully in', elapsed, 'ms');
 
       if (Platform.OS === 'ios') {
-        safeHaptic.notification('success');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (error) {
       errorWithTs('[ScanARKit] ❌ Failed to start tracking:', error);
@@ -1715,7 +1634,6 @@ export default function ScanARKitScreen() {
     resetWorkoutController,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
-    resetShadowTracking,
   ]);
 
   const stopRecordingCore = useCallback(async () => {
@@ -1768,7 +1686,11 @@ export default function ScanARKitScreen() {
       resetWorkoutController();
       setRepCount(0);
       setFps(0);
-      resetShadowTracking();
+      realtimeFormEngineRef.current = createRealtimeEngineState();
+      lastShadowMeanAbsDeltaRef.current = null;
+      shadowStatsRef.current = createShadowStatsAccumulator();
+      shadowProviderCountsRef.current = createShadowProviderCounts();
+      mediaPipePoseRef.current = null;
       setShadowProviderRuntime('mediapipe_proxy');
       resetBaselineDebugMetrics();
       resetCueHysteresis();
@@ -1776,7 +1698,7 @@ export default function ScanARKitScreen() {
       if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
       if (Platform.OS === 'ios') {
-        safeHaptic.impact('medium');
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
     } catch (error) {
       errorWithTs('[ScanARKit] ❌ Error stopping tracking:', error);
@@ -1792,7 +1714,6 @@ export default function ScanARKitScreen() {
     resetWorkoutController,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
-    resetShadowTracking,
   ]);
 
   // Cleanup on unmount
@@ -1849,7 +1770,10 @@ export default function ScanARKitScreen() {
 	      return messages;
 	    }
 
-	    const realtimeCues = callGetRealtimeCues(activeWorkoutDef, activePhase, activeMetrics);
+	    const realtimeCues = activeWorkoutDef.ui?.getRealtimeCues?.({
+	      phaseId: activePhase,
+	      metrics: activeMetrics as never,
+	    });
 	    if (realtimeCues?.length) {
 	      messages.push(...realtimeCues);
 	    }
@@ -1862,36 +1786,6 @@ export default function ScanARKitScreen() {
 	      () => feedback?.filter((cue): cue is string => !!cue) ?? [],
 	      [feedback]
 	    );
-	    // Top-priority cue for the CueCard overlay (#416). We classify each
-	    // feedback message with classifyCue(), then surface the highest-
-	    // priority one (critical > warning > advisory).
-	    const topPriorityCue: CueEntry | null = useMemo(() => {
-	      if (!feedback || feedback.length === 0) return null;
-	      const classified = feedback.map((msg) => classifyCue(msg));
-	      const byPriority = (p: CueEntry['priority']): number =>
-	        p === 'critical' ? 0 : p === 'warning' ? 1 : 2;
-	      return [...classified].sort(
-	        (a, b) => byPriority(a.priority) - byPriority(b.priority),
-	      )[0] ?? null;
-	    }, [feedback]);
-	    // Tracking confidence proxy driving the TrackingLossBanner (#416):
-	    // ratio of tracked joints to the total the native module returned.
-	    // Null when tracking is off so the hook stays idle.
-	    const trackingConfidence: number | null = useMemo(() => {
-	      if (!isTracking || !pose?.joints || pose.joints.length === 0) {
-	        return null;
-	      }
-	      const tracked = pose.joints.filter((j) => j.isTracked).length;
-	      return tracked / pose.joints.length;
-	    }, [isTracking, pose]);
-	    const { isLost: trackingLost, lostForMs: trackingLostForMs } =
-	      useTrackingLoss(trackingConfidence);
-	    // Clear the user's manual dismissal once confidence recovers.
-	    useEffect(() => {
-	      if (!trackingLost) {
-	        setTrackingLossDismissed(false);
-	      }
-	    }, [trackingLost]);
 	    const poseTimestamp = pose?.timestamp ?? null;
 	    const primaryCue = useMemo(() => {
 	      if (!isTracking) {
@@ -1922,7 +1816,7 @@ export default function ScanARKitScreen() {
 	      () => ({
 	        mode: detectionMode,
 	        reps: repCount,
-	        ...callBuildUploadMetrics(activeWorkoutDef, activeMetrics),
+	        ...(activeWorkoutDef.ui?.buildUploadMetrics(activeMetrics as never) ?? {}),
 	      }),
 	      [activeWorkoutDef, activeMetrics, detectionMode, repCount]
 	    );
@@ -1937,10 +1831,7 @@ export default function ScanARKitScreen() {
       return;
     }
     lastSpokenCueRef.current = { cue: primaryCue, timestamp: now };
-    // Rotate to a varied phrasing just before TTS so the user doesn't hear
-    // the same wording across reps. Dedupe + logging keep the base string
-    // so the 5s repeat-guard and analytics stay coherent.
-    speakCue(cueRotatorRef.current.rotate(primaryCue));
+    speakCue(primaryCue);
 
     addWorkoutRepCue(primaryCue);
   }, [primaryCue, audioFeedbackEnabled, speakCue, addWorkoutRepCue]);
@@ -2120,45 +2011,22 @@ export default function ScanARKitScreen() {
       };
     }, [watchMirrorActive, captureAndSendWatchMirror]);
 
-    // Watch Connectivity: Listen for commands.
-    //
-    // The listener reads current tracking state and callbacks via refs so it
-    // can stay subscribed once per mount instead of churning every time
-    // isTracking / supportStatus / startTracking / stopTracking change. A
-    // rapid start/stop toggle previously registered a brand new listener
-    // on every flip; with the ref-based approach the native bridge only
-    // ever sees a single subscription.
-    const watchCommandContextRef = React.useRef({
-      isTracking,
-      supportStatus,
-      startTracking,
-      stopTracking,
-    });
-    useEffect(() => {
-      watchCommandContextRef.current = {
-        isTracking,
-        supportStatus,
-        startTracking,
-        stopTracking,
-      };
-    }, [isTracking, supportStatus, startTracking, stopTracking]);
-
+    // Watch Connectivity: Listen for commands
     useEffect(() => {
       const unsubscribe = watchEvents.addListener('message', (message: { command?: string }) => {
-        const ctx = watchCommandContextRef.current;
         if (message.command === 'start') {
-          if (!ctx.isTracking && ctx.supportStatus === 'supported') {
-            ctx.startTracking();
+          if (!isTracking && supportStatus === 'supported') {
+            startTracking();
           }
         } else if (message.command === 'stop') {
-          if (ctx.isTracking) {
-            ctx.stopTracking();
+          if (isTracking) {
+            stopTracking();
           }
         }
       });
 
       return () => unsubscribe();
-    }, []);
+    }, [isTracking, supportStatus, startTracking, stopTracking]);
 
     // Watch Connectivity: Sync state
     useEffect(() => {
@@ -2176,7 +2044,7 @@ export default function ScanARKitScreen() {
 
 	      const reps = repCount;
 	      const phase = activePhase;
-	      const metrics = callBuildWatchMetrics(activeWorkoutDef, activeMetrics);
+	      const metrics = activeWorkoutDef.ui?.buildWatchMetrics(activeMetrics as never) ?? {};
 
 	      const payload = buildWatchTrackingPayload({
 	        now,
@@ -2436,7 +2304,7 @@ export default function ScanARKitScreen() {
         if (Platform.OS === 'android') {
           ToastAndroid.show(message, ToastAndroid.SHORT);
         } else {
-          safeHaptic.notification('success');
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
       }
     } else {
@@ -2468,7 +2336,7 @@ export default function ScanARKitScreen() {
     if (Platform.OS === 'android') {
       ToastAndroid.show(message, ToastAndroid.SHORT);
     } else {
-      safeHaptic.notification('success');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
   }, []);
 
@@ -2584,7 +2452,7 @@ export default function ScanARKitScreen() {
 	    activeWorkoutDef.phases.find((phase) => phase.id === telemetryPhaseId)?.displayName ??
 	    String(telemetryPhaseId);
 	  const telemetryUi = activeWorkoutDef.ui;
-	  const telemetryMetricValues = callBuildWatchMetrics(activeWorkoutDef, activeMetrics);
+	  const telemetryMetricValues = telemetryUi?.buildWatchMetrics(activeMetrics as never) ?? {};
 	  const telemetryPrimaryMetric = telemetryUi?.primaryMetric;
 	  const telemetrySecondaryMetric = telemetryUi?.secondaryMetric;
 	  const telemetryPrimaryLabel = telemetryPrimaryMetric?.label ?? '--';
@@ -2629,7 +2497,6 @@ export default function ScanARKitScreen() {
     detectionMode === 'pullup' &&
     (isTracking || fixturePlaybackEnabled) &&
     showPartialTrackingBadge &&
-    !isPartialTrackingBadgeDismissed &&
     effectivePartialStatus?.visibility_badge === 'partial';
   const missingComponentSet = new Set(effectivePartialStatus?.missing_components ?? []);
   const partialTrackingComponents = PULLUP_COMPONENT_INDICATORS.map((item) => ({
@@ -2671,7 +2538,7 @@ export default function ScanARKitScreen() {
                 onPress={() => setIsDropdownOpen(!isDropdownOpen)}
               >
                 <Ionicons
-                  name={activeWorkoutDef.ui?.iconName ?? 'barbell-outline'}
+                  name={(activeWorkoutDef.ui?.iconName ?? 'barbell-outline') as any}
                   size={16}
                   color="#F5F7FF"
                 />
@@ -2704,6 +2571,20 @@ export default function ScanARKitScreen() {
           </View>
 
           <View style={styles.topBarActions}>
+            {/* #427 active-set-anchor — rendered only when the scan is bound to a live session */}
+            {activeSetBinding.isBound ? (
+              <ActiveSetBadge
+                setLabel={activeSetBinding.setLabel}
+                exerciseName={currentSessionExerciseName}
+                testID="scan-active-set-badge"
+              />
+            ) : null}
+            {/* #427 live HR chip */}
+            <HeartRatePill
+              bpm={heartRate?.bpm ?? null}
+              timestampMs={heartRate?.timestamp ?? null}
+              testID="scan-heart-rate-pill"
+            />
             <TouchableOpacity
               style={styles.topBarButton}
               onPress={openWorkoutInsights}
@@ -2723,6 +2604,69 @@ export default function ScanARKitScreen() {
           </View>
         </View>
       </View>
+
+      {/* #427 session-aware overlays — rendered outside the existing
+          tracking view so PR #424 components stay untouched. */}
+      <View
+        style={styleOverrides.sessionOverlayRow}
+        pointerEvents="box-none"
+        testID="scan-session-overlay-row"
+      >
+        {activeSetBinding.isBound && restTimer ? (
+          <InlineRestTimer
+            startedAt={restTimer.startedAt}
+            targetSeconds={restTimer.targetSeconds}
+            onExtend15={() => extendRest(15)}
+            onSkip={() => {
+              void skipRest();
+            }}
+            testID="scan-inline-rest-timer"
+          />
+        ) : null}
+        {activeSetBinding.isBound ? (
+          <ExerciseHistoryStrip
+            summary={exerciseHistory.summary}
+            exerciseDisplayName={currentSessionExerciseName}
+            testID="scan-exercise-history-strip"
+          />
+        ) : null}
+      </View>
+
+      {/* #427 resume banner — auto-driven by useSessionAutopause. */}
+      {autopause.needsResume ? (
+        <View style={styleOverrides.resumeToastWrap} pointerEvents="box-none">
+          <SessionResumeToast
+            visible={autopause.needsResume}
+            reason={autopause.pauseReason}
+            lastExerciseName={currentSessionExerciseName}
+            onResume={() => {
+              void autopause.acknowledgeResume();
+            }}
+            testID="scan-session-resume-toast"
+          />
+        </View>
+      ) : null}
+
+      {/* #427 swap sheet + drill sheet */}
+      <ExerciseSwapSheet
+        visible={pendingSwapMode != null}
+        targetExerciseName={pendingSwapDef?.displayName ?? ''}
+        currentExerciseName={currentSessionExerciseName}
+        onDismiss={() => setPendingSwapMode(null)}
+        onConfirm={handleSwapConfirm}
+        testID="scan-exercise-swap-sheet"
+      />
+      <DrillSheet
+        visible={activeDrillFault != null}
+        fault={activeDrillFault}
+        exerciseId={detectionMode}
+        sessionId={activeSession?.id ?? null}
+        onDismiss={() => setActiveDrillFault(null)}
+        testID="scan-drill-sheet"
+      />
+
+      {/* Debug hook for future cue-tap integration — no-op until wired */}
+      {fatigue.state === 'fatigued' && restTimer && fatigue.suggestRestSec > 0 ? null : null}
 
       {/* Tracking view */}
       <View style={styles.trackingContainer}>
@@ -2747,16 +2691,7 @@ export default function ScanARKitScreen() {
         >
 
           {!showTelemetry && (
-            <Animated.View
-              style={[styles.topGuide, { top: topBarBottom + 16, opacity: textOpacity }]}
-              accessible
-              accessibilityRole="header"
-              accessibilityLabel={
-                isTracking
-                  ? `Tracking active. Real-world 3D joint tracking at ${fps} frames per second.`
-                  : 'Tracking inactive. Press Start to begin.'
-              }
-            >
+            <Animated.View style={[styles.topGuide, { top: topBarBottom + 16, opacity: textOpacity }]}>
               <Text style={styles.guideText}>
                 {isTracking ? 'Tracking Active' : 'Press Start to Begin'}
               </Text>
@@ -2778,11 +2713,6 @@ export default function ScanARKitScreen() {
               viewBox="0 0 1 1"
             preserveAspectRatio="none"
             pointerEvents="none"
-            accessible
-            accessibilityRole="image"
-            accessibilityLabel={`Body skeleton overlay showing ${
-              smoothedPose2DJoints.filter((j) => j.isTracked).length
-            } tracked joints`}
             >
               {(() => {
                 const jointsByName = new Map<string, Joint2D>();
@@ -2884,25 +2814,12 @@ export default function ScanARKitScreen() {
 
 	        {/* Workout telemetry display */}
 	        {showTelemetry && (
-          <View
-            style={[styles.anglesDisplay, { top: topBarBottom + 8 }]}
-            accessible
-            accessibilityRole="summary"
-            accessibilityLabel={
-              `${telemetryTitle} telemetry. ` +
-              `Reps ${telemetryReps}. ` +
-              `Phase ${telemetryPhaseLabel}. ` +
-              `${telemetryPrimaryLabel} ${telemetryPrimaryDisplay}. ` +
-              `${telemetrySecondaryLabel} ${telemetrySecondaryDisplay}.`
-            }
-          >
+          <View style={[styles.anglesDisplay, { top: topBarBottom + 8 }]}>
 	            <Text style={styles.anglesTitle}>{telemetryTitle}</Text>
 	            <View style={styles.anglesGrid}>
               <View style={styles.angleItem}>
                 <Text style={styles.angleLabel}>Reps</Text>
-                <RepPulse repCount={telemetryReps}>
-                  <Text style={styles.angleValue}>{telemetryReps}</Text>
-                </RepPulse>
+                <Text style={styles.angleValue}>{telemetryReps}</Text>
               </View>
               <View style={styles.angleItem}>
                 <Text style={styles.angleLabel}>Phase</Text>
@@ -2920,51 +2837,16 @@ export default function ScanARKitScreen() {
 	          </View>
 	        )}
 
-        {/* Form feedback — new CueCard overlay (#416).
-            Falls back to the plain feedback list when multiple cues
-            are present so nothing is lost to classification heuristics. */}
-        {topPriorityCue ? (
-          <View
-            style={styles.feedbackContainer}
-            accessible={false}
-            pointerEvents="box-none"
-          >
-            <CueCard cue={topPriorityCue} />
+        {/* Form feedback */}
+        {feedback && (
+          <View style={styles.feedbackContainer}>
+            {feedback.map((msg, idx) => (
+              <Text key={idx} style={styles.feedbackText}>
+                {msg}
+              </Text>
+            ))}
           </View>
-        ) : null}
-
-        {/* Tracking-loss banner — sits below the top bar when confidence
-            has been poor for >500ms (#416). */}
-        <View
-          style={[styles.trackingLossSlot, { top: topBarBottom + 8 }]}
-          pointerEvents="box-none"
-        >
-          <TrackingLossBanner
-            visible={trackingLost && !trackingLossDismissed}
-            lostForMs={trackingLostForMs}
-            onDismiss={() => setTrackingLossDismissed(true)}
-          />
-        </View>
-
-        {/* Live FQI gauge — anchored to the bottom-right of the overlay
-            so it never occludes the user's body (#416). */}
-        {isTracking ? (
-          <View
-            style={[styles.fqiGaugeSlot, { bottom: insets.bottom + 100 }]}
-            pointerEvents="none"
-          >
-            <FqiGauge score={liveFqi} />
-          </View>
-        ) : null}
-
-        {/* First-use onboarding panel — shown once, persists via
-            AsyncStorage (#249 + #416). */}
-        <View
-          style={[styles.onboardingSlot, { top: topBarBottom + 12 }]}
-          pointerEvents="box-none"
-        >
-          <TrackingOnboardingOverlay />
-        </View>
+        )}
       </View>
 
       {/* Controls */}
@@ -2986,26 +2868,6 @@ export default function ScanARKitScreen() {
               }
             }}
             disabled={isFinalizingRecording}
-            accessibilityRole="button"
-            accessibilityLabel={
-              isFinalizingRecording
-                ? 'Finalizing recording'
-                : isRecording
-                  ? 'Stop recording'
-                  : 'Record set'
-            }
-            accessibilityHint={
-              isFinalizingRecording
-                ? 'Please wait while the last set is being saved'
-                : isRecording
-                  ? 'Double tap to stop the current recording'
-                  : 'Double tap to start recording the current set'
-            }
-            accessibilityState={{
-              disabled: isFinalizingRecording,
-              busy: isFinalizingRecording,
-              selected: isRecording,
-            }}
           >
             {isFinalizingRecording ? (
               <ActivityIndicator color="#FFFFFF" />
@@ -3056,25 +2918,8 @@ export default function ScanARKitScreen() {
       )}
 
       {shouldShowPartialTrackingBadge && (
-        <View
-          style={[styles.partialTrackingBadge, { top: topBarBottom + 8 }]}
-          accessible
-          accessibilityRole="alert"
-          accessibilityLabel="Partial tracking — some joints are out of frame"
-        >
-          <View style={styles.partialTrackingHeader}>
-            <Text style={styles.partialTrackingBadgeText}>Partial tracking</Text>
-            <TouchableOpacity
-              onPress={handleDismissPartialTrackingBadge}
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss partial tracking badge"
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={styles.partialTrackingCloseButton}
-              testID="partial-tracking-badge-close"
-            >
-              <Ionicons name="close" size={12} color="#F5F7FF" />
-            </TouchableOpacity>
-          </View>
+        <View style={[styles.partialTrackingBadge, { top: topBarBottom + 8 }]}> 
+          <Text style={styles.partialTrackingBadgeText}>Partial tracking</Text>
           <View style={styles.partialTrackingComponentRow}>
             {partialTrackingComponents.map((component) => (
               <View
@@ -3099,18 +2944,6 @@ export default function ScanARKitScreen() {
           </View>
         </View>
       )}
-
-      {/* PR celebration badge (issue #447 W3-C #2). Surgical mount — renders
-          only when usePRDetection has a hit. Safe no-op when pr is null. */}
-      <PRCelebrationBadge pr={currentPR} onDismiss={clearCurrentPR} />
-
-      {/* Progression suggestion badge (issue #447 W3-C #3). Hidden until the
-          data-feed wiring lands (see TODO near useProgressionSuggestion). */}
-      {progressionSuggestion ? (
-        <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
-          <ProgressionSuggestionBadge suggestion={progressionSuggestion} />
-        </View>
-      ) : null}
 
       <Modal
         visible={isSettingsVisible}

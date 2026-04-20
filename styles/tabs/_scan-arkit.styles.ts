@@ -790,5 +790,28 @@ export const styles = StyleSheet.create({
   },
 });
 
+// #427 — session-aware overlay layout styles. Appended in an
+// orthogonal block so existing `styles` above are not modified.
+export const scanSessionOverlayStyles = StyleSheet.create({
+  sessionOverlayRow: {
+    position: 'absolute',
+    top: 96,
+    left: 0,
+    right: 0,
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    zIndex: 120,
+  },
+  resumeToastWrap: {
+    position: 'absolute',
+    top: 72,
+    left: 12,
+    right: 12,
+    zIndex: 150,
+  },
+});
+
 // Default export to satisfy Expo Router (this file is not a route)
 export default null;
