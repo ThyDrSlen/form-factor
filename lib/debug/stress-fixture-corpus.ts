@@ -41,7 +41,6 @@ function baseHangingJoints(xCenter: number, jitter: number, rng: () => number) {
     right_knee: { x: r4(xCenter + 0.07 + jit(rng, jitter)), y: 0.82, isTracked: true, confidence: 0.90 },
   };
 }
-
 function r4(v: number): number {
   return Number(v.toFixed(4));
 }
@@ -53,7 +52,7 @@ function jit(rng: () => number, scale: number): number {
 /** Generate a sin-wave rep signal in [0,1] during the given window, 0 outside. */
 function repSignal(
   ts: number,
-  windows: Array<{ start: number; end: number; amplitude?: number }>,
+  windows: { start: number; end: number; amplitude?: number }[],
 ): number {
   for (const w of windows) {
     if (ts < w.start || ts > w.end) continue;
@@ -609,7 +608,7 @@ function buildCrowdNoise(rng: () => number): StressFixtureTrace {
   ];
 
   // Noise spike positions: every ~50 frames, lasting 3-5 frames
-  const noiseSpikes: Array<{ start: number; length: number }> = [];
+  const noiseSpikes: { start: number; length: number }[] = [];
   const spikeRng = makeRng(77777);
   let nextSpike = 50 + Math.floor(spikeRng() * 10);
   while (nextSpike < count) {
