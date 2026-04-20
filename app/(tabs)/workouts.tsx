@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { DeleteAction } from '@/components';
 import { useUnits } from '@/contexts/UnitsContext';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
+import { exportSession } from '@/lib/services/session-export-service';
 import React, { useCallback, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -13,6 +14,7 @@ import {
     RefreshControl,
     ScrollView,
     Share,
+    StyleSheet,
     Text,
     TouchableOpacity,
     View
@@ -135,6 +137,77 @@ export default function WorkoutsScreen() {
       }
     },
     [getWeightLabel, showToast]
+  );
+
+  // --- Session timeline + export (#476) -----------------------------------
+  const handleOpenTimeline = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
+    router.push('/(modals)/session-timeline');
+  }, [router]);
+
+  const exportLatestSession = useCallback(
+    async (format: 'json' | 'csv') => {
+      try {
+        const db = (await import('@/lib/services/database/local-db')).localDB.db;
+        if (!db) {
+          showToast('Storage unavailable — try again shortly.', { type: 'error' });
+          return;
+        }
+        const rows = await db.getAllAsync<{ id: string }>(
+          `SELECT id FROM workout_sessions
+            WHERE deleted = 0 AND ended_at IS NOT NULL
+            ORDER BY started_at DESC LIMIT 1`,
+        );
+        const sessionId = rows[0]?.id;
+        if (!sessionId) {
+          showToast('No completed sessions to export yet.', { type: 'info' });
+          return;
+        }
+        const res = await exportSession(sessionId, format);
+        await Share.share({ url: res.path, title: `Session export (${format.toUpperCase()})` });
+        showToast(`Exported ${format.toUpperCase()}`, { type: 'success' });
+      } catch (err) {
+        errorWithTs('[Workouts] export failed', err);
+        showToast('Export failed — please try again.', { type: 'error' });
+      }
+    },
+    [showToast]
+  );
+
+  const handleOpenExportMenu = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
+    Alert.alert(
+      'Export latest session',
+      'Choose a format to share with your coach.',
+      [
+        { text: 'JSON', onPress: () => exportLatestSession('json') },
+        { text: 'CSV', onPress: () => exportLatestSession('csv') },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  }, [exportLatestSession]);
+
+  const renderIntelHeader = () => (
+    <View style={intelHeaderStyles.row}>
+      <TouchableOpacity
+        style={intelHeaderStyles.pill}
+        onPress={handleOpenTimeline}
+        accessibilityLabel="Open session timeline"
+        accessibilityRole="button"
+      >
+        <Ionicons name="calendar-outline" size={14} color="#4C8CFF" />
+        <Text style={intelHeaderStyles.pillText}>Timeline</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={intelHeaderStyles.pill}
+        onPress={handleOpenExportMenu}
+        accessibilityLabel="Export latest session"
+        accessibilityRole="button"
+      >
+        <Ionicons name="download-outline" size={14} color="#4C8CFF" />
+        <Text style={intelHeaderStyles.pillText}>Export</Text>
+      </TouchableOpacity>
+    </View>
   );
 
   const renderItem = (info: { item: Workout }) => {
@@ -279,6 +352,7 @@ export default function WorkoutsScreen() {
             />
           }
         >
+          {renderIntelHeader()}
           {lastUpdatedLabel ? (
             <Text style={{ color: '#8E8E93', fontSize: 12, marginBottom: 16, textAlign: 'center' }}>{lastUpdatedLabel}</Text>
           ) : null}
@@ -316,9 +390,12 @@ export default function WorkoutsScreen() {
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
-            lastUpdatedLabel ? (
-              <Text style={{ color: '#8E8E93', fontSize: 12, marginBottom: 12, textAlign: 'center' }}>{lastUpdatedLabel}</Text>
-            ) : null
+            <>
+              {renderIntelHeader()}
+              {lastUpdatedLabel ? (
+                <Text style={{ color: '#8E8E93', fontSize: 12, marginBottom: 12, textAlign: 'center' }}>{lastUpdatedLabel}</Text>
+              ) : null}
+            </>
           }
           refreshControl={
             <RefreshControl
@@ -342,3 +419,29 @@ export default function WorkoutsScreen() {
     </View>
   );
 }
+
+// --- Local styles for the form-intel header pills (#476) ---------------------
+const intelHeaderStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: '#4C8CFF15',
+    borderWidth: 1,
+    borderColor: '#4C8CFF30',
+  },
+  pillText: {
+    fontSize: 12,
+    fontFamily: 'Lexend_500Medium',
+    color: '#4C8CFF',
+  },
+});
