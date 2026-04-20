@@ -97,7 +97,13 @@ export default function SessionHistoryScreen() {
 
   const renderItem = useCallback(
     ({ item }: { item: SessionSummary }) => (
-      <TouchableOpacity style={historyStyles.card}>
+      <TouchableOpacity
+        style={historyStyles.card}
+        testID={`session-card-${item.id}`}
+        onPress={() => {
+          router.push(`/form-quality-recovery?sessionId=${encodeURIComponent(item.id)}`);
+        }}
+      >
         <View style={historyStyles.cardHeader}>
           <Text style={historyStyles.cardDate}>{formatDate(item.started_at)}</Text>
           <Text style={historyStyles.cardDuration}>
@@ -118,9 +124,12 @@ export default function SessionHistoryScreen() {
             {item.goal_profile}
           </Text>
         </View>
+        <View style={historyStyles.cardFooter}>
+          <Text style={historyStyles.cardLink}>Review form quality →</Text>
+        </View>
       </TouchableOpacity>
     ),
-    [formatDate, formatDuration],
+    [formatDate, formatDuration, router],
   );
 
   return (
@@ -236,6 +245,17 @@ const historyStyles = StyleSheet.create({
   cardStatSep: {
     fontSize: 12,
     color: tabColors.textSecondary,
+  },
+  cardFooter: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  cardLink: {
+    fontSize: 12,
+    fontFamily: 'Lexend_500Medium',
+    color: tabColors.accent,
   },
   stateContainer: {
     flex: 1,
