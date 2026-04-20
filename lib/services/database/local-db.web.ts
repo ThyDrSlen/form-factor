@@ -233,6 +233,21 @@ class LocalDatabase {
     return this.getData<LocalWorkout>(this.getStorageKey('workouts'));
   }
 
+  async getWorkoutsByExercise(
+    userId: string,
+    exerciseNameOrId: string,
+    limit?: number,
+  ): Promise<LocalWorkout[]> {
+    void userId;
+    const rows = this.getData<LocalWorkout>(this.getStorageKey('workouts'))
+      .filter(w => w.deleted === 0 && w.exercise === exerciseNameOrId)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    if (typeof limit === 'number' && limit > 0) {
+      return rows.slice(0, Math.floor(limit));
+    }
+    return rows;
+  }
+
   async updateWorkoutSyncStatus(id: string, synced: boolean): Promise<void> {
     await this.updateWorkout(id, { synced: synced ? 1 : 0 });
   }
