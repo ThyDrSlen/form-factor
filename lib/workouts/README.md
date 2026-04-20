@@ -33,7 +33,7 @@ Each workout lives in its own file (for example `pullup.ts`, `pushup.ts`) and ex
 - Keep thresholds named and documented (avoid magic numbers sprinkled through the UI).
 - If you need a new metric for UI/telemetry, add it to that workout's `Metrics` type and compute it in `calculateMetrics`.
 
-## Registered movements (as of #459)
+## Registered movements (combined #441 + #459)
 
 | ID | Category | Faults | Gotchas |
 |---|---|---|---|
@@ -43,8 +43,9 @@ Each workout lives in its own file (for example `pullup.ts`, `pushup.ts`) and ex
 | `deadlift` | full_body | 2 | Sequence-based rounded_back |
 | `rdl` | full_body | 1 | Hinge asymmetry |
 | `benchpress` | upper_body | 5 | Elbow flare, asymmetric press |
-| `dead_hang` | upper_body | 3 (core) + scapular/kipping/grip_shift when merged from #441 | Static hold — no rep boundary |
+| `dead_hang` | upper_body | 3 core + scapular_retraction, kipping_swing (hip-only), grip_shift (#441) | Static hold — no rep boundary |
 | `farmers_walk` | full_body | 1 | Duration-based; lateral lean |
+| `lunge` | lower_body | 6 | Unilateral — alternating legs (#441) |
 | `hip_thrust` | lower_body | 5 | Heel-liftoff proxy: knee-angle asymmetry |
 | `bulgarian_split_squat` | lower_body | 4 | Unilateral — deeper-knee = working leg |
 | `barbell_row` | upper_body | 4 | Rounded-back via hip-vs-shoulder sequenceCheck |
@@ -52,17 +53,7 @@ Each workout lives in its own file (for example `pullup.ts`, `pushup.ts`) and ex
 | `overhead_press` | upper_body | 4 | Core hyperextension via peak-hip angle |
 | `dumbbell_curl` | upper_body | 3 | Swinging via hip-flex delta proxy |
 
-## Coach-drill backfill (follow-up)
+## Future work
 
-`FaultDefinition` does not yet carry a `drills` field. Once #434 lands and
-introduces `drills?: FaultDrill[]`, a follow-up PR will backfill 1-3
-corrective drills per fault across **all** movements (including the 6 new
-ones added here). Until then, the `dynamicCue` string carries the lone
-corrective message for each fault.
-
-## Helper reconcile note (#441 + #459)
-
-`lib/workouts/helpers.ts` is currently duplicated between this PR and
-`feat/438-form-model-depth` (#441). Both PRs carry identical content —
-whichever merges second should delete its TODO(#438) reconcile comment
-but needs no other action because the files are byte-for-byte identical.
+- **Drill population deferred until PR #434 merges.** The `FaultDefinition` type will gain an optional `drills[]` field on that branch, along with per-fault drill suggestions across all movements (including the 6 added in #459 and the lunge added in #441). Until that lands the `dynamicCue` string carries the lone corrective message for each fault.
+- Shared helpers in `lib/workouts/helpers.ts` (`asymmetryCheck`, `sequenceCheck`, `validateAngleInRange`, `clampedDelta`) are reused across the new workouts; refactoring the original 8 workouts to use them is a follow-up PR once #434 is in `main`.

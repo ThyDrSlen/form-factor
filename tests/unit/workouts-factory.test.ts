@@ -141,8 +141,8 @@ describe('new detection modes (#459) are registered', () => {
     }
   });
 
-  test('DetectionMode union expands to 14 keys (8 existing + 6 new)', () => {
-    expect(getWorkoutIds().length).toBe(14);
+  test('DetectionMode union expands to 15 keys (8 existing + 6 new from #459 + lunge from #441)', () => {
+    expect(getWorkoutIds().length).toBe(15);
   });
 });
 
