@@ -1495,3 +1495,104 @@ describe('rest timer — unified ownership', () => {
     expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
   });
 });
+
+// ===========================================================================
+// 15. subscribeToEvents (named event listener API)
+// ===========================================================================
+
+import {
+  subscribeToEvents,
+  __resetSessionEventListenersForTests,
+} from '@/lib/stores/session-runner';
+
+describe('subscribeToEvents', () => {
+  beforeEach(() => {
+    __resetSessionEventListenersForTests();
+  });
+
+  afterEach(() => {
+    __resetSessionEventListenersForTests();
+  });
+
+  it('invokes a subscribed listener when events are emitted through the store', async () => {
+    const listener = jest.fn();
+    subscribeToEvents(listener);
+
+    await state().startSession();
+
+    expect(listener).toHaveBeenCalled();
+    const eventArg = listener.mock.calls[0][0];
+    expect(eventArg).toMatchObject({
+      type: 'session_started',
+      session_id: expect.any(String),
+    });
+    // Payload is the rich object, not a JSON string
+    expect(typeof eventArg.payload).toBe('object');
+  });
+
+  it('unsubscribe stops further fires', async () => {
+    const listener = jest.fn();
+    const unsubscribe = subscribeToEvents(listener);
+
+    await state().startSession();
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+
+    mockUuidCounter = 200;
+    await state().addExercise('ex-1');
+    // addExercise emits exercise_started; listener should NOT see it after unsubscribe
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('multiple listeners each receive independent fires', async () => {
+    const listenerA = jest.fn();
+    const listenerB = jest.fn();
+    subscribeToEvents(listenerA);
+    subscribeToEvents(listenerB);
+
+    await state().startSession();
+
+    expect(listenerA).toHaveBeenCalled();
+    expect(listenerB).toHaveBeenCalled();
+    expect(listenerA.mock.calls.length).toBe(listenerB.mock.calls.length);
+  });
+
+  it('existing emitEvent path (no subscribers) still writes the event row unchanged', async () => {
+    // No subscribers attached. emitEvent path must still persist to DB.
+    expect(mockGenericLocalUpsert).not.toHaveBeenCalledWith(
+      'workout_session_events',
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+
+    await state().startSession();
+
+    const eventUpsert = mockGenericLocalUpsert.mock.calls.find(
+      (c: any[]) => c[0] === 'workout_session_events',
+    );
+    expect(eventUpsert).toBeDefined();
+    expect(eventUpsert![2]).toMatchObject({
+      type: 'session_started',
+      synced: 0,
+    });
+    // Payload on the DB row is still the serialized JSON string
+    expect(typeof eventUpsert![2].payload).toBe('string');
+  });
+
+  it('a listener that throws does not break subsequent listeners or the session flow', async () => {
+    const bad = jest.fn(() => {
+      throw new Error('listener boom');
+    });
+    const good = jest.fn();
+    subscribeToEvents(bad);
+    subscribeToEvents(good);
+
+    // Should not reject — emitEvent catches listener errors
+    await expect(state().startSession()).resolves.toBeUndefined();
+    expect(bad).toHaveBeenCalled();
+    expect(good).toHaveBeenCalled();
+    expect(state().isWorkoutInProgress).toBe(true);
+  });
+});

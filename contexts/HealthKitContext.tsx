@@ -33,6 +33,23 @@ import { useAuth } from './AuthContext';
 import { useSessionRunner } from '@/lib/stores/session-runner';
 import { useNetwork } from './NetworkContext';
 import { updateWatchContext } from '@/lib/watch-connectivity';
+import type { WatchHeartRateStatus } from '@/lib/watch-connectivity/tracking-payload';
+
+// Thresholds used by computeHrStatus — measured from the latest-HR sample timestamp.
+const HR_LIVE_MAX_AGE_MS = 10_000;
+const HR_STALE_MAX_AGE_MS = 30_000;
+
+export function computeHrStatus(
+  hrTimestampMs: number | null | undefined,
+  nowMs: number = Date.now(),
+): WatchHeartRateStatus {
+  if (hrTimestampMs == null || !Number.isFinite(hrTimestampMs)) return 'unavailable';
+  const age = nowMs - hrTimestampMs;
+  if (age < 0) return 'live';
+  if (age < HR_LIVE_MAX_AGE_MS) return 'live';
+  if (age < HR_STALE_MAX_AGE_MS) return 'stale';
+  return 'unavailable';
+}
 
 interface HealthKitContextValue {
   isAvailable: boolean;
@@ -599,10 +616,26 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
-    const payload = {
+    const bpm = latestHeartRate?.bpm ?? null;
+    const hrTs = latestHeartRate?.timestamp ?? null;
+
+    // Build a rich heartRate object for the watch when a workout is live so
+    // the watch can render live HR with freshness context. Outside workouts
+    // we keep the existing flat `heartRate: <number|null>` key for back-compat.
+    const now = Date.now();
+    const richHeartRate =
+      isWorkoutInProgress && bpm != null
+        ? { bpm, timestamp: now, status: computeHrStatus(hrTs, now) }
+        : undefined;
+
+    const payload: Record<string, unknown> = {
       steps: stepsToday ?? 0,
-      heartRate: latestHeartRate?.bpm ?? null,
+      heartRate: bpm,
     };
+    if (richHeartRate) {
+      payload.liveHeartRate = richHeartRate;
+    }
+
     const signature = JSON.stringify(payload);
     if (signature === watchContextSignatureRef.current) {
       return;
@@ -614,7 +647,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.warn('[HealthKitContext] Failed to push watch context', err);
     }
-  }, [stepsToday, latestHeartRate?.bpm]);
+  }, [stepsToday, latestHeartRate?.bpm, latestHeartRate?.timestamp, isWorkoutInProgress]);
 
   // Fetch static characteristics (biological sex, birth date/age) once permissions are granted
   useEffect(() => {
