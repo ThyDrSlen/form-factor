@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 import { supabase } from '@/lib/supabase';
 import { ensureUser } from '@/lib/auth-utils';
 import { warnWithTs } from '@/lib/logger';
+import { createError } from '@/lib/services/ErrorHandler';
 
 const VIDEO_BUCKET = 'videos';
 const THUMBNAIL_BUCKET = 'video-thumbnails';
@@ -13,6 +14,35 @@ const DEFAULT_MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 const DEFAULT_MAX_THUMBNAIL_BYTES = 80 * 1024 * 1024;
 const SIGNED_URL_MAX_RETRIES = 2;
 const SIGNED_URL_RETRY_DELAY_MS = 500;
+
+const SESSION_ID_METRICS_KEY = 'sessionId';
+
+/**
+ * Embed a workout-session id into the video metrics bag without clobbering
+ * existing fields. Returns a new object so the original `metrics` ref stays
+ * intact. Returns `null` (the video row's default) when there is nothing to
+ * persist.
+ */
+export function bindSessionIdToMetrics(
+  metrics: Record<string, any> | null | undefined,
+  sessionId: string | null | undefined,
+): Record<string, any> | null {
+  if (!sessionId) {
+    return metrics ?? null;
+  }
+  return { ...(metrics ?? {}), [SESSION_ID_METRICS_KEY]: sessionId };
+}
+
+/**
+ * Pull the bound session id out of a stored video metrics blob.
+ */
+export function extractSessionIdFromMetrics(
+  metrics: Record<string, any> | null | undefined,
+): string | null {
+  if (!metrics) return null;
+  const value = metrics[SESSION_ID_METRICS_KEY];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
 
 async function withRetry<T>(fn: () => Promise<T>, maxRetries = SIGNED_URL_MAX_RETRIES, delayMs = SIGNED_URL_RETRY_DELAY_MS): Promise<T> {
   let lastError: unknown;
@@ -264,6 +294,14 @@ export async function uploadWorkoutVideo(opts: {
   fileUri: string;
   durationSeconds?: number;
   exercise?: string;
+  /**
+   * Optional workout-session id to bind this video to. The id is embedded
+   * into `metrics.sessionId` so post-session drills, fault-recovery, and
+   * longitudinal analytics can correlate video artifacts back to the
+   * session that produced them. A follow-up migration can promote this
+   * into a first-class column; callers can start threading the id now.
+   */
+  sessionId?: string;
   maxUploadBytes?: number;
   maxThumbnailBytes?: number;
   thumbnailTimeMs?: number;
@@ -275,6 +313,7 @@ export async function uploadWorkoutVideo(opts: {
     fileUri,
     durationSeconds,
     exercise,
+    sessionId,
     maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES,
     maxThumbnailBytes = DEFAULT_MAX_THUMBNAIL_BYTES,
     thumbnailTimeMs = 500,
@@ -282,6 +321,20 @@ export async function uploadWorkoutVideo(opts: {
     metrics,
     analysisOnly = false,
   } = opts;
+  const boundMetrics = bindSessionIdToMetrics(metrics, sessionId);
+
+  // Validate exercise and metrics fields before any I/O.
+  if (exercise !== undefined) {
+    if (typeof exercise !== 'string' || exercise.length > 255) {
+      throw createError('validation', 'INVALID_INPUT', 'Exercise name exceeds maximum length');
+    }
+  }
+  if (metrics !== undefined) {
+    const metricsJson = JSON.stringify(metrics);
+    if (new TextEncoder().encode(metricsJson).byteLength > 10240) {
+      throw createError('validation', 'INVALID_INPUT', 'Metrics payload exceeds maximum size');
+    }
+  }
 
   // Validate env before auth/upload calls so failures are explicit and actionable.
   getSupabaseUrl();
@@ -343,7 +396,7 @@ export async function uploadWorkoutVideo(opts: {
       thumbnail_path: thumbnailPath,
       duration_seconds: durationSeconds ?? null,
       exercise: exercise ?? null,
-      metrics: metrics ?? null,
+      metrics: boundMetrics,
       analysis_only: analysisOnly,
     })
     .select()
@@ -434,12 +487,25 @@ export async function addVideoComment(videoId: string, comment: string) {
   return data as CommentRecord;
 }
 
+const _activeCommentChannels = new Map<string, ReturnType<typeof supabase.channel>>();
+
 export function subscribeToVideoComments(
   videoId: string,
   onInsert: (comment: CommentRecord) => void
 ) {
+  const channelName = `video-comments-${videoId}`;
+
+  // Remove any pre-existing channel for this videoId before creating a new one.
+  // This prevents duplicate Realtime channels when the hook re-runs (e.g. React
+  // Strict Mode double-invoke, or rapid mount/unmount cycles).
+  const existing = _activeCommentChannels.get(videoId);
+  if (existing) {
+    supabase.removeChannel(existing);
+    _activeCommentChannels.delete(videoId);
+  }
+
   const channel = supabase
-    .channel(`video-comments-${videoId}`)
+    .channel(channelName)
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'video_comments', filter: `video_id=eq.${videoId}` },
@@ -449,8 +515,14 @@ export function subscribeToVideoComments(
     )
     .subscribe();
 
+  _activeCommentChannels.set(videoId, channel);
+
   return () => {
     supabase.removeChannel(channel);
+    // Only remove from the map if this is still the active channel for the videoId.
+    if (_activeCommentChannels.get(videoId) === channel) {
+      _activeCommentChannels.delete(videoId);
+    }
   };
 }
 

@@ -147,6 +147,14 @@ describe('useWorkoutController', () => {
     mockGetWorkoutById.mockReturnValue(fakeWorkoutDef);
     (fakeWorkoutDef.getNextPhase as jest.Mock).mockReturnValue('idle');
     (fakeWorkoutDef.calculateMetrics as jest.Mock).mockReturnValue(fakeMetrics);
+    // Reset the haptic-bus singleton so debounce state from a prior test
+    // does not suppress emits in the current test. The bus is shared module
+    // state because it's a singleton event emitter.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { hapticBus } = require('@/lib/haptics/haptic-bus') as {
+      hapticBus: { _reset: () => void };
+    };
+    hapticBus._reset();
   });
 
   afterEach(() => {
