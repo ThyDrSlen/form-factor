@@ -585,6 +585,17 @@ export default function ScanARKitScreen() {
   const mediaPipeModelVersionRef = React.useRef<string>(MEDIAPIPE_POSE_LANDMARKER_VERSION);
   const lastShadowMeanAbsDeltaRef = React.useRef<number | null>(null);
   const [mediaPipeModelPath, setMediaPipeModelPath] = useState<string | null>(null);
+  // Tracks the initial pose-model download / init phase so the UI can
+  // surface a "Downloading pose model…" modal. The flag starts as true
+  // on iOS where the bundled MediaPipe Lite asset must be resolved
+  // (and occasionally re-downloaded on first run). The effect below
+  // that loads MEDIAPIPE_LITE_MODEL_ASSET flips it to false on success
+  // OR failure, and supportStatus resolving to 'supported' /
+  // 'unsupported' also clears it so the modal cannot persist past the
+  // skeleton gate.
+  const [isPoseModelLoading, setIsPoseModelLoading] = useState<boolean>(
+    Platform.OS === 'ios',
+  );
   const mediaPipePollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const mediaPipePollInFlightRef = React.useRef(false);
   const partialTrackingHideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -690,6 +701,7 @@ export default function ScanARKitScreen() {
 
     if (Platform.OS !== 'ios') {
       setMediaPipeModelPath(null);
+      setIsPoseModelLoading(false);
       return () => {
         cancelled = true;
       };
@@ -717,6 +729,10 @@ export default function ScanARKitScreen() {
         if (!cancelled) {
           setMediaPipeModelPath(null);
         }
+      } finally {
+        if (!cancelled) {
+          setIsPoseModelLoading(false);
+        }
       }
     };
 
@@ -726,6 +742,17 @@ export default function ScanARKitScreen() {
       cancelled = true;
     };
   }, [DEV]);
+
+  // Safety: once BodyTracker finishes its capability probe, stop
+  // showing the loading modal regardless of the asset path resolution
+  // state above. This covers the unsupported case where the effect
+  // above never runs (non-iOS) plus any race where supportStatus
+  // resolves before the asset download finishes.
+  useEffect(() => {
+    if (supportStatus === 'supported' || supportStatus === 'unsupported') {
+      setIsPoseModelLoading(false);
+    }
+  }, [supportStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2904,6 +2931,48 @@ export default function ScanARKitScreen() {
             Initializing form tracking…
           </Text>
         </View>
+        {/*
+         * Pose-model loading modal (#551).
+         *
+         * On iOS the MediaPipe pose-landmarker lite model has to be
+         * resolved from the bundled asset (and occasionally re-downloaded
+         * on first run). We surface the progress via an indeterminate
+         * modal so users know the screen hasn't hung. Dismisses
+         * automatically once supportStatus resolves or the asset download
+         * effect completes (see setIsPoseModelLoading(false) calls above).
+         */}
+        <Modal
+          visible={isPoseModelLoading}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => {
+            // User-initiated close: clear the flag so the modal goes away.
+            // If tracking still needs the model, subsequent frames will
+            // degrade gracefully to the proxy provider + surface the
+            // existing "Pose tracking degraded" toast.
+            setIsPoseModelLoading(false);
+          }}
+        >
+          <View style={styles.poseModelModalBackdrop}>
+            <View
+              style={styles.poseModelModalCard}
+              accessible
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              accessibilityLabel="Downloading pose model"
+              testID="scan-arkit-pose-model-loading-modal"
+            >
+              <ActivityIndicator size="large" color="#4C8CFF" />
+              <Text style={styles.poseModelModalTitle}>
+                Downloading pose model…
+              </Text>
+              <Text style={styles.poseModelModalSubtitle}>
+                One-time setup on this device.
+              </Text>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     );
   }
