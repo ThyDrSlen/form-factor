@@ -1,5 +1,6 @@
 import './global.css';
 import { Slot, usePathname, useRouter, useSegments } from 'expo-router';
+import * as Linking from 'expo-linking';
 import React, { Component, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, View, Text as RNText, StyleSheet, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -18,6 +19,8 @@ import { ToastProvider } from '../contexts/ToastContext';
 import { logWithTs, warnWithTs } from '@/lib/logger';
 import { isOnboardingCompleted } from '@/lib/services/onboarding';
 import { hasSeenWelcome } from '@/app/(onboarding)/welcome';
+import { parseTemplateIdFromUrl } from '@/lib/services/workout-scheduler';
+import '@/lib/services/fault-explainer-bootstrap';
 
 // Error boundary to catch crashes in the provider tree or layout
 interface ErrorBoundaryState {
@@ -140,6 +143,40 @@ function InitialLayout() {
   useEffect(() => {
     hasSeenWelcome().then(setWelcomeSeen);
   }, []);
+
+  // Deep-link handler — issue #447 W3-C item #4. Routes
+  // `form-factor://scan?templateId=xxx` to the scan tab with the templateId
+  // query preserved so `app/(tabs)/scan-arkit.tsx` can hydrate form-targets
+  // from the session-runner store. Applies to cold-start (getInitialURL)
+  // and mid-session URL events (addEventListener).
+  useEffect(() => {
+    let cancelled = false;
+
+    const routeToScan = (templateId: string) => {
+      logWithTs('[Layout] Deep-link → scan', { templateId });
+      const safe = encodeURIComponent(templateId);
+      router.push(`/(tabs)/scan-arkit?templateId=${safe}` as never);
+    };
+
+    const handleUrl = (url: string | null) => {
+      if (!url || cancelled) return;
+      const tid = parseTemplateIdFromUrl(url);
+      if (tid) routeToScan(tid);
+    };
+
+    Linking.getInitialURL()
+      .then(handleUrl)
+      .catch((err) => warnWithTs('[Layout] getInitialURL failed', err));
+
+    const sub = Linking.addEventListener('url', (event) => {
+      handleUrl(event.url);
+    });
+
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, [router]);
 
   useEffect(() => {
     if (user) {
