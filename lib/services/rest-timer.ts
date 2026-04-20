@@ -1,13 +1,18 @@
 /**
  * Rest Timer Service
  *
- * Computes default rest durations, schedules local notifications,
- * and handles background resume for workout rest periods.
+ * Computes default rest durations, schedules local notifications, and
+ * exposes an AppState subscription so UIs can re-render the remaining
+ * seconds when the app returns from background. Consumers subscribe via
+ * `onRestTimerAppResume(fn)` and re-read the current rest via
+ * `computeRemainingSeconds(restStartedAt, restTargetSeconds)`.
  */
 
 import * as Notifications from 'expo-notifications';
+import { AppState, type AppStateStatus } from 'react-native';
 import { GoalProfile, SetType } from '@/lib/types/workout-session';
 import { logWithTs, warnWithTs } from '@/lib/logger';
+import { hapticBus } from '@/lib/haptics/haptic-bus';
 
 // =============================================================================
 // Rest Duration Defaults
@@ -199,4 +204,121 @@ export function formatRestTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// =============================================================================
+// AppState resume — background → active transition
+// =============================================================================
+
+type AppResumeListener = () => void;
+
+const appResumeListeners = new Set<AppResumeListener>();
+let lastAppStateForRest: AppStateStatus = AppState.currentState;
+let appStateSubscription: { remove: () => void } | null = null;
+
+function handleAppStateChange(next: AppStateStatus): void {
+  const prev = lastAppStateForRest;
+  lastAppStateForRest = next;
+  // Fire on any transition INTO 'active' (covers background, inactive, unknown).
+  if (next === 'active' && prev !== 'active') {
+    appResumeListeners.forEach((listener) => {
+      try {
+        listener();
+      } catch (error) {
+        warnWithTs('[RestTimer] AppState resume listener threw:', error);
+      }
+    });
+  }
+}
+
+function ensureAppStateSubscription(): void {
+  if (appStateSubscription) return;
+  appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
+}
+
+/**
+ * Register a callback invoked whenever the app returns to the foreground.
+ * Callers should re-compute `computeRemainingSeconds(...)` inside the
+ * callback and re-render their TimerPill / countdown UI.
+ *
+ * Returns an unsubscribe function. The underlying AppState listener is
+ * removed when the last subscriber unsubscribes.
+ */
+export function onRestTimerAppResume(listener: AppResumeListener): () => void {
+  appResumeListeners.add(listener);
+  ensureAppStateSubscription();
+  return () => {
+    appResumeListeners.delete(listener);
+    if (appResumeListeners.size === 0 && appStateSubscription) {
+      appStateSubscription.remove();
+      appStateSubscription = null;
+    }
+  };
+}
+
+/**
+ * Test-only reset — clears listeners + the AppState subscription so each
+ * test starts from a clean slate. Not exported from the public barrel.
+ */
+export function __resetRestTimerAppStateForTests(): void {
+  appResumeListeners.clear();
+  if (appStateSubscription) {
+    appStateSubscription.remove();
+    appStateSubscription = null;
+  }
+  lastAppStateForRest = AppState.currentState;
+}
+
+// =============================================================================
+// Foreground rest haptic companion
+// =============================================================================
+
+let foregroundInterval: ReturnType<typeof setInterval> | null = null;
+let lastTick10s = -1;
+
+/**
+ * Start a foreground polling companion that emits haptic-bus events while
+ * the app is in the foreground. Schedules a `rest.tick10s` event at the
+ * 30s/20s/10s marks and `rest.done` when the timer hits zero.
+ *
+ * Returns a `stop()` function. The local-notification flow still runs for
+ * the background case; this companion is purely additive for users who
+ * leave the app open during rest.
+ */
+export function startForegroundRestHapticCompanion(
+  restStartedAt: string | Date,
+  restTargetSeconds: number,
+): () => void {
+  stopForegroundRestHapticCompanion();
+  lastTick10s = -1;
+  let doneEmitted = false;
+
+  const tick = () => {
+    const remaining = computeRemainingSeconds(restStartedAt, restTargetSeconds);
+    if (remaining <= 0 && !doneEmitted) {
+      doneEmitted = true;
+      hapticBus.emit('rest.done');
+      stopForegroundRestHapticCompanion();
+      return;
+    }
+    // Every full 10-second threshold crossing under 30s.
+    if (remaining > 0 && remaining <= 30) {
+      const bucket = Math.floor(remaining / 10);
+      if (bucket !== lastTick10s) {
+        lastTick10s = bucket;
+        hapticBus.emit('rest.tick10s');
+      }
+    }
+  };
+
+  tick();
+  foregroundInterval = setInterval(tick, 1000);
+  return stopForegroundRestHapticCompanion;
+}
+
+export function stopForegroundRestHapticCompanion(): void {
+  if (foregroundInterval !== null) {
+    clearInterval(foregroundInterval);
+    foregroundInterval = null;
+  }
 }

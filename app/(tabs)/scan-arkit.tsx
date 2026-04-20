@@ -38,6 +38,7 @@ import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type MediaPipePose2D } from '@/lib/arkit/ARKitBodyTracker';
+import { useKeepAwakeSmart } from '@/lib/a11y/useKeepAwakeSmart';
 import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
 import { audioSessionManager } from '@/lib/services/audio-session-manager';
 import { CrashBoundary } from '@/components/CrashBoundary';
@@ -84,6 +85,12 @@ import {
 } from '@/lib/tracking-quality';
 import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
+import { usePRDetection } from '@/hooks/use-pr-detection';
+import { PRCelebrationBadge } from '@/components/form-tracking/PRCelebrationBadge';
+import { ProgressionSuggestionBadge } from '@/components/form-tracking/ProgressionSuggestionBadge';
+import { useProgressionSuggestion } from '@/hooks/use-progression-suggestion';
+import { useSessionRunner } from '@/lib/stores/session-runner';
+import type { FormTargets } from '@/lib/services/form-target-resolver';
 import {
   DEFAULT_DETECTION_MODE,
   getWorkoutByMode,
@@ -103,6 +110,7 @@ import occlusionLongFixture from '@/tests/fixtures/pullup-tracking/occlusion-lon
 import bounceNoiseFixture from '@/tests/fixtures/pullup-tracking/bounce-noise.json';
 import { styles } from '../../styles/tabs/_scan-arkit.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
+import { VoiceCommandFeedback } from '@/components/form-tracking/VoiceCommandFeedback';
 
 // Phase and detection mode types are now imported from lib/workouts
 type BaseUploadMetrics = Record<string, unknown> & {
@@ -307,8 +315,27 @@ const PreviewPlayer = ({ uri }: { uri: string }) => {
 export default function ScanARKitScreen() {
   const DEV = __DEV__;
   const router = useRouter();
-  const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string; trackingDebug?: string }>();
+  const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string; trackingDebug?: string; templateId?: string }>();
   const fixturePlaybackRequested = params.fixturePlayback === '1';
+  // Issue #447 — deep-link / scheduled-workout template binding.
+  // Reads form-targets from the session-runner store (populated when the
+  // session was started from this templateId by `materializeTemplate`).
+  // No side-effects when no templateId is present.
+  const deepLinkTemplateId = typeof params.templateId === 'string' ? params.templateId : null;
+  const getFormTargetsFor = useSessionRunner((s) => s.getFormTargetsFor);
+  // PR-detection surface (issue #447 W3-C item #2).
+  const { pr: currentPR, clearPR: clearCurrentPR } = usePRDetection();
+  // Progression suggestion surface (issue #447 W3-C item #3).
+  // TODO(#434): wire lastSessionAvgFqi + lastWeight from session-runner
+  // history once PR #434 lands its history-panel query. Until then, keep
+  // the inputs null so the badge stays hidden. The hook + badge component
+  // are production-ready; only the data feed is deferred.
+  const progressionSuggestion = useProgressionSuggestion({
+    exerciseId: null,
+    lastSessionAvgFqi: null,
+    lastWeight: null,
+    unit: 'lb',
+  });
   const fixtureName = typeof params.fixture === 'string' ? params.fixture : FIXTURE_PLAYBACK_DEFAULT;
   const fixtureFrames = fixturePlaybackRequested ? FIXTURE_PLAYBACK_TRACES[fixtureName] ?? null : null;
   const fixturePlaybackEnabled = fixturePlaybackRequested && !!fixtureFrames;
@@ -341,6 +368,11 @@ export default function ScanARKitScreen() {
     startTracking: startNativeTracking,
     stopTracking: stopNativeTracking,
   } = useBodyTracking(60);
+
+  // Keep the screen awake while the user is actively tracking a set so the
+  // ARKit session isn't killed by the device locking mid-rep (#428).
+  useKeepAwakeSmart('tracking-active', isTracking);
+
   const [supportStatus, setSupportStatus] = useState<'unknown' | 'supported' | 'unsupported'>('unknown');
   const [jointAngles, setJointAngles] = useState<JointAngles | null>(null);
   const [fps, setFps] = useState(0);
@@ -360,6 +392,27 @@ export default function ScanARKitScreen() {
   const [repCount, setRepCount] = useState(0);
   const [detectionMode, setDetectionMode] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
   const activeWorkoutDef = useMemo(() => getWorkoutByMode(detectionMode), [detectionMode]);
+  // Active form targets — resolved from session-runner (template override)
+  // with a fall-through to per-exercise defaults. Exposed as a ref so the
+  // cue-engine / FQI gauge can read without retriggering the whole render.
+  // Issue #447 W3-C item #1.
+  const activeFormTargets: FormTargets = useMemo(
+    () => getFormTargetsFor(detectionMode),
+    [getFormTargetsFor, detectionMode],
+  );
+  const activeFormTargetsRef = React.useRef<FormTargets>(activeFormTargets);
+  useEffect(() => {
+    activeFormTargetsRef.current = activeFormTargets;
+    if (deepLinkTemplateId) {
+      logWithTs('[ScanARKit] Active form targets', {
+        exerciseId: detectionMode,
+        templateId: deepLinkTemplateId,
+        fqiMin: activeFormTargets.fqiMin,
+        romMin: activeFormTargets.romMin,
+        romMax: activeFormTargets.romMax,
+      });
+    }
+  }, [activeFormTargets, detectionMode, deepLinkTemplateId]);
   const [activePhase, setActivePhase] = useState<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
   const activePhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
@@ -414,6 +467,7 @@ export default function ScanARKitScreen() {
   const watchMirrorInFlightRef = React.useRef(false);
   const watchTrackingPublishAtRef = React.useRef(0);
   const watchTrackingSignatureRef = React.useRef<string | null>(null);
+  const lastTrackingQualityRef = React.useRef<number | null>(null);
   const [shadowModeEnabled, setShadowModeEnabled] = useState(true);
   const shadowModeEnabledRef = React.useRef(true);
   const shadowStatsRef = React.useRef(createShadowStatsAccumulator());
@@ -1368,7 +1422,11 @@ export default function ScanARKitScreen() {
           trackingQuality: smoothingResult?.trackingQuality,
           shadowMeanAbsDelta: shadowComparison?.meanAbsDelta,
         });
+        if (typeof smoothingResult?.trackingQuality === 'number') {
+          lastTrackingQualityRef.current = smoothingResult.trackingQuality;
+        }
       } else {
+        lastTrackingQualityRef.current = null;
         repIndexTrackerRef.current.reset();
         resetWorkoutController({ preserveRepCount: true });
         setActiveMetrics(null);
@@ -1956,6 +2014,13 @@ export default function ScanARKitScreen() {
 	      const reps = repCount;
 	      const phase = activePhase;
 	      const metrics = activeWorkoutDef.ui?.buildWatchMetrics(activeMetrics as never) ?? {};
+	      const confidence = lastTrackingQualityRef.current;
+	      const partialBadge = livePullupPartialStatus?.visibility_badge;
+	      const isDegraded = partialBadge != null && partialBadge !== 'full';
+	      const quality =
+	        typeof confidence === 'number'
+	          ? { trackingConfidence: confidence, isDegraded, degradationReason: isDegraded ? partialBadge : undefined }
+	          : undefined;
 
 	      const payload = buildWatchTrackingPayload({
 	        now,
@@ -1965,6 +2030,7 @@ export default function ScanARKitScreen() {
         reps,
         primaryCue: primaryCue ?? null,
         metrics,
+        quality,
       });
 
       const signature = JSON.stringify(payload.tracking);
@@ -1983,6 +2049,7 @@ export default function ScanARKitScreen() {
 	      activeWorkoutDef,
 	      detectionMode,
 	      isTracking,
+	      livePullupPartialStatus,
 	      primaryCue,
 	      repCount,
 	      watchInstalled,
@@ -2702,6 +2769,26 @@ export default function ScanARKitScreen() {
               }
             }}
             disabled={isFinalizingRecording}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isFinalizingRecording
+                ? 'Finalizing recording'
+                : isRecording
+                  ? 'Stop recording'
+                  : 'Record set'
+            }
+            accessibilityHint={
+              isFinalizingRecording
+                ? 'Please wait while the last set is being saved'
+                : isRecording
+                  ? 'Double tap to stop the current recording'
+                  : 'Double tap to start recording the current set'
+            }
+            accessibilityState={{
+              disabled: isFinalizingRecording,
+              busy: isFinalizingRecording,
+              selected: isRecording,
+            }}
           >
             {isFinalizingRecording ? (
               <ActivityIndicator color="#FFFFFF" />
@@ -2778,6 +2865,18 @@ export default function ScanARKitScreen() {
           </View>
         </View>
       )}
+
+      {/* PR celebration badge (issue #447 W3-C #2). Surgical mount — renders
+          only when usePRDetection has a hit. Safe no-op when pr is null. */}
+      <PRCelebrationBadge pr={currentPR} onDismiss={clearCurrentPR} />
+
+      {/* Progression suggestion badge (issue #447 W3-C #3). Hidden until the
+          data-feed wiring lands (see TODO near useProgressionSuggestion). */}
+      {progressionSuggestion ? (
+        <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
+          <ProgressionSuggestionBadge suggestion={progressionSuggestion} />
+        </View>
+      ) : null}
 
       <Modal
         visible={isSettingsVisible}
@@ -3008,6 +3107,7 @@ export default function ScanARKitScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+      <VoiceCommandFeedback />
 </View>
     </CrashBoundary>
   );

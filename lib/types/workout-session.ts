@@ -25,7 +25,8 @@ export type SessionEventType =
   | 'rest_started'
   | 'rest_completed'
   | 'rest_skipped'
-  | 'session_completed';
+  | 'session_completed'
+  | 'pr_detected';
 
 // =============================================================================
 // Exercise
@@ -58,6 +59,18 @@ export interface WorkoutTemplate {
   share_slug: string | null;
   created_at: string;
   updated_at: string;
+
+  // Scheduling & programming metadata (optional — resolver-friendly).
+  // Added for issue #447: template × form-tracking integration.
+  // These fields are not persisted to the workout_templates table today;
+  // they are threaded in-memory by `lib/services/workout-scheduler.ts`
+  // and the form-target resolver. See TODO below once schema lands.
+  /** ID of the program this template belongs to (for program-phase tracking). */
+  program_id?: string;
+  /** Recommended rest days between repeating this template. */
+  rest_days_between?: number;
+  /** ISO timestamps of the next scheduled occurrences of this template. */
+  scheduled_next_dates?: string[];
 }
 
 export interface WorkoutTemplateExercise {
@@ -70,6 +83,16 @@ export interface WorkoutTemplateExercise {
   default_tempo: string | null;
   created_at: string;
   updated_at: string;
+
+  // Form-target overrides (optional). When set, the form-target resolver
+  // prefers these over per-exercise defaults exported from `lib/workouts/*`.
+  // Added for issue #447 — safe to omit for legacy templates.
+  /** Minimum average FQI to earn a "green" set outcome (0-100). */
+  target_fqi_min?: number;
+  /** Minimum range-of-motion angle in degrees (exercise-specific). */
+  target_rom_min?: number;
+  /** Maximum range-of-motion angle in degrees (exercise-specific). */
+  target_rom_max?: number;
 }
 
 export interface WorkoutTemplateSet {

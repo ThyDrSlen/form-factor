@@ -16,6 +16,14 @@ export default function ModalsLayout() {
       <Stack.Screen name="follow-requests" options={{ presentation: 'modal' }} />
       <Stack.Screen name="user-profile" options={{ presentation: 'modal' }} />
       <Stack.Screen name="workout-insights" options={{ presentation: 'modal' }} />
+      <Stack.Screen
+        name="rep-insights"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#0B1626' },
+        }}
+      />
       <Stack.Screen name="help-support" options={{ presentation: 'modal', gestureEnabled: true }} />
       <Stack.Screen name="notifications" options={{ presentation: 'modal', gestureEnabled: true }} />
       <Stack.Screen name="about" options={{ presentation: 'modal', gestureEnabled: true }} />
@@ -37,6 +45,22 @@ export default function ModalsLayout() {
       />
       <Stack.Screen
         name="session-history"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
+      <Stack.Screen
+        name="rep-pain-journal"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
+      <Stack.Screen
+        name="session-timeline"
         options={{
           presentation: 'modal',
           gestureEnabled: true,
@@ -66,7 +90,7 @@ export default function ModalsLayout() {
         }}
       />
       <Stack.Screen
-        name="form-tracking-setup"
+        name="fault-heatmap"
         options={{
           presentation: 'fullScreenModal',
           contentStyle: { backgroundColor: '#050E1F' },
@@ -74,6 +98,29 @@ export default function ModalsLayout() {
       />
       <Stack.Screen
         name="form-tracking-debrief"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
+      <Stack.Screen
+        name="form-tracking-setup"
+        options={{
+          presentation: 'fullScreenModal',
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
+      <Stack.Screen
+        name="progression-plan"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
+      <Stack.Screen
+        name="settings-coaching"
         options={{
           presentation: 'modal',
           gestureEnabled: true,
