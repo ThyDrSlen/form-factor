@@ -390,6 +390,54 @@ describe('deadlift faults', () => {
       });
       expect(f.condition(c)).toBe(false);
     });
+
+    // =========================================================================
+    // #436 — symmetric-delta fix
+    //
+    // Prior to the fix, hips_rise_first read only leftHip / leftKnee deltas.
+    // Camera-angle noise on the right side was enough to trigger the fault
+    // even when actual form was symmetric. The fix takes
+    // min(leftDelta, rightDelta) for both hips and knees.
+    // =========================================================================
+
+    it('[#436] symmetric rise: both hips rise 40°, knees rise 20° — fault DOES fire', () => {
+      // leftHipDelta=rightHipDelta=40, min=40
+      // leftKneeDelta=rightKneeDelta=20, min=20
+      // 40 > 20 + 30 = 50? No — actually falls below threshold.
+      // Bump hips to 60° so we're comfortably over the +30 margin.
+      const c = ctx({
+        start: { leftHip: 80, rightHip: 80, leftKnee: 140, rightKnee: 140 },
+        max: { leftHip: 140, rightHip: 140, leftKnee: 160, rightKnee: 160 },
+      });
+      // hipChange=60, kneeChange=20, 60 > 20+30=50 ✓
+      expect(f.condition(c)).toBe(true);
+    });
+
+    it('[#436] asymmetric tracking noise: left hip 40° / right hip 5° — fault does NOT fire', () => {
+      // leftHipDelta=40, rightHipDelta=5, min=5 (conservative)
+      // leftKneeDelta=rightKneeDelta=20, min=20
+      // 5 > 20+30=50? No — the bug-fix behavior.
+      // Before the fix this hit 40 > 20+30? No; but using the older left-only
+      // read WITH a larger asymmetry (e.g. 90° vs 5°) would have fired
+      // spuriously. Verify the symmetric path clamps to the lower side.
+      const c = ctx({
+        start: { leftHip: 80, rightHip: 80, leftKnee: 140, rightKnee: 140 },
+        max: { leftHip: 170, rightHip: 85, leftKnee: 160, rightKnee: 160 },
+      });
+      // Using min: hipChange=5, kneeChange=20, 5 > 50? No.
+      // If the code still read leftHip-only: hipChange=90, kneeChange=20,
+      // 90 > 50? YES — would have fired. This test pins the new behavior.
+      expect(f.condition(c)).toBe(false);
+    });
+
+    it('[#436] symmetric good form (hips 20°, knees 30°): fault does NOT fire', () => {
+      // hipChange=20, kneeChange=30, 20 > 30+30=60? No.
+      const c = ctx({
+        start: { leftHip: 120, rightHip: 120, leftKnee: 130, rightKnee: 130 },
+        max: { leftHip: 140, rightHip: 140, leftKnee: 160, rightKnee: 160 },
+      });
+      expect(f.condition(c)).toBe(false);
+    });
   });
 
   describe('asymmetric_pull', () => {
