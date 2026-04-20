@@ -46,6 +46,10 @@ import { PreSetPreviewCard } from '@/components/form-tracking/PreSetPreviewCard'
 import { usePreSetPreview } from '@/hooks/use-pre-set-preview';
 import { generateSessionId, logCueEvent, upsertSessionMetrics } from '@/lib/services/cue-logger';
 import { logPoseSample, flushPoseBuffer, resetFrameCounter } from '@/lib/services/pose-logger';
+import {
+  appendFormSessionHistory,
+  getFormSessionHistory,
+} from '@/lib/services/form-session-history';
 import { playRepCountdown } from '@/lib/services/rep-countdown-audio';
 import { RepIndexTracker } from '@/lib/services/rep-index-tracker';
 import { saveSessionSnapshot } from '@/lib/services/session-snapshot';
@@ -93,7 +97,7 @@ import { usePRDetection } from '@/hooks/use-pr-detection';
 import { PRCelebrationBadge } from '@/components/form-tracking/PRCelebrationBadge';
 import { ProgressionSuggestionBadge } from '@/components/form-tracking/ProgressionSuggestionBadge';
 import { useProgressionSuggestion } from '@/hooks/use-progression-suggestion';
-import { useSessionRunner } from '@/lib/stores/session-runner';
+import { emitFormMilestone, useSessionRunner } from '@/lib/stores/session-runner';
 import type { FormTargets } from '@/lib/services/form-target-resolver';
 import {
   DEFAULT_DETECTION_MODE,
@@ -1712,7 +1716,13 @@ export default function ScanARKitScreen() {
   // Stop tracking
   const stopTracking = useCallback(async () => {
     if (DEV) logWithTs('[ScanARKit] Stopping tracking...');
-    
+
+    // Snapshot the session data before the cleanup below wipes the refs.
+    // Used for post-session milestone detection (#494).
+    const sessionScoresAtStop = sessionFqiScoresRef.current.slice();
+    const exerciseKeyAtStop = detectionMode;
+    const sessionIdAtStop = sessionIdRef.current;
+
     try {
       if (isRecording) {
         try {
@@ -1752,6 +1762,37 @@ export default function ScanARKitScreen() {
 
       if (Platform.OS === 'ios') {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+
+      // Post-session milestone detection (#494). Runs off the main
+      // stop-tracking path so we never block cleanup on I/O. Requires at
+      // least 3 reps so a half-hearted 1-rep toggle doesn't overwrite PBs.
+      if (sessionScoresAtStop.length >= 3) {
+        const sum = sessionScoresAtStop.reduce((acc, v) => acc + v, 0);
+        const avgFqi = sum / sessionScoresAtStop.length;
+        const endedAt = new Date().toISOString();
+        (async () => {
+          try {
+            const prior = await getFormSessionHistory(exerciseKeyAtStop);
+            await emitFormMilestone({
+              sessionId: sessionIdAtStop,
+              exerciseKey: exerciseKeyAtStop,
+              currentAvgFqi: avgFqi,
+              priorSessions: prior.map((p) => ({
+                avgFqi: p.avgFqi,
+                endedAt: p.endedAt,
+              })),
+            });
+            await appendFormSessionHistory({
+              exerciseKey: exerciseKeyAtStop,
+              avgFqi,
+              endedAt,
+              sessionId: sessionIdAtStop,
+            });
+          } catch (error) {
+            if (DEV) warnWithTs('[ScanARKit] milestone post-session failed', error);
+          }
+        })();
       }
     } catch (error) {
       errorWithTs('[ScanARKit] ❌ Error stopping tracking:', error);
