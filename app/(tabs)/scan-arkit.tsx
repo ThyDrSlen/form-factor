@@ -38,6 +38,7 @@ import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type MediaPipePose2D } from '@/lib/arkit/ARKitBodyTracker';
+import { useKeepAwakeSmart } from '@/lib/a11y/useKeepAwakeSmart';
 import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
 import { audioSessionManager } from '@/lib/services/audio-session-manager';
 import { CrashBoundary } from '@/components/CrashBoundary';
@@ -366,6 +367,11 @@ export default function ScanARKitScreen() {
     startTracking: startNativeTracking,
     stopTracking: stopNativeTracking,
   } = useBodyTracking(60);
+
+  // Keep the screen awake while the user is actively tracking a set so the
+  // ARKit session isn't killed by the device locking mid-rep (#428).
+  useKeepAwakeSmart('tracking-active', isTracking);
+
   const [supportStatus, setSupportStatus] = useState<'unknown' | 'supported' | 'unsupported'>('unknown');
   const [jointAngles, setJointAngles] = useState<JointAngles | null>(null);
   const [fps, setFps] = useState(0);
@@ -2748,6 +2754,26 @@ export default function ScanARKitScreen() {
               }
             }}
             disabled={isFinalizingRecording}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isFinalizingRecording
+                ? 'Finalizing recording'
+                : isRecording
+                  ? 'Stop recording'
+                  : 'Record set'
+            }
+            accessibilityHint={
+              isFinalizingRecording
+                ? 'Please wait while the last set is being saved'
+                : isRecording
+                  ? 'Double tap to stop the current recording'
+                  : 'Double tap to start recording the current set'
+            }
+            accessibilityState={{
+              disabled: isFinalizingRecording,
+              busy: isFinalizingRecording,
+              selected: isRecording,
+            }}
           >
             {isFinalizingRecording ? (
               <ActivityIndicator color="#FFFFFF" />
