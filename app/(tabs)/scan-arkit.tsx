@@ -81,6 +81,9 @@ import {
   type PullupScoringResult,
 } from '@/lib/tracking-quality';
 import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
+import { useAppStatePause } from '@/hooks/use-app-state-pause';
+import { useCameraPermissionGuard } from '@/hooks/use-camera-permission-guard';
+import { useSubjectIdentity } from '@/hooks/use-subject-identity';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
 import {
   DEFAULT_DETECTION_MODE,
@@ -464,6 +467,13 @@ export default function ScanARKitScreen() {
   const [recordPreview, setRecordPreview] = useState<RecordedPreview | null>(null);
   const [recordingQuality, setRecordingQuality] = useState<RecordingQuality>('medium');
   const [subjectLockEnabled, setSubjectLockEnabled] = useState(true);
+  const subjectIdentity = useSubjectIdentity({
+    enabled: subjectLockEnabled && !fixturePlaybackEnabled,
+  });
+  const cameraPermission = useCameraPermissionGuard({ detectRevoke: true });
+  const appStatePause = useAppStatePause({
+    enabled: !fixturePlaybackEnabled,
+  });
   const [gestureRecordingEnabled, setGestureRecordingEnabled] = useState(true);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -1525,6 +1535,14 @@ export default function ScanARKitScreen() {
     }
   }, [pose2D]);
 
+  // Feed the subject-identity tracker once per pose frame. The hook only
+  // re-renders on calibration / switch transitions so this is cheap.
+  const subjectIdentityStep = subjectIdentity.step;
+  useEffect(() => {
+    if (!pose2D || pose2D.joints.length === 0) return;
+    subjectIdentityStep(pose2D.joints);
+  }, [pose2D, subjectIdentityStep]);
+
   useEffect(() => {
     if (!pose2D || pose2D.joints.length === 0) {
       pose2DCacheRef.current = {};
@@ -1722,6 +1740,23 @@ export default function ScanARKitScreen() {
       stopTracking();
     };
   }, [stopTracking]);
+
+  // Pause tracking immediately on mid-session camera permission revocation.
+  // The banner below offers a Settings deep-link and a retry affordance.
+  useEffect(() => {
+    if (cameraPermission.revoked && isTracking) {
+      stopTracking();
+    }
+  }, [cameraPermission.revoked, isTracking, stopTracking]);
+
+  // AppState pause: when the app leaves 'active' we stop the native
+  // tracker. The hook flips needsResume on return so the user must
+  // opt-in via the Resume? prompt before rep counting starts again.
+  useEffect(() => {
+    if (appStatePause.isPaused && isTracking) {
+      stopTracking();
+    }
+  }, [appStatePause.isPaused, isTracking, stopTracking]);
 
   const handleOverlayLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
@@ -2330,15 +2365,17 @@ export default function ScanARKitScreen() {
     setIsPreviewVisible(false);
   }, [recordPreview, cleanupLocalRecording, uploading, savingRecording]);
 
+  const subjectIdentityReset = subjectIdentity.reset;
   const handleReacquireSubject = useCallback(() => {
     BodyTracker.resetSubjectLock();
+    subjectIdentityReset();
     const message = 'Subject lock reset';
     if (Platform.OS === 'android') {
       ToastAndroid.show(message, ToastAndroid.SHORT);
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-  }, []);
+  }, [subjectIdentityReset]);
 
     const handleSaveOnlyRecording = useCallback(async () => {
       if (!recordPreview || uploading || savingRecording) return;
@@ -2918,7 +2955,7 @@ export default function ScanARKitScreen() {
       )}
 
       {shouldShowPartialTrackingBadge && (
-        <View style={[styles.partialTrackingBadge, { top: topBarBottom + 8 }]}> 
+        <View style={[styles.partialTrackingBadge, { top: topBarBottom + 8 }]}>
           <Text style={styles.partialTrackingBadgeText}>Partial tracking</Text>
           <View style={styles.partialTrackingComponentRow}>
             {partialTrackingComponents.map((component) => (
@@ -2942,6 +2979,87 @@ export default function ScanARKitScreen() {
               </View>
             ))}
           </View>
+        </View>
+      )}
+
+      {subjectLockEnabled && subjectIdentity.snapshot.switchDetected && !fixturePlaybackEnabled && (
+        <View
+          style={[styles.subjectSwitchBanner, { top: topBarBottom + 8 }]}
+          accessibilityRole="alert"
+          accessibilityLabel="Subject changed detected"
+        >
+          <Ionicons name="person-remove-outline" size={18} color="#F5F7FF" />
+          <View style={styles.subjectSwitchText}>
+            <Text style={styles.subjectSwitchTitle}>Subject changed</Text>
+            <Text style={styles.subjectSwitchHint}>Step back in frame</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.subjectSwitchAction}
+            onPress={handleReacquireSubject}
+            accessibilityRole="button"
+            accessibilityLabel="Reacquire subject"
+          >
+            <Text style={styles.subjectSwitchActionText}>Reset</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {cameraPermission.revoked && (
+        <View
+          style={[styles.cameraRevokedBanner, { top: topBarBottom + 8 }]}
+          accessibilityRole="alert"
+          accessibilityLabel="Camera permission revoked"
+        >
+          <Ionicons name="videocam-off-outline" size={18} color="#F5F7FF" />
+          <View style={styles.subjectSwitchText}>
+            <Text style={styles.subjectSwitchTitle}>Camera access turned off</Text>
+            <Text style={styles.subjectSwitchHint}>
+              {cameraPermission.canAskAgain
+                ? 'Grant access to keep tracking'
+                : 'Re-enable in Settings to resume'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.subjectSwitchAction}
+            onPress={() => {
+              if (cameraPermission.canAskAgain) {
+                void cameraPermission.request();
+              } else {
+                void cameraPermission.openSettings();
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={cameraPermission.canAskAgain ? 'Request camera access' : 'Open device settings'}
+          >
+            <Text style={styles.subjectSwitchActionText}>
+              {cameraPermission.canAskAgain ? 'Allow' : 'Settings'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {appStatePause.needsResume && !cameraPermission.revoked && (
+        <View
+          style={[styles.resumePromptBanner, { top: topBarBottom + 8 }]}
+          accessibilityRole="alert"
+          accessibilityLabel="Session paused, resume tracking"
+        >
+          <Ionicons name="pause-circle-outline" size={18} color="#F5F7FF" />
+          <View style={styles.subjectSwitchText}>
+            <Text style={styles.subjectSwitchTitle}>Session paused</Text>
+            <Text style={styles.subjectSwitchHint}>Tap resume when you&apos;re ready</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.subjectSwitchAction}
+            onPress={() => {
+              appStatePause.resume();
+              void startTracking();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Resume tracking"
+          >
+            <Text style={styles.subjectSwitchActionText}>Resume</Text>
+          </TouchableOpacity>
         </View>
       )}
 

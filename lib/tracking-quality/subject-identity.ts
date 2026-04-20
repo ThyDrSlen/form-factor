@@ -78,6 +78,7 @@ const SIGNATURE_JOINTS = [
   'left_hand',
   'right_hand',
 ] as const;
+
 const MIN_TRACKED_JOINTS_FOR_CENTROID = 3;
 
 function dist(ax: number, ay: number, bx: number, by: number): number {
