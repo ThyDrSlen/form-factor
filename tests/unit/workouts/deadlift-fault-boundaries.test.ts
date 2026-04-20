@@ -113,17 +113,12 @@ describe('deadlift fault boundaries', () => {
       expect(fault.condition(ctx)).toBe(true);
     });
 
-    test('asymmetric: only LEFT hip rises (right unchanged) does NOT fire — condition uses LEFT-side deltas so this does trigger; documents current bug / asymmetry-blind check', () => {
-      // Current impl uses LEFT-side hip/knee deltas only — so a left-only rise DOES fire.
-      // Per issue #430: "left hip rising without right → does NOT fire" is the DESIRED contract.
-      // Locking in current behavior with a note for follow-up (asymmetry-blind detection).
+    test('asymmetric: only LEFT hip rises (right unchanged) does NOT fire — symmetric min() check ignores unilateral deltas per #436', () => {
       const ctx = makeCtx({
         startAngles: makeAngles({ leftHip: 90, rightHip: 90, leftKnee: 100, rightKnee: 100 }),
-        // left hip rises 50, right hip unchanged; knees unchanged
         maxAngles: makeAngles({ leftHip: 140, rightHip: 90, leftKnee: 100, rightKnee: 100 }),
       });
-      // hipChange (left-only) = 50, kneeChange (left-only) = 0, 50 > 30 -> fires
-      expect(fault.condition(ctx)).toBe(true);
+      expect(fault.condition(ctx)).toBe(false);
     });
   });
 
