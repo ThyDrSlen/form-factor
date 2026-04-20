@@ -830,6 +830,42 @@ class LocalDatabase {
     });
   }
 
+  /**
+   * Fetch workouts for a specific exercise, sorted by date descending.
+   *
+   * The legacy `workouts` table is single-user-per-device (no `user_id` column);
+   * `userId` is accepted for API symmetry with the forthcoming Supabase equivalent
+   * so callers can pass a stable identifier without branching. The parameter name
+   * `exerciseNameOrId` reflects that the local table stores the exercise as a
+   * free-text `exercise` column — callers may pass either the canonical exercise
+   * name (legacy path) or an exercise id if the session-based tables grow a
+   * local aggregate view later.
+   *
+   * @param userId - Accepted for API parity; currently unused locally.
+   * @param exerciseNameOrId - Exact match on the stored `exercise` column.
+   * @param limit - Optional cap on the number of rows returned (newest first).
+   */
+  async getWorkoutsByExercise(
+    userId: string,
+    exerciseNameOrId: string,
+    limit?: number,
+  ): Promise<LocalWorkout[]> {
+    void userId; // reserved for multi-user support; see Supabase stub in sync-service.ts
+    const dbResult = await this.ensureInitialized();
+    if (!dbResult.ok) {
+      throw new Error(dbResult.error.message);
+    }
+
+    const params: (string | number)[] = [exerciseNameOrId];
+    let query =
+      'SELECT * FROM workouts WHERE deleted = 0 AND exercise = ? ORDER BY date DESC';
+    if (typeof limit === 'number' && limit > 0) {
+      query += ' LIMIT ?';
+      params.push(Math.floor(limit));
+    }
+    return dbResult.data.getAllAsync<LocalWorkout>(query, params);
+  }
+
   // Health Metric operations
   async insertHealthMetric(metric: Omit<LocalHealthMetric, 'synced' | 'updated_at'>): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
