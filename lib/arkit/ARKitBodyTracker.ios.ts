@@ -465,8 +465,21 @@ export class BodyTracker {
 
 /**
  * React hook for ARKit body tracking
+ *
+ * @param fps Baseline poll frequency used when active.
+ * @param options.activeFps Optional override FPS applied when tracking is
+ *   "active" in the workout session sense (used by the caller to drop the
+ *   native frame pull during rest/thermal throttled states). The TS layer
+ *   currently just swaps the JS-side poll interval to this value — the
+ *   matching native ARKit frame-rate drop is tracked as a follow-up
+ *   (TODO(native): thread activeFps into ARKitBodyTrackerModule.swift so
+ *   the AR session itself throttles, not just the JS poll).
  */
-export function useBodyTracking(fps: number = 60) {
+export function useBodyTracking(
+  fps: number = 60,
+  options: { activeFps?: number } = {}
+) {
+  const { activeFps } = options;
   const [pose, setPose] = React.useState<BodyPose | null>(null);
   const [pose2D, setPose2D] = React.useState<BodyPose2D | null>(null);
   const [isSupported, setIsSupported] = React.useState(false);
@@ -521,8 +534,18 @@ export function useBodyTracking(fps: number = 60) {
       await BodyTracker.startTracking();
       setIsTracking(true);
 
-      // Poll for poses at specified FPS
+      // Poll for poses at the effective FPS. When the caller supplies
+      // options.activeFps we honour it (e.g. drop to 30fps under thermal
+      // throttle); otherwise fall back to the baseline `fps` argument.
+      // TODO(native): propagate this value into ARKitBodyTrackerModule.swift
+      //   so the AR session's frame production itself is throttled rather
+      //   than leaving the native side at 60fps and just sampling slower
+      //   from JS.
       if (intervalRef.current) return;
+      const effectiveFps =
+        typeof activeFps === 'number' && Number.isFinite(activeFps) && activeFps > 0
+          ? activeFps
+          : fps;
       intervalRef.current = setInterval(() => {
         const currentPose = BodyTracker.getCurrentPose();
         if (!currentPose || !currentPose.isTracking) {
@@ -547,12 +570,12 @@ export function useBodyTracking(fps: number = 60) {
         } else {
           setPose2D(null);
         }
-      }, 1000 / fps);
+      }, 1000 / effectiveFps);
     } catch (error) {
       errorWithTs('Failed to start body tracking:', error);
       throw error;
     }
-  }, [fps]);
+  }, [fps, activeFps]);
 
   const stopTracking = React.useCallback(() => {
     if (intervalRef.current) {
