@@ -33,7 +33,8 @@ export type SessionEventType =
   | 'rest_completed'
   | 'rest_skipped'
   | 'session_completed'
-  | 'pr_detected';
+  | 'pr_detected'
+  | 'form_milestone';
 
 // =============================================================================
 // Exercise

@@ -20,6 +20,7 @@ import { HapticPreferencesProvider } from '../contexts/HapticPreferencesContext'
 import { logWithTs, warnWithTs } from '@/lib/logger';
 import { isOnboardingCompleted } from '@/lib/services/onboarding';
 import { hasSeenWelcome } from '@/app/(onboarding)/welcome';
+import { MilestoneToastBridge } from '@/components/MilestoneToastBridge';
 import { SessionTelemetryBinder } from '@/components/telemetry/SessionTelemetryBinder';
 import { parseTemplateIdFromUrl } from '@/lib/services/workout-scheduler';
 import '@/lib/services/fault-explainer-bootstrap';
@@ -111,6 +112,7 @@ function RootLayoutNav() {
                               ) : (
                                 <>
                                   <SessionTelemetryBinder />
+                                  <MilestoneToastBridge />
                                   <InitialLayout />
                                 </>
                               )}

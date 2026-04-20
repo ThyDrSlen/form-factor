@@ -31,6 +31,11 @@ import {
   getDefaultsForExercise,
   type FormTargets,
 } from '@/lib/services/form-target-resolver';
+import {
+  detectMilestone,
+  type PriorSession,
+  type MilestoneResult,
+} from '@/lib/services/form-milestone-detector';
 import type {
   WorkoutSession,
   WorkoutSessionExercise,
@@ -249,6 +254,59 @@ async function emitEvent(
     session_set_id: sessionSetId ?? null,
     payload,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Post-session form milestone surface (#494)
+//
+// Surface a new PB / week-consistency signal via the session-event bus
+// after a form-tracking session finishes. Kept outside the store so the
+// caller (scan-arkit) can pipe the precise averages it already has
+// without forcing the session-runner to re-aggregate SQL rows on finish.
+//
+// Listeners (e.g. ToastMilestoneBridge) subscribe via subscribeToEvents
+// and render the user-facing surface.
+// ---------------------------------------------------------------------------
+
+export interface EmitFormMilestoneArgs {
+  sessionId: string;
+  exerciseKey: string;
+  currentAvgFqi: number;
+  priorSessions: PriorSession[];
+  /** Override the detector options per-call. */
+  pbMargin?: number;
+  consistencyBand?: number;
+  consistencyWindow?: number;
+  consistencyMinScore?: number;
+}
+
+/**
+ * Run the milestone detector against the given inputs and — when a
+ * milestone is present — emit a `form_milestone` session event. Returns
+ * the raw detector result so the caller can gate extra UI on it.
+ */
+export async function emitFormMilestone(
+  args: EmitFormMilestoneArgs,
+): Promise<MilestoneResult> {
+  const result = detectMilestone({
+    exerciseKey: args.exerciseKey,
+    currentAvgFqi: args.currentAvgFqi,
+    priorSessions: args.priorSessions,
+    pbMargin: args.pbMargin,
+    consistencyBand: args.consistencyBand,
+    consistencyWindow: args.consistencyWindow,
+    consistencyMinScore: args.consistencyMinScore,
+  });
+
+  if (result.kind) {
+    await emitEvent(args.sessionId, 'form_milestone', null, null, {
+      kind: result.kind,
+      message: result.message,
+      score: result.score,
+      exercise_key: args.exerciseKey,
+    });
+  }
+  return result;
 }
 
 async function getExerciseById(exerciseId: string): Promise<Exercise | null> {
