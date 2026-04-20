@@ -21,6 +21,7 @@ import type {
   RepContext,
   ScoringMetricDefinition,
 } from '@/lib/types/workout-definitions';
+import { averageJointPair } from '@/lib/workouts/helpers';
 
 // =============================================================================
 // Phase Type
@@ -186,7 +187,8 @@ const faults: FaultDefinition[] = [
     id: 'incomplete_lockout',
     displayName: 'Incomplete Lockout',
     condition: (ctx: RepContext) => {
-      const endElbow = (ctx.endAngles.leftElbow + ctx.endAngles.rightElbow) / 2;
+      const endElbow = averageJointPair(ctx.endAngles, 'leftElbow', 'rightElbow');
+      if (endElbow === null) return false; // no endAngles signal -> do not flag (#166)
       return endElbow < BENCHPRESS_THRESHOLDS.readyElbow - 10;
     },
     severity: 1,

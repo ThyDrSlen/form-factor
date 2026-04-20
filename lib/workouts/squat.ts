@@ -21,6 +21,7 @@ import type {
   RepContext,
   ScoringMetricDefinition,
 } from '@/lib/types/workout-definitions';
+import { averageJointPair } from '@/lib/workouts/helpers';
 
 // =============================================================================
 // Phase Type
@@ -198,7 +199,8 @@ const faults: FaultDefinition[] = [
     id: 'incomplete_lockout',
     displayName: 'Incomplete Lockout',
     condition: (ctx: RepContext) => {
-      const endKnee = (ctx.endAngles.leftKnee + ctx.endAngles.rightKnee) / 2;
+      const endKnee = averageJointPair(ctx.endAngles, 'leftKnee', 'rightKnee');
+      if (endKnee === null) return false; // no endAngles signal -> do not flag (#166)
       return endKnee < SQUAT_THRESHOLDS.standing - 10;
     },
     severity: 1,
