@@ -3,10 +3,12 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { DeleteAction } from '@/components';
+import { OverloadAnalyticsCard } from '@/components/workouts/OverloadAnalyticsCard';
+import { useAuth } from '@/contexts/AuthContext';
 import { useUnits } from '@/contexts/UnitsContext';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import { exportSession } from '@/lib/services/session-export-service';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -42,12 +44,34 @@ const buildWorkoutShareMessage = (workout: Workout, weightLabel: string): string
 
 export default function WorkoutsScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const { getWeightLabel } = useUnits();
   const { workouts, loading, refreshWorkouts, deleteWorkout } = useWorkouts();
   const { show: showToast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
+
+  // Pick the most recently logged exercise for the overload card. We fall
+  // back to the first row when dates are missing; if the list is empty, the
+  // card is hidden entirely to keep the empty-state screen clean.
+  const featuredExercise = useMemo(() => {
+    if (!workouts || workouts.length === 0) return null;
+    const sorted = [...workouts].sort((a, b) => {
+      const ad = a.date ? new Date(a.date).getTime() : 0;
+      const bd = b.date ? new Date(b.date).getTime() : 0;
+      return bd - ad;
+    });
+    return sorted[0].exercise;
+  }, [workouts]);
+
+  const openProgressionPlan = useCallback(() => {
+    if (!featuredExercise) return;
+    Haptics.selectionAsync().catch(() => {});
+    router.push(
+      `/(modals)/progression-plan?exercise=${encodeURIComponent(featuredExercise)}`,
+    );
+  }, [featuredExercise, router]);
 
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -390,12 +414,19 @@ export default function WorkoutsScreen() {
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
-            <>
+            <View>
               {renderIntelHeader()}
               {lastUpdatedLabel ? (
                 <Text style={{ color: '#8E8E93', fontSize: 12, marginBottom: 12, textAlign: 'center' }}>{lastUpdatedLabel}</Text>
               ) : null}
-            </>
+              {featuredExercise ? (
+                <OverloadAnalyticsCard
+                  userId={user?.id ?? 'local-user'}
+                  exercise={featuredExercise}
+                  onPressPlan={openProgressionPlan}
+                />
+              ) : null}
+            </View>
           }
           refreshControl={
             <RefreshControl

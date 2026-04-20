@@ -32,7 +32,8 @@ export type SessionEventType =
   | 'rest_started'
   | 'rest_completed'
   | 'rest_skipped'
-  | 'session_completed';
+  | 'session_completed'
+  | 'pr_detected';
 
 // =============================================================================
 // Exercise

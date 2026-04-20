@@ -176,6 +176,49 @@ function scheduleRestTimerCompletionHaptic(startedAt: string, targetSeconds: num
   }, remainingMs);
 }
 
+// =============================================================================
+// Event Listener Registry (module-level, non-breaking fan-out)
+// =============================================================================
+
+export type SessionEventListener = (event: WorkoutSessionEvent) => void;
+
+const sessionEventListeners = new Set<SessionEventListener>();
+
+/**
+ * Subscribe to session events as they are emitted (set_completed, rest_started,
+ * rest_ended, session_completed, pr_detected, etc.). Returns an unsubscribe fn.
+ *
+ * This is a pure fan-out: listeners are invoked synchronously after the event
+ * has been persisted to SQLite. Listener exceptions are caught so a buggy
+ * subscriber cannot break session state. Safe to call multiple times; each
+ * subscription is tracked independently.
+ */
+export function subscribeToEvents(listener: SessionEventListener): () => void {
+  sessionEventListeners.add(listener);
+  return () => {
+    sessionEventListeners.delete(listener);
+  };
+}
+
+/**
+ * Test-only helper: clear all subscribers. Kept non-public-exported but usable
+ * via the debug entry below when needed by unit tests.
+ */
+export function __resetSessionEventListenersForTests(): void {
+  sessionEventListeners.clear();
+}
+
+function notifySessionEventListeners(event: WorkoutSessionEvent): void {
+  if (sessionEventListeners.size === 0) return;
+  for (const listener of sessionEventListeners) {
+    try {
+      listener(event);
+    } catch (err) {
+      errorWithTs('[SessionRunner] Listener threw:', err);
+    }
+  }
+}
+
 async function emitEvent(
   sessionId: string,
   type: SessionEventType,
@@ -194,6 +237,18 @@ async function emitEvent(
     synced: 0,
   };
   await genericLocalUpsert('workout_session_events', 'id', event, 0);
+
+  // Fan out to in-process listeners (watch bridge, analytics, etc.).
+  // The stored payload is serialized JSON; subscribers receive the rich object.
+  notifySessionEventListeners({
+    id: event.id as string,
+    session_id: sessionId,
+    created_at: event.created_at as string,
+    type,
+    session_exercise_id: sessionExerciseId ?? null,
+    session_set_id: sessionSetId ?? null,
+    payload,
+  });
 }
 
 async function getExerciseById(exerciseId: string): Promise<Exercise | null> {
