@@ -17,6 +17,7 @@ import { dumbbellCurlDefinition, type DumbbellCurlPhase, type DumbbellCurlMetric
 import { farmersWalkDefinition, type FarmersWalkPhase, type FarmersWalkMetrics } from './farmers-walk';
 import { hipThrustDefinition, type HipThrustPhase, type HipThrustMetrics } from './hip-thrust';
 import { latPulldownDefinition, type LatPulldownPhase, type LatPulldownMetrics } from './lat-pulldown';
+import { lungeDefinition, type LungePhase, type LungeMetrics } from './lunge';
 import { overheadPressDefinition, type OverheadPressPhase, type OverheadPressMetrics } from './overhead-press';
 import { pullupDefinition, type PullUpPhase, type PullUpMetrics } from './pullup';
 import { pushupDefinition, type PushUpPhase, type PushUpMetrics } from './pushup';
@@ -33,6 +34,7 @@ export const workoutsByMode = {
   farmers_walk: farmersWalkDefinition,
   hip_thrust: hipThrustDefinition,
   lat_pulldown: latPulldownDefinition,
+  lunge: lungeDefinition,
   overhead_press: overheadPressDefinition,
   pullup: pullupDefinition,
   pushup: pushupDefinition,
@@ -54,6 +56,7 @@ export { dumbbellCurlDefinition, DUMBBELL_CURL_THRESHOLDS, type DumbbellCurlPhas
 export { farmersWalkDefinition, FARMERS_WALK_THRESHOLDS, type FarmersWalkPhase, type FarmersWalkMetrics } from './farmers-walk';
 export { hipThrustDefinition, HIP_THRUST_THRESHOLDS, type HipThrustPhase, type HipThrustMetrics } from './hip-thrust';
 export { latPulldownDefinition, LAT_PULLDOWN_THRESHOLDS, type LatPulldownPhase, type LatPulldownMetrics } from './lat-pulldown';
+export { lungeDefinition, LUNGE_THRESHOLDS, type LungePhase, type LungeMetrics } from './lunge';
 export { overheadPressDefinition, OVERHEAD_PRESS_THRESHOLDS, type OverheadPressPhase, type OverheadPressMetrics } from './overhead-press';
 export { pullupDefinition, PULLUP_THRESHOLDS, type PullUpPhase, type PullUpMetrics } from './pullup';
 export { pushupDefinition, PUSHUP_THRESHOLDS, type PushUpPhase, type PushUpMetrics } from './pushup';
@@ -85,6 +88,7 @@ export const workoutRegistry: WorkoutRegistry = {
   farmers_walk: farmersWalkDefinition as unknown as WorkoutDefinition,
   hip_thrust: hipThrustDefinition as unknown as WorkoutDefinition,
   lat_pulldown: latPulldownDefinition as unknown as WorkoutDefinition,
+  lunge: lungeDefinition as unknown as WorkoutDefinition,
   overhead_press: overheadPressDefinition as unknown as WorkoutDefinition,
   pullup: pullupDefinition as unknown as WorkoutDefinition,
   pushup: pushupDefinition as unknown as WorkoutDefinition,

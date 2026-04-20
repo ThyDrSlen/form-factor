@@ -197,6 +197,27 @@ export const CUE_ROTATION_VARIANTS: CueVariantMap = {
     'Steady rep — squeeze at the top.',
   ],
 
+  // ---- Lunge / Bulgarian split squat ----
+  'Drop deeper — front thigh parallel to the floor.': [
+    'Sink deeper until the front thigh is parallel.',
+    'Go lower until the front thigh is level.',
+  ],
+  'Ease off — keep the front knee stacked over the ankle.': [
+    'Reduce the push and stack the knee.',
+    'Back off and stack the knee over the ankle.',
+  ],
+  'Reset your stance, breathe, then repeat.': [
+    'Reset the stance, breathe, then go again.',
+    'Rebuild the stance, breathe, repeat.',
+  ],
+  'Shift weight back — keep the front shin vertical.': [
+    'Sit back and keep the front shin stacked.',
+    'Move back into the heel and stack the shin.',
+  ],
+  'Sit into the front leg — stay tall through the hips.': [
+    'Load the front leg and stay tall.',
+    'Sink into the front leg and keep hips tall.',
+  ],
   // ---- Barbell row ----
   'Tuck elbows down — pull to the lower ribs.': [
     'Keep elbows tucked and row to the ribs.',
@@ -209,24 +230,6 @@ export const CUE_ROTATION_VARIANTS: CueVariantMap = {
   'Smooth pull — squeeze the shoulder blades at the top.': [
     'Pull smooth and pinch the shoulder blades.',
     'Row smooth and squeeze the upper back.',
-  ],
-
-  // ---- Bulgarian split squat ----
-  'Drop deeper — front thigh parallel to the floor.': [
-    'Sink deeper until the front thigh is parallel.',
-    'Go lower until the front thigh is level.',
-  ],
-  'Shift weight back — keep the front shin vertical.': [
-    'Sit back and keep the front shin stacked.',
-    'Move back into the heel and stack the shin.',
-  ],
-  'Reset your stance, breathe, then repeat.': [
-    'Reset the stance, breathe, then go again.',
-    'Rebuild the stance, breathe, repeat.',
-  ],
-  'Sit into the front leg — stay tall through the hips.': [
-    'Load the front leg and stay tall.',
-    'Sink into the front leg and keep hips tall.',
   ],
 
   // ---- Overhead press ----
