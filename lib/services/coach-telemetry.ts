@@ -27,6 +27,8 @@
  * - `getCoachTelemetrySnapshot()` / `resetCoachTelemetry()`
  */
 
+import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
+
 // ---------------------------------------------------------------------------
 // Generic counters + cue adoption (main)
 // ---------------------------------------------------------------------------
@@ -182,4 +184,62 @@ export function recordCoachFailoverUsed(secondaryProvider: string): void {
   snapshot.failover_used += 1;
   snapshot.failover_used_by_provider[secondaryProvider] =
     (snapshot.failover_used_by_provider[secondaryProvider] ?? 0) + 1;
+}
+
+// ---------------------------------------------------------------------------
+// On-device coach emit-style counters (PR #431 salvage)
+//
+// These map to the metrics promised in docs/gemma-integration.md. They are
+// log-only (no in-memory snapshot) because coach-local / coach-safety /
+// coach-context-enricher only need to emit structured events — the cloud
+// aggregator is the source of truth. Additive on top of the counters/
+// snapshots above.
+// ---------------------------------------------------------------------------
+
+export type CoachLocalTelemetryEvent =
+  | 'coach.local.fallback_reason'
+  | 'coach.local.safety_reject'
+  | 'coach.local.context_tokens';
+
+interface CoachLocalTelemetryPayload {
+  event: CoachLocalTelemetryEvent;
+  value?: number | string;
+  ts: string;
+  [meta: string]: unknown;
+}
+
+function emitLocalTelemetry(
+  payload: CoachLocalTelemetryPayload,
+  level: 'log' | 'warn' | 'error' = 'log'
+): void {
+  const writer = level === 'error' ? errorWithTs : level === 'warn' ? warnWithTs : logWithTs;
+  writer('[coach-telemetry]', payload);
+}
+
+function localBase(
+  event: CoachLocalTelemetryEvent,
+  value?: number | string,
+  meta?: Record<string, unknown>
+): CoachLocalTelemetryPayload {
+  return {
+    event,
+    value,
+    ts: new Date().toISOString(),
+    ...(meta || {}),
+  };
+}
+
+/** Dispatcher fell back to cloud — reason must be categorical (#431). */
+export function recordFallback(reason: string): void {
+  emitLocalTelemetry(localBase('coach.local.fallback_reason', reason));
+}
+
+/** Safety filter rejected a candidate output (#431). */
+export function recordSafetyReject(metric: string, reason?: string): void {
+  emitLocalTelemetry(localBase('coach.local.safety_reject', metric, { reason }), 'warn');
+}
+
+/** Context tokens prepended by the enricher (#431). */
+export function recordContextTokens(n: number): void {
+  emitLocalTelemetry(localBase('coach.local.context_tokens', n));
 }
