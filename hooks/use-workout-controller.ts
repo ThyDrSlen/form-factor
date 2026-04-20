@@ -160,6 +160,14 @@ export interface UseWorkoutControllerReturn<TPhase extends string = string> {
   getWorkoutDefinition: () => WorkoutDefinition | undefined;
   /** Add a cue to the current rep's tracking data */
   addRepCue: (cueType: string) => void;
+  /**
+   * Number of rep-write events currently queued for retry. A non-zero
+   * value means `logRep()` has failed for at least one rep and the UI
+   * should surface a banner / retry affordance so the user knows their
+   * reps are not yet synced to the backend. Updated after every successful
+   * or failed `logRep()` call.
+   */
+  pendingRepCount: number;
 }
 
 // =============================================================================
@@ -231,6 +239,14 @@ export function useWorkoutController<TPhase extends string = string>(
 
   const pendingRepWritesRef = useRef<RepEvent[]>([]);
   const MAX_PENDING_REPS = 64; // bounded so a disconnected session can't grow forever
+  // Mirror the queue depth into React state so consumers can subscribe to
+  // visibility changes without polling the ref. Updated synchronously at
+  // every mutation site below (drain + enqueue paths) via the shared
+  // `syncPendingRepCount` helper.
+  const [pendingRepCount, setPendingRepCount] = useState(0);
+  const syncPendingRepCount = useCallback(() => {
+    setPendingRepCount(pendingRepWritesRef.current.length);
+  }, []);
 
   // =============================================================================
   // Rep Tracking Helpers
@@ -428,8 +444,13 @@ export function useWorkoutController<TPhase extends string = string>(
           }
         }
       }
+
+      // Reflect the final queue depth into the state mirror so consumers
+      // re-render when the pending count changes across drain + enqueue
+      // steps above.
+      syncPendingRepCount();
     },
-    [sessionId, callbacks]
+    [sessionId, callbacks, syncPendingRepCount]
   );
 
   const emitFramePullupScoring = useCallback(
@@ -628,6 +649,12 @@ export function useWorkoutController<TPhase extends string = string>(
       cues: [],
       lastJoints: null,
     };
+    // Drop any queued rep writes — a full reset (e.g. new session)
+    // means the previous session's pending reps are no longer valid.
+    // Callers that want to keep the queue across resets should be
+    // refactored to use `preserveRepCount` semantics at a higher level.
+    pendingRepWritesRef.current = [];
+    setPendingRepCount(0);
 
     setState({
       phase: initialPhase,
@@ -665,6 +692,7 @@ export function useWorkoutController<TPhase extends string = string>(
     setWorkout,
     getWorkoutDefinition,
     addRepCue,
+    pendingRepCount,
   };
 }
 
