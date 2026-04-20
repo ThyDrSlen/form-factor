@@ -104,6 +104,14 @@ export default function ModalsLayout() {
           contentStyle: { backgroundColor: '#050E1F' },
         }}
       />
+      <Stack.Screen
+        name="progression-plan"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
     </Stack>
   );
 }

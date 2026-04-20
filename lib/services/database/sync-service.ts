@@ -1632,6 +1632,26 @@ class SyncService {
     this.setSyncStatus({ state: 'idle', lastError: null, lastErrorAt: null });
     logWithTs('[SyncService] Sync queue cleared');
   }
+
+  /**
+   * Fetch remote workouts for a given exercise. Mirrors
+   * `localDB.getWorkoutsByExercise()` so callers can prefer local-first and
+   * fall through to Supabase when the local store is cold.
+   *
+   * TODO(day): wire the remote Supabase query once progressive overload
+   * becomes multi-device. For now we defer entirely to the local store to
+   * avoid an extra network round-trip on the hot path.
+   */
+  async getWorkoutsByExerciseRemote(
+    userId: string,
+    exerciseNameOrId: string,
+    limit?: number,
+  ): Promise<LocalWorkout[]> {
+    void userId;
+    void exerciseNameOrId;
+    void limit;
+    return [];
+  }
 }
 
 // Export singleton instance
