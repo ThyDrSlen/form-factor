@@ -5,6 +5,7 @@ module.exports = {
     '<rootDir>/tests/unit/**/*.test.{ts,tsx}',
     '<rootDir>/tests/integration/**/*.test.{ts,tsx}',
     '<rootDir>/lib/**/*.test.{ts,tsx}',
+    '<rootDir>/supabase/functions/**/*.test.{ts,tsx}',
   ],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
   transformIgnorePatterns: [
