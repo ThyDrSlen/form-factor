@@ -1,14 +1,94 @@
-// Coach telemetry counters.
-//
-// TODO(#429): merge with PR #431 canonical telemetry module on land. PR #431
-// owns the eval-YAML-driven counter registry, persistent flush, and Sentry
-// bridge. Until that lands, we ship a minimal in-memory stub so the streaming
-// (Item 4 of #465) and failover (Item 2 of #465) call sites compile and so
-// jest tests can assert counter increments.
-//
-// The public surface (`recordCoachStream*`, `recordCoachFailoverUsed`,
-// `getCoachTelemetrySnapshot`, `resetCoachTelemetry`) is the contract callers
-// rely on; PR #431 must preserve these names when it lands.
+/**
+ * coach-telemetry
+ *
+ * This module hosts two complementary telemetry surfaces:
+ *
+ * 1. Generic counter + cue-adoption rate helpers (main, used by coach-dispatch
+ *    and the coach cue pipeline).
+ * 2. Streaming / failover / TTFT counters (PR #465, used by `coach-streaming`,
+ *    `coach-failover`, and the shaped-stream integration).
+ *
+ * Both surfaces are additive and share no state — they are colocated here so
+ * call sites have a single import path. PR #431, when it lands, should
+ * preserve BOTH public APIs non-destructively.
+ *
+ * API (cue adoption / generic counters):
+ * - `recordCounter(name, value?)` — generic in-memory counter used by
+ *   coach-dispatch for fallback telemetry.
+ * - `getCounter(name)` — read counter (test helper).
+ * - `recordCoachCueEmitted(cueId, sessionId)` — emit event for a cue.
+ * - `recordCoachCueAdopted(cueId, sessionId)` — adopt event for a cue.
+ * - `getAdoptionRate()` — adopted unique (cueId, sessionId) / emitted.
+ * - `resetTelemetry()` — clears all counters + emit/adopt state.
+ *
+ * API (streaming + failover, PR #465):
+ * - `recordCoachStreamStart/Chunk/Complete/Abort/BufferedPct`
+ * - `recordCoachFailoverUsed(secondaryProvider)`
+ * - `getCoachTelemetrySnapshot()` / `resetCoachTelemetry()`
+ */
+
+// ---------------------------------------------------------------------------
+// Generic counters + cue adoption (main)
+// ---------------------------------------------------------------------------
+
+const counters = new Map<string, number>();
+
+// Unique cueId::sessionId pairs: a cue emitted multiple times for the same
+// (cue, session) counts once when computing adoption rate.
+const emittedKeys = new Set<string>();
+const adoptedKeys = new Set<string>();
+
+function cueKey(cueId: string, sessionId: string): string {
+  return `${cueId}::${sessionId}`;
+}
+
+export function recordCounter(name: string, value: number = 1): void {
+  const prev = counters.get(name) ?? 0;
+  counters.set(name, prev + value);
+}
+
+export function getCounter(name: string): number {
+  return counters.get(name) ?? 0;
+}
+
+export function recordCoachCueEmitted(cueId: string, sessionId: string): void {
+  if (!cueId || !sessionId) return;
+  emittedKeys.add(cueKey(cueId, sessionId));
+  recordCounter('coach_cue_emitted');
+}
+
+export function recordCoachCueAdopted(cueId: string, sessionId: string): void {
+  if (!cueId || !sessionId) return;
+  // Record emission implicitly so callers that only observe adoption still
+  // contribute a valid denominator.
+  const key = cueKey(cueId, sessionId);
+  emittedKeys.add(key);
+  adoptedKeys.add(key);
+  recordCounter('coach_cue_adopted');
+}
+
+/**
+ * Adoption rate = unique adopted (cueId, sessionId) / unique emitted.
+ * Returns 1 on empty data (neutral-best default for a fresh UI).
+ */
+export function getAdoptionRate(): number {
+  const emitted = emittedKeys.size;
+  if (emitted === 0) return 1;
+  return adoptedKeys.size / emitted;
+}
+
+export function resetTelemetry(): void {
+  counters.clear();
+  emittedKeys.clear();
+  adoptedKeys.clear();
+  // Also reset the streaming/failover snapshot so a single reset clears the
+  // entire module state (what most tests want).
+  resetCoachTelemetry();
+}
+
+// ---------------------------------------------------------------------------
+// Streaming + failover counters (PR #465)
+// ---------------------------------------------------------------------------
 
 export interface CoachTelemetrySnapshot {
   /** Total chunks observed across all streams (Item 4). */
