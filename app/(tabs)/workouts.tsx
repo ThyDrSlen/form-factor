@@ -3,12 +3,14 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { DeleteAction } from '@/components';
+import { FormQualityBadge } from '@/components/form-tracking/FormQualityBadge';
 import { OverloadAnalyticsCard } from '@/components/workouts/OverloadAnalyticsCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnits } from '@/contexts/UnitsContext';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
+import { getMostRecentAvgFqi } from '@/lib/services/form-session-history-lookup';
 import { exportSession } from '@/lib/services/session-export-service';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -51,6 +53,11 @@ export default function WorkoutsScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
+  // Per-exercise most-recent FQI (issue #494, item 4). Lazily populated
+  // from form-session-history; missing entries render no badge.
+  const [formQualityByExercise, setFormQualityByExercise] = useState<
+    Record<string, number | null>
+  >({});
 
   // Pick the most recently logged exercise for the overload card. We fall
   // back to the first row when dates are missing; if the list is empty, the
@@ -72,6 +79,37 @@ export default function WorkoutsScreen() {
       `/(modals)/progression-plan?exercise=${encodeURIComponent(featuredExercise)}`,
     );
   }, [featuredExercise, router]);
+
+  // Populate the form-quality map whenever the workout list changes.
+  // Unique exercises only — the same name is re-used across sets.
+  useEffect(() => {
+    if (!workouts || workouts.length === 0) return;
+    const uniqueNames = Array.from(
+      new Set(workouts.map((w) => w.exercise).filter(Boolean)),
+    );
+    let cancelled = false;
+    (async () => {
+      const pairs = await Promise.all(
+        uniqueNames.map(async (name) => {
+          try {
+            const score = await getMostRecentAvgFqi(name);
+            return [name, score] as const;
+          } catch {
+            return [name, null] as const;
+          }
+        }),
+      );
+      if (cancelled) return;
+      setFormQualityByExercise((prev) => {
+        const next = { ...prev };
+        for (const [name, score] of pairs) next[name] = score;
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workouts]);
 
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -275,7 +313,13 @@ export default function WorkoutsScreen() {
                 </Text>
               </View>
             </View>
-            
+
+            {formQualityByExercise[item.exercise] != null ? (
+              <View style={workoutCardStyles.badgeRow}>
+                <FormQualityBadge score={formQualityByExercise[item.exercise]} />
+              </View>
+            ) : null}
+
             <View style={styles.cardDetails}>
               <View style={styles.detailItem}>
                 <Text style={styles.detailValue}>{item.sets || '0'}</Text>
@@ -450,6 +494,14 @@ export default function WorkoutsScreen() {
     </View>
   );
 }
+
+// --- Local styles for the per-card form quality badge (#494) ----------------
+const workoutCardStyles = StyleSheet.create({
+  badgeRow: {
+    marginTop: 6,
+    marginBottom: 2,
+  },
+});
 
 // --- Local styles for the form-intel header pills (#476) ---------------------
 const intelHeaderStyles = StyleSheet.create({
