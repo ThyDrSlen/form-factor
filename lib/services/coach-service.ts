@@ -1,6 +1,9 @@
 import { supabase } from '@/lib/supabase';
 import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { createError, logError } from './ErrorHandler';
+import type { CoachCloudProvider } from './coach-cloud-provider';
+import { resolveCloudProvider } from './coach-cloud-provider';
+import { sendCoachGemmaPrompt } from './coach-gemma-service';
 import {
   inferCoachProvider,
   type CoachProvider,
@@ -56,9 +59,39 @@ interface RawCoachResponse {
 const DEFAULT_MODEL_ID = 'gpt-5.4-mini';
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
 
+export interface SendCoachOptions {
+  /**
+   * Which cloud provider to use. When omitted, resolves from AsyncStorage /
+   * EXPO_PUBLIC_COACH_CLOUD_PROVIDER / default (`openai`) via
+   * {@link resolveCloudProvider}.
+   */
+  provider?: CoachCloudProvider;
+}
+
+/**
+ * Send a coach prompt. When `opts.provider` is provided it dispatches to that
+ * provider directly; otherwise the selection is resolved from storage/env.
+ * Backward compatible: callers passing only (messages, context) continue to
+ * hit the OpenAI-backed coach function unless a user preference or env has
+ * been set.
+ */
 export async function sendCoachPrompt(
   messages: CoachMessage[],
-  context?: CoachContext
+  context?: CoachContext,
+  opts?: SendCoachOptions,
+): Promise<CoachMessage> {
+  const provider = opts?.provider ?? (await resolveCloudProvider());
+
+  if (provider === 'gemma') {
+    return sendCoachGemmaPrompt(messages, context);
+  }
+
+  return sendOpenAICoachPrompt(messages, context);
+}
+
+async function sendOpenAICoachPrompt(
+  messages: CoachMessage[],
+  context?: CoachContext,
 ): Promise<CoachMessage> {
   try {
     const { data, error } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
