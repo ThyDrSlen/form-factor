@@ -466,6 +466,7 @@ export default function ScanARKitScreen() {
   const watchMirrorInFlightRef = React.useRef(false);
   const watchTrackingPublishAtRef = React.useRef(0);
   const watchTrackingSignatureRef = React.useRef<string | null>(null);
+  const lastTrackingQualityRef = React.useRef<number | null>(null);
   const [shadowModeEnabled, setShadowModeEnabled] = useState(true);
   const shadowModeEnabledRef = React.useRef(true);
   const shadowStatsRef = React.useRef(createShadowStatsAccumulator());
@@ -1420,7 +1421,11 @@ export default function ScanARKitScreen() {
           trackingQuality: smoothingResult?.trackingQuality,
           shadowMeanAbsDelta: shadowComparison?.meanAbsDelta,
         });
+        if (typeof smoothingResult?.trackingQuality === 'number') {
+          lastTrackingQualityRef.current = smoothingResult.trackingQuality;
+        }
       } else {
+        lastTrackingQualityRef.current = null;
         repIndexTrackerRef.current.reset();
         resetWorkoutController({ preserveRepCount: true });
         setActiveMetrics(null);
@@ -2008,6 +2013,13 @@ export default function ScanARKitScreen() {
 	      const reps = repCount;
 	      const phase = activePhase;
 	      const metrics = activeWorkoutDef.ui?.buildWatchMetrics(activeMetrics as never) ?? {};
+	      const confidence = lastTrackingQualityRef.current;
+	      const partialBadge = livePullupPartialStatus?.visibility_badge;
+	      const isDegraded = partialBadge != null && partialBadge !== 'full';
+	      const quality =
+	        typeof confidence === 'number'
+	          ? { trackingConfidence: confidence, isDegraded, degradationReason: isDegraded ? partialBadge : undefined }
+	          : undefined;
 
 	      const payload = buildWatchTrackingPayload({
 	        now,
@@ -2017,6 +2029,7 @@ export default function ScanARKitScreen() {
         reps,
         primaryCue: primaryCue ?? null,
         metrics,
+        quality,
       });
 
       const signature = JSON.stringify(payload.tracking);
@@ -2035,6 +2048,7 @@ export default function ScanARKitScreen() {
 	      activeWorkoutDef,
 	      detectionMode,
 	      isTracking,
+	      livePullupPartialStatus,
 	      primaryCue,
 	      repCount,
 	      watchInstalled,
