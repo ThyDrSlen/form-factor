@@ -192,6 +192,19 @@ const faults: FaultDefinition[] = [
     severity: 2,
     dynamicCue: 'Finish each rep with full hip extension.',
     fqiPenalty: 12,
+    drills: [
+      {
+        id: 'deadlift-hip-thrust',
+        title: 'Barbell Hip Thrusts',
+        durationSec: 120,
+        reps: 8,
+        steps: [
+          'Sit with upper back against a bench, bar across hips.',
+          'Drive heels into floor, push hips up, squeeze glutes hard.',
+          'Pause 1 second at lockout. 3 sets of 8.',
+        ],
+      },
+    ],
   },
   {
     id: 'rounded_back',
@@ -204,6 +217,19 @@ const faults: FaultDefinition[] = [
     severity: 3,
     dynamicCue: 'Keep your back flat — don\'t round your spine.',
     fqiPenalty: 20,
+    drills: [
+      {
+        id: 'deadlift-bird-dog',
+        title: 'Bird-Dogs w/ 3s Hold',
+        durationSec: 90,
+        reps: 8,
+        steps: [
+          'Start on all fours, wrists under shoulders.',
+          'Extend opposite arm + leg and hold 3 seconds, spine neutral.',
+          'Focus on bracing. 3 sets of 8 per side.',
+        ],
+      },
+    ],
   },
   {
     id: 'hips_rise_first',
@@ -242,6 +268,19 @@ const faults: FaultDefinition[] = [
     severity: 2,
     dynamicCue: 'Drive with your legs — don\'t let your hips shoot up first.',
     fqiPenalty: 10,
+    drills: [
+      {
+        id: 'deadlift-pause-off-floor',
+        title: 'Pause Deadlifts (1″ Off Floor)',
+        durationSec: 150,
+        reps: 5,
+        steps: [
+          'Set up at the bar; lift until bar is 1 inch off the floor.',
+          'Pause 2 seconds maintaining leg pressure, then lockout.',
+          'Use 60% of your working weight. 4 sets of 5.',
+        ],
+      },
+    ],
   },
   {
     id: 'asymmetric_pull',

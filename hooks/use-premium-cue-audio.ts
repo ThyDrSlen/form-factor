@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import * as Speech from 'expo-speech';
 import { Paths, File as ExpoFile } from 'expo-file-system';
 import { Audio, InterruptionModeIOS } from 'expo-av';
 import { warnWithTs } from '@/lib/logger';
 import { createError, logError } from '@/lib/services/ErrorHandler';
+import {
+  mapSeverityToAudioHint,
+  type CueAudioHint,
+} from '@/lib/services/cue-priority-audio';
+import type { FaultSeverity } from '@/lib/types/workout-definitions';
 
 // ---------------------------------------------------------------------------
 // Cue manifest — maps normalised cue text → MP3 filename.
@@ -94,6 +99,17 @@ interface PremiumCueAudioOptions {
   volume?: number;
   minIntervalMs?: number;
   shouldAllowRecording?: boolean;
+  /**
+   * Optional severity-based priority hint. When provided, the hook
+   * derives `minIntervalMs` + `volume` via the cue-priority-audio
+   * mapper instead of using the raw props. Existing callers that
+   * omit this keep the previous behavior unchanged.
+   *
+   * Accepts either:
+   *   - a FaultSeverity (1/2/3)
+   *   - a partial hint object from mapSeverityToAudioHint()
+   */
+  priorityHint?: FaultSeverity | Partial<CueAudioHint>;
   onEvent?: (event: {
     cue: string;
     action: 'queued' | 'spoken' | 'dropped';
@@ -121,8 +137,29 @@ export function usePremiumCueAudio({
   volume = 1,
   minIntervalMs = 2000,
   shouldAllowRecording = true,
+  priorityHint,
   onEvent,
 }: PremiumCueAudioOptions): PremiumCueAudioControls {
+  // When a priority hint is supplied, derive interval + volume from the
+  // shared mapper so the scan overlay and watch stay in sync.
+  const resolved = useMemo(() => {
+    if (priorityHint == null) {
+      return { minIntervalMs, volume };
+    }
+    if (typeof priorityHint === 'number') {
+      const hint = mapSeverityToAudioHint(priorityHint);
+      return {
+        minIntervalMs: hint.intervalMs,
+        volume: hint.volume,
+      };
+    }
+    return {
+      minIntervalMs: priorityHint.intervalMs ?? minIntervalMs,
+      volume: priorityHint.volume ?? volume,
+    };
+  }, [priorityHint, minIntervalMs, volume]);
+  const effectiveInterval = resolved.minIntervalMs;
+  const effectiveVolume = resolved.volume;
   const queueRef = useRef<string[]>([]);
   const isSpeakingRef = useRef(false);
   const lastPhraseRef = useRef<string | null>(null);
@@ -220,14 +257,14 @@ export function usePremiumCueAudio({
           language,
           rate,
           pitch,
-          volume,
+          volume: effectiveVolume,
           onDone: resolve,
           onStopped: resolve,
           onError: () => resolve(),
         });
       });
     },
-    [voiceId, language, rate, pitch, volume]
+    [voiceId, language, rate, pitch, effectiveVolume]
   );
 
   // ---- Queue flusher (matches useSpeechFeedback logic exactly) ----
@@ -260,7 +297,7 @@ export function usePremiumCueAudio({
     const now = Date.now();
     const elapsed = now - lastTimestampRef.current;
 
-    if (elapsed < minIntervalMs) {
+    if (elapsed < effectiveInterval) {
       clearPendingTimeout();
       if (queueRef.current[0]) {
         onEvent?.({
@@ -279,7 +316,7 @@ export function usePremiumCueAudio({
             error
           );
         });
-      }, minIntervalMs - elapsed);
+      }, effectiveInterval - elapsed);
       return;
     }
 
@@ -317,7 +354,7 @@ export function usePremiumCueAudio({
         );
       });
     }
-  }, [enabled, minIntervalMs, clearPendingTimeout, ensureAudioMode, playCue, onEvent, reportAsyncError]);
+  }, [enabled, effectiveInterval, clearPendingTimeout, ensureAudioMode, playCue, onEvent, reportAsyncError]);
 
   // ---- Public speak() ----
 
@@ -335,7 +372,7 @@ export function usePremiumCueAudio({
 
       const now = Date.now();
       const lastPhrase = lastPhraseRef.current;
-      if (lastPhrase === text && now - lastTimestampRef.current < minIntervalMs) {
+      if (lastPhrase === text && now - lastTimestampRef.current < effectiveInterval) {
         onEvent?.({
           cue: text,
           action: 'dropped',
@@ -363,7 +400,7 @@ export function usePremiumCueAudio({
         reportAsyncError('PREMIUM_AUDIO_FLUSH_ENQUEUE_FAILED', 'Failed to flush premium audio queue after enqueue', error);
       });
     },
-    [enabled, flushQueue, minIntervalMs, onEvent, reportAsyncError]
+    [enabled, flushQueue, effectiveInterval, onEvent, reportAsyncError]
   );
 
   // ---- Public stop() ----

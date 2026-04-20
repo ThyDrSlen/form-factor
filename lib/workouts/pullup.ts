@@ -186,6 +186,19 @@ const faults: FaultDefinition[] = [
     severity: 2,
     dynamicCue: 'Pull higher to bring your chin past the bar.',
     fqiPenalty: 15,
+    drills: [
+      {
+        id: 'pullup-negative-hold',
+        title: 'Top-Position Negatives',
+        durationSec: 45,
+        reps: 3,
+        steps: [
+          'Jump or step up so your chin is over the bar.',
+          'Brace ribs down and hold the top for 3 seconds.',
+          'Lower with control over 5 seconds; repeat 3x.',
+        ],
+      },
+    ],
   },
   {
     id: 'incomplete_extension',
@@ -198,6 +211,18 @@ const faults: FaultDefinition[] = [
     severity: 1,
     dynamicCue: 'Fully extend your arms before the next rep.',
     fqiPenalty: 10,
+    drills: [
+      {
+        id: 'pullup-dead-hang',
+        title: 'Active Dead Hangs',
+        durationSec: 60,
+        steps: [
+          'Hang from the bar with straight arms, shoulders packed.',
+          'Think "long arms" — do not bend elbows.',
+          'Hold 3 rounds of 20 seconds with 45 seconds rest.',
+        ],
+      },
+    ],
   },
   {
     id: 'shoulder_elevation',
@@ -210,6 +235,19 @@ const faults: FaultDefinition[] = [
     severity: 2,
     dynamicCue: 'Draw your shoulders down to keep your lats engaged.',
     fqiPenalty: 12,
+    drills: [
+      {
+        id: 'pullup-scap-pull',
+        title: 'Scapular Pull-Ups',
+        durationSec: 60,
+        reps: 10,
+        steps: [
+          'Hang from the bar with straight arms.',
+          'Without bending elbows, pull shoulder blades down and together.',
+          'Pause 1 second then release. 2 sets of 10.',
+        ],
+      },
+    ],
   },
   {
     id: 'asymmetric_pull',

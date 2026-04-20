@@ -194,6 +194,19 @@ const faults: FaultDefinition[] = [
     severity: 1,
     dynamicCue: 'Finish each rep with a full lockout.',
     fqiPenalty: 10,
+    drills: [
+      {
+        id: 'bench-tricep-extension',
+        title: 'Overhead Tricep Extensions',
+        durationSec: 120,
+        reps: 10,
+        steps: [
+          'Hold a dumbbell with both hands overhead, arms straight.',
+          'Lower behind your head, elbows tight; press back up.',
+          'Focus on full extension. 3 sets of 10.',
+        ],
+      },
+    ],
   },
   {
     id: 'shallow_depth',
@@ -205,6 +218,19 @@ const faults: FaultDefinition[] = [
     severity: 2,
     dynamicCue: 'Lower the bar closer to your chest for full range.',
     fqiPenalty: 12,
+    drills: [
+      {
+        id: 'bench-paused-bench',
+        title: 'Pause Bench (Chest)',
+        durationSec: 180,
+        reps: 5,
+        steps: [
+          'Unrack the bar and lower to lightly touch your chest.',
+          'Pause 2 seconds with active tension.',
+          'Drive up explosively. Use 70% weight, 4 sets of 5.',
+        ],
+      },
+    ],
   },
   {
     id: 'asymmetric_press',
@@ -235,6 +261,19 @@ const faults: FaultDefinition[] = [
     severity: 2,
     dynamicCue: 'Tuck elbows slightly to protect your shoulders.',
     fqiPenalty: 10,
+    drills: [
+      {
+        id: 'bench-close-grip',
+        title: 'Close-Grip Bench',
+        durationSec: 150,
+        reps: 8,
+        steps: [
+          'Grip the bar shoulder-width apart.',
+          'Keep elbows tucked about 45° from your torso.',
+          'Touch mid-chest and press. 3 sets of 8.',
+        ],
+      },
+    ],
   },
 ];
 
