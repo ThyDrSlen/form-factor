@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createCueRotator } from '@/lib/services/cue-rotator';
+import { CUE_ROTATION_VARIANTS } from '@/lib/services/cue-rotator-variants';
 import {
   ActivityIndicator,
   Alert,
@@ -81,10 +83,14 @@ import {
   type PullupScoringResult,
 } from '@/lib/tracking-quality';
 import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
-import { useAppStatePause } from '@/hooks/use-app-state-pause';
-import { useCameraPermissionGuard } from '@/hooks/use-camera-permission-guard';
-import { useSubjectIdentity } from '@/hooks/use-subject-identity';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
+import { useFrameLighting } from '@/hooks/use-frame-lighting';
+import { useDeviceThermalBattery } from '@/hooks/use-device-thermal-battery';
+import { usePreCalibrationStatus } from '@/hooks/use-pre-calibration-status';
+import { useRepCounterPosition } from '@/hooks/use-rep-counter-position';
+import { LightingWarningBadge } from '@/components/form-tracking/LightingWarningBadge';
+import { BatteryThermalBadge } from '@/components/form-tracking/BatteryThermalBadge';
+import { RepCounterOverlay } from '@/components/form-tracking/RepCounterOverlay';
 import {
   DEFAULT_DETECTION_MODE,
   getWorkoutByMode,
@@ -92,7 +98,7 @@ import {
   getPhaseStaticCue,
   type DetectionMode,
 } from '@/lib/workouts';
-import type { WorkoutMetrics, FaultDefinition } from '@/lib/types/workout-definitions';
+import type { WorkoutMetrics } from '@/lib/types/workout-definitions';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
 import { buildVideoMetricsForClip, type RecordingQuality } from '@/lib/services/video-metrics';
 import { shouldUploadVideo } from '@/lib/services/consent-service';
@@ -102,27 +108,8 @@ import backTurnedFixture from '@/tests/fixtures/pullup-tracking/back-turned.json
 import occlusionBriefFixture from '@/tests/fixtures/pullup-tracking/occlusion-brief.json';
 import occlusionLongFixture from '@/tests/fixtures/pullup-tracking/occlusion-long.json';
 import bounceNoiseFixture from '@/tests/fixtures/pullup-tracking/bounce-noise.json';
-import {
-  styles,
-  scanSessionOverlayStyles as styleOverrides,
-} from '../../styles/tabs/_scan-arkit.styles';
+import { styles } from '../../styles/tabs/_scan-arkit.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
-
-// Issue #427 — session-aware overlays. Scoped to new regions; existing
-// render tree is untouched.
-import { useSessionRunner } from '@/lib/stores/session-runner';
-import { useHealthKit } from '@/contexts/HealthKitContext';
-import { useActiveSetBinding } from '@/hooks/use-active-set-binding';
-import { useExerciseHistory } from '@/hooks/use-exercise-history';
-import { useLiveFatigue } from '@/hooks/use-live-fatigue';
-import { useSessionAutopause } from '@/hooks/use-session-autopause';
-import { ActiveSetBadge } from '@/components/form-tracking/ActiveSetBadge';
-import { InlineRestTimer } from '@/components/form-tracking/InlineRestTimer';
-import { ExerciseHistoryStrip } from '@/components/form-tracking/ExerciseHistoryStrip';
-import { HeartRatePill } from '@/components/form-tracking/HeartRatePill';
-import { SessionResumeToast } from '@/components/form-tracking/SessionResumeToast';
-import { ExerciseSwapSheet } from '@/components/form-tracking/ExerciseSwapSheet';
-import { DrillSheet } from '@/components/form-tracking/DrillSheet';
 
 // Phase and detection mode types are now imported from lib/workouts
 type BaseUploadMetrics = Record<string, unknown> & {
@@ -298,6 +285,36 @@ const formatDuration = (startIso: string | null | undefined, endIso: string | nu
   return `${min}m ${sec.toString().padStart(2, '0')}s`;
 };
 
+/**
+ * Internal helper for #464 — projects the latest skeleton joints into a
+ * `RepCounterOverlay` mounted inside the existing SVG layer. Kept colocated
+ * with `ScanARKitScreen` so the prop wiring stays explicit.
+ */
+function RepCounterOverlayBoundToHip({
+  repCount,
+  phase,
+  joints2D,
+}: {
+  repCount: number;
+  phase: string;
+  joints2D: Joint2D[] | null;
+}) {
+  const position = useRepCounterPosition({
+    repCount,
+    phase,
+    joints2D,
+  });
+  return (
+    <RepCounterOverlay
+      currentRep={position.repCount}
+      visible={position.visible}
+      x={position.x}
+      y={position.y}
+      opacity={position.opacity}
+    />
+  );
+}
+
 const PreviewPlayer = ({ uri }: { uri: string }) => {
   const player = useVideoPlayer(uri, (instance) => {
     instance.loop = false;
@@ -378,85 +395,8 @@ export default function ScanARKitScreen() {
   const realtimeFormEngineRef = React.useRef(createRealtimeEngineState());
   const jointAnglesStateRef = React.useRef<JointAngles | null>(null);
   const [repCount, setRepCount] = useState(0);
-  const [detectionMode, setDetectionModeState] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
+  const [detectionMode, setDetectionMode] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
   const activeWorkoutDef = useMemo(() => getWorkoutByMode(detectionMode), [detectionMode]);
-
-  // ------------------------------------------------------------------
-  // Issue #427 — session binding, fatigue, swap + resume plumbing.
-  // ------------------------------------------------------------------
-  const activeSession = useSessionRunner((s) => s.activeSession);
-  const restTimer = useSessionRunner((s) => s.restTimer);
-  const skipRest = useSessionRunner((s) => s.skipRest);
-  const extendRest = useSessionRunner((s) => s.extendRest);
-  const loadActiveSession = useSessionRunner((s) => s.loadActiveSession);
-  const swapExerciseByDetectionMode = useSessionRunner((s) => s.swapExerciseByDetectionMode);
-  const activeSetBinding = useActiveSetBinding(detectionMode);
-  const healthKit = useHealthKit();
-  const heartRate = healthKit.latestHeartRate;
-  const exerciseHistory = useExerciseHistory(activeSetBinding.sessionExercise?.exercise_id ?? null);
-  const [recentFqiSamples, setRecentFqiSamples] = useState<number[]>([]);
-  const fatigue = useLiveFatigue({
-    recentFqi: recentFqiSamples,
-    heartRateBpm: heartRate?.bpm,
-  });
-  const autopause = useSessionAutopause({ enabled: true });
-  const [pendingSwapMode, setPendingSwapMode] = useState<DetectionMode | null>(null);
-  const [activeDrillFault, setActiveDrillFault] = useState<FaultDefinition | null>(null);
-
-  const currentSessionExerciseName =
-    activeSetBinding.sessionExercise?.exercise?.name ?? activeWorkoutDef.displayName;
-  const pendingSwapDef = pendingSwapMode ? getWorkoutByMode(pendingSwapMode) : null;
-
-  // Wrapper: when there's no active session, switch immediately. When a
-  // session IS active, queue the swap for confirmation via ExerciseSwapSheet.
-  const setDetectionMode: typeof setDetectionModeState = useCallback(
-    (next) => {
-      if (!activeSession) {
-        setDetectionModeState(next);
-        return;
-      }
-      const resolved = typeof next === 'function'
-        ? (next as (prev: DetectionMode) => DetectionMode)(detectionMode)
-        : next;
-      if (resolved === detectionMode) {
-        setDetectionModeState(resolved);
-        return;
-      }
-      setPendingSwapMode(resolved);
-    },
-    [activeSession, detectionMode],
-  );
-
-  // Confirm: swap session_exercise then flip the scan detection mode.
-  const handleSwapConfirm = useCallback(
-    async (action: 'append' | 'replace') => {
-      if (!pendingSwapMode) return;
-      try {
-        await swapExerciseByDetectionMode(pendingSwapMode, action);
-      } catch {
-        // Ignore — scan still updates so the user keeps tracking.
-      }
-      setDetectionModeState(pendingSwapMode);
-      setPendingSwapMode(null);
-      setIsDropdownOpen(false);
-    },
-    [pendingSwapMode, swapExerciseByDetectionMode],
-  );
-
-  // Feed rep scores into the rolling fatigue window.
-  const recordFqiSample = useCallback((score: number) => {
-    if (!Number.isFinite(score)) return;
-    setRecentFqiSamples((prev) => {
-      const next = [...prev, score];
-      if (next.length > 8) next.shift();
-      return next;
-    });
-  }, []);
-
-  // Resume the persisted session on mount (no-op when none).
-  useEffect(() => {
-    void loadActiveSession();
-  }, [loadActiveSession]);
   const [activePhase, setActivePhase] = useState<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
   const activePhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
@@ -467,13 +407,6 @@ export default function ScanARKitScreen() {
   const [recordPreview, setRecordPreview] = useState<RecordedPreview | null>(null);
   const [recordingQuality, setRecordingQuality] = useState<RecordingQuality>('medium');
   const [subjectLockEnabled, setSubjectLockEnabled] = useState(true);
-  const subjectIdentity = useSubjectIdentity({
-    enabled: subjectLockEnabled && !fixturePlaybackEnabled,
-  });
-  const cameraPermission = useCameraPermissionGuard({ detectRevoke: true });
-  const appStatePause = useAppStatePause({
-    enabled: !fixturePlaybackEnabled,
-  });
   const [gestureRecordingEnabled, setGestureRecordingEnabled] = useState(true);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -495,6 +428,7 @@ export default function ScanARKitScreen() {
   const smoothedPose2DRef = React.useRef<Joint2D[] | null>(null);
   const pose2DCacheRef = React.useRef<Record<string, { x: number; y: number }>>({});
   const lastSpokenCueRef = React.useRef<{ cue: string; timestamp: number } | null>(null);
+  const cueRotatorRef = useRef(createCueRotator(CUE_ROTATION_VARIANTS));
   const cueHysteresisControllerRef = React.useRef(
     new CueHysteresisController<string>({ showFrames: SHOW_N_FRAMES, hideFrames: HIDE_N_FRAMES })
   );
@@ -536,6 +470,19 @@ export default function ScanARKitScreen() {
   useEffect(() => {
     trackingDebugEnabledRef.current = trackingDebugEnabled;
   }, [trackingDebugEnabled]);
+
+  // Form-tracking visual polish (#464) — lighting, battery/thermal, and
+  // pre-calibration are wired via thin hooks so the existing scan-arkit
+  // logic remains the source of truth for tracking state.
+  const { reading: lightingReading } = useFrameLighting();
+  const {
+    batteryLevel,
+    thermalState,
+    badgeLevel: deviceBadgeLevel,
+    shouldPauseLowPower,
+  } = useDeviceThermalBattery();
+  const preCalibration = usePreCalibrationStatus();
+  const preCalibrationGateFiredRef = React.useRef(false);
 
   const logTrackingDebug = useCallback((event: string, payload: Record<string, unknown>) => {
     if (!trackingDebugEnabledRef.current) return;
@@ -859,6 +806,15 @@ export default function ScanARKitScreen() {
     }
   }, [isScreenFocused, stopSpeech]);
 
+  // Each new tracking session starts cue rotation at variant 0 so support
+  // debugging is deterministic and users always hear the most familiar
+  // phrasing first.
+  useEffect(() => {
+    if (isTracking) {
+      cueRotatorRef.current.reset();
+    }
+  }, [isTracking]);
+
   // Initialize telemetry context on mount
   useEffect(() => {
     initSessionContext().catch((error) => {
@@ -957,9 +913,6 @@ export default function ScanARKitScreen() {
       if (recordingActiveRef.current && Date.now() >= recordingStartEpochMsRef.current) {
         recordingFqiScoresRef.current.push(fqi);
       }
-      // #427 — feed per-rep FQI into the fatigue window used by the
-      // session-aware overlays (HeartRatePill / InlineRestTimer nudges).
-      recordFqiSample(fqi);
     },
     onPullupScoring: (
       _repNumber: number,
@@ -972,12 +925,14 @@ export default function ScanARKitScreen() {
         meta?.source === 'frame' ? 'frame-live' : 'onPullupScoring-rep-complete'
       );
     },
-  }), [activeWorkoutDef, repCount, recordFqiSample, transitionPhase, updatePartialTrackingBadgeVisibility]);
+  }), [activeWorkoutDef, repCount, transitionPhase, updatePartialTrackingBadgeVisibility]);
 
   const workoutController = useWorkoutController(detectionMode, {
     sessionId: sessionIdRef.current,
     callbacks: workoutControllerCallbacks,
     enableHaptics: true,
+    // #464 — auto-pause when battery / thermal trip the critical bucket.
+    pauseTracking: shouldPauseLowPower,
   });
 
   const {
@@ -1065,6 +1020,26 @@ export default function ScanARKitScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supportStatus, isTracking, cameraPosition, fixturePlaybackEnabled]);
 
+  // Pre-calibration gate (#464) — open the overlay modal once per workout
+  // when calibration is not yet ready. Suppression after two successful
+  // runs lives inside `usePreCalibrationStatus`.
+  useEffect(() => {
+    if (preCalibrationGateFiredRef.current) return;
+    if (fixturePlaybackEnabled) return;
+    if (!isTracking) return;
+    if (!preCalibration.status.shouldShow) return;
+    if (preCalibration.status.status === 'success') return;
+
+    preCalibrationGateFiredRef.current = true;
+    router.push('/(modals)/form-tracking-pre-calibration');
+  }, [
+    isTracking,
+    fixturePlaybackEnabled,
+    preCalibration.status.shouldShow,
+    preCalibration.status.status,
+    router,
+  ]);
+
   useEffect(() => {
     if (!fixturePlaybackEnabled || !fixtureFrames || fixtureFrames.length === 0) {
       setFixturePlaybackFramesProcessed(0);
@@ -1145,9 +1120,6 @@ export default function ScanARKitScreen() {
         clearTimeout(timeoutId);
       }
     };
-    // setDetectionMode is a ref-stable wrapper; omitted from deps to
-    // avoid re-triggering fixture playback on detection-mode changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     fixturePlaybackEnabled,
     fixtureFrames,
@@ -1159,8 +1131,6 @@ export default function ScanARKitScreen() {
     DEV,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
-    // setDetectionMode intentionally omitted — the wrapper reads
-    // activeSession + detectionMode and would loop if listed here.
   ]);
 
   // Debug pose updates (throttled logging)
@@ -1535,14 +1505,6 @@ export default function ScanARKitScreen() {
     }
   }, [pose2D]);
 
-  // Feed the subject-identity tracker once per pose frame. The hook only
-  // re-renders on calibration / switch transitions so this is cheap.
-  const subjectIdentityStep = subjectIdentity.step;
-  useEffect(() => {
-    if (!pose2D || pose2D.joints.length === 0) return;
-    subjectIdentityStep(pose2D.joints);
-  }, [pose2D, subjectIdentityStep]);
-
   useEffect(() => {
     if (!pose2D || pose2D.joints.length === 0) {
       pose2DCacheRef.current = {};
@@ -1741,23 +1703,6 @@ export default function ScanARKitScreen() {
     };
   }, [stopTracking]);
 
-  // Pause tracking immediately on mid-session camera permission revocation.
-  // The banner below offers a Settings deep-link and a retry affordance.
-  useEffect(() => {
-    if (cameraPermission.revoked && isTracking) {
-      stopTracking();
-    }
-  }, [cameraPermission.revoked, isTracking, stopTracking]);
-
-  // AppState pause: when the app leaves 'active' we stop the native
-  // tracker. The hook flips needsResume on return so the user must
-  // opt-in via the Resume? prompt before rep counting starts again.
-  useEffect(() => {
-    if (appStatePause.isPaused && isTracking) {
-      stopTracking();
-    }
-  }, [appStatePause.isPaused, isTracking, stopTracking]);
-
   const handleOverlayLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     overlayLayout.current = { width, height };
@@ -1866,7 +1811,10 @@ export default function ScanARKitScreen() {
       return;
     }
     lastSpokenCueRef.current = { cue: primaryCue, timestamp: now };
-    speakCue(primaryCue);
+    // Rotate to a varied phrasing just before TTS so the user doesn't hear
+    // the same wording across reps. Dedupe + logging keep the base string
+    // so the 5s repeat-guard and analytics stay coherent.
+    speakCue(cueRotatorRef.current.rotate(primaryCue));
 
     addWorkoutRepCue(primaryCue);
   }, [primaryCue, audioFeedbackEnabled, speakCue, addWorkoutRepCue]);
@@ -2365,17 +2313,15 @@ export default function ScanARKitScreen() {
     setIsPreviewVisible(false);
   }, [recordPreview, cleanupLocalRecording, uploading, savingRecording]);
 
-  const subjectIdentityReset = subjectIdentity.reset;
   const handleReacquireSubject = useCallback(() => {
     BodyTracker.resetSubjectLock();
-    subjectIdentityReset();
     const message = 'Subject lock reset';
     if (Platform.OS === 'android') {
       ToastAndroid.show(message, ToastAndroid.SHORT);
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-  }, [subjectIdentityReset]);
+  }, []);
 
     const handleSaveOnlyRecording = useCallback(async () => {
       if (!recordPreview || uploading || savingRecording) return;
@@ -2608,20 +2554,6 @@ export default function ScanARKitScreen() {
           </View>
 
           <View style={styles.topBarActions}>
-            {/* #427 active-set-anchor — rendered only when the scan is bound to a live session */}
-            {activeSetBinding.isBound ? (
-              <ActiveSetBadge
-                setLabel={activeSetBinding.setLabel}
-                exerciseName={currentSessionExerciseName}
-                testID="scan-active-set-badge"
-              />
-            ) : null}
-            {/* #427 live HR chip */}
-            <HeartRatePill
-              bpm={heartRate?.bpm ?? null}
-              timestampMs={heartRate?.timestamp ?? null}
-              testID="scan-heart-rate-pill"
-            />
             <TouchableOpacity
               style={styles.topBarButton}
               onPress={openWorkoutInsights}
@@ -2641,69 +2573,6 @@ export default function ScanARKitScreen() {
           </View>
         </View>
       </View>
-
-      {/* #427 session-aware overlays — rendered outside the existing
-          tracking view so PR #424 components stay untouched. */}
-      <View
-        style={styleOverrides.sessionOverlayRow}
-        pointerEvents="box-none"
-        testID="scan-session-overlay-row"
-      >
-        {activeSetBinding.isBound && restTimer ? (
-          <InlineRestTimer
-            startedAt={restTimer.startedAt}
-            targetSeconds={restTimer.targetSeconds}
-            onExtend15={() => extendRest(15)}
-            onSkip={() => {
-              void skipRest();
-            }}
-            testID="scan-inline-rest-timer"
-          />
-        ) : null}
-        {activeSetBinding.isBound ? (
-          <ExerciseHistoryStrip
-            summary={exerciseHistory.summary}
-            exerciseDisplayName={currentSessionExerciseName}
-            testID="scan-exercise-history-strip"
-          />
-        ) : null}
-      </View>
-
-      {/* #427 resume banner — auto-driven by useSessionAutopause. */}
-      {autopause.needsResume ? (
-        <View style={styleOverrides.resumeToastWrap} pointerEvents="box-none">
-          <SessionResumeToast
-            visible={autopause.needsResume}
-            reason={autopause.pauseReason}
-            lastExerciseName={currentSessionExerciseName}
-            onResume={() => {
-              void autopause.acknowledgeResume();
-            }}
-            testID="scan-session-resume-toast"
-          />
-        </View>
-      ) : null}
-
-      {/* #427 swap sheet + drill sheet */}
-      <ExerciseSwapSheet
-        visible={pendingSwapMode != null}
-        targetExerciseName={pendingSwapDef?.displayName ?? ''}
-        currentExerciseName={currentSessionExerciseName}
-        onDismiss={() => setPendingSwapMode(null)}
-        onConfirm={handleSwapConfirm}
-        testID="scan-exercise-swap-sheet"
-      />
-      <DrillSheet
-        visible={activeDrillFault != null}
-        fault={activeDrillFault}
-        exerciseId={detectionMode}
-        sessionId={activeSession?.id ?? null}
-        onDismiss={() => setActiveDrillFault(null)}
-        testID="scan-drill-sheet"
-      />
-
-      {/* Debug hook for future cue-tap integration — no-op until wired */}
-      {fatigue.state === 'fatigued' && restTimer && fatigue.suggestRestSec > 0 ? null : null}
 
       {/* Tracking view */}
       <View style={styles.trackingContainer}>
@@ -2845,6 +2714,12 @@ export default function ScanARKitScreen() {
                     />
                 );
               })}
+              {/* #464 — body-anchored rep counter overlay */}
+              <RepCounterOverlayBoundToHip
+                repCount={repCount}
+                phase={activePhase}
+                joints2D={smoothedPose2DJoints ?? null}
+              />
             </Svg>
           )}
         </View>
@@ -2955,7 +2830,7 @@ export default function ScanARKitScreen() {
       )}
 
       {shouldShowPartialTrackingBadge && (
-        <View style={[styles.partialTrackingBadge, { top: topBarBottom + 8 }]}>
+        <View style={[styles.partialTrackingBadge, { top: topBarBottom + 8 }]}> 
           <Text style={styles.partialTrackingBadgeText}>Partial tracking</Text>
           <View style={styles.partialTrackingComponentRow}>
             {partialTrackingComponents.map((component) => (
@@ -2982,86 +2857,25 @@ export default function ScanARKitScreen() {
         </View>
       )}
 
-      {subjectLockEnabled && subjectIdentity.snapshot.switchDetected && !fixturePlaybackEnabled && (
-        <View
-          style={[styles.subjectSwitchBanner, { top: topBarBottom + 8 }]}
-          accessibilityRole="alert"
-          accessibilityLabel="Subject changed detected"
-        >
-          <Ionicons name="person-remove-outline" size={18} color="#F5F7FF" />
-          <View style={styles.subjectSwitchText}>
-            <Text style={styles.subjectSwitchTitle}>Subject changed</Text>
-            <Text style={styles.subjectSwitchHint}>Step back in frame</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.subjectSwitchAction}
-            onPress={handleReacquireSubject}
-            accessibilityRole="button"
-            accessibilityLabel="Reacquire subject"
-          >
-            <Text style={styles.subjectSwitchActionText}>Reset</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {cameraPermission.revoked && (
-        <View
-          style={[styles.cameraRevokedBanner, { top: topBarBottom + 8 }]}
-          accessibilityRole="alert"
-          accessibilityLabel="Camera permission revoked"
-        >
-          <Ionicons name="videocam-off-outline" size={18} color="#F5F7FF" />
-          <View style={styles.subjectSwitchText}>
-            <Text style={styles.subjectSwitchTitle}>Camera access turned off</Text>
-            <Text style={styles.subjectSwitchHint}>
-              {cameraPermission.canAskAgain
-                ? 'Grant access to keep tracking'
-                : 'Re-enable in Settings to resume'}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.subjectSwitchAction}
-            onPress={() => {
-              if (cameraPermission.canAskAgain) {
-                void cameraPermission.request();
-              } else {
-                void cameraPermission.openSettings();
-              }
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={cameraPermission.canAskAgain ? 'Request camera access' : 'Open device settings'}
-          >
-            <Text style={styles.subjectSwitchActionText}>
-              {cameraPermission.canAskAgain ? 'Allow' : 'Settings'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {appStatePause.needsResume && !cameraPermission.revoked && (
-        <View
-          style={[styles.resumePromptBanner, { top: topBarBottom + 8 }]}
-          accessibilityRole="alert"
-          accessibilityLabel="Session paused, resume tracking"
-        >
-          <Ionicons name="pause-circle-outline" size={18} color="#F5F7FF" />
-          <View style={styles.subjectSwitchText}>
-            <Text style={styles.subjectSwitchTitle}>Session paused</Text>
-            <Text style={styles.subjectSwitchHint}>Tap resume when you&apos;re ready</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.subjectSwitchAction}
-            onPress={() => {
-              appStatePause.resume();
-              void startTracking();
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Resume tracking"
-          >
-            <Text style={styles.subjectSwitchActionText}>Resume</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      {/* #464 — visual polish badges row (lighting + battery/thermal) */}
+      <View
+        pointerEvents="box-none"
+        style={{
+          position: 'absolute',
+          top: topBarBottom + 56,
+          right: 12,
+          flexDirection: 'column',
+          alignItems: 'flex-end',
+          gap: 8,
+        }}
+      >
+        <LightingWarningBadge bucket={lightingReading?.bucket ?? null} />
+        <BatteryThermalBadge
+          badgeLevel={deviceBadgeLevel}
+          batteryLevel={batteryLevel}
+          thermalState={thermalState}
+        />
+      </View>
 
       <Modal
         visible={isSettingsVisible}
