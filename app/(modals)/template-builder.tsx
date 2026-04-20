@@ -440,6 +440,19 @@ export default function TemplateBuilderScreen() {
           ))}
         </View>
 
+        {/* AI-generate CTA */}
+        {!isEditing && (
+          <TouchableOpacity
+            style={builderStyles.aiBtn}
+            onPress={() => router.push('/(modals)/generate-session' as never)}
+            accessibilityRole="button"
+            accessibilityLabel="Generate template with AI"
+          >
+            <Ionicons name="sparkles-outline" size={16} color={tabColors.accent} />
+            <Text style={builderStyles.aiBtnText}>Generate from AI</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Exercises */}
         <Text style={[builderStyles.label, { marginTop: 24 }]}>Exercises</Text>
 
@@ -638,6 +651,23 @@ const builderStyles = StyleSheet.create({
   addSetText: {
     fontSize: 13,
     fontFamily: 'Lexend_500Medium',
+    color: tabColors.accent,
+  },
+  aiBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: tabColors.accent,
+    backgroundColor: 'rgba(123, 194, 255, 0.08)',
+  },
+  aiBtnText: {
+    fontSize: 13,
+    fontFamily: 'Lexend_700Bold',
     color: tabColors.accent,
   },
 });

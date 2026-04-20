@@ -87,6 +87,10 @@ export default function TemplatesScreen() {
     router.push('/(modals)/template-builder');
   }, [router]);
 
+  const handleQuickGenerate = useCallback(() => {
+    router.push('/(modals)/generate-session' as never);
+  }, [router]);
+
   const renderItem = useCallback(
     ({ item }: { item: TemplateSummary }) => (
       <View style={templateStyles.card}>
@@ -129,9 +133,19 @@ export default function TemplatesScreen() {
           <Ionicons name="arrow-back" size={24} color={tabColors.textPrimary} />
         </TouchableOpacity>
         <Text style={templateStyles.headerTitle}>Templates</Text>
-        <TouchableOpacity onPress={handleNewTemplate} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="add" size={26} color={tabColors.accent} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <TouchableOpacity
+            onPress={handleQuickGenerate}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Quick generate with AI"
+          >
+            <Ionicons name="sparkles-outline" size={24} color={tabColors.accent} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleNewTemplate} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="add" size={26} color={tabColors.accent} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? (
