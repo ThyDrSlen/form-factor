@@ -119,6 +119,13 @@ import bounceNoiseFixture from '@/tests/fixtures/pullup-tracking/bounce-noise.js
 import { styles } from '../../styles/tabs/_scan-arkit.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
 import { VoiceCommandFeedback } from '@/components/form-tracking/VoiceCommandFeedback';
+// W3-A resilience (#445) — hooks + services.
+import { isAROverlaysV2Enabled } from '@/lib/services/ar-overlays-v2-flag';
+import { useSubjectIdentity } from '@/hooks/use-subject-identity';
+import { useCameraPermissionGuard } from '@/hooks/use-camera-permission-guard';
+import { useAppStatePause } from '@/hooks/use-app-state-pause';
+import { useAdaptiveFps } from '@/hooks/use-adaptive-fps';
+import { OcclusionHoldManager, type SustainedOcclusionEvent } from '@/lib/tracking-quality/occlusion';
 
 // Phase and detection mode types are now imported from lib/workouts
 type BaseUploadMetrics = Record<string, unknown> & {
@@ -483,6 +490,53 @@ export default function ScanARKitScreen() {
   // Wall-clock of the last FPS publish so we can throttle to 500ms intervals
   // independent of the ARKit frame timestamp clock.
   const lastFpsPublishMsRef = React.useRef<number>(0);
+
+  // ---------------------------------------------------------------
+  // W3-A form-tracking resilience (#445) — all behind the AR_OVERLAYS_V2
+  // master feature flag so the legacy tree stays byte-identical until
+  // EXPO_PUBLIC_AR_OVERLAYS_V2=on flips the whole package on.
+  // ---------------------------------------------------------------
+  const arOverlaysV2 = useMemo(() => isAROverlaysV2Enabled(), []);
+  const subjectIdentity = useSubjectIdentity({ enabled: arOverlaysV2 && isTracking });
+  // These hook snapshots are consumed by banners mounted in a follow-on commit;
+  // name them with the convention so the unused-check ignores them.
+  const cameraPermission = useCameraPermissionGuard();
+  void cameraPermission;
+  const appStatePause = useAppStatePause({ enabled: arOverlaysV2 && isTracking });
+  void appStatePause;
+  const adaptiveFps = useAdaptiveFps({ enabled: arOverlaysV2 });
+  void adaptiveFps;
+  const [sustainedOcclusionHint, setSustainedOcclusionHint] =
+    useState<SustainedOcclusionEvent | null>(null);
+  void sustainedOcclusionHint;
+  const sustainedOcclusionTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSustainedOcclusion = useCallback((event: SustainedOcclusionEvent) => {
+    setSustainedOcclusionHint(event);
+    if (sustainedOcclusionTimerRef.current) {
+      clearTimeout(sustainedOcclusionTimerRef.current);
+    }
+    sustainedOcclusionTimerRef.current = setTimeout(() => {
+      setSustainedOcclusionHint(null);
+      sustainedOcclusionTimerRef.current = null;
+    }, 3200);
+  }, []);
+  const occlusionManagerRef = React.useRef<OcclusionHoldManager | null>(null);
+  if (occlusionManagerRef.current === null) {
+    occlusionManagerRef.current = new OcclusionHoldManager({
+      sustainFrames: 30,
+      onSustainedOcclusion: handleSustainedOcclusion,
+    });
+  }
+  useEffect(() => {
+    return () => {
+      if (sustainedOcclusionTimerRef.current) {
+        clearTimeout(sustainedOcclusionTimerRef.current);
+        sustainedOcclusionTimerRef.current = null;
+      }
+    };
+  }, []);
+  // ---------------------------------------------------------------
+
   const [watchMirrorEnabled, setWatchMirrorEnabled] = useState(Platform.OS === 'ios');
   const [watchPaired, setWatchPaired] = useState(false);
   const [watchInstalled, setWatchInstalled] = useState(false);
@@ -1620,7 +1674,25 @@ export default function ScanARKitScreen() {
       return hasAnyTracked ? nextJoints : null;
     });
 
+    // W3-A resilience (#445): feed joints into the subject-identity
+    // tracker + occlusion manager. Both are no-ops when AR_OVERLAYS_V2
+    // is off thanks to `enabled` gating inside the hooks.
+    if (arOverlaysV2 && hasAnyTracked) {
+      subjectIdentity.step(nextJoints);
+      const occMap: Record<string, { x: number; y: number; isTracked: boolean; confidence?: number } | null> = {};
+      for (const j of nextJoints) {
+        if (!j?.name) continue;
+        occMap[j.name] = j.isTracked
+          ? { x: j.x, y: j.y, isTracked: true, confidence: 0.9 }
+          : null;
+      }
+      occlusionManagerRef.current?.update(occMap);
+    }
+
     return undefined;
+    // Intentionally keep dep list tight: adding subjectIdentity/arOverlaysV2
+    // here would churn this frame-driven effect every snapshot change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pose2D]);
 
   // Start tracking
