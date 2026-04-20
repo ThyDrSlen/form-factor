@@ -3,9 +3,12 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { DeleteAction } from '@/components';
+import { OverloadAnalyticsCard } from '@/components/workouts/OverloadAnalyticsCard';
+import { useAuth } from '@/contexts/AuthContext';
 import { useUnits } from '@/contexts/UnitsContext';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
-import React, { useCallback, useRef, useState } from 'react';
+import { exportSession } from '@/lib/services/session-export-service';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -13,6 +16,7 @@ import {
     RefreshControl,
     ScrollView,
     Share,
+    StyleSheet,
     Text,
     TouchableOpacity,
     View
@@ -40,12 +44,34 @@ const buildWorkoutShareMessage = (workout: Workout, weightLabel: string): string
 
 export default function WorkoutsScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const { getWeightLabel } = useUnits();
   const { workouts, loading, refreshWorkouts, deleteWorkout } = useWorkouts();
   const { show: showToast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
+
+  // Pick the most recently logged exercise for the overload card. We fall
+  // back to the first row when dates are missing; if the list is empty, the
+  // card is hidden entirely to keep the empty-state screen clean.
+  const featuredExercise = useMemo(() => {
+    if (!workouts || workouts.length === 0) return null;
+    const sorted = [...workouts].sort((a, b) => {
+      const ad = a.date ? new Date(a.date).getTime() : 0;
+      const bd = b.date ? new Date(b.date).getTime() : 0;
+      return bd - ad;
+    });
+    return sorted[0].exercise;
+  }, [workouts]);
+
+  const openProgressionPlan = useCallback(() => {
+    if (!featuredExercise) return;
+    Haptics.selectionAsync().catch(() => {});
+    router.push(
+      `/(modals)/progression-plan?exercise=${encodeURIComponent(featuredExercise)}`,
+    );
+  }, [featuredExercise, router]);
 
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -135,6 +161,77 @@ export default function WorkoutsScreen() {
       }
     },
     [getWeightLabel, showToast]
+  );
+
+  // --- Session timeline + export (#476) -----------------------------------
+  const handleOpenTimeline = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
+    router.push('/(modals)/session-timeline');
+  }, [router]);
+
+  const exportLatestSession = useCallback(
+    async (format: 'json' | 'csv') => {
+      try {
+        const db = (await import('@/lib/services/database/local-db')).localDB.db;
+        if (!db) {
+          showToast('Storage unavailable — try again shortly.', { type: 'error' });
+          return;
+        }
+        const rows = await db.getAllAsync<{ id: string }>(
+          `SELECT id FROM workout_sessions
+            WHERE deleted = 0 AND ended_at IS NOT NULL
+            ORDER BY started_at DESC LIMIT 1`,
+        );
+        const sessionId = rows[0]?.id;
+        if (!sessionId) {
+          showToast('No completed sessions to export yet.', { type: 'info' });
+          return;
+        }
+        const res = await exportSession(sessionId, format);
+        await Share.share({ url: res.path, title: `Session export (${format.toUpperCase()})` });
+        showToast(`Exported ${format.toUpperCase()}`, { type: 'success' });
+      } catch (err) {
+        errorWithTs('[Workouts] export failed', err);
+        showToast('Export failed — please try again.', { type: 'error' });
+      }
+    },
+    [showToast]
+  );
+
+  const handleOpenExportMenu = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
+    Alert.alert(
+      'Export latest session',
+      'Choose a format to share with your coach.',
+      [
+        { text: 'JSON', onPress: () => exportLatestSession('json') },
+        { text: 'CSV', onPress: () => exportLatestSession('csv') },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  }, [exportLatestSession]);
+
+  const renderIntelHeader = () => (
+    <View style={intelHeaderStyles.row}>
+      <TouchableOpacity
+        style={intelHeaderStyles.pill}
+        onPress={handleOpenTimeline}
+        accessibilityLabel="Open session timeline"
+        accessibilityRole="button"
+      >
+        <Ionicons name="calendar-outline" size={14} color="#4C8CFF" />
+        <Text style={intelHeaderStyles.pillText}>Timeline</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={intelHeaderStyles.pill}
+        onPress={handleOpenExportMenu}
+        accessibilityLabel="Export latest session"
+        accessibilityRole="button"
+      >
+        <Ionicons name="download-outline" size={14} color="#4C8CFF" />
+        <Text style={intelHeaderStyles.pillText}>Export</Text>
+      </TouchableOpacity>
+    </View>
   );
 
   const renderItem = (info: { item: Workout }) => {
@@ -279,6 +376,7 @@ export default function WorkoutsScreen() {
             />
           }
         >
+          {renderIntelHeader()}
           {lastUpdatedLabel ? (
             <Text style={{ color: '#8E8E93', fontSize: 12, marginBottom: 16, textAlign: 'center' }}>{lastUpdatedLabel}</Text>
           ) : null}
@@ -316,9 +414,19 @@ export default function WorkoutsScreen() {
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
-            lastUpdatedLabel ? (
-              <Text style={{ color: '#8E8E93', fontSize: 12, marginBottom: 12, textAlign: 'center' }}>{lastUpdatedLabel}</Text>
-            ) : null
+            <View>
+              {renderIntelHeader()}
+              {lastUpdatedLabel ? (
+                <Text style={{ color: '#8E8E93', fontSize: 12, marginBottom: 12, textAlign: 'center' }}>{lastUpdatedLabel}</Text>
+              ) : null}
+              {featuredExercise ? (
+                <OverloadAnalyticsCard
+                  userId={user?.id ?? 'local-user'}
+                  exercise={featuredExercise}
+                  onPressPlan={openProgressionPlan}
+                />
+              ) : null}
+            </View>
           }
           refreshControl={
             <RefreshControl
@@ -342,3 +450,29 @@ export default function WorkoutsScreen() {
     </View>
   );
 }
+
+// --- Local styles for the form-intel header pills (#476) ---------------------
+const intelHeaderStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: '#4C8CFF15',
+    borderWidth: 1,
+    borderColor: '#4C8CFF30',
+  },
+  pillText: {
+    fontSize: 12,
+    fontFamily: 'Lexend_500Medium',
+    color: '#4C8CFF',
+  },
+});

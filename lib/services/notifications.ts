@@ -58,6 +58,12 @@ async function registerNotificationCategories() {
     await Notifications.setNotificationCategoryAsync('coach', [
       { identifier: 'reply', buttonTitle: 'Reply', options: { opensAppToForeground: true } },
     ]);
+    // Templated-workout reminder (issue #447). "Start" action opens the app
+    // with the deep-link payload so scan-arkit can auto-bind the template.
+    await Notifications.setNotificationCategoryAsync('workout_reminder', [
+      { identifier: 'start', buttonTitle: 'Start', options: { opensAppToForeground: true } },
+      { identifier: 'snooze', buttonTitle: 'Snooze 15m', options: { opensAppToForeground: false } },
+    ]);
   } catch (err) {
     warnWithTs('[notifications] Failed to register notification categories', err);
   }
@@ -272,6 +278,62 @@ export async function loadNotificationPreferences(userId: string): Promise<Notif
   }
 
   return created as NotificationPreferences;
+}
+
+/**
+ * Schedule a local reminder notification bound to a workout template.
+ * Deep-link payload opens the scan tab with the templateId pre-selected.
+ *
+ * Implementation details:
+ *   - Uses expo-notifications' local scheduling API — no server push hop.
+ *   - Stores `templateId` in `content.data` so the notification response
+ *     handler (or the URL-forwarded deep-link) can reconstruct the
+ *     form-factor://scan?templateId=... URL without a round-trip.
+ *   - Returns the scheduled identifier so callers can later cancel.
+ *
+ * Safe to call when notifications haven't been requested yet — expo
+ * rejects silently and we log + swallow. The calling workout-scheduler
+ * additionally guards past dates and invalid inputs.
+ *
+ * Issue #447 W3-C item #4.
+ */
+export async function scheduleTemplatedReminder(
+  templateId: string,
+  scheduledAt: Date,
+  options: { title?: string; body?: string } = {},
+): Promise<string | null> {
+  // Guard in case callers bypass the scheduler's input validation.
+  if (!templateId) return null;
+  if (!(scheduledAt instanceof Date) || Number.isNaN(scheduledAt.getTime())) return null;
+
+  const secondsUntil = Math.max(1, Math.round((scheduledAt.getTime() - Date.now()) / 1000));
+
+  try {
+    const id = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: options.title ?? 'Time to train',
+        body: options.body ?? 'Tap to start your scheduled workout.',
+        categoryIdentifier: 'workout_reminder',
+        data: {
+          templateId,
+          deepLink: `form-factor://scan?templateId=${encodeURIComponent(templateId)}`,
+        },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: secondsUntil,
+      },
+    });
+    infoWithTs('[notifications] Scheduled templated reminder', {
+      templateId,
+      scheduledAt: scheduledAt.toISOString(),
+      id,
+    });
+    return id;
+  } catch (err) {
+    errorWithTs('[notifications] Failed to schedule templated reminder', err);
+    return null;
+  }
 }
 
 export async function updateNotificationPreferences(
