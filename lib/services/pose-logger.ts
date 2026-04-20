@@ -68,6 +68,14 @@ let flushTimer: NodeJS.Timeout | null = null;
 let lastSampleTime = 0;
 let isFlushing = false;
 let frameCounter = 0;
+/**
+ * Latest known frame brightness (0-255 mean) — populated by callers that have
+ * cheap access to the frame buffer (lighting detector, ARKit overlay, etc.).
+ * Used to backfill the schema-level `lighting_score` column when a sample
+ * does not provide one inline. Persisted across sessions to avoid emitting
+ * `null` whenever a single frame skips reading the brightness.
+ */
+let latestFrameBrightness: number | null = null;
 
 /**
  * Check if confidence is below threshold
@@ -224,6 +232,10 @@ export async function logPoseSample(sample: PoseSample): Promise<void> {
       ...sample,
       userId,
       frameIdx: sample.frameIdx ?? frameCounter,
+      // Backfill `lightingScore` from the latest known brightness when the
+      // caller did not supply one — populated by `setLatestFrameBrightness`
+      // (typically from `hooks/use-frame-lighting.ts`).
+      lightingScore: sample.lightingScore ?? latestFrameBrightness ?? undefined,
       modelVersion: context.modelVersion,
       cueConfigVersion: context.cueConfigVersion,
     };
@@ -290,4 +302,25 @@ export function getFrameCounter(): number {
  */
 export function resetFrameCounter(): void {
   frameCounter = 0;
+}
+
+/**
+ * Update the cached frame brightness (0-255 mean). The next pose sample that
+ * does not specify `lightingScore` inline will use this value. Pass `null` to
+ * clear (e.g., when tracking stops).
+ */
+export function setLatestFrameBrightness(brightness: number | null): void {
+  if (brightness === null) {
+    latestFrameBrightness = null;
+    return;
+  }
+  if (!Number.isFinite(brightness)) return;
+  latestFrameBrightness = Math.max(0, Math.min(255, brightness));
+}
+
+/**
+ * Read the latest cached frame brightness (mostly for tests / debug).
+ */
+export function getLatestFrameBrightness(): number | null {
+  return latestFrameBrightness;
 }

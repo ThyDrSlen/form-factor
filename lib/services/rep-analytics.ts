@@ -519,3 +519,28 @@ export async function getRepCueAdoptionStats(
     return emptyShape;
   }
 }
+
+// =============================================================================
+// Bilateral rep history (from #467 visual polish — symmetry comparator)
+// =============================================================================
+
+export interface BilateralRepRow {
+  repNumber: number;
+  leftAngleDeg: number;
+  rightAngleDeg: number;
+  joint?: string;
+}
+
+export async function getBilateralRepHistory(
+  _sessionId: string,
+  _limit = 50,
+): Promise<BilateralRepRow[]> {
+  return [];
+}
+
+export function getBilateralRepHistorySync(
+  _sessionId: string,
+  _limit = 50,
+): BilateralRepRow[] {
+  return [];
+}

@@ -8,7 +8,16 @@
  * to define its specific logic for tracking form.
  */
 
+import type { ComponentProps } from 'react';
+import type { Ionicons } from '@expo/vector-icons';
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
+
+/**
+ * Valid Ionicons icon names (typed union derived from @expo/vector-icons).
+ * Using this type lets UI adapters declare icon names without escaping
+ * into `as any`.
+ */
+export type IoniconsName = ComponentProps<typeof Ionicons>['name'];
 
 // =============================================================================
 // Angle Ranges
@@ -118,6 +127,26 @@ export interface ScoringMetricDefinition {
 export type FaultSeverity = 1 | 2 | 3;
 
 /**
+ * Corrective drill suggested to a user whose rep triggered a specific
+ * fault. Authored alongside the fault definition so the coach UI can
+ * surface it without any extra plumbing.
+ */
+export interface FaultDrill {
+  /** Stable identifier (e.g., 'scap-pull-2x10') */
+  id: string;
+  /** Human-readable title ("Scapular Pull-Ups") */
+  title: string;
+  /** Suggested duration in seconds (null if rep-based) */
+  durationSec: number;
+  /** Optional target rep count (null if time-based) */
+  reps?: number;
+  /** Step-by-step plain-language instructions */
+  steps: string[];
+  /** Optional demo media uri (image or short clip) */
+  mediaUri?: string;
+}
+
+/**
  * Defines a detectable form fault
  */
 export interface FaultDefinition {
@@ -133,6 +162,11 @@ export interface FaultDefinition {
   dynamicCue: string;
   /** FQI penalty points (subtracted from score) */
   fqiPenalty: number;
+  /**
+   * Optional corrective drills surfaced by DrillSheet when this fault
+   * is detected. Ordered by recommended priority.
+   */
+  drills?: FaultDrill[];
 }
 
 // =============================================================================
@@ -197,7 +231,7 @@ export interface WorkoutUiMetric {
 
 export interface WorkoutUiAdapter<TMetrics extends WorkoutMetrics = WorkoutMetrics> {
   /** Icon name for the workout selector (Ionicons) */
-  iconName: string;
+  iconName: IoniconsName;
   /** Primary metric displayed in telemetry/preview */
   primaryMetric: WorkoutUiMetric;
   /** Secondary metric displayed in telemetry/preview (optional) */

@@ -19,7 +19,20 @@ jest.mock('expo-crypto', () => ({
 
 jest.mock('expo-haptics', () => ({
   notificationAsync: jest.fn(),
-  NotificationFeedbackType: { Success: 'success' },
+  impactAsync: jest.fn(),
+  selectionAsync: jest.fn(),
+  NotificationFeedbackType: {
+    Success: 'success',
+    Warning: 'warning',
+    Error: 'error',
+  },
+  ImpactFeedbackStyle: {
+    Light: 'light',
+    Medium: 'medium',
+    Heavy: 'heavy',
+    Rigid: 'rigid',
+    Soft: 'soft',
+  },
 }));
 
 jest.mock('@/lib/logger', () => ({
@@ -1275,6 +1288,78 @@ describe('duplicateExercise', () => {
 });
 
 // ===========================================================================
+// swapExerciseByDetectionMode
+// ===========================================================================
+
+describe('swapExerciseByDetectionMode', () => {
+  beforeEach(async () => {
+    mockGenericLocalUpsert.mockResolvedValue(undefined);
+    mockGetAllAsync.mockResolvedValue([]);
+  });
+
+  it('returns null when no session is active', async () => {
+    const result = await state().swapExerciseByDetectionMode('pullup');
+    expect(result).toBeNull();
+  });
+
+  it('returns null when the local db cannot resolve an exercise for the mode', async () => {
+    await state().startSession();
+    mockGetAllAsync.mockResolvedValue([]);
+
+    const result = await state().swapExerciseByDetectionMode('pullup');
+    expect(result).toBeNull();
+  });
+
+  it('appends a new session exercise when a mode match exists', async () => {
+    await state().startSession();
+
+    // First call: find by id (returns the matched exercise id).
+    // Subsequent getAllAsync calls are for loadSessionExercises etc.
+    mockGetAllAsync.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM exercises WHERE LOWER')) {
+        return [{ id: 'ex-pullup-system' }];
+      }
+      if (sql.includes('FROM exercises WHERE id')) {
+        return [{ id: 'ex-pullup-system', name: 'Pull-Up', is_compound: 1, is_timed: 0, is_system: 1 }];
+      }
+      return [];
+    });
+
+    const existingCount = state().exercises.length;
+    const newSeId = await state().swapExerciseByDetectionMode('pullup', 'append');
+    expect(newSeId).toBeTruthy();
+    expect(state().exercises.length).toBe(existingCount + 1);
+    expect(state().exercises[state().exercises.length - 1].exercise_id).toBe('ex-pullup-system');
+  });
+
+  it('removes the current exercise then adds the new one on replace', async () => {
+    await state().startSession();
+
+    // Seed an existing exercise
+    mockGetAllAsync.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM exercises WHERE LOWER')) {
+        return [{ id: 'ex-squat' }];
+      }
+      if (sql.includes('FROM exercises WHERE id')) {
+        return [{ id: 'ex-squat', name: 'Squat', is_compound: 1, is_timed: 0, is_system: 1 }];
+      }
+      return [];
+    });
+    await state().addExercise('ex-first');
+
+    const beforeLen = state().exercises.length;
+    const firstId = state().exercises[beforeLen - 1].id;
+
+    const newSeId = await state().swapExerciseByDetectionMode('squat', 'replace');
+    expect(newSeId).toBeTruthy();
+    // removeExercise + addExercise: net 0 change, but id differs
+    expect(state().exercises.length).toBe(beforeLen);
+    expect(state().exercises.some((e) => e.id === firstId)).toBe(false);
+    expect(mockGenericSoftDelete).toHaveBeenCalledWith('workout_session_exercises', 'id', firstId);
+  });
+});
+
+// ===========================================================================
 // Integration: Full Session Lifecycle
 // ===========================================================================
 
@@ -1328,6 +1413,86 @@ describe('full session lifecycle', () => {
     await state().finishSession();
     expect(state().activeSession).toBeNull();
     expect(state().isWorkoutInProgress).toBe(false);
+  });
+});
+
+// ===========================================================================
+// Rest Timer — Unified Zustand Ownership (issue #418)
+// ===========================================================================
+
+describe('rest timer — unified ownership', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Haptics = require('expo-haptics') as {
+    notificationAsync: jest.Mock;
+  };
+
+  beforeEach(() => {
+    Haptics.notificationAsync.mockClear();
+    Haptics.notificationAsync.mockResolvedValue(undefined);
+  });
+
+  it('fires a single completion haptic when the rest timer elapses', async () => {
+    await state().startSession();
+    mockUuidCounter = 10;
+    const exId = await state().addExercise('ex');
+    const setId = state().sets[exId][0].id;
+    await state().updateSet(setId, { actual_reps: 5 });
+
+    mockComputeRemainingSeconds.mockReturnValue(2);
+    await state().completeSet(setId);
+
+    // Before timeout expires — no haptic yet.
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
+    expect(state().restTimer).not.toBeNull();
+
+    // Advance past 2s rest.
+    jest.advanceTimersByTime(2001);
+
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
+    expect(state().restTimer).toBeNull();
+    expect(state().restTimerCompletionTimeout).toBeNull();
+  });
+
+  it('suppresses completion haptic when the rest is skipped first', async () => {
+    await state().startSession();
+    mockUuidCounter = 20;
+    const exId = await state().addExercise('ex');
+    const setId = state().sets[exId][0].id;
+    await state().updateSet(setId, { actual_reps: 5 });
+
+    mockComputeRemainingSeconds.mockReturnValue(2);
+    await state().completeSet(setId);
+
+    await state().skipRest();
+
+    jest.advanceTimersByTime(5000);
+
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
+    expect(state().restTimer).toBeNull();
+    expect(state().restTimerCompletionTimeout).toBeNull();
+  });
+
+  it('does not leak timeouts across repeated completeSet calls', async () => {
+    await state().startSession();
+    mockUuidCounter = 30;
+    const exId = await state().addExercise('ex');
+    const setId = state().sets[exId][0].id;
+    await state().updateSet(setId, { actual_reps: 5 });
+
+    mockComputeRemainingSeconds.mockReturnValue(5);
+    await state().completeSet(setId);
+    const firstTimeout = state().restTimerCompletionTimeout;
+    expect(firstTimeout).not.toBeNull();
+
+    // Extending rest should cancel the previous timeout and install a new one.
+    state().extendRest(10);
+    const secondTimeout = state().restTimerCompletionTimeout;
+    expect(secondTimeout).not.toBeNull();
+    expect(secondTimeout).not.toBe(firstTimeout);
+
+    // Only the newer timeout fires.
+    jest.advanceTimersByTime(20_000);
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
   });
 });
 

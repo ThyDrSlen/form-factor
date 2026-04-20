@@ -17,6 +17,13 @@ export type TutSource = 'measured' | 'estimated' | 'unknown';
 
 export type ExerciseCategory = 'push' | 'pull' | 'legs' | 'core' | 'cardio' | 'full_body';
 
+/**
+ * Pre-workout calibration status (used by the form-tracking pre-calibration
+ * overlay). `pending` = collecting frames; `success` = calibration confidence
+ * sufficient; `failed` = user-cancelled or timed out without converging.
+ */
+export type CalibrationStatus = 'pending' | 'success' | 'failed';
+
 export type SessionEventType =
   | 'session_started'
   | 'exercise_started'
@@ -127,6 +134,12 @@ export interface WorkoutSession {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * Optional pre-workout calibration status — populated by the
+   * form-tracking pre-calibration overlay (see #464). Sessions started
+   * before that flow runs leave this `undefined`.
+   */
+  calibrationStatus?: CalibrationStatus;
 }
 
 export interface WorkoutSessionExercise {
