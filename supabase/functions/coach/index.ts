@@ -32,6 +32,13 @@ interface CoachContext {
   profile?: { id?: string; name?: string | null; email?: string | null };
   focus?: string;
   liveSession?: LiveSessionSnapshot;
+  /**
+   * Optional cross-session memory clause assembled by the client
+   * (`synthesizeMemoryClause`) and re-injected here so the model sees the
+   * same text whether the client prepended it to `messages` or not. The
+   * value is sanitized before being embedded.
+   */
+  memoryClause?: string | null;
 }
 
 interface RequestBody {
@@ -184,6 +191,16 @@ function sanitizeName(name: string): string {
   return name.replace(/[^\w\s'-]/g, '').slice(0, 100).trim();
 }
 
+/** Cap memory clause length — the client already synthesizes <= 5 sentences. */
+const MAX_MEMORY_CLAUSE_LEN = 600;
+
+function sanitizeMemoryClause(clause: string): string {
+  // Reuse the `sanitizeName` character whitelist but widen punctuation to
+  // cover normal prose (commas, periods, slashes, digits, colons, parens).
+  const permissive = clause.replace(/[^\w\s'.,:;/()\-+%]/g, '');
+  return permissive.slice(0, MAX_MEMORY_CLAUSE_LEN).trim();
+}
+
 function formatFQIScore(value?: number): string | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   return value.toFixed(2);
@@ -259,12 +276,30 @@ function buildPrompt(context?: CoachContext) {
     }
   }
 
-  return [
-    {
-      role: 'system',
-      content: systemLines.join(' '),
-    } satisfies ChatMessage,
-  ];
+  const baseSystem: ChatMessage = {
+    role: 'system',
+    content: systemLines.join(' '),
+  };
+
+  // Additive memory-clause injection: when the client supplies a prior-session
+  // memory clause, surface it as a separate system message AFTER the base
+  // prompt (and after any liveSession summary already embedded above). The
+  // clause is sanitized to prevent prompt injection. Keeping it in a second
+  // message means the model sees it as background rather than mixed in with
+  // safety rules.
+  const rawMemory = typeof context?.memoryClause === 'string' ? context.memoryClause : '';
+  if (rawMemory) {
+    const safeMemory = sanitizeMemoryClause(rawMemory);
+    if (safeMemory.length > 0) {
+      const memorySystem: ChatMessage = {
+        role: 'system',
+        content: `Prior-session memory (use as background only, do not quote verbatim): ${safeMemory}`,
+      };
+      return [baseSystem, memorySystem];
+    }
+  }
+
+  return [baseSystem];
 }
 
 async function generateReply(body: RequestBody) {

@@ -980,6 +980,98 @@ describe('finishSession', () => {
 });
 
 // ===========================================================================
+// 10b. onSessionFinished subscription fan-out
+// ===========================================================================
+
+describe('onSessionFinished', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- after jest.mock hoists
+  const {
+    onSessionFinished,
+    __resetSessionFinishedListenersForTests,
+  } = require('@/lib/stores/session-runner') as typeof import('@/lib/stores/session-runner');
+
+  beforeEach(async () => {
+    __resetSessionFinishedListenersForTests();
+    await state().startSession();
+    jest.clearAllMocks();
+    mockRunAsync.mockResolvedValue(undefined);
+    mockGenericLocalUpsert.mockResolvedValue(undefined);
+    mockCancelRestNotification.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    __resetSessionFinishedListenersForTests();
+  });
+
+  it('invokes subscribed listeners with the finished session metadata', async () => {
+    const listener = jest.fn();
+    onSessionFinished(listener);
+
+    const sessionId = state().activeSession!.id;
+    const startedAt = state().activeSession!.started_at;
+
+    await state().finishSession();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId,
+        startedAt,
+        endedAt: expect.any(String),
+        goalProfile: 'hypertrophy',
+      }),
+    );
+  });
+
+  it('supports multiple listeners (fan-out)', async () => {
+    const a = jest.fn();
+    const b = jest.fn();
+    onSessionFinished(a);
+    onSessionFinished(b);
+
+    await state().finishSession();
+
+    expect(a).toHaveBeenCalledTimes(1);
+    expect(b).toHaveBeenCalledTimes(1);
+  });
+
+  it('unsubscribe stops further invocations', async () => {
+    const listener = jest.fn();
+    const unsubscribe = onSessionFinished(listener);
+    unsubscribe();
+
+    await state().finishSession();
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('isolates listener errors (one failure does not affect others)', async () => {
+    const throwing = jest.fn(() => {
+      throw new Error('listener boom');
+    });
+    const ok = jest.fn();
+    onSessionFinished(throwing);
+    onSessionFinished(ok);
+
+    await expect(state().finishSession()).resolves.toBeUndefined();
+    expect(throwing).toHaveBeenCalledTimes(1);
+    expect(ok).toHaveBeenCalledTimes(1);
+  });
+
+  it('awaits async listeners before finishSession returns', async () => {
+    let resolved = false;
+    onSessionFinished(async () => {
+      // Microtask-only delay so fake timers don't block the assertion.
+      await Promise.resolve();
+      resolved = true;
+    });
+
+    await state().finishSession();
+    expect(resolved).toBe(true);
+  });
+});
+
+// ===========================================================================
 // 11. loadActiveSession
 // ===========================================================================
 
