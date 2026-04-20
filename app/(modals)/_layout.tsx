@@ -16,6 +16,14 @@ export default function ModalsLayout() {
       <Stack.Screen name="follow-requests" options={{ presentation: 'modal' }} />
       <Stack.Screen name="user-profile" options={{ presentation: 'modal' }} />
       <Stack.Screen name="workout-insights" options={{ presentation: 'modal' }} />
+      <Stack.Screen
+        name="rep-insights"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#0B1626' },
+        }}
+      />
       <Stack.Screen name="help-support" options={{ presentation: 'modal', gestureEnabled: true }} />
       <Stack.Screen name="notifications" options={{ presentation: 'modal', gestureEnabled: true }} />
       <Stack.Screen name="about" options={{ presentation: 'modal', gestureEnabled: true }} />
@@ -78,6 +86,14 @@ export default function ModalsLayout() {
         name="templates"
         options={{
           presentation: 'modal',
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
+      <Stack.Screen
+        name="settings-coaching"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
           contentStyle: { backgroundColor: '#050E1F' },
         }}
       />
