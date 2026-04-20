@@ -723,6 +723,10 @@ Generated: ${new Date().toISOString()}
     router.push('/(modals)/privacy');
   };
 
+  const handleOpenFormTrackingSettings = () => {
+    router.push('/(modals)/form-tracking-settings');
+  };
+
   const handleOpenHelpSupport = () => {
     router.push('/(modals)/help-support');
   };
@@ -1057,6 +1061,7 @@ Generated: ${new Date().toISOString()}
             />
           ) : null}
           <MenuItem icon="nutrition-outline" title="Nutrition Goals" onPress={handleOpenEditGoals} />
+          <MenuItem icon="barbell-outline" title="Form Tracking" onPress={handleOpenFormTrackingSettings} />
           <MenuItem icon="notifications-outline" title="Notifications" onPress={handleOpenNotifications} />
           <MenuItem icon="lock-closed-outline" title="Privacy & Security" onPress={handleOpenPrivacy} />
         </View>

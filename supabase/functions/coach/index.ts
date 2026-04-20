@@ -8,14 +8,35 @@ interface ChatMessage {
   content: string;
 }
 
+interface LiveFQI {
+  rom?: number;
+  symmetry?: number;
+  tempo?: number;
+  stability?: number;
+}
+
+interface LiveFault {
+  id: string;
+  count: number;
+  lastRepNumber?: number;
+}
+
+interface LiveSessionSnapshot {
+  exerciseId?: string;
+  exerciseName?: string;
+  currentFQI?: LiveFQI;
+  recentFaults?: LiveFault[];
+}
+
 interface CoachContext {
   profile?: { id?: string; name?: string | null; email?: string | null };
   focus?: string;
+  liveSession?: LiveSessionSnapshot;
   /**
    * Optional cross-session memory clause assembled by the client
    * (`synthesizeMemoryClause`) and re-injected here so the model sees the
    * same text whether the client prepended it to `messages` or not. The
-   * value is sanitized with `sanitizeName` before being embedded.
+   * value is sanitized before being embedded.
    */
   memoryClause?: string | null;
 }
@@ -120,6 +141,54 @@ function sanitizeMemoryClause(clause: string): string {
   return permissive.slice(0, MAX_MEMORY_CLAUSE_LEN).trim();
 }
 
+function formatFQIScore(value?: number): string | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return value.toFixed(2);
+}
+
+/** Mirror of lib/services/coach-live-snapshot.ts#summarizeForPrompt for edge use. */
+function summarizeLiveSession(snap?: LiveSessionSnapshot): string {
+  if (!snap) return '';
+
+  const parts: string[] = [];
+  const rawName = snap.exerciseName || snap.exerciseId;
+  if (rawName) {
+    // Reuse sanitizeName to strip any prompt-injection characters from exercise label.
+    parts.push(`exercise=${sanitizeName(rawName)}`);
+  }
+
+  if (snap.currentFQI) {
+    const fqiParts: string[] = [];
+    const rom = formatFQIScore(snap.currentFQI.rom);
+    const sym = formatFQIScore(snap.currentFQI.symmetry);
+    const tempo = formatFQIScore(snap.currentFQI.tempo);
+    const stab = formatFQIScore(snap.currentFQI.stability);
+    if (rom !== null) fqiParts.push(`rom=${rom}`);
+    if (sym !== null) fqiParts.push(`symmetry=${sym}`);
+    if (tempo !== null) fqiParts.push(`tempo=${tempo}`);
+    if (stab !== null) fqiParts.push(`stability=${stab}`);
+    if (fqiParts.length > 0) parts.push(`FQI(${fqiParts.join(', ')})`);
+  }
+
+  if (Array.isArray(snap.recentFaults) && snap.recentFaults.length > 0) {
+    const capped = snap.recentFaults
+      .filter((f) => f && typeof f.id === 'string' && typeof f.count === 'number' && f.count > 0)
+      .slice(0, 3);
+    if (capped.length > 0) {
+      const faultStr = capped
+        .map((f) =>
+          typeof f.lastRepNumber === 'number'
+            ? `${sanitizeName(f.id)}×${f.count}@rep${f.lastRepNumber}`
+            : `${sanitizeName(f.id)}×${f.count}`,
+        )
+        .join(', ');
+      parts.push(`recent faults: ${faultStr}`);
+    }
+  }
+
+  return parts.join('; ');
+}
+
 function buildPrompt(context?: CoachContext) {
   const focus = context?.focus || 'fitness_coach';
   const rawName = context?.profile?.name;
@@ -128,21 +197,36 @@ function buildPrompt(context?: CoachContext) {
     ? `You are coaching ${safeName}.`
     : 'You are coaching the user.';
 
+  const systemLines: string[] = [
+    'You are Form Factor’s AI coach for strength, conditioning, mobility, and nutrition.',
+    userLine,
+    'Stay safe: avoid medical advice, do not invent injuries, and recommend seeing a physician for pain, dizziness, or medical issues.',
+    'Do not mention that you are an AI or language model.',
+    'Outputs must be concise (under ~180 words) and actionable with clear sets/reps, rest, tempo, or food swaps.',
+    'Prefer simple movements with minimal equipment unless the user specifies otherwise.',
+    'Offer 1-2 options max; avoid long lists.',
+    'If user asks for calorie/protein guidance, give estimates and ranges, not exact prescriptions.',
+    `Focus: ${focus}.`,
+  ];
+
+  if (context?.liveSession) {
+    const liveSummary = summarizeLiveSession(context.liveSession);
+    if (liveSummary) {
+      systemLines.push(`Live session context: ${liveSummary}.`);
+    }
+  }
+
   const baseSystem: ChatMessage = {
     role: 'system',
-    content: [
-      'You are Form Factor’s AI coach for strength, conditioning, mobility, and nutrition.',
-      userLine,
-      'Stay safe: avoid medical advice, do not invent injuries, and recommend seeing a physician for pain, dizziness, or medical issues.',
-      'Do not mention that you are an AI or language model.',
-      'Outputs must be concise (under ~180 words) and actionable with clear sets/reps, rest, tempo, or food swaps.',
-      'Prefer simple movements with minimal equipment unless the user specifies otherwise.',
-      'Offer 1-2 options max; avoid long lists.',
-      'If user asks for calorie/protein guidance, give estimates and ranges, not exact prescriptions.',
-      `Focus: ${focus}.`,
-    ].join(' '),
+    content: systemLines.join(' '),
   };
 
+  // Additive memory-clause injection: when the client supplies a prior-session
+  // memory clause, surface it as a separate system message AFTER the base
+  // prompt (and after any liveSession summary already embedded above). The
+  // clause is sanitized to prevent prompt injection. Keeping it in a second
+  // message means the model sees it as background rather than mixed in with
+  // safety rules.
   const rawMemory = typeof context?.memoryClause === 'string' ? context.memoryClause : '';
   if (rawMemory) {
     const safeMemory = sanitizeMemoryClause(rawMemory);
