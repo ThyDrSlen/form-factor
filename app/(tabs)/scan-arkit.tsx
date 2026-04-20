@@ -523,16 +523,18 @@ export default function ScanARKitScreen() {
   const adaptiveFps = useAdaptiveFps({ enabled: arOverlaysV2 });
   const [sustainedOcclusionHint, setSustainedOcclusionHint] =
     useState<SustainedOcclusionEvent | null>(null);
-  const sustainedOcclusionTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Persistent banner (#551): the sustained-occlusion cue used to auto-
+  // dismiss after 3.2s, which meant a user whose hand was covering a
+  // joint long enough for the native manager to fire the event lost the
+  // guidance almost immediately — especially bad when the joint stayed
+  // hidden. The banner now sticks until the user taps "Got it" (via
+  // dismissSustainedOcclusion below); re-entry of a sustained occlusion
+  // with a different joint set overwrites the existing banner.
   const handleSustainedOcclusion = useCallback((event: SustainedOcclusionEvent) => {
     setSustainedOcclusionHint(event);
-    if (sustainedOcclusionTimerRef.current) {
-      clearTimeout(sustainedOcclusionTimerRef.current);
-    }
-    sustainedOcclusionTimerRef.current = setTimeout(() => {
-      setSustainedOcclusionHint(null);
-      sustainedOcclusionTimerRef.current = null;
-    }, 3200);
+  }, []);
+  const dismissSustainedOcclusion = useCallback(() => {
+    setSustainedOcclusionHint(null);
   }, []);
   const occlusionManagerRef = React.useRef<OcclusionHoldManager | null>(null);
   if (occlusionManagerRef.current === null) {
@@ -541,14 +543,6 @@ export default function ScanARKitScreen() {
       onSustainedOcclusion: handleSustainedOcclusion,
     });
   }
-  useEffect(() => {
-    return () => {
-      if (sustainedOcclusionTimerRef.current) {
-        clearTimeout(sustainedOcclusionTimerRef.current);
-        sustainedOcclusionTimerRef.current = null;
-      }
-    };
-  }, []);
   // ---------------------------------------------------------------
 
   const [watchMirrorEnabled, setWatchMirrorEnabled] = useState(Platform.OS === 'ios');
@@ -3312,17 +3306,38 @@ export default function ScanARKitScreen() {
             </View>
           ) : null}
 
-          {/* Occlusion micro-toast */}
+          {/*
+           * Persistent sustained-occlusion banner (#551).
+           *
+           * Replaces the 3.2s micro-toast. The banner sticks until the
+           * user taps "Got it" or the OcclusionHoldManager clears the
+           * sustained state by calling handleSustainedOcclusion(null).
+           * A dismiss button is essential — on long-limb occlusion (e.g.
+           * squat with arms crossed over camera) the old toast faded
+           * before the user could read what joint was hidden.
+           */}
           {arOverlaysV2 && sustainedOcclusionHint ? (
             <View
-              style={[scanArV2Styles.microToast]}
+              style={[scanArV2Styles.banner, scanArV2Styles.bannerError]}
               accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              testID="scan-arkit-sustained-occlusion-banner"
             >
-              <Ionicons name="eye-off-outline" size={14} color="#F5F7FF" />
-              <Text style={scanArV2Styles.microToastText}>
+              <Ionicons name="eye-off-outline" size={18} color="#FCA5A5" />
+              <Text style={scanArV2Styles.bannerText}>
                 Adjust clothing — {sustainedOcclusionHint.jointNames.length} joint
                 {sustainedOcclusionHint.jointNames.length === 1 ? '' : 's'} hidden
               </Text>
+              <TouchableOpacity
+                onPress={dismissSustainedOcclusion}
+                style={scanArV2Styles.bannerAction}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss occlusion warning"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                testID="scan-arkit-sustained-occlusion-dismiss"
+              >
+                <Text style={scanArV2Styles.bannerActionText}>Got it</Text>
+              </TouchableOpacity>
             </View>
           ) : null}
 
