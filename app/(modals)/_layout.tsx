@@ -66,15 +66,14 @@ export default function ModalsLayout() {
         }}
       />
       <Stack.Screen
-        name="practice-mode"
+        name="form-tracking-setup"
         options={{
-          presentation: 'modal',
-          gestureEnabled: true,
+          presentation: 'fullScreenModal',
           contentStyle: { backgroundColor: '#050E1F' },
         }}
       />
       <Stack.Screen
-        name="calibration-failure-recovery"
+        name="form-tracking-debrief"
         options={{
           presentation: 'modal',
           gestureEnabled: true,
