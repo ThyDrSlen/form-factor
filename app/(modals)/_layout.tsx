@@ -95,6 +95,13 @@ export default function ModalsLayout() {
           contentStyle: { backgroundColor: '#050E1F' },
         }}
       />
+      <Stack.Screen
+        name="generate-session"
+        options={{
+          presentation: 'modal',
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
     </Stack>
   );
 }
