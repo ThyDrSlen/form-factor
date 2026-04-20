@@ -181,4 +181,132 @@ describe('tracking-quality rep detector (pull-up FSM)', () => {
       expect(Math.abs(result.repCount - expected)).toBeLessThanOrEqual(1);
     }
   });
+
+  // ==========================================================================
+  // Wave-29 T7: threshold boundary semantics for minTrackingQuality and
+  // minJointConfidence.
+  //
+  // Locks in two inclusive-lower-bound contracts:
+  //   1. lib/tracking-quality/rep-detector.ts:229
+  //        `quality >= this.options.minTrackingQuality`
+  //      → quality EXACTLY at threshold accepts the frame (no fault).
+  //      → quality at threshold - 0.001 rejects with 'quality_below_min'.
+  //   2. lib/tracking-quality/visibility.ts:40-42 (via L237 areRequiredJointsVisible)
+  //        `clamp01(joint.confidence) >= minConfidence`
+  //      → joint confidence EXACTLY at threshold passes visibility.
+  //      → joint confidence at threshold - 0.001 rejects with 'low_visibility'.
+  //
+  // These guard against any future refactor to a strict `>` comparison —
+  // which would silently shift millions of frames from "accepted" to
+  // "rejected" on devices that clip to the threshold value exactly.
+  // ==========================================================================
+  describe('threshold boundaries (wave-29 T7)', () => {
+    function baseAngles() {
+      return {
+        leftKnee: 120,
+        rightKnee: 120,
+        leftElbow: 160,
+        rightElbow: 160,
+        leftHip: 140,
+        rightHip: 140,
+        leftShoulder: 92,
+        rightShoulder: 92,
+      };
+    }
+
+    function jointsWithConfidence(conf: number, tracked = true) {
+      return {
+        left_shoulder: { x: 0.4, y: 0.33, isTracked: tracked, confidence: conf },
+        right_shoulder: { x: 0.6, y: 0.33, isTracked: tracked, confidence: conf },
+        left_hand: { x: 0.35, y: 0.61, isTracked: tracked, confidence: conf },
+        right_hand: { x: 0.65, y: 0.61, isTracked: tracked, confidence: conf },
+      };
+    }
+
+    test('trackingQuality EXACTLY at minTrackingQuality is accepted (no fault emitted)', () => {
+      const onFault = jest.fn();
+      const detector = new RepDetectorPullup({
+        minTrackingQuality: 0.5,
+        minJointConfidence: 0.6,
+        onFault,
+      });
+
+      detector.step({
+        timestampSec: 0,
+        angles: baseAngles() as JointAngles,
+        joints: jointsWithConfidence(0.95),
+        trackingQuality: 0.5, // exactly at threshold
+      });
+
+      // No fault for quality — we accepted the frame. Snapshot frozenFrames
+      // stays at 0 because freezeOrTimeout was NOT called.
+      expect(onFault).not.toHaveBeenCalled();
+      expect(detector.getSnapshot().frozenFrames).toBe(0);
+    });
+
+    test('trackingQuality at minTrackingQuality - 0.001 is rejected with quality_below_min', () => {
+      const onFault = jest.fn();
+      const detector = new RepDetectorPullup({
+        minTrackingQuality: 0.5,
+        minJointConfidence: 0.6,
+        onFault,
+      });
+
+      detector.step({
+        timestampSec: 0,
+        angles: baseAngles() as JointAngles,
+        joints: jointsWithConfidence(0.95),
+        trackingQuality: 0.499, // just below threshold
+      });
+
+      expect(onFault).toHaveBeenCalledTimes(1);
+      expect(onFault.mock.calls[0]?.[0]).toMatchObject({
+        fault_id: 'rep_rejected',
+        rejection_reason: 'quality_below_min',
+        exercise_id: 'pullup',
+      });
+      // freezeOrTimeout was invoked → frozenFrames should tick up by one.
+      expect(detector.getSnapshot().frozenFrames).toBe(1);
+    });
+
+    test('joint confidence EXACTLY at minJointConfidence passes visibility', () => {
+      const onFault = jest.fn();
+      const detector = new RepDetectorPullup({
+        minJointConfidence: 0.6,
+        onFault,
+      });
+
+      detector.step({
+        timestampSec: 0,
+        angles: baseAngles() as JointAngles,
+        joints: jointsWithConfidence(0.6), // exactly at threshold
+      });
+
+      // visibility.ts:40-42 uses `>=` so 0.6 == 0.6 passes. No fault.
+      expect(onFault).not.toHaveBeenCalled();
+      expect(detector.getSnapshot().frozenFrames).toBe(0);
+    });
+
+    test('joint confidence at minJointConfidence - 0.001 rejects with low_visibility', () => {
+      const onFault = jest.fn();
+      const detector = new RepDetectorPullup({
+        minJointConfidence: 0.6,
+        onFault,
+      });
+
+      detector.step({
+        timestampSec: 0,
+        angles: baseAngles() as JointAngles,
+        joints: jointsWithConfidence(0.599), // just below threshold
+      });
+
+      expect(onFault).toHaveBeenCalledTimes(1);
+      expect(onFault.mock.calls[0]?.[0]).toMatchObject({
+        fault_id: 'rep_rejected',
+        rejection_reason: 'low_visibility',
+        visibility_badge: 'partial',
+      });
+      expect(detector.getSnapshot().frozenFrames).toBe(1);
+    });
+  });
 });
