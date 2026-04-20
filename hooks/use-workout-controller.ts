@@ -16,6 +16,7 @@ import type { WorkoutDefinition, WorkoutMetrics } from '@/lib/types/workout-defi
 import { getWorkoutById, type DetectionMode } from '@/lib/workouts';
 import { calculateFqi, extractRepFeatures, type RepAngles } from '@/lib/services/fqi-calculator';
 import { logRep } from '@/lib/services/rep-logger';
+import type { RepEvent } from '@/lib/types/telemetry';
 import { computeAdaptivePhaseHoldMs, computeAdaptiveRepDurationMs } from '@/lib/services/workout-runtime';
 import { selectShadowProvider } from '@/lib/pose/shadow-provider';
 import {
@@ -81,6 +82,13 @@ export interface WorkoutControllerCallbacks {
   onPhaseChange?: (newPhase: string, prevPhase: string) => void;
   /** Called when a cue should be emitted */
   onCue?: (cue: string, type: 'static' | 'dynamic') => void;
+  /**
+   * Called when \`logRep()\` fails after all in-session retries. The rep is
+   * still queued in-memory and will be retried on the next successful
+   * logRep call, but the UI can surface a retry banner or toast in response
+   * to this callback. \`queueDepth\` is the number of reps currently pending.
+   */
+  onRepLogFailure?: (error: unknown, queueDepth: number) => void;
 }
 
 function buildSingleFrameRepAngles(angles: JointAngles): PullupScoringInput['repAngles'] {
@@ -193,6 +201,20 @@ export function useWorkoutController<TPhase extends string = string>(
     cues: [],
     lastJoints: null,
   });
+
+  // =============================================================================
+  // Failed-rep-write queue
+  //
+  // \`logRep()\` writes directly to Supabase and can fail for transient
+  // reasons (offline, auth refresh, RLS throttling). Previously rejections
+  // were only logged in __DEV__, meaning production sessions silently lost
+  // reps. The queue below retains the event payload so subsequent successful
+  // writes will drain it in order; we also notify the UI via
+  // \`callbacks.onRepLogFailure\` so a retry affordance can be surfaced.
+  // =============================================================================
+
+  const pendingRepWritesRef = useRef<RepEvent[]>([]);
+  const MAX_PENDING_REPS = 64; // bounded so a disconnected session can't grow forever
 
   // =============================================================================
   // Rep Tracking Helpers
@@ -328,19 +350,38 @@ export function useWorkoutController<TPhase extends string = string>(
         recentRepDurationsRef.current.shift();
       }
 
-      // Log the rep
+      // Build the rep event now so retries can re-use the exact payload.
+      const repEvent: RepEvent = {
+        sessionId,
+        repIndex: repNumber,
+        exercise,
+        startTs: new Date(tracking.startTs).toISOString(),
+        endTs: new Date(endTs).toISOString(),
+        features,
+        fqi: fqiResult.score,
+        faultsDetected: fqiResult.detectedFaults,
+        cuesEmitted: tracking.cues,
+      };
+
+      // Drain any previously queued rep writes on best-effort; if one still
+      // fails we re-queue it and stop so ordering is preserved.
+      const queue = pendingRepWritesRef.current;
+      while (queue.length > 0) {
+        const pending = queue[0];
+        try {
+          await logRep(pending);
+          queue.shift();
+        } catch (drainError) {
+          if (__DEV__) {
+            warnWithTs('[WorkoutController] Queue drain failed, will retry later', drainError);
+          }
+          break;
+        }
+      }
+
+      // Log the new rep.
       try {
-        await logRep({
-          sessionId,
-          repIndex: repNumber,
-          exercise,
-          startTs: new Date(tracking.startTs).toISOString(),
-          endTs: new Date(endTs).toISOString(),
-          features,
-          fqi: fqiResult.score,
-          faultsDetected: fqiResult.detectedFaults,
-          cuesEmitted: tracking.cues,
-        });
+        await logRep(repEvent);
 
         if (__DEV__) {
           logWithTs(
@@ -348,8 +389,27 @@ export function useWorkoutController<TPhase extends string = string>(
           );
         }
       } catch (error) {
-        if (__DEV__) {
-          errorWithTs('[WorkoutController] Failed to log rep', error);
+        // Rejection path — production previously lost this rep silently.
+        // Now: enqueue for retry, notify the UI, log (once per rep regardless
+        // of __DEV__ since production observability matters for data loss).
+        if (queue.length < MAX_PENDING_REPS) {
+          queue.push(repEvent);
+        } else if (__DEV__) {
+          warnWithTs('[WorkoutController] Pending-rep queue full, dropping oldest entry');
+          queue.shift();
+          queue.push(repEvent);
+        }
+        errorWithTs('[WorkoutController] Failed to log rep (queued for retry)', {
+          repNumber,
+          queueDepth: queue.length,
+          error,
+        });
+        try {
+          callbacks?.onRepLogFailure?.(error, queue.length);
+        } catch (cbError) {
+          if (__DEV__) {
+            warnWithTs('[WorkoutController] onRepLogFailure callback threw', cbError);
+          }
         }
       }
     },
