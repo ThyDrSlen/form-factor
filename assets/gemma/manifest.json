@@ -1,0 +1,9 @@
+{
+  "version": "gemma-3-270m-it-int4@2026-03-01",
+  "url": "https://placeholder.invalid/gemma/gemma-3-270m-it-int4.pte",
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "bytes": 0,
+  "license": "Gemma Terms of Use",
+  "licenseUrl": "https://ai.google.dev/gemma/terms",
+  "notes": "Placeholder manifest — url/sha256/bytes will be filled in by the ML team before rollout. coach-model-manager.startDownload refuses to proceed while any of url/sha256/bytes is placeholder-shaped, so accidental premature downloads are blocked."
+}

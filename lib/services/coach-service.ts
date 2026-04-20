@@ -1,11 +1,14 @@
 import { supabase } from '@/lib/supabase';
 import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { createError, logError } from './ErrorHandler';
+import { resolveCloudProvider } from './coach-cloud-provider';
+import { sendCoachGemmaPrompt } from './coach-gemma-service';
 import {
   inferCoachProvider,
   type CoachProvider,
   type CoachProviderSignal,
 } from './coach-provider-types';
+import { synthesizeMemoryClause } from './coach-memory-context';
 
 export type { CoachProvider } from './coach-provider-types';
 import type { LiveSessionSnapshot } from './coach-live-snapshot';
@@ -38,6 +41,47 @@ export interface CoachContext {
    * set this.
    */
   liveSession?: LiveSessionSnapshot;
+  /**
+   * Optional pre-composed memory clause. When provided, skips the
+   * AsyncStorage/Supabase lookup inside sendCoachPrompt() — useful for
+   * callers (e.g. auto-debrief) that already built their own memory.
+   */
+  memoryClause?: string | null;
+}
+
+/**
+ * Optional behaviors for `sendCoachPrompt`. All fields are additive and the
+ * existing two-arg call shape (`sendCoachPrompt(messages, ctx?)`) keeps the
+ * exact behavior it had before #465 landed.
+ */
+export interface CoachSendOptions {
+  /**
+   * Streaming mode (#465 Item 1).
+   * - `true`: stream and return the full text once complete (no per-chunk callback).
+   * - function: stream and invoke the callback for every delta.
+   * - omitted/false: synchronous (default).
+   */
+  stream?: boolean | ((chunk: string) => void);
+  /**
+   * If true and the primary call returns 429/5xx, automatically retry against
+   * the secondary provider (#465 Item 2).
+   */
+  allowFailover?: boolean;
+  /**
+   * Provider hint for streaming and for failover routing (`gemma`|`openai`).
+   */
+  provider?: 'gemma' | 'openai';
+  /**
+   * Response cache TTL in ms (#465 Item 3). 0 disables caching; omitted means
+   * cache lookups are not consulted. Defaults are picked at the call site
+   * (e.g. auto-debrief uses 12h).
+   */
+  cacheMs?: number;
+  /**
+   * Used by the cache integration to flag that the cached payload is the
+   * already-shaped response (#465 Item 5). Internal; callers shouldn't need it.
+   */
+  shaper?: boolean;
 }
 
 interface RawCoachResponse {
@@ -56,13 +100,133 @@ interface RawCoachResponse {
 const DEFAULT_MODEL_ID = 'gpt-5.4-mini';
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
 
+/**
+ * Feature-flag gate for prepending cross-session memory to coach prompts.
+ * Defaults to ON (value 'true' or unset). Any other value disables the
+ * memory clause so the coach behaves as before.
+ */
+function isMemoryEnabled(): boolean {
+  const raw = (process.env.EXPO_PUBLIC_COACH_MEMORY ?? 'true').trim().toLowerCase();
+  return raw === '' || raw === 'true' || raw === '1' || raw === 'on';
+}
+
+async function resolveMemoryClause(context?: CoachContext): Promise<string | null> {
+  if (!isMemoryEnabled()) return null;
+  if (context?.memoryClause !== undefined) return context.memoryClause ?? null;
+  try {
+    const clause = await synthesizeMemoryClause();
+    return clause.text;
+  } catch (err) {
+    warnWithTs('[coach-service] memory clause synth failed; continuing without memory', err);
+    return null;
+  }
+}
+
+function applyMemoryClause(
+  messages: CoachMessage[],
+  memoryClause: string | null,
+): CoachMessage[] {
+  if (!memoryClause) return messages;
+  const memoryMessage: CoachMessage = {
+    role: 'system',
+    content: `Athlete memory (recent sessions): ${memoryClause}`,
+  };
+  return [memoryMessage, ...messages];
+}
+
+/**
+ * Send a coach prompt. Dispatch order:
+ *   1. If `opts.stream` → streaming path (#466 Item 1)
+ *   2. If `opts.allowFailover` → failover producer, optionally cached (#466 Items 2-3)
+ *   3. If `opts.cacheMs > 0` → cached OpenAI path (#466 Item 3)
+ *   4. Else → resolve cloud provider (from `opts.provider`, AsyncStorage, or env)
+ *      - `gemma` → direct `sendCoachGemmaPrompt`
+ *      - `openai` → `sendCoachPromptInner` (coach edge function)
+ *
+ * Memory clause (#461) is synthesized inside `sendCoachPromptInner` for the
+ * OpenAI path; callers may opt out by setting `EXPO_PUBLIC_COACH_MEMORY=false`
+ * or pre-composing `context.memoryClause`.
+ *
+ * Backward compatible: the two-arg call shape hits the cloud provider selector,
+ * which defaults to `openai` absent any user/env preference.
+ */
 export async function sendCoachPrompt(
+  messages: CoachMessage[],
+  context?: CoachContext,
+  opts?: CoachSendOptions
+): Promise<CoachMessage> {
+  if (opts?.stream) {
+    return sendCoachPromptStreaming(messages, context, opts);
+  }
+  if (opts?.allowFailover) {
+    // Lazy require keeps the dep graph 1-way and avoids load-order issues
+    // (await import() does not work in jest's CJS env without
+    // --experimental-vm-modules).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { sendCoachPromptWithFailover } = require('./coach-failover') as typeof import('./coach-failover');
+    const failoverProducer = () =>
+      sendCoachPromptWithFailover(messages, context, {
+        primary: opts.provider ?? 'gemma',
+        secondary: opts.provider === 'openai' ? 'gemma' : 'openai',
+      });
+    if (typeof opts.cacheMs === 'number' && opts.cacheMs > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { withCoachCache } = require('./coach-cache') as typeof import('./coach-cache');
+      return withCoachCache(messages, context, opts.cacheMs, failoverProducer, {
+        shaper: opts.shaper,
+      });
+    }
+    return failoverProducer();
+  }
+  if (typeof opts?.cacheMs === 'number' && opts.cacheMs > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { withCoachCache } = require('./coach-cache') as typeof import('./coach-cache');
+    return withCoachCache(
+      messages,
+      context,
+      opts.cacheMs,
+      () => sendCoachPromptInner(messages, context),
+      { shaper: opts.shaper }
+    );
+  }
+
+  // No advanced opts: pick cloud provider (explicit hint, user pref, env, or openai default).
+  const provider = opts?.provider ?? (await resolveCloudProvider());
+  if (provider === 'gemma') {
+    return sendCoachGemmaPrompt(messages, context);
+  }
+  return sendCoachPromptInner(messages, context);
+}
+
+async function sendCoachPromptStreaming(
+  messages: CoachMessage[],
+  context: CoachContext | undefined,
+  opts: CoachSendOptions
+): Promise<CoachMessage> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { streamCoachPrompt } = require('./coach-streaming') as typeof import('./coach-streaming');
+  const onChunk =
+    typeof opts.stream === 'function' ? opts.stream : () => undefined;
+  const result = await streamCoachPrompt(messages, context, onChunk, {
+    provider: opts.provider,
+  });
+  return { role: 'assistant', content: result.text };
+}
+
+async function sendCoachPromptInner(
   messages: CoachMessage[],
   context?: CoachContext
 ): Promise<CoachMessage> {
   try {
+    const memoryClause = await resolveMemoryClause(context);
+    const outgoingMessages = applyMemoryClause(messages, memoryClause);
+    const outgoingContext =
+      memoryClause !== null
+        ? { ...(context ?? {}), memoryClause }
+        : context;
+
     const { data, error } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
-      body: { messages, context },
+      body: { messages: outgoingMessages, context: outgoingContext },
     });
 
     if (error) {
