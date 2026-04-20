@@ -20,7 +20,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { Svg, Circle, Line } from 'react-native-svg';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -35,6 +34,7 @@ import {
 } from '@/lib/watch-connectivity';
 import { buildWatchTrackingPayload } from '@/lib/watch-connectivity/tracking-payload';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
+import { safeHaptic } from '@/lib/utils/safe-haptic';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type MediaPipePose2D } from '@/lib/arkit/ARKitBodyTracker';
@@ -116,6 +116,46 @@ type BaseUploadMetrics = Record<string, unknown> & {
   mode: DetectionMode;
   reps: number;
 };
+
+/**
+ * Workout UI adapter callers — centralise the base-vs-specific metrics
+ * variance handoff so call sites don't need `as never` casts.
+ *
+ * Each workout's `WorkoutUiAdapter` is generic over its own `TMetrics`,
+ * but at runtime we hold `WorkoutMetrics | null` (the base shape) and
+ * the def travels with its metrics for the same mode, so a narrowed
+ * "has a ui adapter" shape is enough to describe what we need at the
+ * call site. The cast to `BaseUiAdapter` happens exactly once, here.
+ */
+type BaseUiAdapter = {
+  buildUploadMetrics?: (metrics: WorkoutMetrics | null) => Record<string, number | null>;
+  buildWatchMetrics?: (metrics: WorkoutMetrics | null) => Record<string, number | null>;
+  getRealtimeCues?: (args: { phaseId: string; metrics: WorkoutMetrics }) => string[] | null;
+};
+
+type DefWithUi = { ui?: unknown };
+
+const baseUiAdapter = (def: DefWithUi): BaseUiAdapter | undefined =>
+  def.ui as BaseUiAdapter | undefined;
+
+const callBuildUploadMetrics = (
+  def: DefWithUi,
+  metrics: WorkoutMetrics | null,
+): Record<string, number | null> =>
+  baseUiAdapter(def)?.buildUploadMetrics?.(metrics) ?? {};
+
+const callBuildWatchMetrics = (
+  def: DefWithUi,
+  metrics: WorkoutMetrics | null,
+): Record<string, number | null> =>
+  baseUiAdapter(def)?.buildWatchMetrics?.(metrics) ?? {};
+
+const callGetRealtimeCues = (
+  def: DefWithUi,
+  phaseId: string,
+  metrics: WorkoutMetrics,
+): string[] | null =>
+  baseUiAdapter(def)?.getRealtimeCues?.({ phaseId, metrics }) ?? null;
 
 type ClipMetaMetrics = {
   avgFqi: number | null;
@@ -246,7 +286,11 @@ const SKELETON_JOINT_ALIASES: Record<string, string[]> = {
   right_foot_joint: ['right_foot_joint'],
 };
 
-let ARKitView: any = View;
+// On iOS we bind the native ARKit view component; on every other platform
+// we fall back to a plain <View /> so the JSX shape stays identical. Both
+// satisfy React.ComponentType<ViewProps>, so we type the binding that way
+// instead of escaping to `any`.
+let ARKitView: React.ComponentType<React.ComponentProps<typeof View>> = View;
 if (Platform.OS === 'ios') {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   ARKitView = require('@/lib/arkit/ARKitBodyView').default;
@@ -501,6 +545,36 @@ export default function ScanARKitScreen() {
     stablePrimaryCueRef.current = null;
   }, []);
 
+  // Frame-callback error reporter. ARKit frame callbacks run async on the
+  // native side — unhandled throws bypass CrashBoundary (which only wraps
+  // the JSX tree) and surface as unhandled promise rejections. Route all
+  // frame-time failures here so we degrade gracefully and log once per
+  // session per source rather than on every bad frame.
+  const processFrameFailureLoggedRef = React.useRef<Set<string>>(new Set());
+  const reportProcessFrameFailure = useCallback((source: string, error: unknown) => {
+    const logged = processFrameFailureLoggedRef.current;
+    if (logged.has(source)) return;
+    logged.add(source);
+    errorWithTs(`[ScanARKit] processFrame(${source}) threw — degrading gracefully`, error);
+  }, []);
+
+  // Consolidated engine / shadow-state lifecycle. Previously each lifecycle
+  // point (mount, detection-mode change, pose-loss, startTracking,
+  // stopTracking) inlined its own five-line reset, drifting over time. A
+  // single callback keeps the invariant "realtime engine is fresh whenever
+  // we reset shadow metrics" in one place.
+  const resetRealtimeEngine = useCallback(() => {
+    realtimeFormEngineRef.current = createRealtimeEngineState();
+    lastShadowMeanAbsDeltaRef.current = null;
+  }, [createRealtimeEngineState]);
+
+  const resetShadowTracking = useCallback(() => {
+    shadowStatsRef.current = createShadowStatsAccumulator();
+    shadowProviderCountsRef.current = createShadowProviderCounts();
+    mediaPipePoseRef.current = null;
+    resetRealtimeEngine();
+  }, [resetRealtimeEngine]);
+
   const updatePartialTrackingBadgeVisibility = useCallback((
     visibilityBadge: PullupScoringResult['visibility_badge'],
     source: 'frame-live' | 'onPullupScoring-rep-complete' | 'unknown' = 'unknown'
@@ -689,17 +763,23 @@ export default function ScanARKitScreen() {
       return;
     }
 
-    let active = true;
+    // Use AbortController as the single source of truth for poll cancellation.
+    // `BodyTracker.getCurrentMediaPipePose2D()` is a native promise that we
+    // can't cancel directly, but we can guard every setState / ref mutation
+    // behind `controller.signal.aborted` so late arrivals never leak onto an
+    // unmounted or detached component.
+    const controller = new AbortController();
+    const { signal } = controller;
 
     const poll = async () => {
-      if (!active || mediaPipePollInFlightRef.current) {
+      if (signal.aborted || mediaPipePollInFlightRef.current) {
         return;
       }
 
       mediaPipePollInFlightRef.current = true;
       try {
         const payload = await BodyTracker.getCurrentMediaPipePose2D();
-        if (!active || !payload || payload.landmarks.length === 0) {
+        if (signal.aborted || !payload || payload.landmarks.length === 0) {
           return;
         }
         mediaPipePoseRef.current = payload;
@@ -707,6 +787,9 @@ export default function ScanARKitScreen() {
           mediaPipeModelVersionRef.current = payload.modelVersion;
         }
       } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
         if (DEV) {
           warnWithTs('[ScanARKit] MediaPipe shadow poll failed', error);
         }
@@ -717,11 +800,12 @@ export default function ScanARKitScreen() {
 
     void poll();
     mediaPipePollTimerRef.current = setInterval(() => {
+      if (signal.aborted) return;
       void poll();
     }, MEDIAPIPE_SHADOW_POLL_INTERVAL_MS);
 
     return () => {
-      active = false;
+      controller.abort();
       if (mediaPipePollTimerRef.current) {
         clearInterval(mediaPipePollTimerRef.current);
         mediaPipePollTimerRef.current = null;
@@ -825,13 +909,9 @@ export default function ScanARKitScreen() {
       }
     });
     resetFrameCounter();
-    shadowStatsRef.current = createShadowStatsAccumulator();
-    shadowProviderCountsRef.current = createShadowProviderCounts();
-    mediaPipePoseRef.current = null;
-    realtimeFormEngineRef.current = createRealtimeEngineState();
-    lastShadowMeanAbsDeltaRef.current = null;
+    resetShadowTracking();
     resetBaselineDebugMetrics();
-  }, [createRealtimeEngineState, resetBaselineDebugMetrics]);
+  }, [resetShadowTracking, resetBaselineDebugMetrics]);
 
   useEffect(() => {
     const countersRef = cueCountersRef;
@@ -951,14 +1031,10 @@ export default function ScanARKitScreen() {
     setLivePullupPartialStatus(null);
     lastLivePartialBadgeRef.current = null;
     repIndexTrackerRef.current.reset();
-    shadowStatsRef.current = createShadowStatsAccumulator();
-    shadowProviderCountsRef.current = createShadowProviderCounts();
-    mediaPipePoseRef.current = null;
-    realtimeFormEngineRef.current = createRealtimeEngineState();
-    lastShadowMeanAbsDeltaRef.current = null;
+    resetShadowTracking();
     resetBaselineDebugMetrics();
     setWorkoutController(detectionMode);
-  }, [createRealtimeEngineState, detectionMode, resetBaselineDebugMetrics, setWorkoutController]);
+  }, [detectionMode, resetBaselineDebugMetrics, resetShadowTracking, setWorkoutController]);
 
   useEffect(() => {
     if (DEV) {
@@ -1073,12 +1149,19 @@ export default function ScanARKitScreen() {
       lastPoseTimestampRef.current = frame.timestampSec;
       jointAnglesStateRef.current = frame.angles;
       setJointAngles(frame.angles);
-      const metrics = getWorkoutByMode('pullup').calculateMetrics(frame.angles, joints) as WorkoutMetrics;
-      setActiveMetrics(metrics);
-      processWorkoutFrame(frame.angles, joints, {
-        trackingQuality: 1,
-        shadowMeanAbsDelta: 0,
-      });
+      // Guard per-frame processing so one bad fixture frame can't tear the
+      // whole playback down; errors are reported once per session to avoid
+      // log floods, and the component continues on the next frame.
+      try {
+        const metrics = getWorkoutByMode('pullup').calculateMetrics(frame.angles, joints) as WorkoutMetrics;
+        setActiveMetrics(metrics);
+        processWorkoutFrame(frame.angles, joints, {
+          trackingQuality: 1,
+          shadowMeanAbsDelta: 0,
+        });
+      } catch (error) {
+        reportProcessFrameFailure('fixture-playback', error);
+      }
       setFixturePlaybackFramesProcessed(index + 1);
 
       const next = fixtureFrames[index + 1];
@@ -1111,6 +1194,7 @@ export default function ScanARKitScreen() {
     DEV,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
+    reportProcessFrameFailure,
   ]);
 
   // Debug pose updates (throttled logging)
@@ -1127,8 +1211,7 @@ export default function ScanARKitScreen() {
       frameStatsRef.current = { lastTimestamp: 0, frameCount: 0 };
       setJointAngles(null);
       jointAnglesStateRef.current = null;
-      realtimeFormEngineRef.current = createRealtimeEngineState();
-      lastShadowMeanAbsDeltaRef.current = null;
+      resetRealtimeEngine();
       setFps(0);
       setSmoothedPose2DJoints(null);
       smoothedPose2DRef.current = null;
@@ -1416,10 +1499,14 @@ export default function ScanARKitScreen() {
           lastLivePartialBadgeRef.current = null;
         }
 
-        processWorkoutFrame(next, jointsMap, {
-          trackingQuality: smoothingResult?.trackingQuality,
-          shadowMeanAbsDelta: shadowComparison?.meanAbsDelta,
-        });
+        try {
+          processWorkoutFrame(next, jointsMap, {
+            trackingQuality: smoothingResult?.trackingQuality,
+            shadowMeanAbsDelta: shadowComparison?.meanAbsDelta,
+          });
+        } catch (error) {
+          reportProcessFrameFailure('live-frame', error);
+        }
       } else {
         repIndexTrackerRef.current.reset();
         resetWorkoutController({ preserveRepCount: true });
@@ -1430,7 +1517,7 @@ export default function ScanARKitScreen() {
         transitionPhase(activeWorkoutDef.initialPhase);
       }
     } catch (error) {
-      errorWithTs('[ScanARKit] ❌ Error calculating angles:', error);
+      reportProcessFrameFailure('angle-calculation', error);
     } finally {
       if (frameProcessStartMs !== null) {
         const elapsedMs = Math.max(0, nowMs() - frameProcessStartMs);
@@ -1562,18 +1649,14 @@ export default function ScanARKitScreen() {
       resetCueHysteresis();
 
       const startTime = Date.now();
-      shadowStatsRef.current = createShadowStatsAccumulator();
-      shadowProviderCountsRef.current = createShadowProviderCounts();
-      mediaPipePoseRef.current = null;
-      realtimeFormEngineRef.current = createRealtimeEngineState();
-      lastShadowMeanAbsDeltaRef.current = null;
+      resetShadowTracking();
       await startNativeTracking();
       const elapsed = Date.now() - startTime;
       
       if (DEV) logWithTs('[ScanARKit] Tracking started successfully in', elapsed, 'ms');
 
       if (Platform.OS === 'ios') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        safeHaptic.notification('success');
       }
     } catch (error) {
       errorWithTs('[ScanARKit] ❌ Failed to start tracking:', error);
@@ -1594,6 +1677,7 @@ export default function ScanARKitScreen() {
     resetWorkoutController,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
+    resetShadowTracking,
   ]);
 
   const stopRecordingCore = useCallback(async () => {
@@ -1646,11 +1730,7 @@ export default function ScanARKitScreen() {
       resetWorkoutController();
       setRepCount(0);
       setFps(0);
-      realtimeFormEngineRef.current = createRealtimeEngineState();
-      lastShadowMeanAbsDeltaRef.current = null;
-      shadowStatsRef.current = createShadowStatsAccumulator();
-      shadowProviderCountsRef.current = createShadowProviderCounts();
-      mediaPipePoseRef.current = null;
+      resetShadowTracking();
       setShadowProviderRuntime('mediapipe_proxy');
       resetBaselineDebugMetrics();
       resetCueHysteresis();
@@ -1658,7 +1738,7 @@ export default function ScanARKitScreen() {
       if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
       if (Platform.OS === 'ios') {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        safeHaptic.impact('medium');
       }
     } catch (error) {
       errorWithTs('[ScanARKit] ❌ Error stopping tracking:', error);
@@ -1674,6 +1754,7 @@ export default function ScanARKitScreen() {
     resetWorkoutController,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
+    resetShadowTracking,
   ]);
 
   // Cleanup on unmount
@@ -1730,10 +1811,7 @@ export default function ScanARKitScreen() {
 	      return messages;
 	    }
 
-	    const realtimeCues = activeWorkoutDef.ui?.getRealtimeCues?.({
-	      phaseId: activePhase,
-	      metrics: activeMetrics as never,
-	    });
+	    const realtimeCues = callGetRealtimeCues(activeWorkoutDef, activePhase, activeMetrics);
 	    if (realtimeCues?.length) {
 	      messages.push(...realtimeCues);
 	    }
@@ -1776,7 +1854,7 @@ export default function ScanARKitScreen() {
 	      () => ({
 	        mode: detectionMode,
 	        reps: repCount,
-	        ...(activeWorkoutDef.ui?.buildUploadMetrics(activeMetrics as never) ?? {}),
+	        ...callBuildUploadMetrics(activeWorkoutDef, activeMetrics),
 	      }),
 	      [activeWorkoutDef, activeMetrics, detectionMode, repCount]
 	    );
@@ -1974,22 +2052,45 @@ export default function ScanARKitScreen() {
       };
     }, [watchMirrorActive, captureAndSendWatchMirror]);
 
-    // Watch Connectivity: Listen for commands
+    // Watch Connectivity: Listen for commands.
+    //
+    // The listener reads current tracking state and callbacks via refs so it
+    // can stay subscribed once per mount instead of churning every time
+    // isTracking / supportStatus / startTracking / stopTracking change. A
+    // rapid start/stop toggle previously registered a brand new listener
+    // on every flip; with the ref-based approach the native bridge only
+    // ever sees a single subscription.
+    const watchCommandContextRef = React.useRef({
+      isTracking,
+      supportStatus,
+      startTracking,
+      stopTracking,
+    });
+    useEffect(() => {
+      watchCommandContextRef.current = {
+        isTracking,
+        supportStatus,
+        startTracking,
+        stopTracking,
+      };
+    }, [isTracking, supportStatus, startTracking, stopTracking]);
+
     useEffect(() => {
       const unsubscribe = watchEvents.addListener('message', (message: { command?: string }) => {
+        const ctx = watchCommandContextRef.current;
         if (message.command === 'start') {
-          if (!isTracking && supportStatus === 'supported') {
-            startTracking();
+          if (!ctx.isTracking && ctx.supportStatus === 'supported') {
+            ctx.startTracking();
           }
         } else if (message.command === 'stop') {
-          if (isTracking) {
-            stopTracking();
+          if (ctx.isTracking) {
+            ctx.stopTracking();
           }
         }
       });
 
       return () => unsubscribe();
-    }, [isTracking, supportStatus, startTracking, stopTracking]);
+    }, []);
 
     // Watch Connectivity: Sync state
     useEffect(() => {
@@ -2007,7 +2108,7 @@ export default function ScanARKitScreen() {
 
 	      const reps = repCount;
 	      const phase = activePhase;
-	      const metrics = activeWorkoutDef.ui?.buildWatchMetrics(activeMetrics as never) ?? {};
+	      const metrics = callBuildWatchMetrics(activeWorkoutDef, activeMetrics);
 
 	      const payload = buildWatchTrackingPayload({
 	        now,
@@ -2267,7 +2368,7 @@ export default function ScanARKitScreen() {
         if (Platform.OS === 'android') {
           ToastAndroid.show(message, ToastAndroid.SHORT);
         } else {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          safeHaptic.notification('success');
         }
       }
     } else {
@@ -2299,7 +2400,7 @@ export default function ScanARKitScreen() {
     if (Platform.OS === 'android') {
       ToastAndroid.show(message, ToastAndroid.SHORT);
     } else {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      safeHaptic.notification('success');
     }
   }, []);
 
@@ -2415,7 +2516,7 @@ export default function ScanARKitScreen() {
 	    activeWorkoutDef.phases.find((phase) => phase.id === telemetryPhaseId)?.displayName ??
 	    String(telemetryPhaseId);
 	  const telemetryUi = activeWorkoutDef.ui;
-	  const telemetryMetricValues = telemetryUi?.buildWatchMetrics(activeMetrics as never) ?? {};
+	  const telemetryMetricValues = callBuildWatchMetrics(activeWorkoutDef, activeMetrics);
 	  const telemetryPrimaryMetric = telemetryUi?.primaryMetric;
 	  const telemetrySecondaryMetric = telemetryUi?.secondaryMetric;
 	  const telemetryPrimaryLabel = telemetryPrimaryMetric?.label ?? '--';
@@ -2501,7 +2602,7 @@ export default function ScanARKitScreen() {
                 onPress={() => setIsDropdownOpen(!isDropdownOpen)}
               >
                 <Ionicons
-                  name={(activeWorkoutDef.ui?.iconName ?? 'barbell-outline') as any}
+                  name={activeWorkoutDef.ui?.iconName ?? 'barbell-outline'}
                   size={16}
                   color="#F5F7FF"
                 />

@@ -13,7 +13,7 @@
 
 import { create } from 'zustand';
 import * as Crypto from 'expo-crypto';
-import * as Haptics from 'expo-haptics';
+import { safeHaptic } from '@/lib/utils/safe-haptic';
 import { localDB } from '@/lib/services/database/local-db';
 import {
   genericLocalUpsert,
@@ -129,29 +129,6 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-let restTimerCompletionTimeout: ReturnType<typeof setTimeout> | null = null;
-
-function clearRestTimerCompletionTimeout(): void {
-  if (restTimerCompletionTimeout) {
-    clearTimeout(restTimerCompletionTimeout);
-    restTimerCompletionTimeout = null;
-  }
-}
-
-function scheduleRestTimerCompletionHaptic(startedAt: string, targetSeconds: number): void {
-  clearRestTimerCompletionTimeout();
-
-  const remainingMs = computeRemainingSeconds(startedAt, targetSeconds) * 1000;
-  if (remainingMs <= 0) {
-    return;
-  }
-
-  restTimerCompletionTimeout = setTimeout(() => {
-    restTimerCompletionTimeout = null;
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, remainingMs);
-}
-
 async function emitEvent(
   sessionId: string,
   type: SessionEventType,
@@ -203,12 +180,22 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       computeRemainingSeconds(restTimer.startedAt, restTimer.targetSeconds) * 1000,
     );
 
+    if (remainingMilliseconds <= 0) {
+      // Already elapsed — fire haptic immediately and clear state.
+      safeHaptic.notification('success');
+      set({ restTimer: null, restTimerCompletionTimeout: null });
+      return;
+    }
+
     const timeout = setTimeout(() => {
       const currentRestTimer = get().restTimer;
       if (!currentRestTimer || currentRestTimer.setId !== restTimer.setId) {
+        // Rest was skipped / swapped to another set — haptic already stale.
+        set({ restTimerCompletionTimeout: null });
         return;
       }
 
+      safeHaptic.notification('success');
       set({ restTimer: null, restTimerCompletionTimeout: null });
     }, remainingMilliseconds);
 
@@ -544,7 +531,6 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       exercise?.name,
       nextSetIdx + 1,
     );
-    scheduleRestTimerCompletionHaptic(now, restSeconds);
 
     // Update in-memory state
     set((state) => {
@@ -635,7 +621,6 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
     if (remaining > 0) {
       scheduleRestNotification(remaining).catch(() => {});
     }
-    scheduleRestTimerCompletionHaptic(restTimer.startedAt, newTarget);
 
     // Update DB
     const db = localDB.db;
@@ -840,7 +825,6 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
                 startedAt: s.rest_started_at,
                 setId: s.id,
               };
-              scheduleRestTimerCompletionHaptic(s.rest_started_at, s.rest_target_seconds);
             }
           }
         }
