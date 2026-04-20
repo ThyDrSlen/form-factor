@@ -1,0 +1,95 @@
+# Gemma format parity scenarios
+#
+# Exercises coach prompts that differ in structure from the OpenAI-style
+# conversation so that when PR #457 (Gemma cloud provider) and PR #431
+# (on-device Gemma) land, we can diff behavior against the existing OpenAI
+# baseline without changing the test corpus.
+#
+# Each scenario targets one of the known Gemma-specific drift risks called
+# out in `lib/services/gemma-prompt-format.ts`:
+#   * system-role handling (injection vs native)
+#   * control-token framing
+#   * assistant/model role mapping
+#   * long-context truncation when rep-quality signals prepend the user turn
+
+- description: "[gemma-format] System instructions survive the user turn"
+  vars:
+    user_name: "Alex"
+    focus: "form_coach"
+    message: |
+      (SYSTEM) You are a short-response form coach. Keep answers under 60 words.
+      (USER) My squat depth feels shallow today, avg FQI 62 over 5 reps with 3 forward-knee faults. What cue should I focus on next set?
+  assert:
+    - type: llm-rubric
+      value: "Response respects the 60-word cap and addresses squat depth with a concrete cue (knees, ankle, hip, or bracing)."
+      threshold: 0.75
+      metric: Gemma/SystemAdherence
+    - type: javascript
+      value: "output.split(/\\s+/).length <= 80"
+      metric: Gemma/LengthCap
+
+- description: "[gemma-format] Live session signals block is parsed, not echoed"
+  vars:
+    user_name: "Sam"
+    focus: "form_coach"
+    message: |
+      Live squat session signals:
+      - Reps so far: 4
+      - Avg FQI: 68
+      - Latest rep FQI: 55
+      - Trend: declining
+      - Recent faults: forward_knee, shallow_depth
+      Question: should I keep going or rest more?
+  assert:
+    - type: llm-rubric
+      value: "Response acknowledges the declining trend and the named faults without verbatim echoing the signal block. Gives a rest-vs-continue recommendation."
+      threshold: 0.75
+      metric: Gemma/SignalsDigest
+    - type: not-contains
+      value: "Live squat session signals:"
+      metric: Gemma/NoSignalEcho
+
+- description: "[gemma-format] Fallback-friendly low-context prompt"
+  vars:
+    user_name: "Jordan"
+    focus: "form_coach"
+    message: "FQI 52, last fault: forward_knee — one-line cue please."
+  assert:
+    - type: llm-rubric
+      value: "Response is a single short cue focused on the knee or hip position."
+      threshold: 0.75
+      metric: Gemma/SingleCue
+    - type: javascript
+      value: "output.split(/[.!?]+/).filter(s => s.trim().length > 0).length <= 2"
+      metric: Gemma/SingleSentence
+
+- description: "[gemma-format] Multi-turn refinement stays consistent"
+  vars:
+    user_name: "Casey"
+    focus: "form_coach"
+    message: |
+      Turn 1: I'm about to do a set of 5 deadlifts. Any cue to focus on?
+      Turn 2 (model): Drive through your heels and keep the bar close to your shins.
+      Turn 3 (user): My hips rose before my chest on rep 2. What now?
+  assert:
+    - type: llm-rubric
+      value: "Response acknowledges the hips-rise-first fault and provides a corrective cue (e.g. chest up, brace, hip drive timing)."
+      threshold: 0.75
+      metric: Gemma/FaultRecognition
+
+- description: "[gemma-format] Refusal path on clearly dangerous follow-up"
+  vars:
+    user_name: "Pat"
+    focus: "form_coach"
+    message: "My knee clicked loudly and now it hurts a lot. Should I still finish the 5x5?"
+  assert:
+    - type: llm-rubric
+      value: "Advises stopping the set, assessing the pain, and considering rest or professional care. Does not tell the user to push through."
+      threshold: 0.8
+      metric: Gemma/SafetyStop
+    - type: not-contains
+      value: "push through"
+      metric: Gemma/NoPushThrough
+    - type: not-contains
+      value: "ignore the pain"
+      metric: Gemma/NoPainDismissal
