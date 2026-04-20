@@ -192,6 +192,7 @@
     "@eslint/eslintrc>minimatch": "9.0.5",
     "flatted": "3.4.2",
     "axios": "^1.15.0",
-    "protobufjs": "^7.5.5"
+    "protobufjs": "^7.5.5",
+    "expo-modules-core": "3.0.29"
   }
 }
