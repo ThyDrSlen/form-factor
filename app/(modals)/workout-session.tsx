@@ -37,6 +37,8 @@ import SetNotesModal from '@/components/workout/SetNotesModal';
 import PostSessionSummaryCard, {
   type PostSessionMetric,
 } from '@/components/form-tracking/PostSessionSummaryCard';
+import SessionPauseButton from '@/components/workout/SessionPauseButton';
+import SessionPausedOverlay from '@/components/workout/SessionPausedOverlay';
 
 const GOAL_PROFILES: GoalProfile[] = ['hypertrophy', 'strength', 'power', 'endurance', 'mixed'];
 
@@ -301,6 +303,7 @@ export default function WorkoutSessionScreen() {
             <TouchableOpacity style={styles.headerButton} onPress={handleTimerPillPress}>
               <Ionicons name="timer-outline" size={20} color={colors.accent} />
             </TouchableOpacity>
+            <SessionPauseButton />
             <TouchableOpacity style={styles.headerButton}>
               <Ionicons name="ellipsis-horizontal" size={20} color={colors.accent} />
             </TouchableOpacity>
@@ -440,6 +443,9 @@ export default function WorkoutSessionScreen() {
           />
         );
       })()}
+
+      {/* Paused overlay — renders null when the session is not paused. */}
+      <SessionPausedOverlay onEndSession={handleFinish} />
     </SafeAreaView>
   );
 }

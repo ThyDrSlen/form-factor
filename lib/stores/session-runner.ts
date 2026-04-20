@@ -27,11 +27,17 @@ import {
   computeRemainingSeconds,
 } from '@/lib/services/rest-timer';
 import { estimateTut, timedSetTut } from '@/lib/services/tut-estimator';
+import {
+  getDefaultsForExercise,
+  type FormTargets,
+} from '@/lib/services/form-target-resolver';
 import type {
   WorkoutSession,
   WorkoutSessionExercise,
   WorkoutSessionSet,
   WorkoutSessionEvent,
+  WorkoutTemplate,
+  WorkoutTemplateExercise,
   GoalProfile,
   SetType,
   Exercise,
@@ -43,11 +49,19 @@ import { logWithTs, errorWithTs } from '@/lib/logger';
 // Types
 // =============================================================================
 
+export type PauseReason = 'user' | 'system';
+
 export interface SessionRunnerState {
   // Session data
   activeSession: WorkoutSession | null;
   exercises: (WorkoutSessionExercise & { exercise?: Exercise })[];
   sets: Record<string, WorkoutSessionSet[]>; // keyed by session_exercise_id
+
+  // Form-target slice (issue #447) — keyed by `exercise_id` (not session-exercise-id)
+  // so consumers can resolve targets by the active scan exercise. Populated from
+  // template overrides on startSession when a templateId is supplied; empty
+  // for ad-hoc sessions. Callers should fall back to `getDefaultsForExercise`.
+  formTargetsByExercise: Record<string, FormTargets>;
 
   // Timer state
   restTimer: {
@@ -56,6 +70,20 @@ export interface SessionRunnerState {
     setId: string;
   } | null;
   restTimerCompletionTimeout: ReturnType<typeof setTimeout> | null;
+
+  // Pause state — additive, never nullifies existing behavior
+  isPaused: boolean;
+  pausedAt: number | null;
+  totalPausedMs: number;
+  /**
+   * Remembered rest-timer snapshot so we can resume with the exact remaining
+   * seconds the user had when they paused (instead of the original duration).
+   */
+  pausedRestTimer: {
+    targetSeconds: number;
+    remainingSeconds: number;
+    setId: string;
+  } | null;
 
   // Status
   isLoading: boolean;
@@ -71,30 +99,30 @@ export interface SessionRunnerState {
   }) => Promise<void>;
   addExercise: (exerciseId: string) => Promise<string>;
   removeExercise: (sessionExerciseId: string) => Promise<void>;
+  swapExerciseByDetectionMode: (
+    mode: string,
+    action?: 'append' | 'replace',
+  ) => Promise<string | null>;
   addSet: (sessionExerciseId: string, setType?: SetType) => Promise<string>;
   removeSet: (setId: string) => Promise<void>;
   updateSet: (setId: string, fields: Partial<WorkoutSessionSet>) => Promise<void>;
   completeSet: (setId: string) => Promise<void>;
   skipRest: () => Promise<void>;
   extendRest: (seconds: number) => void;
+  pauseSession: (reason?: PauseReason) => void;
+  resumeSession: () => void;
   finishSession: () => Promise<void>;
   loadActiveSession: () => Promise<void>;
   duplicateSet: (setId: string, count?: number) => Promise<void>;
   updateSetType: (setId: string, setType: SetType) => Promise<void>;
   duplicateExercise: (sessionExerciseId: string) => Promise<void>;
   /**
-   * Bind a scan-overlay detection mode (e.g., 'pullup') to the active
-   * session. `action` controls whether the matching exercise is added
-   * alongside the current one or replaces it.
-   *   - 'append' adds a new session_exercise (default)
-   *   - 'replace' soft-deletes the active exercise before adding
-   * Returns the new session_exercise_id, or null when no active session
-   * exists or no matching exercise was found.
+   * Resolve the active form targets for a given exerciseId.
+   * Prefers template overrides threaded on startSession, falls back to
+   * per-exercise defaults (`form-target-resolver.getDefaultsForExercise`).
+   * Safe to call at any time — returns conservative defaults when no session.
    */
-  swapExerciseByDetectionMode: (
-    mode: string,
-    action?: 'append' | 'replace',
-  ) => Promise<string | null>;
+  getFormTargetsFor: (exerciseId: string) => FormTargets;
 }
 
 // =============================================================================
@@ -105,25 +133,45 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-let restTimerCompletionTimeout: ReturnType<typeof setTimeout> | null = null;
+async function findExerciseIdForMode(mode: string): Promise<string | null> {
+  const db = localDB.db;
+  if (!db) return null;
+  const likeToken = `${mode.toLowerCase().replace(/[^a-z0-9]/g, '')}%`;
+  try {
+    const byId = await db.getAllAsync<{ id: string }>(
+      'SELECT id FROM exercises WHERE LOWER(REPLACE(REPLACE(id, \'-\', \'\'), \'_\', \'\')) LIKE ? LIMIT 1',
+      [likeToken],
+    );
+    if (byId[0]?.id) return byId[0].id;
+    const byName = await db.getAllAsync<{ id: string }>(
+      'SELECT id FROM exercises WHERE LOWER(REPLACE(REPLACE(name, \' \', \'\'), \'-\', \'\')) LIKE ? ORDER BY is_system DESC LIMIT 1',
+      [likeToken],
+    );
+    return byName[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
-function clearRestTimerCompletionTimeout(): void {
-  if (restTimerCompletionTimeout) {
-    clearTimeout(restTimerCompletionTimeout);
-    restTimerCompletionTimeout = null;
+let restTimerHapticTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function clearRestTimerHapticTimeout(): void {
+  if (restTimerHapticTimeout) {
+    clearTimeout(restTimerHapticTimeout);
+    restTimerHapticTimeout = null;
   }
 }
 
 function scheduleRestTimerCompletionHaptic(startedAt: string, targetSeconds: number): void {
-  clearRestTimerCompletionTimeout();
+  clearRestTimerHapticTimeout();
 
   const remainingMs = computeRemainingSeconds(startedAt, targetSeconds) * 1000;
   if (remainingMs <= 0) {
     return;
   }
 
-  restTimerCompletionTimeout = setTimeout(() => {
-    restTimerCompletionTimeout = null;
+  restTimerHapticTimeout = setTimeout(() => {
+    restTimerHapticTimeout = null;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, remainingMs);
 }
@@ -156,33 +204,6 @@ async function getExerciseById(exerciseId: string): Promise<Exercise | null> {
     [exerciseId],
   );
   return rows[0] ?? null;
-}
-
-/**
- * Look up an `exercises.id` for a given detection mode. Matches the
- * local `exercises` table by (case-insensitive) name prefix or id
- * containment. Returns null when no row is available so the caller
- * can surface a friendly no-op.
- */
-async function findExerciseIdForMode(mode: string): Promise<string | null> {
-  const db = localDB.db;
-  if (!db) return null;
-  const likeToken = `${mode.toLowerCase().replace(/[^a-z0-9]/g, '')}%`;
-  try {
-    const byId = await db.getAllAsync<{ id: string }>(
-      'SELECT id FROM exercises WHERE LOWER(REPLACE(REPLACE(id, \'-\', \'\'), \'_\', \'\')) LIKE ? LIMIT 1',
-      [likeToken],
-    );
-    if (byId[0]?.id) return byId[0].id;
-
-    const byName = await db.getAllAsync<{ id: string }>(
-      'SELECT id FROM exercises WHERE LOWER(REPLACE(REPLACE(name, \' \', \'\'), \'-\', \'\')) LIKE ? ORDER BY is_system DESC LIMIT 1',
-      [likeToken],
-    );
-    return byName[0]?.id ?? null;
-  } catch {
-    return null;
-  }
 }
 
 // =============================================================================
@@ -222,11 +243,26 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
   activeSession: null,
   exercises: [],
   sets: {},
+  formTargetsByExercise: {},
   restTimer: null,
   restTimerCompletionTimeout: null,
+  isPaused: false,
+  pausedAt: null,
+  totalPausedMs: 0,
+  pausedRestTimer: null,
   isLoading: false,
   isWorkoutInProgress: false,
   error: null,
+
+  // =========================================================================
+  // Form Targets
+  // =========================================================================
+  getFormTargetsFor: (exerciseId: string): FormTargets => {
+    const map = get().formTargetsByExercise;
+    const override = map[exerciseId];
+    if (override) return override;
+    return getDefaultsForExercise(exerciseId);
+  },
 
   // =========================================================================
   // Start Session
@@ -256,9 +292,11 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       await genericLocalUpsert('workout_sessions', 'id', session, 0);
       await emitEvent(sessionId, 'session_started');
 
-      // If created from template, materialize exercises + sets
+      // If created from template, materialize exercises + sets and collect
+      // any per-exercise form-target overrides (issue #447).
+      let formTargetsByExercise: Record<string, FormTargets> = {};
       if (opts?.templateId) {
-        await materializeTemplate(sessionId, opts.templateId);
+        formTargetsByExercise = await materializeTemplate(sessionId, opts.templateId);
       }
 
       // Reload state
@@ -270,8 +308,13 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
         activeSession: sessionObj,
         exercises,
         sets,
+        formTargetsByExercise,
         restTimer: null,
         restTimerCompletionTimeout: null,
+        isPaused: false,
+        pausedAt: null,
+        totalPausedMs: 0,
+        pausedRestTimer: null,
         isWorkoutInProgress: true,
       });
       clearRestTimerCompletionTimeout();
@@ -349,6 +392,23 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
         sets: newSets,
       };
     });
+  },
+
+  // =========================================================================
+  // Swap Exercise By Detection Mode (#434)
+  // =========================================================================
+  swapExerciseByDetectionMode: async (mode, action = 'append') => {
+    const { activeSession, exercises } = get();
+    if (!activeSession) return null;
+    if (!mode) return null;
+    const matchId = await findExerciseIdForMode(mode);
+    if (!matchId) return null;
+    if (action === 'replace' && exercises.length > 0) {
+      const last = exercises[exercises.length - 1];
+      await get().removeExercise(last.id);
+    }
+    const newId = await get().addExercise(matchId);
+    return newId;
   },
 
   // =========================================================================
@@ -572,6 +632,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
     const now = nowIso();
 
     clearRestTimerCompletionTimeout();
+    clearRestTimerHapticTimeout();
     await cancelRestNotification();
 
     const db = localDB.db;
@@ -634,13 +695,105 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
   },
 
   // =========================================================================
+  // Pause Session
+  // =========================================================================
+  pauseSession: (reason = 'user') => {
+    const { activeSession, isPaused, restTimer } = get();
+    if (!activeSession || isPaused) return;
+
+    // Snapshot the rest timer so we can restore it with the same amount of
+    // remaining time when the user resumes. The raw `restTimer.startedAt`
+    // can't stay valid across the pause gap because it's a wall-clock stamp.
+    let pausedRestTimer: SessionRunnerState['pausedRestTimer'] = null;
+    if (restTimer) {
+      const remaining = Math.max(
+        0,
+        computeRemainingSeconds(restTimer.startedAt, restTimer.targetSeconds),
+      );
+      pausedRestTimer = {
+        targetSeconds: restTimer.targetSeconds,
+        remainingSeconds: remaining,
+        setId: restTimer.setId,
+      };
+    }
+
+    clearRestTimerCompletionTimeout();
+    // Fire-and-forget: we don't want to block UI on notification scheduling.
+    void cancelRestNotification();
+
+    set({
+      isPaused: true,
+      pausedAt: Date.now(),
+      pausedRestTimer,
+      restTimer: null,
+    });
+
+    logWithTs(`[SessionRunner] Paused session ${activeSession.id} (reason=${reason})`);
+  },
+
+  // =========================================================================
+  // Resume Session
+  // =========================================================================
+  resumeSession: () => {
+    const {
+      activeSession,
+      isPaused,
+      pausedAt,
+      totalPausedMs,
+      pausedRestTimer,
+    } = get();
+    if (!activeSession || !isPaused || pausedAt == null) return;
+
+    const pausedMsForThisSegment = Math.max(0, Date.now() - pausedAt);
+    const nextTotalPausedMs = totalPausedMs + pausedMsForThisSegment;
+
+    // Reconstruct the rest timer from the remaining-seconds snapshot so the
+    // visible countdown continues from exactly where the user left it.
+    let nextRestTimer: SessionRunnerState['restTimer'] = null;
+    if (pausedRestTimer && pausedRestTimer.remainingSeconds > 0) {
+      const resumedAt = new Date().toISOString();
+      nextRestTimer = {
+        targetSeconds: pausedRestTimer.remainingSeconds,
+        startedAt: resumedAt,
+        setId: pausedRestTimer.setId,
+      };
+    }
+
+    set({
+      isPaused: false,
+      pausedAt: null,
+      totalPausedMs: nextTotalPausedMs,
+      pausedRestTimer: null,
+      restTimer: nextRestTimer,
+    });
+
+    if (nextRestTimer) {
+      // Reschedule the background notification + completion haptic for the
+      // recomputed remaining window.
+      scheduleRestNotification(nextRestTimer.targetSeconds).catch(() => {});
+      scheduleRestTimerCompletionHaptic(nextRestTimer.startedAt, nextRestTimer.targetSeconds);
+      scheduleRestTimerCompletion(nextRestTimer);
+    }
+
+    logWithTs(
+      `[SessionRunner] Resumed session ${activeSession.id} (+${pausedMsForThisSegment}ms paused)`,
+    );
+  },
+
+  // =========================================================================
   // Finish Session
   // =========================================================================
   finishSession: async () => {
-    const { activeSession } = get();
+    const { activeSession, isPaused, pausedAt, totalPausedMs } = get();
     if (!activeSession) return;
 
     const now = nowIso();
+
+    // If we finish while paused, flush the in-flight pause segment into the
+    // accumulator so elapsed-time consumers can subtract a complete total.
+    const finalPausedMs = isPaused && pausedAt != null
+      ? totalPausedMs + Math.max(0, Date.now() - pausedAt)
+      : totalPausedMs;
 
     clearRestTimerCompletionTimeout();
     await cancelRestNotification();
@@ -653,18 +806,27 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       [now, now, activeSession.id],
     );
 
-    await emitEvent(activeSession.id, 'session_completed');
+    await emitEvent(activeSession.id, 'session_completed', null, null, {
+      paused_ms: finalPausedMs,
+    });
 
     set({
       activeSession: null,
       exercises: [],
       sets: {},
+      formTargetsByExercise: {},
       restTimer: null,
       restTimerCompletionTimeout: null,
+      isPaused: false,
+      pausedAt: null,
+      totalPausedMs: 0,
+      pausedRestTimer: null,
       isWorkoutInProgress: false,
     });
 
-    logWithTs(`[SessionRunner] Finished session ${activeSession.id}`);
+    logWithTs(
+      `[SessionRunner] Finished session ${activeSession.id} (paused_ms=${finalPausedMs})`,
+    );
   },
 
   // =========================================================================
@@ -687,8 +849,13 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
           activeSession: null,
           exercises: [],
           sets: {},
+          formTargetsByExercise: {},
           restTimer: null,
           restTimerCompletionTimeout: null,
+          isPaused: false,
+          pausedAt: null,
+          totalPausedMs: 0,
+          pausedRestTimer: null,
           isWorkoutInProgress: false,
         });
         return;
@@ -697,6 +864,11 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       const session = rows[0];
       const exercises = await loadSessionExercises(session.id);
       const sets = await loadSessionSets(exercises);
+      // Rehydrate form-target overrides from the originating template so
+      // scan-arkit still sees per-exercise targets after an app resume.
+      const formTargetsByExercise = session.template_id
+        ? await loadFormTargetsForTemplate(session.template_id)
+        : {};
 
       // Check if there's an active rest timer
       let restTimer: SessionRunnerState['restTimer'] = null;
@@ -720,7 +892,12 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
         activeSession: session,
         exercises,
         sets,
+        formTargetsByExercise,
         restTimer,
+        isPaused: false,
+        pausedAt: null,
+        totalPausedMs: 0,
+        pausedRestTimer: null,
         isWorkoutInProgress: true,
       });
       if (restTimer) {
@@ -806,29 +983,6 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
   // =========================================================================
   updateSetType: async (setId, setType) => {
     await get().updateSet(setId, { set_type: setType });
-  },
-
-  // =========================================================================
-  // Swap Exercise By Detection Mode
-  // =========================================================================
-  swapExerciseByDetectionMode: async (mode, action = 'append') => {
-    const { activeSession, exercises } = get();
-    if (!activeSession) return null;
-    if (!mode) return null;
-
-    // Resolve an `exercises.id` matching the detection mode. Prefer system
-    // exercises whose name starts with the mode token (case-insensitive).
-    const matchId = await findExerciseIdForMode(mode);
-    if (!matchId) return null;
-
-    // Optionally soft-delete the "current" (last) exercise before adding.
-    if (action === 'replace' && exercises.length > 0) {
-      const last = exercises[exercises.length - 1];
-      await get().removeExercise(last.id);
-    }
-
-    const newId = await get().addExercise(matchId);
-    return newId;
   },
 
   // =========================================================================
@@ -940,11 +1094,14 @@ async function loadSessionSets(
 async function materializeTemplate(
   sessionId: string,
   templateId: string,
-): Promise<void> {
+): Promise<Record<string, FormTargets>> {
   const db = localDB.db;
-  if (!db) return;
+  if (!db) return {};
 
   const now = nowIso();
+  // Collected form-target overrides keyed by exercise_id. Populated from any
+  // template-exercise rows with `target_fqi_min`/`target_rom_min`/`target_rom_max`.
+  const formTargetOverrides: Record<string, FormTargets> = {};
 
   // Get template exercises
   const templateExercises = await db.getAllAsync<Record<string, unknown>>(
@@ -968,6 +1125,18 @@ async function materializeTemplate(
       created_at: now,
     };
     await genericLocalUpsert('workout_session_exercises', 'id', seRow, 0);
+
+    // Collect any form-target override for this exercise. The template table
+    // may not yet physically host `target_fqi_min`/etc. columns (schema change
+    // is deferred — see issue #447 "Deferred" section); we read defensively
+    // and only record an override when at least one numeric value is present.
+    const exerciseId = typeof tEx.exercise_id === 'string' ? tEx.exercise_id : null;
+    if (exerciseId) {
+      const override = extractFormTargetOverride(tEx);
+      if (override) {
+        formTargetOverrides[exerciseId] = override;
+      }
+    }
 
     // Get template sets for this exercise
     const templateSets = await db.getAllAsync<Record<string, unknown>>(
@@ -1007,4 +1176,68 @@ async function materializeTemplate(
       await genericLocalUpsert('workout_session_sets', 'id', ssRow, 0);
     }
   }
+
+  return formTargetOverrides;
 }
+
+/**
+ * Extract a `FormTargets` override from a raw template-exercise row, pulling
+ * the merged defaults for the exercise and overlaying any present numeric
+ * `target_*` columns. Returns `null` when no override fields are set so the
+ * caller can skip recording the exerciseId.
+ */
+function extractFormTargetOverride(row: Record<string, unknown>): FormTargets | null {
+  const fqi = asFiniteNumber(row.target_fqi_min);
+  const romMin = asFiniteNumber(row.target_rom_min);
+  const romMax = asFiniteNumber(row.target_rom_max);
+  if (fqi === null && romMin === null && romMax === null) return null;
+
+  const exerciseId = typeof row.exercise_id === 'string' ? row.exercise_id : '';
+  const base = getDefaultsForExercise(exerciseId);
+  return {
+    fqiMin: fqi ?? base.fqiMin,
+    romMin: romMin ?? base.romMin,
+    romMax: romMax ?? base.romMax,
+  };
+}
+
+function asFiniteNumber(v: unknown): number | null {
+  if (typeof v !== 'number') return null;
+  if (!Number.isFinite(v)) return null;
+  return v;
+}
+
+/**
+ * Re-read the form-target overrides for all exercises of a template from the
+ * local DB. Used on `loadActiveSession` to rehydrate the scan context after
+ * an app resume. Returns an empty map on error or when the template rows
+ * don't carry override columns yet.
+ */
+async function loadFormTargetsForTemplate(
+  templateId: string,
+): Promise<Record<string, FormTargets>> {
+  const db = localDB.db;
+  if (!db) return {};
+  try {
+    const rows = await db.getAllAsync<Record<string, unknown>>(
+      'SELECT * FROM workout_template_exercises WHERE template_id = ? AND deleted = 0 ORDER BY sort_order ASC',
+      [templateId],
+    );
+    const map: Record<string, FormTargets> = {};
+    for (const row of rows) {
+      const exerciseId = typeof row.exercise_id === 'string' ? row.exercise_id : null;
+      if (!exerciseId) continue;
+      const override = extractFormTargetOverride(row);
+      if (override) map[exerciseId] = override;
+    }
+    return map;
+  } catch (error) {
+    errorWithTs('[SessionRunner] Failed to load form-target overrides', error);
+    return {};
+  }
+}
+
+// Re-export types so callers using session-runner don't need to import two
+// modules when they want both the store hook and FormTargets type.
+export type { FormTargets } from '@/lib/services/form-target-resolver';
+export type { WorkoutTemplate, WorkoutTemplateExercise };

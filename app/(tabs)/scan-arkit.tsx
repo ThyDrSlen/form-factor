@@ -41,6 +41,8 @@ import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type Medi
 import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
 import { audioSessionManager } from '@/lib/services/audio-session-manager';
 import { CrashBoundary } from '@/components/CrashBoundary';
+import { PreSetPreviewCard } from '@/components/form-tracking/PreSetPreviewCard';
+import { usePreSetPreview } from '@/hooks/use-pre-set-preview';
 import { generateSessionId, logCueEvent, upsertSessionMetrics } from '@/lib/services/cue-logger';
 import { logPoseSample, flushPoseBuffer, resetFrameCounter } from '@/lib/services/pose-logger';
 import { RepIndexTracker } from '@/lib/services/rep-index-tracker';
@@ -84,6 +86,12 @@ import {
 } from '@/lib/tracking-quality';
 import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
 import { useWorkoutController } from '@/hooks/use-workout-controller';
+import { usePRDetection } from '@/hooks/use-pr-detection';
+import { PRCelebrationBadge } from '@/components/form-tracking/PRCelebrationBadge';
+import { ProgressionSuggestionBadge } from '@/components/form-tracking/ProgressionSuggestionBadge';
+import { useProgressionSuggestion } from '@/hooks/use-progression-suggestion';
+import { useSessionRunner } from '@/lib/stores/session-runner';
+import type { FormTargets } from '@/lib/services/form-target-resolver';
 import {
   DEFAULT_DETECTION_MODE,
   getWorkoutByMode,
@@ -95,11 +103,6 @@ import type { WorkoutMetrics } from '@/lib/types/workout-definitions';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
 import { buildVideoMetricsForClip, type RecordingQuality } from '@/lib/services/video-metrics';
 import { shouldUploadVideo } from '@/lib/services/consent-service';
-// Issue #479 — first-session confidence surface. All three below are
-// additive and pulled in at the call sites marked with `// issue/479`.
-import ExerciseCameraGuide from '@/components/form-tracking/ExerciseCameraGuide';
-import type { CalibrationPhase, CalibrationState } from '@/lib/fusion/calibration';
-import { useCalibrationFailureHandler } from '@/hooks/use-calibration-failure-handler';
 import type { PullupFixtureFrame } from '@/lib/debug/pullup-fixture-corpus';
 import cameraFacingFixture from '@/tests/fixtures/pullup-tracking/camera-facing.json';
 import backTurnedFixture from '@/tests/fixtures/pullup-tracking/back-turned.json';
@@ -139,6 +142,13 @@ type RecordedPreview = {
 // Thresholds are now imported from workout definitions (PULLUP_THRESHOLDS, PUSHUP_THRESHOLDS)
 
 const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
+// Upper bound for the 2D pose smoothing cache. ARKit exposes ~20 joints;
+// we allow modest alias headroom before LRU-evicting the oldest entry.
+export const POSE2D_CACHE_MAX_ENTRIES = 30;
+// Minimum wall-clock interval between FPS stat publishes. Frames can arrive
+// at up to 60Hz; publishing state + debug logs on every frame wastes both
+// render work and log bandwidth when only the smoothed average is useful.
+export const FPS_PUBLISH_INTERVAL_MS = 500;
 const WATCH_MIRROR_INTERVAL_MS = 750;
 const WATCH_MIRROR_AR_QUALITY = 0.25;
 const WATCH_MIRROR_MAX_WIDTH = 320;
@@ -312,8 +322,27 @@ const PreviewPlayer = ({ uri }: { uri: string }) => {
 export default function ScanARKitScreen() {
   const DEV = __DEV__;
   const router = useRouter();
-  const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string; trackingDebug?: string }>();
+  const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string; trackingDebug?: string; templateId?: string }>();
   const fixturePlaybackRequested = params.fixturePlayback === '1';
+  // Issue #447 — deep-link / scheduled-workout template binding.
+  // Reads form-targets from the session-runner store (populated when the
+  // session was started from this templateId by `materializeTemplate`).
+  // No side-effects when no templateId is present.
+  const deepLinkTemplateId = typeof params.templateId === 'string' ? params.templateId : null;
+  const getFormTargetsFor = useSessionRunner((s) => s.getFormTargetsFor);
+  // PR-detection surface (issue #447 W3-C item #2).
+  const { pr: currentPR, clearPR: clearCurrentPR } = usePRDetection();
+  // Progression suggestion surface (issue #447 W3-C item #3).
+  // TODO(#434): wire lastSessionAvgFqi + lastWeight from session-runner
+  // history once PR #434 lands its history-panel query. Until then, keep
+  // the inputs null so the badge stays hidden. The hook + badge component
+  // are production-ready; only the data feed is deferred.
+  const progressionSuggestion = useProgressionSuggestion({
+    exerciseId: null,
+    lastSessionAvgFqi: null,
+    lastWeight: null,
+    unit: 'lb',
+  });
   const fixtureName = typeof params.fixture === 'string' ? params.fixture : FIXTURE_PLAYBACK_DEFAULT;
   const fixtureFrames = fixturePlaybackRequested ? FIXTURE_PLAYBACK_TRACES[fixtureName] ?? null : null;
   const fixturePlaybackEnabled = fixturePlaybackRequested && !!fixtureFrames;
@@ -365,49 +394,33 @@ export default function ScanARKitScreen() {
   const [repCount, setRepCount] = useState(0);
   const [detectionMode, setDetectionMode] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
   const activeWorkoutDef = useMemo(() => getWorkoutByMode(detectionMode), [detectionMode]);
-
-  // Issue #479 — calibration failure recovery wiring. The calibration phase
-  // and state stream are not currently routed through this screen; we keep
-  // the handler inert with `'idle'` until the fusion wiring in a future PR
-  // surfaces the real phase. Once wired, the handler opens a recovery modal
-  // when calibration sits in `recalibration_required` for > 8s.
-  const [calibrationPhase, setCalibrationPhase] = useState<CalibrationPhase>('idle');
-  const [calibrationStateSnapshot, setCalibrationStateSnapshot] =
-    useState<CalibrationState | null>(null);
-  const [calibrationNowMs, setCalibrationNowMs] = useState<number>(() => nowMs());
-  const calibrationFailure = useCalibrationFailureHandler({
-    phase: calibrationPhase,
-    state: calibrationStateSnapshot,
-    nowMs: calibrationNowMs,
-  });
-
+  // Active form targets — resolved from session-runner (template override)
+  // with a fall-through to per-exercise defaults. Exposed as a ref so the
+  // cue-engine / FQI gauge can read without retriggering the whole render.
+  // Issue #447 W3-C item #1.
+  const activeFormTargets: FormTargets = useMemo(
+    () => getFormTargetsFor(detectionMode),
+    [getFormTargetsFor, detectionMode],
+  );
+  const activeFormTargetsRef = React.useRef<FormTargets>(activeFormTargets);
   useEffect(() => {
-    // When the handler surfaces a failure, route to the recovery modal once.
-    // Consuming the failure clears the hook's latch so repeated failures
-    // re-trigger navigation.
-    if (!calibrationFailure.hasFailure || !calibrationFailure.analysis) return;
-    const a = calibrationFailure.analysis;
-    const query = new URLSearchParams({
-      reason: a.reason,
-      title: a.title,
-      remediation: a.remediation,
-      sampleCount: String(a.metrics.sampleCount),
-      avgStability: String(a.metrics.avgStability),
-      driftDeg: String(a.metrics.headDriftDegApprox),
-      ...(a.metrics.elapsedMs != null ? { elapsedMs: String(a.metrics.elapsedMs) } : {}),
-      ...(a.suggestedExercise ? { suggestedExercise: a.suggestedExercise } : {}),
-    }).toString();
-    router.push(`/(modals)/calibration-failure-recovery?${query}`);
-    calibrationFailure.consume();
-  }, [calibrationFailure, router]);
-
-  // Silence unused setter warnings until future wiring consumes these.
-  void setCalibrationPhase;
-  void setCalibrationStateSnapshot;
-  void setCalibrationNowMs;
+    activeFormTargetsRef.current = activeFormTargets;
+    if (deepLinkTemplateId) {
+      logWithTs('[ScanARKit] Active form targets', {
+        exerciseId: detectionMode,
+        templateId: deepLinkTemplateId,
+        fqiMin: activeFormTargets.fqiMin,
+        romMin: activeFormTargets.romMin,
+        romMax: activeFormTargets.romMax,
+      });
+    }
+  }, [activeFormTargets, detectionMode, deepLinkTemplateId]);
   const [activePhase, setActivePhase] = useState<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
   const activePhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
+  // Tracks the current workout's resting/initial phase so timer callbacks can
+  // cheaply skip heavy work while the user is between reps.
+  const restPhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [activeMetrics, setActiveMetrics] = useState<WorkoutMetrics | null>(null);
   const [uploading, setUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -434,7 +447,12 @@ export default function ScanARKitScreen() {
   const recordingStopInFlightRef = React.useRef(false);
   const [smoothedPose2DJoints, setSmoothedPose2DJoints] = useState<Joint2D[] | null>(null);
   const smoothedPose2DRef = React.useRef<Joint2D[] | null>(null);
-  const pose2DCacheRef = React.useRef<Record<string, { x: number; y: number }>>({});
+  // LRU cache keyed by lowercased joint name. Map preserves insertion order,
+  // so reinserting on update pushes the key to the most-recently-used tail
+  // and the head is always the oldest candidate for eviction.
+  const pose2DCacheRef = React.useRef<Map<string, { x: number; y: number }>>(new Map());
+  // Exposed via `__getPose2DCacheSizeForTests` for regression guards.
+  const pose2DCacheKeysRef = React.useRef<number | null>(null);
   const lastSpokenCueRef = React.useRef<{ cue: string; timestamp: number } | null>(null);
   const cueRotatorRef = useRef(createCueRotator(CUE_ROTATION_VARIANTS));
   const cueHysteresisControllerRef = React.useRef(
@@ -446,11 +464,16 @@ export default function ScanARKitScreen() {
   const lastGestureTriggerRef = React.useRef(0);
   const overlayLayout = React.useRef<{ width: number; height: number } | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [preSetPreviewVisible, setPreSetPreviewVisible] = useState(false);
+  const preSetPreview = usePreSetPreview();
   const isScreenFocused = useIsFocused();
   const sessionIdRef = React.useRef(generateSessionId());
   const sessionStartRef = React.useRef(new Date().toISOString());
   const cueCountersRef = React.useRef({ total: 0, spoken: 0, droppedRepeat: 0, droppedDisabled: 0 });
   const fpsStatsRef = React.useRef<{ count: number; sum: number; min: number }>({ count: 0, sum: 0, min: Number.POSITIVE_INFINITY });
+  // Wall-clock of the last FPS publish so we can throttle to 500ms intervals
+  // independent of the ARKit frame timestamp clock.
+  const lastFpsPublishMsRef = React.useRef<number>(0);
   const [watchMirrorEnabled, setWatchMirrorEnabled] = useState(Platform.OS === 'ios');
   const [watchPaired, setWatchPaired] = useState(false);
   const [watchInstalled, setWatchInstalled] = useState(false);
@@ -462,6 +485,11 @@ export default function ScanARKitScreen() {
   const [shadowModeEnabled, setShadowModeEnabled] = useState(true);
   const shadowModeEnabledRef = React.useRef(true);
   const shadowStatsRef = React.useRef(createShadowStatsAccumulator());
+  // Per-rep shadow-drift accumulator — reset at each rep-start phase
+  // transition so callers (realtime pipeline, UI, future telemetry) see a
+  // fresh drift window per rep rather than a cumulative session average
+  // that gets dominated by any single bad rep.
+  const shadowStatsPerRepRef = React.useRef(createShadowStatsAccumulator());
   const [shadowProviderRuntime, setShadowProviderRuntime] = useState<ShadowProvider>('mediapipe_proxy');
   const shadowProviderRuntimeRef = React.useRef<ShadowProvider>('mediapipe_proxy');
   const shadowProviderCountsRef = React.useRef(createShadowProviderCounts());
@@ -689,6 +717,12 @@ export default function ScanARKitScreen() {
         return;
       }
 
+      // Skip heavy native poll while the user is in the resting/idle phase
+      // between reps — shadow comparison only matters during the active rep.
+      if (activePhaseRef.current === restPhaseRef.current) {
+        return;
+      }
+
       mediaPipePollInFlightRef.current = true;
       try {
         const payload = await BodyTracker.getCurrentMediaPipePose2D();
@@ -819,6 +853,7 @@ export default function ScanARKitScreen() {
     });
     resetFrameCounter();
     shadowStatsRef.current = createShadowStatsAccumulator();
+    shadowStatsPerRepRef.current = createShadowStatsAccumulator();
     shadowProviderCountsRef.current = createShadowProviderCounts();
     mediaPipePoseRef.current = null;
     realtimeFormEngineRef.current = createRealtimeEngineState();
@@ -900,6 +935,9 @@ export default function ScanARKitScreen() {
       }
       if (nextPhase === activeWorkoutDef.repBoundary.startPhase) {
         repIndexTrackerRef.current.startRep(repCount);
+        // Start of a new rep: clear the per-rep shadow-drift accumulator so
+        // the next rep's delta metrics are not polluted by the previous rep.
+        shadowStatsPerRepRef.current = createShadowStatsAccumulator();
       }
     },
     onRepComplete: (repNumber: number, fqi: number) => {
@@ -938,6 +976,7 @@ export default function ScanARKitScreen() {
   useEffect(() => {
     const nextInitialPhase = getWorkoutByMode(detectionMode).initialPhase;
     activePhaseRef.current = nextInitialPhase;
+    restPhaseRef.current = nextInitialPhase;
     setActivePhase(nextInitialPhase);
     setRepCount(0);
     setActiveMetrics(null);
@@ -945,6 +984,7 @@ export default function ScanARKitScreen() {
     lastLivePartialBadgeRef.current = null;
     repIndexTrackerRef.current.reset();
     shadowStatsRef.current = createShadowStatsAccumulator();
+    shadowStatsPerRepRef.current = createShadowStatsAccumulator();
     shadowProviderCountsRef.current = createShadowProviderCounts();
     mediaPipePoseRef.current = null;
     realtimeFormEngineRef.current = createRealtimeEngineState();
@@ -1118,6 +1158,7 @@ export default function ScanARKitScreen() {
         incrementPoseLost();
       }
       frameStatsRef.current = { lastTimestamp: 0, frameCount: 0 };
+      lastFpsPublishMsRef.current = 0;
       setJointAngles(null);
       jointAnglesStateRef.current = null;
       realtimeFormEngineRef.current = createRealtimeEngineState();
@@ -1125,7 +1166,8 @@ export default function ScanARKitScreen() {
       setFps(0);
       setSmoothedPose2DJoints(null);
       smoothedPose2DRef.current = null;
-      pose2DCacheRef.current = {};
+      pose2DCacheRef.current.clear();
+      pose2DCacheKeysRef.current = null;
       setActiveMetrics(null);
       setLivePullupPartialStatus(null);
       lastLivePartialBadgeRef.current = null;
@@ -1323,6 +1365,7 @@ export default function ScanARKitScreen() {
 
         if (shadowComparison) {
           accumulateShadowStats(shadowStatsRef.current, shadowComparison);
+          accumulateShadowStats(shadowStatsPerRepRef.current, shadowComparison);
           lastShadowMeanAbsDeltaRef.current = shadowComparison.meanAbsDelta;
           if (shadowFrame) {
             bumpShadowProviderCount(shadowProviderCountsRef.current, shadowFrame.provider);
@@ -1445,23 +1488,31 @@ export default function ScanARKitScreen() {
     frameStatsRef.current.frameCount += 1;
     if (frameStatsRef.current.lastTimestamp === 0) {
       frameStatsRef.current.lastTimestamp = pose.timestamp;
+      lastFpsPublishMsRef.current = Date.now();
       return;
     }
 
-    const elapsed = pose.timestamp - frameStatsRef.current.lastTimestamp;
-    if (elapsed >= 1) {
-      const newFps = Math.round(frameStatsRef.current.frameCount / elapsed);
-      if (baselineDebugEnabledRef.current) {
-        logWithTs('[ScanARKit] 🎯 Performance:', {
-          fps: newFps,
-          totalFrames: frameStatsRef.current.frameCount
-        });
+    // Publish FPS on a fixed 500ms wall-clock cadence instead of
+    // per-frame. Still use the pose timestamp delta to compute the rate so
+    // the reported number reflects actual frame arrival (not clock skew).
+    const nowWall = Date.now();
+    if (nowWall - lastFpsPublishMsRef.current >= FPS_PUBLISH_INTERVAL_MS) {
+      const elapsed = pose.timestamp - frameStatsRef.current.lastTimestamp;
+      if (elapsed > 0) {
+        const newFps = Math.round(frameStatsRef.current.frameCount / elapsed);
+        if (baselineDebugEnabledRef.current) {
+          logWithTs('[ScanARKit] 🎯 Performance:', {
+            fps: newFps,
+            totalFrames: frameStatsRef.current.frameCount
+          });
+        }
+        setFps(newFps);
+        fpsStatsRef.current.count += 1;
+        fpsStatsRef.current.sum += newFps;
+        fpsStatsRef.current.min = Math.min(fpsStatsRef.current.min, newFps);
+        frameStatsRef.current = { lastTimestamp: pose.timestamp, frameCount: 0 };
       }
-      setFps(newFps);
-      fpsStatsRef.current.count += 1;
-      fpsStatsRef.current.sum += newFps;
-      fpsStatsRef.current.min = Math.min(fpsStatsRef.current.min, newFps);
-      frameStatsRef.current = { lastTimestamp: pose.timestamp, frameCount: 0 };
+      lastFpsPublishMsRef.current = nowWall;
     }
   // Intentionally scoped to frame-driven inputs to avoid hot-path dependency churn.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1480,7 +1531,8 @@ export default function ScanARKitScreen() {
 
   useEffect(() => {
     if (!pose2D || pose2D.joints.length === 0) {
-      pose2DCacheRef.current = {};
+      pose2DCacheRef.current.clear();
+      pose2DCacheKeysRef.current = null;
       smoothedPose2DRef.current = null;
       setSmoothedPose2DJoints(null);
       return;
@@ -1489,48 +1541,58 @@ export default function ScanARKitScreen() {
     const alpha = 0.55;
     const cache = pose2DCacheRef.current;
     const joints = pose2D.joints;
+    const seenKeys = new Set<string>();
     const nextJoints = joints.map((joint) => {
       if (!joint.isTracked) {
         return { ...joint };
       }
       const key = joint.name.toLowerCase();
-      const prev = cache[key];
+      seenKeys.add(key);
+      const prev = cache.get(key);
       const targetX = joint.x;
       const targetY = joint.y;
       const easedX = prev ? prev.x + (targetX - prev.x) * alpha : targetX;
       const easedY = prev ? prev.y + (targetY - prev.y) * alpha : targetY;
-      cache[key] = { x: easedX, y: easedY };
+      // Reinsert to move this key to the tail (most-recently-used) slot; Map
+      // preserves insertion order so the head is always the oldest entry.
+      if (prev) cache.delete(key);
+      cache.set(key, { x: easedX, y: easedY });
       return { ...joint, x: easedX, y: easedY };
     });
 
-    Object.keys(cache).forEach((key) => {
-      if (!joints.some((joint) => joint.name.toLowerCase() === key && joint.isTracked)) {
-        delete cache[key];
+    // Drop any untracked/stale aliases still lingering from a previous frame.
+    for (const key of Array.from(cache.keys())) {
+      if (!seenKeys.has(key)) {
+        cache.delete(key);
       }
-    });
-
-    const prevSmoothed = smoothedPose2DRef.current;
-    const changed =
-      !prevSmoothed ||
-      prevSmoothed.length !== nextJoints.length ||
-      nextJoints.some((joint, idx) => {
-        const prev = prevSmoothed[idx];
-        if (!prev) return true;
-        if (prev.name !== joint.name) return true;
-        if (joint.isTracked !== prev.isTracked) return true;
-        return (
-          Math.abs(prev.x - joint.x) > 0.001 ||
-          Math.abs(prev.y - joint.y) > 0.001
-        );
-      });
-
-    if (changed) {
-      smoothedPose2DRef.current = nextJoints;
-      let rafId = requestAnimationFrame(() => {
-        setSmoothedPose2DJoints(nextJoints);
-      });
-      return () => cancelAnimationFrame(rafId);
     }
+
+    // Hard cap: evict oldest insertions beyond the bound. 30 covers every
+    // joint we render on the skeleton overlay with room for alias spillover.
+    while (cache.size > POSE2D_CACHE_MAX_ENTRIES) {
+      const oldestKey = cache.keys().next().value;
+      if (oldestKey === undefined) break;
+      cache.delete(oldestKey);
+    }
+    pose2DCacheKeysRef.current = cache.size;
+
+    // The smoothed joints always live in a ref — the skeleton SVG below
+    // reads from the ref during render, and `pose` state changes each frame
+    // already force the containing component to re-render. We intentionally
+    // avoid bumping React state on every pose tick; only flip
+    // smoothedPose2DJoints state when the partial-tracking badge visibility
+    // (i.e. whether we have *any* renderable tracked joints) changes, so
+    // downstream gestureRecordingEnabled-style effects still fire on the
+    // visible/hidden transition without re-running each frame.
+    smoothedPose2DRef.current = nextJoints;
+    const hasAnyTracked = nextJoints.some((joint) => joint.isTracked);
+    setSmoothedPose2DJoints((prev) => {
+      const prevHasAny = prev !== null && prev.length > 0 && prev.some((j) => j.isTracked);
+      if (prevHasAny === hasAnyTracked) {
+        return prev;
+      }
+      return hasAnyTracked ? nextJoints : null;
+    });
 
     return undefined;
   }, [pose2D]);
@@ -1630,6 +1692,7 @@ export default function ScanARKitScreen() {
 
       stopNativeTracking();
       frameStatsRef.current = { lastTimestamp: 0, frameCount: 0 };
+      lastFpsPublishMsRef.current = 0;
       setJointAngles(null);
       setActiveMetrics(null);
       const nextInitialPhase = getWorkoutByMode(detectionMode).initialPhase;
@@ -1956,8 +2019,18 @@ export default function ScanARKitScreen() {
         return;
       }
 
-      captureAndSendWatchMirror();
-      watchMirrorTimerRef.current = setInterval(captureAndSendWatchMirror, WATCH_MIRROR_INTERVAL_MS);
+      const tick = () => {
+        // Skip the mirror snapshot while the user is resting between reps —
+        // the watch already shows the last frame, and capturing another is
+        // pure battery waste during idle/setup phases.
+        if (activePhaseRef.current === restPhaseRef.current) {
+          return;
+        }
+        captureAndSendWatchMirror();
+      };
+
+      tick();
+      watchMirrorTimerRef.current = setInterval(tick, WATCH_MIRROR_INTERVAL_MS);
 
       return () => {
         if (watchMirrorTimerRef.current) {
@@ -2222,13 +2295,18 @@ export default function ScanARKitScreen() {
       return;
     }
 
-    if (!smoothedPose2DJoints || smoothedPose2DJoints.length === 0) {
+    // Read joints from the ref (kept fresh each frame) rather than from the
+    // smoothedPose2DJoints state, which now only flips on partial-tracking
+    // badge visibility change. Re-key the effect on `pose` so hand-hold
+    // detection still samples every frame.
+    const joints = smoothedPose2DRef.current;
+    if (!joints || joints.length === 0) {
       gestureHoldStartRef.current = null;
       return;
     }
 
     const findJoint = (needle: string) =>
-      smoothedPose2DJoints.find(
+      joints.find(
         (joint) => joint.isTracked && joint.name.toLowerCase().includes(needle)
       );
 
@@ -2268,11 +2346,23 @@ export default function ScanARKitScreen() {
     }
   }, [
     gestureRecordingEnabled,
-    smoothedPose2DJoints,
+    pose,
     isRecording,
     isFinalizingRecording,
     startRecordingVideo,
   ]);
+
+  const handlePreSetPreviewCheck = useCallback(async () => {
+    setPreSetPreviewVisible(true);
+    const snapshot = await BodyTracker.getCurrentFrameSnapshot({
+      maxWidth: WATCH_MIRROR_MAX_WIDTH,
+      quality: WATCH_MIRROR_AR_QUALITY,
+    });
+    if (!snapshot || !jointAngles) {
+      return;
+    }
+    await preSetPreview.check(snapshot, activeWorkoutDef.displayName, jointAngles);
+  }, [activeWorkoutDef.displayName, jointAngles, preSetPreview]);
 
   const handleDiscardRecording = useCallback(async () => {
     if (uploading || savingRecording) return;
@@ -2523,19 +2613,20 @@ export default function ScanARKitScreen() {
                     ))}
                 </View>
               )}
+              <TouchableOpacity
+                style={styles.workoutSelectorButton}
+                onPress={handlePreSetPreviewCheck}
+                accessibilityRole="button"
+                accessibilityLabel="Check my stance"
+                testID="pre-set-preview-trigger"
+              >
+                <Ionicons name="sparkles-outline" size={14} color="#F5F7FF" />
+                <Text style={styles.workoutSelectorText}>Check my stance</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
           <View style={styles.topBarActions}>
-            {/* issue/479 — practice-mode entry point */}
-            <TouchableOpacity
-              style={styles.topBarButton}
-              onPress={() => router.push('/(modals)/practice-mode')}
-              accessibilityRole="button"
-              accessibilityLabel="Open practice mode"
-            >
-              <Ionicons name="ribbon-outline" size={18} color="#FAB05C" />
-            </TouchableOpacity>
             <TouchableOpacity
               style={styles.topBarButton}
               onPress={openWorkoutInsights}
@@ -2594,22 +2685,6 @@ export default function ScanARKitScreen() {
             </Animated.View>
           )}
 
-          {/* issue/479 — camera placement guide for the active exercise.
-              Renders below the exercise dropdown when tracking isn't running. */}
-          {!isTracking && !isDropdownOpen && !showTelemetry && (
-            <View
-              style={{
-                position: 'absolute',
-                top: topBarBottom + 96,
-                left: 16,
-                right: 16,
-              }}
-              pointerEvents="box-none"
-            >
-              <ExerciseCameraGuide exerciseKey={detectionMode} />
-            </View>
-          )}
-
           {/* Skeleton Overlay (2D projected) */}
         {isTracking && cameraPosition === 'back' && smoothedPose2DJoints && smoothedPose2DJoints.length > 0 && (
             <Svg
@@ -2619,8 +2694,12 @@ export default function ScanARKitScreen() {
             pointerEvents="none"
             >
               {(() => {
+                // Pull joints from the ref so per-frame pose updates paint
+                // the skeleton without needing a state bump. The outer gate
+                // above only flips when badge visibility changes.
+                const liveJoints = smoothedPose2DRef.current ?? smoothedPose2DJoints;
                 const jointsByName = new Map<string, Joint2D>();
-                smoothedPose2DJoints.forEach((joint) => {
+                liveJoints.forEach((joint) => {
                   jointsByName.set(joint.name.toLowerCase(), joint);
                 });
 
@@ -2698,20 +2777,22 @@ export default function ScanARKitScreen() {
                 );
               })()}
 
-              {/* Draw joints */}
-              {smoothedPose2DJoints.map((joint: Joint2D, index: number) => {
-                if (!joint.isTracked) return null;
-                return (
-                    <Circle
-                      key={`joint-${index}-${joint.name}`}
-                      cx={joint.x}
-                      cy={joint.y}
-                      r="0.006"
-                      fill="#FFFFFF"
-                      opacity={0.9}
-                    />
-                );
-              })}
+              {/* Draw joints — read from the same ref for consistency */}
+              {(smoothedPose2DRef.current ?? smoothedPose2DJoints).map(
+                (joint: Joint2D, index: number) => {
+                  if (!joint.isTracked) return null;
+                  return (
+                      <Circle
+                        key={`joint-${index}-${joint.name}`}
+                        cx={joint.x}
+                        cy={joint.y}
+                        r="0.006"
+                        fill="#FFFFFF"
+                        opacity={0.9}
+                      />
+                  );
+                }
+              )}
             </Svg>
           )}
         </View>
@@ -2848,6 +2929,18 @@ export default function ScanARKitScreen() {
           </View>
         </View>
       )}
+
+      {/* PR celebration badge (issue #447 W3-C #2). Surgical mount — renders
+          only when usePRDetection has a hit. Safe no-op when pr is null. */}
+      <PRCelebrationBadge pr={currentPR} onDismiss={clearCurrentPR} />
+
+      {/* Progression suggestion badge (issue #447 W3-C #3). Hidden until the
+          data-feed wiring lands (see TODO near useProgressionSuggestion). */}
+      {progressionSuggestion ? (
+        <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
+          <ProgressionSuggestionBadge suggestion={progressionSuggestion} />
+        </View>
+      ) : null}
 
       <Modal
         visible={isSettingsVisible}
@@ -3078,6 +3171,7 @@ export default function ScanARKitScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+      <PreSetPreviewCard visible={preSetPreviewVisible} isChecking={preSetPreview.isChecking} verdict={preSetPreview.verdict} error={preSetPreview.error} exerciseName={activeWorkoutDef.displayName} onRetry={handlePreSetPreviewCheck} onDismiss={() => { setPreSetPreviewVisible(false); preSetPreview.reset(); }} />
 </View>
     </CrashBoundary>
   );
