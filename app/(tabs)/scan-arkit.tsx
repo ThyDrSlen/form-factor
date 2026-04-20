@@ -41,12 +41,14 @@ import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type Medi
 import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
 import { audioSessionManager } from '@/lib/services/audio-session-manager';
 import { CrashBoundary } from '@/components/CrashBoundary';
+import { ExitMidSessionSheet } from '@/components/form-tracking/ExitMidSessionSheet';
 import { PreSetPreviewCard } from '@/components/form-tracking/PreSetPreviewCard';
 import { usePreSetPreview } from '@/hooks/use-pre-set-preview';
 import { generateSessionId, logCueEvent, upsertSessionMetrics } from '@/lib/services/cue-logger';
 import { logPoseSample, flushPoseBuffer, resetFrameCounter } from '@/lib/services/pose-logger';
 import { playRepCountdown } from '@/lib/services/rep-countdown-audio';
 import { RepIndexTracker } from '@/lib/services/rep-index-tracker';
+import { saveSessionSnapshot } from '@/lib/services/session-snapshot';
 import {
   initSessionContext,
   incrementPoseLost,
@@ -434,6 +436,7 @@ export default function ScanARKitScreen() {
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
+  const [isExitMidSessionSheetVisible, setIsExitMidSessionSheetVisible] = useState(false);
   const [showDebugStats, setShowDebugStats] = useState(false);
   const [fixturePlaybackFramesProcessed, setFixturePlaybackFramesProcessed] = useState(0);
   const [latestPullupScoring, setLatestPullupScoring] = useState<PullupScoringResult | null>(null);
@@ -776,6 +779,11 @@ export default function ScanARKitScreen() {
   const recordingStartFrameTimestampRef = React.useRef<number | null>(null);
   const recordingStartRepsRef = React.useRef<number>(0);
   const recordingFqiScoresRef = React.useRef<number[]>([]);
+  // Session-wide FQI scores (one entry per completed rep, regardless of
+  // recording state) — used for snapshots + milestone checks, independent
+  // of whether the user is actively recording a clip. Reset when tracking
+  // starts / stops.
+  const sessionFqiScoresRef = React.useRef<number[]>([]);
   // Ensures the 3-2-1 countdown only fires once per tracking start so we
   // do not re-announce on mode swaps / transient phase re-entries. Reset
   // to false inside startTracking + stopTracking.
@@ -950,6 +958,9 @@ export default function ScanARKitScreen() {
     onRepComplete: (repNumber: number, fqi: number) => {
       setRepCount(repNumber);
       repIndexTrackerRef.current.endRep();
+      if (Number.isFinite(fqi)) {
+        sessionFqiScoresRef.current.push(fqi);
+      }
       if (recordingActiveRef.current && Date.now() >= recordingStartEpochMsRef.current) {
         recordingFqiScoresRef.current.push(fqi);
       }
@@ -1627,6 +1638,7 @@ export default function ScanARKitScreen() {
       resetBaselineDebugMetrics();
       resetCueHysteresis();
       repCountdownFiredRef.current = false;
+      sessionFqiScoresRef.current = [];
 
       const startTime = Date.now();
       shadowStatsRef.current = createShadowStatsAccumulator();
@@ -1734,6 +1746,7 @@ export default function ScanARKitScreen() {
       resetBaselineDebugMetrics();
       resetCueHysteresis();
       repCountdownFiredRef.current = false;
+      sessionFqiScoresRef.current = [];
 
       if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
@@ -1762,6 +1775,72 @@ export default function ScanARKitScreen() {
       stopTracking();
     };
   }, [stopTracking]);
+
+  // ---------------------------------------------------------------------
+  // Mid-session exit flow (#494)
+  //
+  // When the user taps the close button while tracking is live, we show
+  // a three-choice Modal: Discard / Save snapshot / Cancel. This guards
+  // against accidental loss of a session in progress — especially when
+  // the app has been running ARKit for a while and we have rep/FQI data
+  // that would otherwise vanish into the void on back-nav.
+  // ---------------------------------------------------------------------
+  const computeAverageFqi = useCallback((): number | null => {
+    const scores = sessionFqiScoresRef.current;
+    if (!scores.length) return null;
+    const sum = scores.reduce((acc, v) => acc + v, 0);
+    return sum / scores.length;
+  }, []);
+
+  const isMidSession = useCallback((): boolean => {
+    if (!isTracking) return false;
+    const initialPhase = getWorkoutByMode(detectionMode).initialPhase;
+    return repCount > 0 || activePhaseRef.current !== initialPhase;
+  }, [isTracking, detectionMode, repCount]);
+
+  const handleCloseScan = useCallback(() => {
+    if (isMidSession()) {
+      setIsExitMidSessionSheetVisible(true);
+      return;
+    }
+    router.back();
+  }, [isMidSession, router]);
+
+  const handleExitDiscard = useCallback(async () => {
+    setIsExitMidSessionSheetVisible(false);
+    try {
+      await stopTracking();
+    } catch (error) {
+      if (DEV) warnWithTs('[ScanARKit] stopTracking during discard failed', error);
+    }
+    router.back();
+  }, [stopTracking, router, DEV]);
+
+  const handleExitSaveSnapshot = useCallback(async () => {
+    setIsExitMidSessionSheetVisible(false);
+    const avgFqi = computeAverageFqi();
+    try {
+      await saveSessionSnapshot({
+        exerciseKey: detectionMode,
+        repCount,
+        currentFqi: avgFqi,
+        startedAt: sessionStartRef.current,
+        sessionId: sessionIdRef.current,
+      });
+    } catch (error) {
+      if (DEV) warnWithTs('[ScanARKit] saveSessionSnapshot failed', error);
+    }
+    try {
+      await stopTracking();
+    } catch (error) {
+      if (DEV) warnWithTs('[ScanARKit] stopTracking during save failed', error);
+    }
+    router.back();
+  }, [computeAverageFqi, detectionMode, repCount, stopTracking, router, DEV]);
+
+  const handleExitCancel = useCallback(() => {
+    setIsExitMidSessionSheetVisible(false);
+  }, []);
 
   const handleOverlayLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
@@ -2602,7 +2681,7 @@ export default function ScanARKitScreen() {
         <View style={styles.topBarContent}>
           <TouchableOpacity
             style={styles.topBarButton}
-            onPress={() => router.back()}
+            onPress={handleCloseScan}
             accessibilityRole="button"
             accessibilityLabel="Close scan"
           >
@@ -3205,6 +3284,15 @@ export default function ScanARKitScreen() {
         </SafeAreaView>
       </Modal>
       <PreSetPreviewCard visible={preSetPreviewVisible} isChecking={preSetPreview.isChecking} verdict={preSetPreview.verdict} error={preSetPreview.error} exerciseName={activeWorkoutDef.displayName} onRetry={handlePreSetPreviewCheck} onDismiss={() => { setPreSetPreviewVisible(false); preSetPreview.reset(); }} />
+      <ExitMidSessionSheet
+        visible={isExitMidSessionSheetVisible}
+        exerciseDisplayName={activeWorkoutDef.displayName}
+        repCount={repCount}
+        currentFqi={computeAverageFqi()}
+        onDiscard={handleExitDiscard}
+        onSaveSnapshot={handleExitSaveSnapshot}
+        onCancel={handleExitCancel}
+      />
       <VoiceCommandFeedback />
 </View>
     </CrashBoundary>
