@@ -50,6 +50,105 @@ export type PullupScoringResult = {
   suppression_reason: string | null;
 };
 
+// =============================================================================
+// Enriched Rep Fault / Rejection Telemetry (#417 finding #5)
+// =============================================================================
+
+/**
+ * Confidence tier matches CONFIDENCE_TIER_THRESHOLDS buckets (trusted/weak).
+ * Widened to allow `null` for cases where confidence wasn't measurable.
+ */
+export type ConfidenceTier = Exclude<VisibilityTier, 'missing'> | null;
+
+/**
+ * Why a fault or rep was rejected — strings are stable telemetry keys.
+ */
+export type RepRejectionReason =
+  | 'low_visibility'
+  | 'low_confidence'
+  | 'nan_input'
+  | 'infinite_input'
+  | 'stale_frame'
+  | 'duration_debounce'
+  | 'quality_below_min'
+  | 'occluded_joints'
+  | 'missing_components'
+  | 'other';
+
+/**
+ * Shape for all rep-level fault and rejection telemetry events.
+ *
+ * Prior to #417 faults were emitted as raw strings with no exercise
+ * context, rep number, or rejection reason — making it impossible to tell
+ * a real form issue from a detection artefact. This shape is the canonical
+ * telemetry payload. It is intentionally backward-compatible: consumers
+ * that previously logged just the fault `id` can continue to, while new
+ * telemetry consumers can enrich.
+ */
+export interface RepFaultEvent {
+  /** Workout definition ID: 'squat' | 'pullup' | ... */
+  exercise_id: string;
+  /** 1-indexed rep number within the session. */
+  rep_number: number;
+  /** Fault identifier (e.g. 'incomplete_lockout') OR 'rep_rejected'. */
+  fault_id: string;
+  /** Visibility badge for the rep (full / partial). */
+  visibility_badge: VisibilityBadge;
+  /** Worst confidence tier across required joints for this rep. */
+  confidence_tier: ConfidenceTier;
+  /** True when ALL required components met their min confidence tier. */
+  min_confidence_met: boolean;
+  /** Machine-readable reason when the rep/fault was rejected, else null. */
+  rejection_reason: RepRejectionReason | null;
+  /** Optional free-form note for debug triage (not for UI). */
+  note?: string;
+}
+
+/**
+ * Build a RepFaultEvent with safe defaults. Centralised so producers can
+ * pass only the fields they have without repeating `visibility_badge: 'full'`
+ * boilerplate.
+ */
+export function buildRepFaultEvent(input: {
+  exerciseId: string;
+  repNumber: number;
+  faultId: string;
+  visibilityBadge?: VisibilityBadge;
+  confidenceTier?: ConfidenceTier;
+  minConfidenceMet?: boolean;
+  rejectionReason?: RepRejectionReason | null;
+  note?: string;
+}): RepFaultEvent {
+  return {
+    exercise_id: input.exerciseId,
+    rep_number: input.repNumber,
+    fault_id: input.faultId,
+    visibility_badge: input.visibilityBadge ?? 'full',
+    confidence_tier: input.confidenceTier ?? null,
+    min_confidence_met: input.minConfidenceMet ?? true,
+    rejection_reason: input.rejectionReason ?? null,
+    note: input.note,
+  };
+}
+
+/**
+ * Derive the worst confidence tier across a pullup scoring result — used
+ * to tag rep fault events with the tier that drove any component
+ * suppression. Returns null if no components were evaluated.
+ */
+export function deriveConfidenceTier(result: Pick<PullupScoringResult, 'components_available'>): ConfidenceTier {
+  let worst: ConfidenceTier = null;
+  const order: Record<Exclude<VisibilityTier, 'missing'>, number> = { weak: 0, trusted: 1 };
+  for (const avail of Object.values(result.components_available)) {
+    const tier = avail?.visibility_tier;
+    if (!tier || tier === 'missing') continue;
+    if (worst === null || order[tier] < order[worst]) {
+      worst = tier;
+    }
+  }
+  return worst;
+}
+
 type PullupComponentDefinition = {
   key: PullupComponentKey;
   weight: number;
@@ -368,4 +467,37 @@ export function scorePullupWithComponentAvailability(input: PullupScoringInput):
     score_suppressed: overall.score_suppressed,
     suppression_reason: overall.suppression_reason,
   };
+}
+
+/**
+ * Convert a suppressed PullupScoringResult into an enriched
+ * {@link RepFaultEvent} suitable for telemetry persistence. Returns null
+ * when the result was not suppressed (no fault to log).
+ *
+ * This is the canonical bridge from the legacy free-form
+ * `suppression_reason` string to the structured #417 fault shape.
+ */
+export function repFaultFromScoringResult(input: {
+  exerciseId: string;
+  repNumber: number;
+  result: PullupScoringResult;
+}): RepFaultEvent | null {
+  const { result } = input;
+  if (!result.score_suppressed && result.missing_components.length === 0) {
+    return null;
+  }
+
+  const rejection: RepRejectionReason =
+    result.missing_components.length > 0 ? 'missing_components' : 'low_confidence';
+
+  return buildRepFaultEvent({
+    exerciseId: input.exerciseId,
+    repNumber: input.repNumber,
+    faultId: 'rep_suppressed',
+    visibilityBadge: result.visibility_badge,
+    confidenceTier: deriveConfidenceTier(result),
+    minConfidenceMet: result.missing_components.length === 0,
+    rejectionReason: rejection,
+    note: result.suppression_reason ?? (result.missing_reasons.join('; ') || undefined),
+  });
 }
