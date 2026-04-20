@@ -9,9 +9,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform } from 'react-native';
-import * as Haptics from 'expo-haptics';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
+import { hapticBus } from '@/lib/haptics/haptic-bus';
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 import type { WorkoutDefinition, WorkoutMetrics } from '@/lib/types/workout-definitions';
 import { getWorkoutById, type DetectionMode } from '@/lib/workouts';
@@ -484,9 +483,10 @@ export function useWorkoutController<TPhase extends string = string>(
 
             isInActiveRepRef.current = false;
 
-            // Haptic feedback
-            if (enableHaptics && Platform.OS === 'ios') {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            // Cross-platform haptic feedback via the shared bus so Android
+            // and iOS both get a rep-complete cue (issue #428).
+            if (enableHaptics) {
+              hapticBus.emit('rep.complete');
             }
 
             // Complete and log the rep

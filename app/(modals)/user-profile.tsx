@@ -7,6 +7,7 @@ import {
   RefreshControl,
   SafeAreaView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -18,6 +19,8 @@ import { useSafeBack } from '@/hooks/use-safe-back';
 import { useToast } from '@/contexts/ToastContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSocial } from '@/contexts/SocialContext';
+import { useHapticPreferences } from '@/contexts/HapticPreferencesContext';
+import type { HapticMode } from '@/lib/haptics/haptic-bus';
 import {
   getFollowCounts,
   getProfile,
@@ -41,6 +44,102 @@ const INITIAL_STATUS: FollowStatusSummary = {
   blocked_by_me: false,
   blocked_between: false,
 };
+
+function AccessibilitySettingsSection() {
+  const prefs = useHapticPreferences();
+
+  const cycleMode = useCallback(() => {
+    const order: HapticMode[] = ['all', 'critical-only', 'off'];
+    const next = order[(order.indexOf(prefs.mode) + 1) % order.length];
+    void prefs.setMode(next);
+  }, [prefs]);
+
+  const cycleColorBlind = useCallback(() => {
+    const order: (typeof prefs.colorBlindMode)[] = [
+      'off',
+      'protanopia',
+      'deuteranopia',
+      'tritanopia',
+      'high-contrast',
+    ];
+    const next = order[(order.indexOf(prefs.colorBlindMode) + 1) % order.length];
+    void prefs.setColorBlindMode(next);
+  }, [prefs]);
+
+  return (
+    <View
+      style={styles.settingsBlock}
+      accessibilityRole="summary"
+      accessibilityLabel="Accessibility preferences"
+    >
+      <Text style={styles.sectionTitle}>Accessibility</Text>
+
+      <View style={styles.settingsRow}>
+        <View style={styles.settingsLabelCol}>
+          <Text style={styles.settingsLabel}>Haptic feedback</Text>
+          <Text style={styles.settingsHint}>
+            Rep, fault, rest, and PR cues use vibration.
+          </Text>
+        </View>
+        <Switch
+          value={prefs.enabled}
+          onValueChange={(v) => void prefs.setEnabled(v)}
+          accessibilityLabel={prefs.enabled ? 'Disable haptic feedback' : 'Enable haptic feedback'}
+        />
+      </View>
+
+      <TouchableOpacity
+        style={styles.settingsRow}
+        onPress={cycleMode}
+        accessibilityRole="button"
+        accessibilityLabel={`Haptic intensity: ${prefs.mode}`}
+        accessibilityHint="Double tap to cycle between all, critical-only, and off"
+      >
+        <View style={styles.settingsLabelCol}>
+          <Text style={styles.settingsLabel}>Intensity</Text>
+          <Text style={styles.settingsHint}>
+            {prefs.mode === 'all'
+              ? 'Every tracked event fires a haptic.'
+              : prefs.mode === 'critical-only'
+                ? 'Only critical events (faults, tracking lost, PRs).'
+                : 'No haptics.'}
+          </Text>
+        </View>
+        <Text style={styles.settingsValue}>{prefs.mode}</Text>
+      </TouchableOpacity>
+
+      <View style={styles.settingsRow}>
+        <View style={styles.settingsLabelCol}>
+          <Text style={styles.settingsLabel}>Tone-only mode</Text>
+          <Text style={styles.settingsHint}>
+            Replace voice coaching with short beeps and dings.
+          </Text>
+        </View>
+        <Switch
+          value={prefs.toneOnly}
+          onValueChange={(v) => void prefs.setToneOnly(v)}
+          accessibilityLabel={prefs.toneOnly ? 'Disable tone-only mode' : 'Enable tone-only mode'}
+        />
+      </View>
+
+      <TouchableOpacity
+        style={styles.settingsRow}
+        onPress={cycleColorBlind}
+        accessibilityRole="button"
+        accessibilityLabel={`Colorblind mode: ${prefs.colorBlindMode}`}
+        accessibilityHint="Double tap to cycle through colorblind-friendly palettes"
+      >
+        <View style={styles.settingsLabelCol}>
+          <Text style={styles.settingsLabel}>Colorblind mode</Text>
+          <Text style={styles.settingsHint}>
+            Swap FQI gauge colours for a safer palette.
+          </Text>
+        </View>
+        <Text style={styles.settingsValue}>{prefs.colorBlindMode}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 export default function UserProfileModal() {
   const { user } = useAuth();
@@ -351,6 +450,8 @@ export default function UserProfileModal() {
                 </View>
               ) : null}
 
+              {status.is_self ? <AccessibilitySettingsSection /> : null}
+
               <Text style={styles.sectionTitle}>Videos</Text>
             </View>
           }
@@ -573,5 +674,40 @@ const styles = StyleSheet.create({
   },
   mutedText: {
     color: '#9AACD1',
+  },
+  settingsBlock: {
+    marginTop: 16,
+    backgroundColor: 'rgba(154, 172, 209, 0.08)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#152642',
+    padding: 12,
+    gap: 12,
+  },
+  settingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  settingsLabelCol: {
+    flex: 1,
+    gap: 2,
+  },
+  settingsLabel: {
+    color: '#E9EFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  settingsHint: {
+    color: '#9AACD1',
+    fontSize: 12,
+  },
+  settingsValue: {
+    color: '#4C8CFF',
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
 });

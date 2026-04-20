@@ -7,15 +7,33 @@
  * + mobility + reflection content tailored to the just-completed set.
  */
 
-import React, { useEffect, useMemo, useState, forwardRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState, forwardRef } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { sessionStyles as styles, colors } from '@/styles/workout-session.styles';
 import { useSessionRunner } from '@/lib/stores/session-runner';
 import { computeRemainingSeconds, formatRestTime } from '@/lib/services/rest-timer';
 import { useBetweenSetsCoach } from '@/hooks/use-between-sets-coach';
+import { useKeepAwakeSmart } from '@/lib/a11y/useKeepAwakeSmart';
 import RestActiveRecoveryPanel from './RestActiveRecoveryPanel';
 import SetReadyButton from './SetReadyButton';
+
+/**
+ * Best-effort lazy import for the haptic bus. Wrapped in try/catch + delayed
+ * require() so that unit tests that don't exercise haptics can stub react-
+ * native without pulling in the full bus graph.
+ */
+function emitRestDoneHaptic(): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const bus = require('@/lib/haptics/haptic-bus') as {
+      hapticBus?: { emit: (event: string) => void };
+    };
+    bus?.hapticBus?.emit('rest.done');
+  } catch {
+    /* haptic bus not available in this environment — safe to skip */
+  }
+}
 
 interface RestTimerSheetProps {
   onClose: () => void;
@@ -31,22 +49,34 @@ const RestTimerSheet = forwardRef<BottomSheet, RestTimerSheetProps>(({ onClose }
 
   const { recommendation, refresh } = useBetweenSetsCoach();
   const [remaining, setRemaining] = useState(0);
+  const haptedForTimerRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!restTimer) {
       setRemaining(0);
+      haptedForTimerRef.current = null;
       return;
     }
 
+    const timerKey = `${restTimer.startedAt}-${restTimer.targetSeconds}`;
+
     const update = () => {
       const r = computeRemainingSeconds(restTimer.startedAt, restTimer.targetSeconds);
-      setRemaining(r);
+      setRemaining((prev) => {
+        if (prev !== 0 && r === 0 && haptedForTimerRef.current !== timerKey) {
+          haptedForTimerRef.current = timerKey;
+          emitRestDoneHaptic();
+        }
+        return r;
+      });
     };
 
     update();
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
   }, [restTimer]);
+
+  useKeepAwakeSmart('rest-long', remaining > 60);
 
   let nextUpText = '';
   if (restTimer) {
@@ -104,6 +134,9 @@ const RestTimerSheet = forwardRef<BottomSheet, RestTimerSheetProps>(({ onClose }
               style={styles.restTimerBtn}
               onPress={() => extendRest(15)}
               testID="rest-timer-extend-15"
+              accessibilityRole="button"
+              accessibilityLabel="Add 15 seconds"
+              accessibilityHint="Double tap to extend the rest timer by 15 seconds"
             >
               <Text style={styles.restTimerBtnText}>+15s</Text>
             </TouchableOpacity>
@@ -111,6 +144,9 @@ const RestTimerSheet = forwardRef<BottomSheet, RestTimerSheetProps>(({ onClose }
               style={styles.restTimerBtn}
               onPress={() => extendRest(30)}
               testID="rest-timer-extend-30"
+              accessibilityRole="button"
+              accessibilityLabel="Add 30 seconds"
+              accessibilityHint="Double tap to extend the rest timer by 30 seconds"
             >
               <Text style={styles.restTimerBtnText}>+30s</Text>
             </TouchableOpacity>
@@ -124,6 +160,9 @@ const RestTimerSheet = forwardRef<BottomSheet, RestTimerSheetProps>(({ onClose }
             style={sheetStyles.skipLinkButton}
             onPress={handleSkip}
             testID="rest-timer-skip"
+            accessibilityRole="button"
+            accessibilityLabel="Skip rest"
+            accessibilityHint="Double tap to end the rest period and move to the next set"
           >
             <Text style={sheetStyles.skipLinkText}>Skip rest</Text>
           </TouchableOpacity>
