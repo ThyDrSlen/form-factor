@@ -23,6 +23,13 @@
  */
 
 import { File as ExpoFile } from 'expo-file-system';
+import {
+  decideCoachModel,
+  type CoachUserTier,
+  type DispatchDecision,
+} from './coach-model-dispatch';
+import { isCoachVisionEnabled } from './coach-vision-flag';
+import type { CoachCloudProvider } from './coach-cloud-provider';
 
 // ---------------------------------------------------------------------------
 // Multimodal message shape
@@ -158,4 +165,86 @@ export async function encodeJpegToBase64(uri: string): Promise<string> {
     throw new Error(`encodeJpegToBase64: file not found at ${uri}`);
   }
   return await file.base64();
+}
+
+// ---------------------------------------------------------------------------
+// Dispatch
+// ---------------------------------------------------------------------------
+
+export type VisionSkipReason = 'flag-off';
+
+export interface VisionDispatchSkipped {
+  readonly skipped: true;
+  readonly reason: VisionSkipReason;
+}
+
+export interface VisionDispatchSent {
+  readonly skipped: false;
+  readonly decision: DispatchDecision;
+  readonly provider: CoachCloudProvider;
+  readonly message: VisionMessage;
+}
+
+export type VisionDispatchResult = VisionDispatchSkipped | VisionDispatchSent;
+
+export interface DispatchVisionOptions {
+  /**
+   * Overrides the flag check. When omitted the env flag
+   * `EXPO_PUBLIC_COACH_VISION` is consulted via `isCoachVisionEnabled()`.
+   * Exposed primarily for tests and for call sites that already know the
+   * flag state (e.g. settings screen surface).
+   */
+  readonly flag?: boolean;
+  /**
+   * Which cloud provider the caller expects to serve this turn. The
+   * dispatcher itself doesn't care — it only picks a model id — but the
+   * returned result carries the provider so callers can hand the message
+   * to the right edge function.
+   */
+  readonly provider?: CoachCloudProvider;
+  /** User tier, defaults to `free`. */
+  readonly userTier?: CoachUserTier;
+  /**
+   * Pass-through to the dispatcher. When true, degrades to gpt-5.4-mini
+   * (text-only) with `reason: 'vision_fallback_cloud'`. Callers set this
+   * after observing Gemma failures.
+   */
+  readonly fallbackToCloud?: boolean;
+}
+
+/**
+ * Flag-gated vision dispatch shim. Does NOT call the coach-service or
+ * any network transport yet — that wiring is the next PR. This function
+ * is the single place where the flag check, dispatch decision, and
+ * provider selection live so unit tests can pin the routing logic.
+ *
+ * Return shape:
+ * - `{ skipped: true, reason: 'flag-off' }` when the flag is off or when
+ *   an explicit `flag: false` override was passed.
+ * - `{ skipped: false, decision, provider, message }` otherwise. The
+ *   caller (coach-service wiring, landing in a follow-up) is responsible
+ *   for sending the message.
+ */
+export function dispatchVisionRequest(
+  message: VisionMessage,
+  options?: DispatchVisionOptions,
+): VisionDispatchResult {
+  const flagOn = options?.flag ?? isCoachVisionEnabled();
+  if (!flagOn) {
+    return { skipped: true, reason: 'flag-off' };
+  }
+
+  const decision = decideCoachModel(
+    'form_vision_check',
+    {},
+    options?.userTier ?? 'free',
+    { visionFallbackToCloud: options?.fallbackToCloud === true },
+  );
+
+  return {
+    skipped: false,
+    decision,
+    provider: options?.provider ?? 'gemma',
+    message,
+  };
 }
