@@ -66,11 +66,19 @@ export default function ModalsLayout() {
         }}
       />
       <Stack.Screen
-        name="form-tracking-pre-calibration"
+        name="practice-mode"
         options={{
-          presentation: 'transparentModal',
-          gestureEnabled: false,
-          contentStyle: { backgroundColor: 'transparent' },
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
+      <Stack.Screen
+        name="calibration-failure-recovery"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#050E1F' },
         }}
       />
     </Stack>
