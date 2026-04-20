@@ -127,6 +127,16 @@ export interface UseWorkoutControllerOptions {
   callbacks?: WorkoutControllerCallbacks;
   /** Enable haptic feedback on rep completion */
   enableHaptics?: boolean;
+  /**
+   * When true the controller will not advance phase / count reps.
+   *
+   * Wired by `hooks/use-device-thermal-battery` via `shouldPauseLowPower`.
+   *
+   * TODO(#464): if PR #427 / #434 land a richer pause API on this hook
+   * before this PR merges, swap this flag for the canonical structure.
+   * For now it is intentionally additive so the merge stays trivial.
+   */
+  pauseTracking?: boolean;
 }
 
 export interface ResetWorkoutOptions {
@@ -160,7 +170,13 @@ export function useWorkoutController<TPhase extends string = string>(
   initialWorkoutId: DetectionMode,
   options: UseWorkoutControllerOptions
 ): UseWorkoutControllerReturn<TPhase> {
-  const { sessionId, callbacks, enableHaptics = true } = options;
+  const { sessionId, callbacks, enableHaptics = true, pauseTracking = false } = options;
+  // Mirror the prop into a ref so the per-frame closure can read the latest
+  // value without re-binding `processFrame` on every change.
+  const pauseRef = useRef<boolean>(pauseTracking);
+  useEffect(() => {
+    pauseRef.current = pauseTracking;
+  }, [pauseTracking]);
 
   // Current workout definition
   const workoutIdRef = useRef<DetectionMode>(initialWorkoutId);
@@ -453,6 +469,9 @@ export function useWorkoutController<TPhase extends string = string>(
       context?: { trackingQuality?: number; shadowMeanAbsDelta?: number | null }
     ) => {
       if (transitioningRef.current) return;
+      // Auto-pause from the battery+thermal hook — bail before any phase
+      // logic so we keep the last-known phase / repCount stable.
+      if (pauseRef.current) return;
 
       const workoutDef = workoutDefRef.current;
       if (!workoutDef) return;
