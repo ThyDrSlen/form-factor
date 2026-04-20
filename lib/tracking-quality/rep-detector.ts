@@ -1,8 +1,18 @@
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 
 import { CONFIDENCE_TIER_THRESHOLDS, N_CONSEC_FRAMES, REP_DETECTOR_THRESHOLDS } from './config';
+import type { RepFaultEvent, RepRejectionReason } from './scoring';
+import { buildRepFaultEvent } from './scoring';
 import type { RequiredJointSpec } from './visibility';
 import { areRequiredJointsVisible } from './visibility';
+
+/**
+ * Optional telemetry sink for enriched rep-rejection events (#417 finding #5).
+ * Consumers can subscribe to rejection reasons (low_visibility, nan_input,
+ * stale_frame, quality_below_min) with exercise/rep/visibility context
+ * instead of relying on unstructured log strings.
+ */
+export type RepDetectorFaultSink = (event: RepFaultEvent) => void;
 
 const REQUIRED_JOINTS: RequiredJointSpec[] = [
   ['left_shoulder', 'left_shoulder_1_joint'],
@@ -54,6 +64,17 @@ export type RepDetectorPullupOptions = {
   elbowTopDeg?: number;
   elbowBottomDeg?: number;
   baselineAlpha?: number;
+  /**
+   * Exercise ID used when emitting RepFaultEvents. Defaults to 'pullup'
+   * since this detector is pullup-specific, but exposed so downstream can
+   * relabel if the detector is reused for similar upper-body pulls.
+   */
+  exerciseId?: string;
+  /**
+   * Optional sink invoked on every rejection (low visibility, NaN/Inf input,
+   * low tracking quality). Emits enriched telemetry — see {@link RepFaultEvent}.
+   */
+  onFault?: RepDetectorFaultSink;
 };
 
 function clamp01(value: number): number {
@@ -86,14 +107,28 @@ function computeShoulderHandGap(joints: RepDetectorPullupJoints): number | null 
     return null;
   }
 
-  const shoulderY = asFinite((leftShoulder.y + rightShoulder.y) / 2);
-  const handY = asFinite((leftHand.y + rightHand.y) / 2);
-  if (shoulderY === null || handY === null) return null;
+  // Guard each coordinate BEFORE averaging to prevent NaN/Infinity from one
+  // side poisoning the whole gap. Previously `(a + b) / 2` was computed first
+  // which could yield NaN (Infinity + -Infinity), or Infinity (any + Infinity),
+  // and the subsequent asFinite() would treat it as "unknown" even when the
+  // other side was actually trustworthy.
+  const leftShoulderY = asFinite(leftShoulder.y);
+  const rightShoulderY = asFinite(rightShoulder.y);
+  const leftHandY = asFinite(leftHand.y);
+  const rightHandY = asFinite(rightHand.y);
+  if (leftShoulderY === null || rightShoulderY === null || leftHandY === null || rightHandY === null) {
+    return null;
+  }
+
+  const shoulderY = (leftShoulderY + rightShoulderY) / 2;
+  const handY = (leftHandY + rightHandY) / 2;
+  if (!Number.isFinite(shoulderY) || !Number.isFinite(handY)) return null;
   return shoulderY - handY;
 }
 
 export class RepDetectorPullup {
-  private readonly options: Required<RepDetectorPullupOptions>;
+  private readonly options: Required<Omit<RepDetectorPullupOptions, 'onFault'>>;
+  private readonly onFault?: RepDetectorFaultSink;
 
   private state: RepDetectorPullupState = 'bottom';
   private repCount = 0;
@@ -135,7 +170,37 @@ export class RepDetectorPullup {
       elbowBottomDeg:
         typeof options?.elbowBottomDeg === 'number' ? options.elbowBottomDeg : REP_DETECTOR_THRESHOLDS.elbowBottomDeg,
       baselineAlpha: clamp01(baselineAlpha),
+      exerciseId: options?.exerciseId ?? 'pullup',
     };
+    this.onFault = options?.onFault;
+  }
+
+  /**
+   * Safely invoke the fault sink with an enriched rejection event. Sinks
+   * that throw are caught so detector state never leaks exceptions up the
+   * frame pipeline.
+   */
+  private emitFault(
+    faultId: string,
+    rejectionReason: RepRejectionReason,
+    note?: string,
+  ): void {
+    if (!this.onFault) return;
+    try {
+      this.onFault(
+        buildRepFaultEvent({
+          exerciseId: this.options.exerciseId,
+          repNumber: this.repCount + 1,
+          faultId,
+          rejectionReason,
+          minConfidenceMet: rejectionReason !== 'low_confidence' && rejectionReason !== 'low_visibility',
+          visibilityBadge: rejectionReason === 'low_visibility' ? 'partial' : 'full',
+          note,
+        }),
+      );
+    } catch {
+      // Never let a telemetry sink break the detector.
+    }
   }
 
   getSnapshot(): RepDetectorPullupSnapshot {
@@ -164,6 +229,7 @@ export class RepDetectorPullup {
     const qualityOk = quality === null ? true : quality >= this.options.minTrackingQuality;
 
     if (!qualityOk || !joints) {
+      this.emitFault('rep_rejected', !joints ? 'occluded_joints' : 'quality_below_min');
       this.freezeOrTimeout();
       return;
     }
@@ -171,6 +237,8 @@ export class RepDetectorPullup {
     const visible = areRequiredJointsVisible(joints, REQUIRED_JOINTS, this.options.minJointConfidence);
     const rawGap = visible ? computeShoulderHandGap(joints) : null;
     if (!visible || rawGap === null || !Number.isFinite(rawGap)) {
+      const reason: RepRejectionReason = !visible ? 'low_visibility' : 'nan_input';
+      this.emitFault('rep_rejected', reason);
       this.freezeOrTimeout();
       return;
     }
@@ -181,7 +249,31 @@ export class RepDetectorPullup {
     }
 
     const delta = gap - this.baselineGap;
-    const avgElbow = (input.angles.leftElbow + input.angles.rightElbow) / 2;
+
+    // Guard angle inputs: a single NaN/Infinity reading (e.g. camera occlusion
+    // returning 0-division limb angles) would propagate through avgElbow and
+    // poison every subsequent comparison — `NaN >= threshold` is always false
+    // which silently stalls the FSM instead of freezing gracefully.
+    const leftElbow = asFinite(input.angles.leftElbow);
+    const rightElbow = asFinite(input.angles.rightElbow);
+    if (leftElbow === null || rightElbow === null) {
+      const reason: RepRejectionReason =
+        input.angles.leftElbow === Number.POSITIVE_INFINITY ||
+        input.angles.leftElbow === Number.NEGATIVE_INFINITY ||
+        input.angles.rightElbow === Number.POSITIVE_INFINITY ||
+        input.angles.rightElbow === Number.NEGATIVE_INFINITY
+          ? 'infinite_input'
+          : 'nan_input';
+      this.emitFault('rep_rejected', reason);
+      this.freezeOrTimeout();
+      return;
+    }
+    const avgElbow = (leftElbow + rightElbow) / 2;
+    if (!Number.isFinite(avgElbow)) {
+      this.emitFault('rep_rejected', 'nan_input');
+      this.freezeOrTimeout();
+      return;
+    }
 
     if (
       this.baselineGap !== null &&

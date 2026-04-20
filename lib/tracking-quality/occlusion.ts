@@ -19,10 +19,29 @@ function normalizeJoint(joint: CanonicalJoint2D): CanonicalJoint2D {
   return { ...joint, confidence: clamp01(joint.confidence) };
 }
 
+/**
+ * Fires when one or more joints have been continuously occluded for longer
+ * than the configured sustain threshold. Consumers typically surface a
+ * micro-toast suggesting the user adjust sleeves / clothing.
+ */
+export type SustainedOcclusionEvent = {
+  /** Joint names currently above the sustain threshold. */
+  jointNames: string[];
+  /** Frames the longest-occluded joint has been missing for. */
+  maxMissingFrames: number;
+};
+
 export type OcclusionHoldManagerOptions = {
   holdFrames?: number;
   minConfidence?: number;
   decayFactorPerFrame?: number;
+  /**
+   * Number of consecutive frames a joint must be missing before
+   * onSustainedOcclusion fires. Defaults to 30 (~1s at 30fps).
+   */
+  sustainFrames?: number;
+  /** Callback invoked when one or more joints cross the sustain threshold. */
+  onSustainedOcclusion?: (event: SustainedOcclusionEvent) => void;
 };
 
 export class OcclusionHoldManager {
@@ -30,15 +49,69 @@ export class OcclusionHoldManager {
   private readonly minConfidence: number;
   private readonly decayFactorPerFrame: number;
   private readonly holds = new Map<string, HoldState>();
+  private readonly sustainFrames: number;
+  private readonly onSustainedOcclusion?: (event: SustainedOcclusionEvent) => void;
+  private readonly sustainedJoints = new Set<string>();
 
   constructor(options: OcclusionHoldManagerOptions = {}) {
     this.holdFrames = options.holdFrames ?? HOLD_FRAMES;
     this.minConfidence = options.minConfidence ?? CONFIDENCE_TIER_THRESHOLDS.low;
     this.decayFactorPerFrame = options.decayFactorPerFrame ?? 0.85;
+    this.sustainFrames = options.sustainFrames ?? 30;
+    this.onSustainedOcclusion = options.onSustainedOcclusion;
   }
 
   reset(): void {
     this.holds.clear();
+    this.sustainedJoints.clear();
+  }
+
+  /**
+   * Returns the names of joints that have been occluded long enough to
+   * cross the sustain threshold. Refreshed on every update() call.
+   */
+  getSustainedOccludedJoints(): string[] {
+    return Array.from(this.sustainedJoints);
+  }
+
+  /**
+   * Re-evaluate sustained occlusion after every update() call. Fires the
+   * callback only when the set of sustained joints changes from empty to
+   * non-empty or gains a new joint, so consumers can gate micro-toasts
+   * without repeating per frame.
+   */
+  private evaluateSustainedOcclusion(): void {
+    const nextNames: string[] = [];
+    let maxMissing = 0;
+    for (const [name, state] of this.holds) {
+      if (state.missingFrames >= this.sustainFrames) {
+        nextNames.push(name);
+        if (state.missingFrames > maxMissing) {
+          maxMissing = state.missingFrames;
+        }
+      }
+    }
+    if (nextNames.length === 0) {
+      this.sustainedJoints.clear();
+      return;
+    }
+    const added = nextNames.filter((n) => !this.sustainedJoints.has(n));
+    for (const n of nextNames) this.sustainedJoints.add(n);
+    for (const existing of Array.from(this.sustainedJoints)) {
+      if (!nextNames.includes(existing)) {
+        this.sustainedJoints.delete(existing);
+      }
+    }
+    if (added.length > 0 && this.onSustainedOcclusion) {
+      try {
+        this.onSustainedOcclusion({
+          jointNames: [...nextNames],
+          maxMissingFrames: maxMissing,
+        });
+      } catch {
+        // Consumer callbacks must not break the pipeline.
+      }
+    }
   }
 
   update(joints: CanonicalJointMap): CanonicalJointMap;
@@ -91,6 +164,7 @@ export class OcclusionHoldManager {
       });
     }
 
+    this.evaluateSustainedOcclusion();
     return output;
   }
 
@@ -133,6 +207,7 @@ export class OcclusionHoldManager {
       };
     }
 
+    this.evaluateSustainedOcclusion();
     return output;
   }
 }

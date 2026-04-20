@@ -239,8 +239,15 @@ export class BodyTracker {
 
 /**
  * React hook for ARKit body tracking (Web Stub)
+ *
+ * `activeFps` is accepted for signature parity with the iOS hook so
+ * callers can compile on web without conditional argument shapes. It is
+ * otherwise unused here.
  */
-export function useBodyTracking(fps: number = 30) {
+export function useBodyTracking(
+  _fps: number = 30,
+  _options: { activeFps?: number } = {}
+) {
   return {
     pose: null as BodyPose | null,
     pose2D: null as BodyPose2D | null,

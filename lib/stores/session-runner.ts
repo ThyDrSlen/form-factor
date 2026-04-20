@@ -99,6 +99,10 @@ export interface SessionRunnerState {
   }) => Promise<void>;
   addExercise: (exerciseId: string) => Promise<string>;
   removeExercise: (sessionExerciseId: string) => Promise<void>;
+  swapExerciseByDetectionMode: (
+    mode: string,
+    action?: 'append' | 'replace',
+  ) => Promise<string | null>;
   addSet: (sessionExerciseId: string, setType?: SetType) => Promise<string>;
   removeSet: (setId: string) => Promise<void>;
   updateSet: (setId: string, fields: Partial<WorkoutSessionSet>) => Promise<void>;
@@ -129,25 +133,45 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-let restTimerCompletionTimeout: ReturnType<typeof setTimeout> | null = null;
+async function findExerciseIdForMode(mode: string): Promise<string | null> {
+  const db = localDB.db;
+  if (!db) return null;
+  const likeToken = `${mode.toLowerCase().replace(/[^a-z0-9]/g, '')}%`;
+  try {
+    const byId = await db.getAllAsync<{ id: string }>(
+      'SELECT id FROM exercises WHERE LOWER(REPLACE(REPLACE(id, \'-\', \'\'), \'_\', \'\')) LIKE ? LIMIT 1',
+      [likeToken],
+    );
+    if (byId[0]?.id) return byId[0].id;
+    const byName = await db.getAllAsync<{ id: string }>(
+      'SELECT id FROM exercises WHERE LOWER(REPLACE(REPLACE(name, \' \', \'\'), \'-\', \'\')) LIKE ? ORDER BY is_system DESC LIMIT 1',
+      [likeToken],
+    );
+    return byName[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
-function clearRestTimerCompletionTimeout(): void {
-  if (restTimerCompletionTimeout) {
-    clearTimeout(restTimerCompletionTimeout);
-    restTimerCompletionTimeout = null;
+let restTimerHapticTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function clearRestTimerHapticTimeout(): void {
+  if (restTimerHapticTimeout) {
+    clearTimeout(restTimerHapticTimeout);
+    restTimerHapticTimeout = null;
   }
 }
 
 function scheduleRestTimerCompletionHaptic(startedAt: string, targetSeconds: number): void {
-  clearRestTimerCompletionTimeout();
+  clearRestTimerHapticTimeout();
 
   const remainingMs = computeRemainingSeconds(startedAt, targetSeconds) * 1000;
   if (remainingMs <= 0) {
     return;
   }
 
-  restTimerCompletionTimeout = setTimeout(() => {
-    restTimerCompletionTimeout = null;
+  restTimerHapticTimeout = setTimeout(() => {
+    restTimerHapticTimeout = null;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, remainingMs);
 }
@@ -426,6 +450,23 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
   },
 
   // =========================================================================
+  // Swap Exercise By Detection Mode (#434)
+  // =========================================================================
+  swapExerciseByDetectionMode: async (mode, action = 'append') => {
+    const { activeSession, exercises } = get();
+    if (!activeSession) return null;
+    if (!mode) return null;
+    const matchId = await findExerciseIdForMode(mode);
+    if (!matchId) return null;
+    if (action === 'replace' && exercises.length > 0) {
+      const last = exercises[exercises.length - 1];
+      await get().removeExercise(last.id);
+    }
+    const newId = await get().addExercise(matchId);
+    return newId;
+  },
+
+  // =========================================================================
   // Add Set
   // =========================================================================
   addSet: async (sessionExerciseId, setType = 'normal') => {
@@ -646,6 +687,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
     const now = nowIso();
 
     clearRestTimerCompletionTimeout();
+    clearRestTimerHapticTimeout();
     await cancelRestNotification();
 
     const db = localDB.db;
