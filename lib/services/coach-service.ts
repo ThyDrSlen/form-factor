@@ -1,7 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { createError, logError } from './ErrorHandler';
-import type { CoachCloudProvider } from './coach-cloud-provider';
 import { resolveCloudProvider } from './coach-cloud-provider';
 import { sendCoachGemmaPrompt } from './coach-gemma-service';
 import {
@@ -43,6 +42,41 @@ export interface CoachContext {
   liveSession?: LiveSessionSnapshot;
 }
 
+/**
+ * Optional behaviors for `sendCoachPrompt`. All fields are additive and the
+ * existing two-arg call shape (`sendCoachPrompt(messages, ctx?)`) keeps the
+ * exact behavior it had before #465 landed.
+ */
+export interface CoachSendOptions {
+  /**
+   * Streaming mode (#465 Item 1).
+   * - `true`: stream and return the full text once complete (no per-chunk callback).
+   * - function: stream and invoke the callback for every delta.
+   * - omitted/false: synchronous (default).
+   */
+  stream?: boolean | ((chunk: string) => void);
+  /**
+   * If true and the primary call returns 429/5xx, automatically retry against
+   * the secondary provider (#465 Item 2).
+   */
+  allowFailover?: boolean;
+  /**
+   * Provider hint for streaming and for failover routing (`gemma`|`openai`).
+   */
+  provider?: 'gemma' | 'openai';
+  /**
+   * Response cache TTL in ms (#465 Item 3). 0 disables caching; omitted means
+   * cache lookups are not consulted. Defaults are picked at the call site
+   * (e.g. auto-debrief uses 12h).
+   */
+  cacheMs?: number;
+  /**
+   * Used by the cache integration to flag that the cached payload is the
+   * already-shaped response (#465 Item 5). Internal; callers shouldn't need it.
+   */
+  shaper?: boolean;
+}
+
 interface RawCoachResponse {
   message?: string;
   content?: string;
@@ -59,39 +93,84 @@ interface RawCoachResponse {
 const DEFAULT_MODEL_ID = 'gpt-5.4-mini';
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
 
-export interface SendCoachOptions {
-  /**
-   * Which cloud provider to use. When omitted, resolves from AsyncStorage /
-   * EXPO_PUBLIC_COACH_CLOUD_PROVIDER / default (`openai`) via
-   * {@link resolveCloudProvider}.
-   */
-  provider?: CoachCloudProvider;
-}
-
 /**
- * Send a coach prompt. When `opts.provider` is provided it dispatches to that
- * provider directly; otherwise the selection is resolved from storage/env.
- * Backward compatible: callers passing only (messages, context) continue to
- * hit the OpenAI-backed coach function unless a user preference or env has
- * been set.
+ * Send a coach prompt. Dispatch order:
+ *   1. If `opts.stream` → streaming path (#466 Item 1)
+ *   2. If `opts.allowFailover` → failover producer, optionally cached (#466 Items 2-3)
+ *   3. If `opts.cacheMs > 0` → cached OpenAI path (#466 Item 3)
+ *   4. Else → resolve cloud provider (from `opts.provider`, AsyncStorage, or env)
+ *      - `gemma` → direct `sendCoachGemmaPrompt`
+ *      - `openai` → `sendCoachPromptInner` (coach edge function)
+ *
+ * Backward compatible: the two-arg call shape hits the cloud provider selector,
+ * which defaults to `openai` absent any user/env preference.
  */
 export async function sendCoachPrompt(
   messages: CoachMessage[],
   context?: CoachContext,
-  opts?: SendCoachOptions,
+  opts?: CoachSendOptions
 ): Promise<CoachMessage> {
-  const provider = opts?.provider ?? (await resolveCloudProvider());
+  if (opts?.stream) {
+    return sendCoachPromptStreaming(messages, context, opts);
+  }
+  if (opts?.allowFailover) {
+    // Lazy require keeps the dep graph 1-way and avoids load-order issues
+    // (await import() does not work in jest's CJS env without
+    // --experimental-vm-modules).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { sendCoachPromptWithFailover } = require('./coach-failover') as typeof import('./coach-failover');
+    const failoverProducer = () =>
+      sendCoachPromptWithFailover(messages, context, {
+        primary: opts.provider ?? 'gemma',
+        secondary: opts.provider === 'openai' ? 'gemma' : 'openai',
+      });
+    if (typeof opts.cacheMs === 'number' && opts.cacheMs > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { withCoachCache } = require('./coach-cache') as typeof import('./coach-cache');
+      return withCoachCache(messages, context, opts.cacheMs, failoverProducer, {
+        shaper: opts.shaper,
+      });
+    }
+    return failoverProducer();
+  }
+  if (typeof opts?.cacheMs === 'number' && opts.cacheMs > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { withCoachCache } = require('./coach-cache') as typeof import('./coach-cache');
+    return withCoachCache(
+      messages,
+      context,
+      opts.cacheMs,
+      () => sendCoachPromptInner(messages, context),
+      { shaper: opts.shaper }
+    );
+  }
 
+  // No advanced opts: pick cloud provider (explicit hint, user pref, env, or openai default).
+  const provider = opts?.provider ?? (await resolveCloudProvider());
   if (provider === 'gemma') {
     return sendCoachGemmaPrompt(messages, context);
   }
-
-  return sendOpenAICoachPrompt(messages, context);
+  return sendCoachPromptInner(messages, context);
 }
 
-async function sendOpenAICoachPrompt(
+async function sendCoachPromptStreaming(
   messages: CoachMessage[],
-  context?: CoachContext,
+  context: CoachContext | undefined,
+  opts: CoachSendOptions
+): Promise<CoachMessage> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { streamCoachPrompt } = require('./coach-streaming') as typeof import('./coach-streaming');
+  const onChunk =
+    typeof opts.stream === 'function' ? opts.stream : () => undefined;
+  const result = await streamCoachPrompt(messages, context, onChunk, {
+    provider: opts.provider,
+  });
+  return { role: 'assistant', content: result.text };
+}
+
+async function sendCoachPromptInner(
+  messages: CoachMessage[],
+  context?: CoachContext
 ): Promise<CoachMessage> {
   try {
     const { data, error } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
