@@ -209,10 +209,34 @@ const faults: FaultDefinition[] = [
     id: 'hips_rise_first',
     displayName: 'Hips Rise First',
     condition: (ctx: RepContext) => {
-      // If hip angle increases significantly before knee angle
-      // This is a simplified check - ideally would track velocity
-      const hipChange = ctx.maxAngles.leftHip - ctx.startAngles.leftHip;
-      const kneeChange = ctx.maxAngles.leftKnee - ctx.startAngles.leftKnee;
+      // Compute hip-rise and knee-rise symmetrically. Taking min() across
+      // left/right is the most conservative signal — the fault represents
+      // "hips as a unit rose before the knees", so a unilateral hip-delta
+      // spike (which is almost always tracking noise from one side being
+      // occluded or at a bad camera angle) must NOT trigger it. See #436.
+      const leftHipDelta = ctx.maxAngles.leftHip - ctx.startAngles.leftHip;
+      const rightHipDelta = ctx.maxAngles.rightHip - ctx.startAngles.rightHip;
+      const leftKneeDelta = ctx.maxAngles.leftKnee - ctx.startAngles.leftKnee;
+      const rightKneeDelta = ctx.maxAngles.rightKnee - ctx.startAngles.rightKnee;
+
+      const hipChange = Math.min(leftHipDelta, rightHipDelta);
+      const kneeChange = Math.min(leftKneeDelta, rightKneeDelta);
+
+      // If the two sides disagree by more than 15°, one leg is almost
+      // certainly miscoded. Log so we can tune later without adding a
+      // dedicated telemetry module for this one event.
+      const hipAsymmetry = Math.abs(leftHipDelta - rightHipDelta);
+      if (hipAsymmetry > 15 && __DEV__) {
+        console.warn('[deadlift] asymmetry_suspected:', {
+          leftHipDelta,
+          rightHipDelta,
+          leftKneeDelta,
+          rightKneeDelta,
+          hipAsymmetry,
+          repNumber: ctx.repNumber,
+        });
+      }
+
       return hipChange > kneeChange + 30;
     },
     severity: 2,

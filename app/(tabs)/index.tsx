@@ -36,6 +36,7 @@ import {
 } from '@/lib/services/video-service';
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
+import { CoachProviderBadge } from '@/components/coach/CoachProviderBadge';
 import {
   buildOverlaySummary,
   buildPostText,
@@ -845,6 +846,9 @@ export default function HomeScreen() {
               >
                 <Text style={styles.coachBubbleText}>{item.content}</Text>
                 <Text style={styles.coachBubbleMeta}>{isUser ? 'You' : 'Coach'}</Text>
+                {!isUser && item.provider && (
+                  <CoachProviderBadge provider={item.provider} />
+                )}
               </View>
             </View>
           );

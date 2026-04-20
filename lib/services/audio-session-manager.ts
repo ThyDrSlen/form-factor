@@ -38,6 +38,7 @@ export class AudioSessionManager {
   private static instance: AudioSessionManager;
   private currentMode: AudioSessionMode = 'idle';
   private listeners: Set<(mode: AudioSessionMode) => void> = new Set();
+  private cancelListeners: Set<() => void> = new Set();
 
   static getInstance(): AudioSessionManager {
     if (!AudioSessionManager.instance) {
@@ -71,6 +72,40 @@ export class AudioSessionManager {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
+    };
+  }
+
+  /**
+   * Interrupt any in-flight speech / audio playback.
+   *
+   * Designed as a fan-out: TTS layers (expo-speech, streaming mp3 player, etc.)
+   * register via {@link onCancelRequested} and perform their own stop logic.
+   * The cue-engine calls this when a higher-priority cue needs to preempt a
+   * lower-priority one that is still playing through.
+   *
+   * Listeners run synchronously and any thrown errors are swallowed so one
+   * misbehaving listener can't block the others.
+   */
+  cancel(): void {
+    for (const listener of this.cancelListeners) {
+      try {
+        listener();
+      } catch (err) {
+        console.warn('[AudioSessionManager] cancel listener threw:', err);
+      }
+    }
+  }
+
+  /**
+   * Register a cancel listener. Returns an unsubscribe function.
+   *
+   * Typical wiring: the speech-feedback hook registers a listener that calls
+   * `Speech.stop()` and clears its queue tail.
+   */
+  onCancelRequested(listener: () => void): () => void {
+    this.cancelListeners.add(listener);
+    return () => {
+      this.cancelListeners.delete(listener);
     };
   }
 }
