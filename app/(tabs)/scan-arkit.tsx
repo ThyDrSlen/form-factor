@@ -45,6 +45,7 @@ import { PreSetPreviewCard } from '@/components/form-tracking/PreSetPreviewCard'
 import { usePreSetPreview } from '@/hooks/use-pre-set-preview';
 import { generateSessionId, logCueEvent, upsertSessionMetrics } from '@/lib/services/cue-logger';
 import { logPoseSample, flushPoseBuffer, resetFrameCounter } from '@/lib/services/pose-logger';
+import { playRepCountdown } from '@/lib/services/rep-countdown-audio';
 import { RepIndexTracker } from '@/lib/services/rep-index-tracker';
 import {
   initSessionContext,
@@ -775,6 +776,10 @@ export default function ScanARKitScreen() {
   const recordingStartFrameTimestampRef = React.useRef<number | null>(null);
   const recordingStartRepsRef = React.useRef<number>(0);
   const recordingFqiScoresRef = React.useRef<number[]>([]);
+  // Ensures the 3-2-1 countdown only fires once per tracking start so we
+  // do not re-announce on mode swaps / transient phase re-entries. Reset
+  // to false inside startTracking + stopTracking.
+  const repCountdownFiredRef = React.useRef(false);
 
   const { speak: speakCue, stop: stopSpeech } = usePremiumCueAudio({
     enabled: audioFeedbackEnabled && isScreenFocused,
@@ -1621,6 +1626,7 @@ export default function ScanARKitScreen() {
       setActiveMetrics(null);
       resetBaselineDebugMetrics();
       resetCueHysteresis();
+      repCountdownFiredRef.current = false;
 
       const startTime = Date.now();
       shadowStatsRef.current = createShadowStatsAccumulator();
@@ -1630,11 +1636,22 @@ export default function ScanARKitScreen() {
       lastShadowMeanAbsDeltaRef.current = null;
       await startNativeTracking();
       const elapsed = Date.now() - startTime;
-      
+
       if (DEV) logWithTs('[ScanARKit] Tracking started successfully in', elapsed, 'ms');
 
       if (Platform.OS === 'ios') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+
+      // Fire the 3-2-1 pre-announce once per tracking start. Gated on the
+      // user preference + the EXPO_PUBLIC_REP_COUNTDOWN env flag inside
+      // playRepCountdown itself. Errors are swallowed — countdown is a
+      // nice-to-have, not a blocker for the tracking loop.
+      if (!repCountdownFiredRef.current) {
+        repCountdownFiredRef.current = true;
+        playRepCountdown().catch((error) => {
+          if (DEV) warnWithTs('[ScanARKit] rep countdown failed', error);
+        });
       }
     } catch (error) {
       errorWithTs('[ScanARKit] ❌ Failed to start tracking:', error);
@@ -1716,7 +1733,8 @@ export default function ScanARKitScreen() {
       setShadowProviderRuntime('mediapipe_proxy');
       resetBaselineDebugMetrics();
       resetCueHysteresis();
-      
+      repCountdownFiredRef.current = false;
+
       if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
       if (Platform.OS === 'ios') {
