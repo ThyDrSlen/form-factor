@@ -74,6 +74,10 @@ jest.mock('@/lib/logger', () => ({
   errorWithTs: jest.fn(),
 }));
 
+jest.mock('@/lib/haptics/haptic-bus', () => ({
+  hapticBus: { emit: jest.fn() },
+}));
+
 import {
   computeRemainingSeconds,
   onRestTimerAppResume,
