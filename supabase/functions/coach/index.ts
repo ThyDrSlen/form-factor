@@ -176,13 +176,60 @@ function ok(body: Record<string, unknown>) {
   });
 }
 
+/**
+ * Inline port of lib/services/coach-injection-hardener.ts (PR #448 salvage).
+ * Deno edge functions can't import from @/lib, so the smallest working
+ * subset is duplicated here. Keep the two in sync when editing either.
+ */
+const EDGE_PROMPT_BREAK_PATTERNS: RegExp[] = [
+  /\[\s*ignore\s+(?:all\s+)?(?:safety|previous|above|prior)[^\]]*\]/gi,
+  /\[\s*system\s*\]/gi,
+  /###\s*system\b/gi,
+  /###\s*instruction\b/gi,
+  /<\|im_start\|>/gi,
+  /<\|im_end\|>/gi,
+  /<\|start_of_turn\|>/gi,
+  /<\|end_of_turn\|>/gi,
+  /<start_of_turn>/gi,
+  /<end_of_turn>/gi,
+  /\bBEGIN\s+SYSTEM\s+PROMPT\b/gi,
+  /\bEND\s+SYSTEM\s+PROMPT\b/gi,
+  /\bnow\s+ignore\s+all\s+rules\b/gi,
+  /\bjailbreak\s*:/gi,
+  /\bDAN\s+mode\b/gi,
+];
+
+function hardenAgainstInjection(value: string | undefined | null, maxLength: number): string {
+  if (value == null || typeof value !== 'string') return '';
+  // Normalize exotic whitespace so patterns like "### system" still match.
+  let out = value.replace(/[\r\n\t\v\f\u0085\u2028\u2029]+/g, ' ');
+  for (const p of EDGE_PROMPT_BREAK_PATTERNS) {
+    out = out.replace(p, '[redacted]');
+  }
+  out = out
+    .replace(/```/g, '\u201C\u201D\u201C')
+    .replace(/`/g, '\u2018')
+    .replace(/</g, '\uFF1C')
+    .replace(/>/g, '\uFF1E')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (out.length > maxLength) out = out.slice(0, maxLength).trimEnd();
+  return out;
+}
+
 function sanitizeMessages(messages: ChatMessage[] = []): ChatMessage[] {
   return messages
     .filter((m) => m && typeof m.content === 'string' && typeof m.role === 'string')
-    .map((m) => ({
-      role: (['user', 'assistant', 'system'] as Role[]).includes(m.role as Role) ? (m.role as Role) : 'user',
-      content: m.content.slice(0, MAX_CONTENT_LENGTH),
-    }))
+    .map((m) => {
+      const role = (['user', 'assistant', 'system'] as Role[]).includes(m.role as Role) ? (m.role as Role) : 'user';
+      // User content flows through the injection hardener — assistant/system
+      // messages are authored by the server so we trust them.
+      const content =
+        role === 'user'
+          ? hardenAgainstInjection(m.content, MAX_CONTENT_LENGTH)
+          : m.content.slice(0, MAX_CONTENT_LENGTH);
+      return { role, content };
+    })
     .slice(-MAX_MESSAGES);
 }
 
