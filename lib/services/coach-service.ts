@@ -8,6 +8,7 @@ import {
   type CoachProvider,
   type CoachProviderSignal,
 } from './coach-provider-types';
+import { synthesizeMemoryClause } from './coach-memory-context';
 
 export type { CoachProvider } from './coach-provider-types';
 import type { LiveSessionSnapshot } from './coach-live-snapshot';
@@ -40,6 +41,12 @@ export interface CoachContext {
    * set this.
    */
   liveSession?: LiveSessionSnapshot;
+  /**
+   * Optional pre-composed memory clause. When provided, skips the
+   * AsyncStorage/Supabase lookup inside sendCoachPrompt() — useful for
+   * callers (e.g. auto-debrief) that already built their own memory.
+   */
+  memoryClause?: string | null;
 }
 
 /**
@@ -94,6 +101,40 @@ const DEFAULT_MODEL_ID = 'gpt-5.4-mini';
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
 
 /**
+ * Feature-flag gate for prepending cross-session memory to coach prompts.
+ * Defaults to ON (value 'true' or unset). Any other value disables the
+ * memory clause so the coach behaves as before.
+ */
+function isMemoryEnabled(): boolean {
+  const raw = (process.env.EXPO_PUBLIC_COACH_MEMORY ?? 'true').trim().toLowerCase();
+  return raw === '' || raw === 'true' || raw === '1' || raw === 'on';
+}
+
+async function resolveMemoryClause(context?: CoachContext): Promise<string | null> {
+  if (!isMemoryEnabled()) return null;
+  if (context?.memoryClause !== undefined) return context.memoryClause ?? null;
+  try {
+    const clause = await synthesizeMemoryClause();
+    return clause.text;
+  } catch (err) {
+    warnWithTs('[coach-service] memory clause synth failed; continuing without memory', err);
+    return null;
+  }
+}
+
+function applyMemoryClause(
+  messages: CoachMessage[],
+  memoryClause: string | null,
+): CoachMessage[] {
+  if (!memoryClause) return messages;
+  const memoryMessage: CoachMessage = {
+    role: 'system',
+    content: `Athlete memory (recent sessions): ${memoryClause}`,
+  };
+  return [memoryMessage, ...messages];
+}
+
+/**
  * Send a coach prompt. Dispatch order:
  *   1. If `opts.stream` → streaming path (#466 Item 1)
  *   2. If `opts.allowFailover` → failover producer, optionally cached (#466 Items 2-3)
@@ -101,6 +142,10 @@ const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
  *   4. Else → resolve cloud provider (from `opts.provider`, AsyncStorage, or env)
  *      - `gemma` → direct `sendCoachGemmaPrompt`
  *      - `openai` → `sendCoachPromptInner` (coach edge function)
+ *
+ * Memory clause (#461) is synthesized inside `sendCoachPromptInner` for the
+ * OpenAI path; callers may opt out by setting `EXPO_PUBLIC_COACH_MEMORY=false`
+ * or pre-composing `context.memoryClause`.
  *
  * Backward compatible: the two-arg call shape hits the cloud provider selector,
  * which defaults to `openai` absent any user/env preference.
@@ -173,8 +218,15 @@ async function sendCoachPromptInner(
   context?: CoachContext
 ): Promise<CoachMessage> {
   try {
+    const memoryClause = await resolveMemoryClause(context);
+    const outgoingMessages = applyMemoryClause(messages, memoryClause);
+    const outgoingContext =
+      memoryClause !== null
+        ? { ...(context ?? {}), memoryClause }
+        : context;
+
     const { data, error } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
-      body: { messages, context },
+      body: { messages: outgoingMessages, context: outgoingContext },
     });
 
     if (error) {

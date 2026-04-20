@@ -1,0 +1,82 @@
+- description: "[auto-debrief] High-FQI positive — celebrates clean reps"
+  vars:
+    user_name: "Alex"
+    focus: "post_session_debrief"
+    message: |
+      Session analytics to debrief:
+      Exercise: Back Squat. Reps logged: 8. Average FQI: 0.91.
+      FQI trend: improving (slope 0.012). Peak asymmetry: 3%.
+      Eccentric tempo: steady.
+
+      Write the debrief now.
+  assert:
+    - type: llm-rubric
+      value: "Response celebrates a real positive (clean reps / strong FQI), names at most one minor fix, and ends with a concrete 'Next session:' directive."
+      metric: Quality/PositiveDebrief
+    - type: llm-rubric
+      value: "Response is 150-260 words, warm and specific — not generic boilerplate."
+      metric: Quality/WordCount
+
+- description: "[auto-debrief] Low-FQI constructive — surfaces the single most important fix"
+  vars:
+    user_name: "Sam"
+    focus: "post_session_debrief"
+    message: |
+      Session analytics to debrief:
+      Exercise: Deadlift. Reps logged: 6. Average FQI: 0.58.
+      FQI trend: fatiguing (slope -0.030). Most-common fault: lumbar_flexion.
+      Peak asymmetry: 8%. Eccentric tempo: slowing.
+
+      Write the debrief now.
+  assert:
+    - type: llm-rubric
+      value: "Response names lumbar flexion (or equivalent low-back rounding) as the top fix and gives ONE concrete drill/cue. Avoids a laundry list of issues."
+      metric: Quality/ConstructiveFocus
+    - type: not-contains
+      value: "medical"
+      metric: Safety/NoMedicalClaims
+
+- description: "[auto-debrief] Single-rep degenerate — graceful handling of thin data"
+  vars:
+    user_name: "Jordan"
+    focus: "post_session_debrief"
+    message: |
+      Session analytics to debrief:
+      Exercise: Bench Press. Reps logged: 1. Average FQI: 0.80.
+
+      Write the debrief now.
+  assert:
+    - type: llm-rubric
+      value: "Response acknowledges that this is a tiny sample and offers a light-touch observation plus a 'Next session:' directive that invites more reps. Does not invent trends."
+      metric: Quality/DegenerateGrace
+
+- description: "[auto-debrief] Symmetry asymmetric — surfaces the left/right imbalance"
+  vars:
+    user_name: "Casey"
+    focus: "post_session_debrief"
+    message: |
+      Session analytics to debrief:
+      Exercise: Pull Up. Reps logged: 10. Average FQI: 0.78.
+      FQI trend: flat (slope 0.000). Most-common fault: depth_short.
+      Peak asymmetry: 17%. Eccentric tempo: steady.
+
+      Write the debrief now.
+  assert:
+    - type: llm-rubric
+      value: "Response calls out the left-right asymmetry (~17%) and recommends a unilateral or tempo-based drill."
+      metric: Quality/AsymmetryCue
+
+- description: "[auto-debrief] Provider fallback — brief is still well-formed on OpenAI fallback"
+  vars:
+    user_name: "Pat"
+    focus: "post_session_debrief"
+    message: |
+      Session analytics to debrief:
+      Exercise: Overhead Press. Reps logged: 5. Average FQI: 0.71.
+      FQI trend: improving (slope 0.018). Peak asymmetry: 4%. Eccentric tempo: steady.
+
+      Write the debrief now.
+  assert:
+    - type: llm-rubric
+      value: "Response contains a positive line, a single fix, and a 'Next session:' directive regardless of which provider authored it."
+      metric: Quality/ProviderInvariant
