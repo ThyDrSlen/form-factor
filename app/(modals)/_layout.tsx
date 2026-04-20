@@ -97,6 +97,13 @@ export default function ModalsLayout() {
           contentStyle: { backgroundColor: '#050E1F' },
         }}
       />
+      <Stack.Screen
+        name="fault-heatmap"
+        options={{
+          presentation: 'fullScreenModal',
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
     </Stack>
   );
 }
