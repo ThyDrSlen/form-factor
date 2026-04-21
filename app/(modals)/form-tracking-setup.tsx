@@ -250,19 +250,36 @@ function PermissionStep({
         <View style={styles.permissionActions} testID="form-tracking-setup-permission-denied">
           <View style={[styles.statusCard, styles.statusDenied]}>
             <Ionicons name="close-circle" size={22} color="#FF4B4B" />
-            <Text style={[styles.statusText, { color: '#FF8A8A' }]}>
-              Camera access was denied. Open Settings to enable it.
-            </Text>
+            <View style={styles.statusTextColumn}>
+              <Text style={[styles.statusText, styles.statusTextDenied]}>
+                Camera access is blocked
+              </Text>
+              <Text style={styles.statusSubtext}>
+                Form tracking needs camera access. You can grant it in
+                Settings, then come back to finish setup.
+              </Text>
+            </View>
           </View>
           <Pressable
             onPress={onOpenSettings}
             accessibilityRole="button"
-            accessibilityLabel="Open Settings"
+            accessibilityLabel="Open Settings to grant camera access"
+            accessibilityHint="Opens the iOS Settings app for this app so you can enable the camera permission"
             style={styles.primaryButton}
             testID="form-tracking-setup-open-settings"
           >
             <Ionicons name="settings-outline" size={18} color="#FFFFFF" />
             <Text style={styles.primaryButtonText}>Open Settings</Text>
+          </Pressable>
+          <Pressable
+            onPress={onRequest}
+            accessibilityRole="button"
+            accessibilityLabel="Try requesting camera access again"
+            style={styles.secondaryInlineButton}
+            testID="form-tracking-setup-retry-permission"
+          >
+            <Ionicons name="refresh-outline" size={16} color="#C9D7F4" />
+            <Text style={styles.secondaryInlineButtonText}>Try again</Text>
           </Pressable>
         </View>
       ) : (
@@ -481,6 +498,35 @@ const styles = StyleSheet.create({
     color: '#C9D7F4',
     fontSize: 14,
     lineHeight: 20,
+  },
+  statusTextColumn: {
+    flex: 1,
+    gap: 4,
+  },
+  statusTextDenied: {
+    color: '#FF8A8A',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  statusSubtext: {
+    color: '#C9D7F4',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  secondaryInlineButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    alignSelf: 'center',
+  },
+  secondaryInlineButtonText: {
+    color: '#C9D7F4',
+    fontSize: 14,
+    fontWeight: '600',
   },
   permissionActions: {
     alignSelf: 'stretch',
