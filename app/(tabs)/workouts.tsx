@@ -3,7 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { DeleteAction } from '@/components';
-import { FormQualityBadge } from '@/components/form-tracking/FormQualityBadge';
+import { FormQualityBadgeRow } from '@/components/workouts/FormQualityBadgeRow';
 import { OverloadAnalyticsCard } from '@/components/workouts/OverloadAnalyticsCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnits } from '@/contexts/UnitsContext';
@@ -314,11 +314,12 @@ export default function WorkoutsScreen() {
               </View>
             </View>
 
-            {formQualityByExercise[item.exercise] != null ? (
-              <View style={workoutCardStyles.badgeRow}>
-                <FormQualityBadge score={formQualityByExercise[item.exercise]} />
-              </View>
-            ) : null}
+            <FormQualityBadgeRow
+              exerciseName={item.exercise}
+              score={formQualityByExercise[item.exercise]}
+              style={workoutCardStyles.badgeRow}
+            />
+
 
             <View style={styles.cardDetails}>
               <View style={styles.detailItem}>
