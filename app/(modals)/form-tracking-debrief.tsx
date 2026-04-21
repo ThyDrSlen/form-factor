@@ -24,6 +24,9 @@ import {
 } from '@/components/form-tracking/RepBreakdownList';
 import { SessionHighlightCard } from '@/components/form-tracking/SessionHighlightCard';
 import { AskCoachCTA } from '@/components/form-tracking/AskCoachCTA';
+import AutoDebriefCard from '@/components/form-tracking/AutoDebriefCard';
+import { useAutoDebrief } from '@/hooks/use-auto-debrief';
+import { isCoachPipelineV2Enabled } from '@/lib/services/coach-pipeline-v2-flag';
 
 function safeParseReps(raw: string | undefined): RepSummary[] {
   if (!raw) return [];
@@ -97,6 +100,27 @@ export default function FormTrackingDebriefScreen() {
   const { best, worst } = useMemo(() => pickBestAndWorst(reps), [reps]);
   const topFault = worst?.faults[0] ?? null;
 
+  // Pipeline v2: synthesize a stable sessionId from the recap payload so the
+  // auto-debrief hook can dedupe via AsyncStorage. We derive from exercise
+  // name + rep count + first-rep fqi (deterministic; no UUID dep).
+  const pipelineV2 = isCoachPipelineV2Enabled();
+  const sessionId = useMemo(() => {
+    if (!pipelineV2 || reps.length === 0) return null;
+    return `debrief:${exerciseName}:${reps.length}:${Math.round((reps[0]?.fqi ?? 0) * 100)}`;
+  }, [pipelineV2, exerciseName, reps]);
+
+  const buildInput = useCallback(async () => {
+    // form-tracking-debrief never fires session_finished directly, but we
+    // still provide a valid builder for the hook contract. Returning null
+    // is a safe no-op when the modal is viewed without a session event.
+    return null;
+  }, []);
+
+  const autoDebrief = useAutoDebrief({
+    buildInput,
+    sessionId: pipelineV2 ? sessionId : null,
+  });
+
   const handleClose = useCallback(() => {
     router.back();
   }, [router]);
@@ -165,6 +189,18 @@ export default function FormTrackingDebriefScreen() {
             </View>
           )}
         </View>
+
+        {pipelineV2 ? (
+          <View style={styles.sectionGap} testID="form-tracking-debrief-auto-section">
+            <Text style={styles.sectionTitle}>Coach debrief</Text>
+            <AutoDebriefCard
+              loading={autoDebrief.loading}
+              error={autoDebrief.error}
+              data={autoDebrief.data}
+              onRetry={autoDebrief.retry}
+            />
+          </View>
+        ) : null}
 
         <View style={styles.footerSpacer} />
       </ScrollView>
