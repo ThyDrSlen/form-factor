@@ -15,6 +15,7 @@
 import * as Crypto from 'expo-crypto';
 import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
 import { parseGemmaJsonResponse, schema, type JsonSchema } from './gemma-json-parser';
+import { assertGemmaSessionGenEnabled } from './gemma-session-gen-flag';
 import {
   buildSessionGeneratorMessages,
   type SessionGeneratorInput,
@@ -98,6 +99,13 @@ export interface SessionGeneratorRuntime {
   uuid?: () => string;
   /** Retry count passed to gemma-json-parser. Default 1. */
   maxRetries?: number;
+  /**
+   * Bypass the `EXPO_PUBLIC_GEMMA_SESSION_GEN` feature flag gate. Intended for
+   * tests and for callers that inject their own `dispatch` stub — when
+   * `dispatch` is supplied we skip the assert automatically since no real
+   * Gemma traffic is generated.
+   */
+  skipFlagCheck?: boolean;
 }
 
 /**
@@ -111,6 +119,13 @@ export async function generateSession(
   input: SessionGeneratorInput,
   runtime: SessionGeneratorRuntime,
 ): Promise<HydratedTemplate> {
+  // Flag gate: only block the real production dispatcher. Tests and callers
+  // that provide their own `dispatch` are allowed through so pure unit tests
+  // don't need to toggle env vars.
+  if (!runtime.dispatch && !runtime.skipFlagCheck) {
+    assertGemmaSessionGenEnabled('session-generator');
+  }
+
   const messages = buildSessionGeneratorMessages(input);
   const dispatch = runtime.dispatch ?? sendCoachPrompt;
 
