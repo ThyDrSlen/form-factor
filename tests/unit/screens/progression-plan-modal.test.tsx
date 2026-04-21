@@ -99,8 +99,9 @@ describe('ProgressionPlanModal', () => {
   });
 
   it('renders a loading state before data resolves', () => {
-    const { getByText } = render(<ProgressionPlanModal />);
-    expect(getByText(/Building your overload plan/)).toBeTruthy();
+    const { getByText, getByTestId } = render(<ProgressionPlanModal />);
+    expect(getByText(/Analyzing your history/)).toBeTruthy();
+    expect(getByTestId('progression-plan-loading')).toBeTruthy();
   });
 
   it('renders summary and PR chips after data loads', async () => {
