@@ -2299,16 +2299,30 @@ export default function ScanARKitScreen() {
       try {
         const uploadAllowed = await shouldUploadVideo();
         if (!uploadAllowed) {
+          warnWithTs('[ScanARKit] Auto upload skipped: video consent disabled', {
+            exercise: payload.exercise,
+            uri: payload.uri,
+          });
           return;
         }
 
         const info = await FileSystem.getInfoAsync(payload.uri);
         if (!info.exists) {
+          warnWithTs('[ScanARKit] Auto upload skipped: recording file missing', { uri: payload.uri });
           return;
         }
         if (info.size && info.size > MAX_UPLOAD_BYTES) {
+          warnWithTs('[ScanARKit] Auto upload skipped: file exceeds max size', {
+            size: info.size,
+            max: MAX_UPLOAD_BYTES,
+          });
           return;
         }
+
+        logWithTs('[ScanARKit] Auto analysis upload starting', {
+          exercise: payload.exercise,
+          sizeBytes: info.size ?? null,
+        });
 
         await uploadWorkoutVideo({
           fileUri: payload.uri,
@@ -2316,6 +2330,8 @@ export default function ScanARKitScreen() {
           metrics: payload.metrics,
           analysisOnly: true,
         });
+
+        logWithTs('[ScanARKit] Auto analysis upload succeeded', { exercise: payload.exercise });
       } catch (error) {
         warnWithTs('[ScanARKit] Auto analysis upload failed', error);
       }
