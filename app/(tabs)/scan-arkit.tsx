@@ -440,6 +440,13 @@ export default function ScanARKitScreen() {
   }, [activeFormTargets, detectionMode, deepLinkTemplateId]);
   const [activePhase, setActivePhase] = useState<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
+  // Mirror for callback-stable access inside memoized workout callbacks.
+  // Updating a ref keeps `workoutControllerCallbacks` from churning every
+  // time the user flips the audio-cue switch.
+  const audioFeedbackEnabledRef = React.useRef<boolean>(true);
+  useEffect(() => {
+    audioFeedbackEnabledRef.current = audioFeedbackEnabled;
+  }, [audioFeedbackEnabled]);
   const activePhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   // Tracks the current workout's resting/initial phase so timer callbacks can
   // cheaply skip heavy work while the user is between reps.
@@ -1023,6 +1030,18 @@ export default function ScanARKitScreen() {
       }
       if (recordingActiveRef.current && Date.now() >= recordingStartEpochMsRef.current) {
         recordingFqiScoresRef.current.push(fqi);
+      }
+      // Additive rep-complete haptic: the workout controller already fires
+      // a Light impact through the shared haptic bus, but testers reported
+      // that in noisy gym environments the light tap is easy to miss. When
+      // the user has audio/cue feedback enabled we also fire a Heavy impact
+      // here so successful reps register unambiguously. Gated by
+      // audioFeedbackEnabledRef.current (mirrors the cue-audio toggle) so
+      // users who explicitly silenced cues don't get a phantom extra buzz.
+      if (audioFeedbackEnabledRef.current) {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {
+          /* native bridge unavailable — silent */
+        });
       }
     },
     onPullupScoring: (
