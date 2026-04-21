@@ -2376,21 +2376,44 @@ export default function ScanARKitScreen() {
     }, [watchMirrorActive, captureAndSendWatchMirror]);
 
     // Watch Connectivity: Listen for commands
+    //
+    // The watch channel is asynchronous: a user can tap "start" on the
+    // watch, foreground-background the phone, and the message still
+    // arrives ~1s later. Without a focus + latest-ref guard the handler
+    // would call startTracking()/stopTracking() closures captured at the
+    // time the effect ran, which may reference stale props (for example
+    // isTracking=false even though tracking already started via a
+    // concurrent tap on the phone). Reading from refs at call time keeps
+    // the decision based on current state, and the isScreenFocused check
+    // prevents late messages arriving after the user navigated away from
+    // the scan tab from kicking the camera back on.
+    const isTrackingRef = useRef(isTracking);
+    const supportStatusRef = useRef(supportStatus);
+    const isScreenFocusedRef = useRef(isScreenFocused);
+    useEffect(() => { isTrackingRef.current = isTracking; }, [isTracking]);
+    useEffect(() => { supportStatusRef.current = supportStatus; }, [supportStatus]);
+    useEffect(() => { isScreenFocusedRef.current = isScreenFocused; }, [isScreenFocused]);
+
     useEffect(() => {
       const unsubscribe = watchEvents.addListener('message', (message: { command?: string }) => {
+        // Ignore late messages arriving after the screen unfocused /
+        // unmounted; see the comment block above for rationale.
+        if (!isScreenFocusedRef.current) {
+          return;
+        }
         if (message.command === 'start') {
-          if (!isTracking && supportStatus === 'supported') {
+          if (!isTrackingRef.current && supportStatusRef.current === 'supported') {
             startTracking();
           }
         } else if (message.command === 'stop') {
-          if (isTracking) {
+          if (isTrackingRef.current) {
             stopTracking();
           }
         }
       });
 
       return () => unsubscribe();
-    }, [isTracking, supportStatus, startTracking, stopTracking]);
+    }, [startTracking, stopTracking]);
 
     // Watch Connectivity: Sync state
     useEffect(() => {
