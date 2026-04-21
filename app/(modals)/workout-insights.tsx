@@ -19,6 +19,7 @@ import {
   type DriverCard,
   type WorkoutInsightsSnapshot,
 } from '@/lib/services/workout-insights';
+import { getFqiBand } from '@/lib/services/workout-insights-fqi-bands';
 
 const { width: screenWidth } = Dimensions.get('window');
 const chartWidth = screenWidth - 40;
@@ -292,6 +293,17 @@ export default function WorkoutInsightsModal() {
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Avg FQI</Text>
               <Text style={styles.summaryValue}>{snapshot.avgFqi ?? '--'}</Text>
+              {(() => {
+                const info = getFqiBand(snapshot.avgFqi);
+                return (
+                  <Text
+                    style={[styles.summaryBand, { color: info.color }]}
+                    testID="fqi-band-label"
+                  >
+                    {info.label}
+                  </Text>
+                );
+              })()}
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Balance</Text>
@@ -699,6 +711,13 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     marginTop: 4,
+  },
+  summaryBand: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    marginTop: 2,
+    textTransform: 'uppercase',
   },
   card: {
     backgroundColor: '#12243A',
