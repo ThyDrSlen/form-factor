@@ -35,6 +35,7 @@ import {
 } from '@/lib/services/progression-planner';
 import { suggestWeight, type WeightSuggestion } from '@/lib/services/weight-suggester';
 import type { PrResult } from '@/lib/services/pr-detector-overload';
+import { ProgressionPlanView } from '@/components/ProgressionPlanView';
 
 const BG = '#050E1F';
 const PANEL = '#0E1A2E';
@@ -241,7 +242,12 @@ export default function ProgressionPlanModal() {
                 <Text style={styles.loadingText}>Asking the coach…</Text>
               </View>
             ) : plan ? (
-              <Text style={styles.planText}>{plan.text}</Text>
+              <ProgressionPlanView
+                source={plan.text}
+                textColor={TEXT_PRIMARY}
+                mutedColor={TEXT_SECONDARY}
+                accentColor={ACCENT}
+              />
             ) : (
               <Text style={styles.cardBody}>
                 The coach service is unavailable — your suggested weight above still applies.
