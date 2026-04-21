@@ -11,6 +11,7 @@ import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { fetchTodaySession, fetchCoachSessionMessages } from '@/lib/services/coach-history-service';
 import { AppError, createError, logError, mapToUserMessage } from '@/lib/services/ErrorHandler';
 import { CoachProviderBadge } from '@/components/coach/CoachProviderBadge';
+import { CoachAvailabilityBanner } from '@/components/coach/CoachAvailabilityBanner';
 import { styles } from '../../styles/tabs/_index.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
 import { tabColors } from '@/styles/tabs/_tab-theme';
@@ -339,6 +340,10 @@ export default function CoachScreen() {
             <VoiceCommandFeedback latestIntent={voiceControl.latestIntent} />
           </>
         ) : null}
+
+        {/* #557 B4: offline-coach awareness banner. Self-hides when the
+            network is online; dismissible with Got it on tap. */}
+        <CoachAvailabilityBanner testID="coach-availability-banner" />
 
         <View style={styles.quickPrompts}>
           {coachQuickPrompts.map(prompt => (
