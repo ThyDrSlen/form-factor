@@ -1,6 +1,7 @@
 import { sendCoachPrompt } from '@/lib/services/coach-service';
 import type { CoachMessage } from '@/lib/services/coach-service';
 import { isCoachPipelineV2Enabled } from '@/lib/services/coach-pipeline-v2-flag';
+import { isDispatchEnabled } from '@/lib/services/coach-model-dispatch-flag';
 
 export type DrillExplainerProvider = 'cloud' | 'gemma' | 'openai';
 
@@ -74,22 +75,48 @@ export function buildDrillExplainerMessages(input: ExplainDrillInput): CoachMess
  * `EXPO_PUBLIC_COACH_CLOUD_PROVIDER` (mirroring `coach-auto-debrief.ts:157`)
  * and pass it through to `sendCoachPrompt`. Flag off → legacy behavior
  * (hardcoded 'cloud' return annotation).
+ *
+ * Gemma-first fallback: when BOTH the pipeline master flag AND the model
+ * dispatch flag are on, we attempt Gemma first (regardless of the env
+ * resolver, since the cost-aware dispatcher considers drill explanations
+ * tactical), and fall back to the cloud on any error. The returned
+ * `provider` field reflects whichever path ultimately produced the text.
+ * Either flag off preserves legacy single-shot behavior.
  */
 export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDrillResult> {
   const messages = buildDrillExplainerMessages(input);
   const pipelineV2 = isCoachPipelineV2Enabled();
+  const dispatchOn = isDispatchEnabled();
+  const gemmaFirst = pipelineV2 && dispatchOn;
   const resolvedProvider: 'gemma' | 'openai' | null = pipelineV2
     ? resolveDrillProvider()
     : null;
   const returnedProvider: DrillExplainerProvider = resolvedProvider ?? 'cloud';
 
+  const context = { focus: 'drill-explainer', sessionId: undefined };
+
+  // Gemma-first attempt (both flags on). On any error we fall through to the
+  // env-resolved provider below.
+  if (gemmaFirst) {
+    try {
+      const reply = await sendCoachPrompt(messages, context, { provider: 'gemma' });
+      const text = (reply.content ?? '').trim();
+      if (text) {
+        return { explanation: text, provider: 'gemma' };
+      }
+      // Empty Gemma reply → fall through to cloud so the user still sees
+      // something actionable.
+    } catch {
+      // Swallow and fall through to cloud. We deliberately don't log the
+      // error here — sendCoachPrompt already logs structured errors via
+      // ErrorHandler; duplicating the warning would pollute the toast UX.
+    }
+  }
+
   try {
     const reply = await sendCoachPrompt(
       messages,
-      {
-        focus: 'drill-explainer',
-        sessionId: undefined,
-      },
+      context,
       resolvedProvider ? { provider: resolvedProvider } : undefined,
     );
     const text = (reply.content ?? '').trim();

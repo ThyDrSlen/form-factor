@@ -195,6 +195,43 @@ describe('decideCoachModel', () => {
       expect(decision.reason).toBe('complex_cloud');
       expect(decision.model).toBe('gpt-5.4-mini');
     });
+
+    // -------------------------------------------------------------------------
+    // Gap #7 — high-fault-upgrade + premium tier.
+    //
+    // The heuristic at coach-model-dispatch.ts:150-156 bumps tactical tasks to
+    // `gpt-5.4-mini` regardless of tier. One reading says premium users with
+    // high faultCount deserve the best-in-tier model (`gpt-5.4`) since they
+    // are paying for it and the session is already degraded. The current
+    // implementation does NOT upgrade per tier on the high-fault path — this
+    // test pins the existing behavior so any future change is a deliberate
+    // choice rather than an accident.
+    //
+    // If product ever wants tier-aware upgrades on high fault, swap this
+    // expectation to `gpt-5.4` and update `tacticalGemmaForTier` + the high
+    // -fault branch to mirror `complexCloudForTier`.
+    // -------------------------------------------------------------------------
+    it('premium + faultCount=5 on tactical task upgrades to gpt-5.4-mini (NOT gpt-5.4)', () => {
+      const decision = decideCoachModel(
+        'form_cue_lookup',
+        { faultCount: 5 },
+        'premium',
+      );
+      // Document: the high-fault upgrade deliberately flattens across tiers.
+      expect(decision.model).toBe('gpt-5.4-mini');
+      expect(decision.reason).toBe('high_fault_upgrade');
+      expect(decision.fellBackToCloud).toBe(true);
+    });
+
+    it('pro + faultCount=5 on tactical task also lands on gpt-5.4-mini (tier-flat)', () => {
+      const decision = decideCoachModel(
+        'form_cue_lookup',
+        { faultCount: 5 },
+        'pro',
+      );
+      expect(decision.model).toBe('gpt-5.4-mini');
+      expect(decision.reason).toBe('high_fault_upgrade');
+    });
   });
 
   describe('form_vision_check → multimodal Gemma', () => {

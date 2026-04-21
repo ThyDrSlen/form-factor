@@ -298,3 +298,70 @@ describe('classifyIntent — noise tolerance', () => {
     expect(r.intent).toBe('skip_rest');
   });
 });
+
+// ===========================================================================
+// Gap #9 — keyword-matched but with an invalid/malformed number.
+//
+// Even when the keyword (`add`, `plus`, `increase`, `rpe`) is present, a
+// bad numeric token must not produce a NaN payload. This is the class of
+// inputs real STT produces when mishearing ("add minus weight", "plus NaN
+// thousand"), and the classifier must either surface the correctly-
+// classified intent with finite params, or fall back to `none` — never
+// emit `NaN`.
+// ===========================================================================
+
+describe('classifyIntent — keyword matched, invalid number', () => {
+  it('"add minus weight" does not produce a NaN weight payload', () => {
+    const r = classifyIntent('add minus weight');
+    // Either we fall back to 'none', or we surface something benign. The
+    // critical invariant: no NaN sneaks into params.weight.
+    if (r.intent === 'add_weight') {
+      expect(Number.isFinite(r.params.weight)).toBe(true);
+      expect(r.params.weight).toBeGreaterThan(0);
+    } else {
+      expect(r.params.weight).toBeUndefined();
+    }
+  });
+
+  it('"add weight abc" rejects non-numeric token and does not classify as add_weight', () => {
+    const r = classifyIntent('add weight abc');
+    expect(r.intent).not.toBe('add_weight');
+    expect(r.params.weight).toBeUndefined();
+  });
+
+  it('"rpe banana" rejects non-numeric and does not produce a NaN rpe', () => {
+    const r = classifyIntent('rpe banana');
+    expect(r.intent).not.toBe('log_rpe');
+    expect(r.params.rpe).toBeUndefined();
+  });
+
+  it('"plus" with no number falls back cleanly', () => {
+    const r = classifyIntent('plus');
+    expect(r.intent).not.toBe('add_weight');
+    expect(r.params.weight).toBeUndefined();
+  });
+
+  it('"add weight -5" rejects negative number without emitting NaN', () => {
+    const r = classifyIntent('add weight -5');
+    expect(r.intent).not.toBe('add_weight');
+    expect(r.params.weight).toBeUndefined();
+  });
+
+  it('ensures every `none` classification has no numeric params', () => {
+    const inputs = ['rpe', 'plus kg', 'add weight minus ten', 'rpe minus one'];
+    for (const input of inputs) {
+      const r = classifyIntent(input);
+      if (r.intent === 'none') {
+        // Params must be empty; no NaN values.
+        expect(r.params).toEqual({});
+      } else if (r.intent === 'add_weight' || r.intent === 'log_rpe') {
+        if (r.params.weight !== undefined) {
+          expect(Number.isFinite(r.params.weight)).toBe(true);
+        }
+        if (r.params.rpe !== undefined) {
+          expect(Number.isFinite(r.params.rpe)).toBe(true);
+        }
+      }
+    }
+  });
+});

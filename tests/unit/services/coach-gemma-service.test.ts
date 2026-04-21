@@ -224,4 +224,59 @@ describe('coach-gemma-service', () => {
 
     await expect(sendCoachGemmaPrompt(baseMessages)).rejects.toBe(domainErr);
   });
+
+  // ---------------------------------------------------------------------------
+  // Timeout / rate-limit hardening (Gap #5)
+  //
+  // Supabase's invoke() surfaces network timeouts as thrown AbortError-shaped
+  // rejections and upstream 429 responses via its { error } channel. The
+  // service must surface a typed error in both cases rather than hang or
+  // leak the underlying network exception.
+  // ---------------------------------------------------------------------------
+
+  it('surfaces timeout-shaped thrown errors as COACH_GEMMA_REQUEST_FAILED (no hang)', async () => {
+    const timeoutErr = Object.assign(new Error('The operation was aborted'), {
+      name: 'AbortError',
+    });
+    mockInvoke.mockRejectedValue(timeoutErr);
+
+    const promise = sendCoachGemmaPrompt(baseMessages);
+    await expect(promise).rejects.toMatchObject({
+      domain: 'network',
+      code: 'COACH_GEMMA_REQUEST_FAILED',
+      retryable: true,
+    });
+  });
+
+  it('surfaces upstream 429 rate-limit responses without hanging', async () => {
+    // Supabase edge returns rate-limit as a { error } with status 429.
+    mockInvoke.mockResolvedValue({
+      data: null,
+      error: { message: '429 Too Many Requests', status: 429 },
+    });
+
+    const promise = sendCoachGemmaPrompt(baseMessages);
+    // The current invoke-error path classifies everything-non-404/-config as
+    // INVOKE_FAILED with retryable=true; assert exactly that shape so future
+    // refinements (e.g. a dedicated COACH_GEMMA_RATE_LIMITED code) can tighten
+    // this test without regressing.
+    await expect(promise).rejects.toMatchObject({
+      domain: 'network',
+      code: 'COACH_GEMMA_INVOKE_FAILED',
+      retryable: true,
+    });
+  });
+
+  it('surfaces 429 text inside data.error as COACH_GEMMA_ERROR with retryable=true', async () => {
+    mockInvoke.mockResolvedValue({
+      data: { error: 'rate limit exceeded (429)' },
+      error: null,
+    });
+
+    await expect(sendCoachGemmaPrompt(baseMessages)).rejects.toMatchObject({
+      domain: 'network',
+      code: 'COACH_GEMMA_ERROR',
+      retryable: true,
+    });
+  });
 });

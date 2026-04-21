@@ -220,6 +220,73 @@ describe('coach-gemma translation helpers', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Gap #8 — malformed `{}` Gemini response simulated through the handler
+  // path.
+  //
+  // The Deno handler in ./index.ts cannot be imported here (Deno-only URL
+  // imports), but the handler's contract is: if `extractGeminiText(body)`
+  // returns null, it logs and returns a 502 `badRequest` with the message
+  // 'Upstream returned an unexpected response format.' These tests pin the
+  // helpers' behavior so the handler's observable contract (null → error)
+  // stays intact.
+  //
+  // Why 502 not 500: the existing handler treats malformed upstream payloads
+  // as bad-gateway (upstream's fault), reserving 500 for server config
+  // errors (missing env vars). Callers see `COACH_GEMMA_ERROR` / retryable
+  // regardless — the status-code precision matters for observability.
+  // ---------------------------------------------------------------------------
+  describe('handler contract for malformed {} upstream body (Gap #8)', () => {
+    it('extractGeminiText on exactly `{}` returns null (triggers 502 in handler)', () => {
+      // The handler calls extractGeminiText on every parsed upstream body.
+      // This is the exact shape the upstream emits when it erroneously sends
+      // an empty JSON object — e.g. hit our concurrency cap, or the model
+      // returned nothing but HTTP 200.
+      const body = {};
+      expect(extractGeminiText(body)).toBeNull();
+    });
+
+    it('extractGeminiText handles partially-shaped bodies (candidates=[])', () => {
+      // Another real upstream shape: candidates is present but empty.
+      expect(extractGeminiText({ candidates: [] })).toBeNull();
+    });
+
+    it('extractGeminiText handles candidates=[{}] (missing content)', () => {
+      expect(extractGeminiText({ candidates: [{}] })).toBeNull();
+    });
+
+    it('extractGeminiText handles candidates with content but no parts array', () => {
+      expect(
+        extractGeminiText({ candidates: [{ content: { parts: undefined } }] }),
+      ).toBeNull();
+    });
+
+    it('extractGeminiText survives a fully-null candidates entry (no unhandled rejection)', () => {
+      // The helper must not throw even on wildly-malformed upstream payloads.
+      // The handler's log-and-502 contract depends on this never throwing.
+      expect(() =>
+        extractGeminiText({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          candidates: [null as any],
+        }),
+      ).not.toThrow();
+    });
+
+    it('buildGeminiPayload produces a wrapping structure that the upstream can reject into `{}`', () => {
+      // Guard against a future refactor that accidentally makes the payload
+      // shape invalid, which would mask a real bug by explaining the `{}`
+      // response as our fault rather than the upstream's.
+      const payload = buildGeminiPayload(
+        [{ role: 'user', content: 'Hello' }],
+        { focus: 'squat' },
+        { temperature: 0.3, maxOutputTokens: 256 },
+      );
+      expect(payload.contents).toBeDefined();
+      expect(payload.contents.length).toBeGreaterThan(0);
+      expect(payload.systemInstruction.parts[0].text).toBeTruthy();
+    });
+  });
+
   describe('model allowlist', () => {
     it('includes only the three Gemma 3 instruct variants', () => {
       expect([...ALLOWED_MODELS].sort()).toEqual([

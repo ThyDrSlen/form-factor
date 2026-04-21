@@ -111,4 +111,71 @@ describe('useCameraPermissionGuard', () => {
     expect(nextStatus).toBe('granted');
     helper.restore();
   });
+
+  // ---------------------------------------------------------------------------
+  // Gap #12 — background→active revocation flow.
+  //
+  // Real-world flow: user grants camera on mount, backgrounds the app, flips
+  // the permission off in Settings, then foregrounds. The hook must refresh
+  // permission state on the `active` AppState transition and surface
+  // `status: 'revoked'` so the scan UI can surface the "Open Settings" CTA.
+  // ---------------------------------------------------------------------------
+
+  it('granted → background → revoked in Settings → active re-fetches and flags revoked', async () => {
+    mockCurrentPermission = { granted: true, canAskAgain: true };
+    const helper = mockAppState();
+    const { result } = renderHook(() => useCameraPermissionGuard());
+    await waitFor(() => expect(result.current.status).toBe('granted'));
+
+    // App backgrounds (no-op per current implementation, but we transition
+    // through it for realism).
+    await act(async () => {
+      helper.emit('background');
+    });
+    // Status should not flip prematurely just on background.
+    expect(result.current.status).toBe('granted');
+
+    // User revokes in Settings; on foreground, refresh picks up the new state.
+    mockCurrentPermission = { granted: false, canAskAgain: false };
+    await act(async () => {
+      helper.emit('active');
+    });
+    await waitFor(() => expect(result.current.status).toBe('revoked'));
+    expect(result.current.revoked).toBe(true);
+    expect(mockGetPermission).toHaveBeenCalled();
+
+    helper.restore();
+  });
+
+  it('initial deny with canAskAgain=false exposes openSettings path (revoked semantics)', async () => {
+    // This is the "irreversible deny" state — the app cannot re-prompt, so
+    // the only recovery is the Settings deep link. The hook should report
+    // revoked=true so the UI shows the correct CTA.
+    mockCurrentPermission = { granted: false, canAskAgain: false };
+    const helper = mockAppState();
+    const { result } = renderHook(() =>
+      useCameraPermissionGuard({ detectRevoke: true }),
+    );
+    await waitFor(() => expect(result.current.status).toBe('revoked'));
+    expect(result.current.revoked).toBe(true);
+    expect(result.current.canAskAgain).toBe(false);
+
+    // The openSettings path must exist and be callable.
+    expect(typeof result.current.openSettings).toBe('function');
+
+    helper.restore();
+  });
+
+  it('detectRevoke=false on canAskAgain=false reports denied (not revoked)', async () => {
+    // Without the revoke detection flag, the hook should degrade to plain
+    // `denied` so legacy callers see no behavior change.
+    mockCurrentPermission = { granted: false, canAskAgain: false };
+    const helper = mockAppState();
+    const { result } = renderHook(() =>
+      useCameraPermissionGuard({ detectRevoke: false }),
+    );
+    await waitFor(() => expect(result.current.status).toBe('denied'));
+    expect(result.current.revoked).toBe(false);
+    helper.restore();
+  });
 });
