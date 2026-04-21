@@ -404,4 +404,128 @@ describe('cue engine — priority cancellation', () => {
     expect(event.replacedByRuleId).toBe('tied_b');
     expect(event.replacedByPriority).toBe(2);
   });
+
+  // ==========================================================================
+  // Wave-29 T6: cancellation boundary at exactly estimatedPlaybackMs.
+  //
+  // lib/fusion/cue-engine.ts:200-209 — maybeCancelLowerPriority bails when
+  // `elapsed >= playbackMs` (L208). The existing suite (L201-228 above)
+  // covers the far-past case (2000ms > 500ms window). These two tests pin
+  // the EXACT boundary:
+  //   - elapsed == estimatedPlaybackMs  → must NOT cancel (>= check)
+  //   - elapsed == estimatedPlaybackMs-1 → MUST cancel
+  // This locks in the inclusive-upper boundary of the playback window so any
+  // future refactor to `elapsed > playbackMs` (exclusive) trips the test.
+  // ==========================================================================
+  test('no cancellation at exact estimatedPlaybackMs boundary (elapsed == window)', () => {
+    const audio = makeAudioMock();
+    const onCancellation = jest.fn();
+
+    const low = baseRule({
+      id: 'low',
+      priority: 3,
+      metric: 'leftKnee',
+      min: 95,
+      max: 105,
+      cooldownMs: 0,
+      persistMs: 0,
+    });
+    const high = baseRule({
+      id: 'high',
+      priority: 1,
+      metric: 'rightKnee',
+      min: 95,
+      max: 105,
+      cooldownMs: 0,
+      persistMs: 0,
+    });
+
+    const engine = createCueEngine([low, high], {
+      minConfidence: 0.7,
+      audio,
+      onCancellation,
+      estimatedPlaybackMs: 1_500,
+    });
+
+    // t=1000 low fires (only leftKnee violates).
+    engine.evaluate({
+      timestampMs: 1_000,
+      phase: 'bottom',
+      confidence: 0.95,
+      metrics: { leftKnee: 80, rightKnee: 100 },
+    });
+
+    // t=2500 → elapsed=1500 = estimatedPlaybackMs → L208 returns EARLY,
+    // clearing currentlyPlaying, so no cancel fires. The high cue still
+    // emits (it's a fresh emission with nothing "playing" after the clear).
+    const emissions = engine.evaluate({
+      timestampMs: 2_500,
+      phase: 'bottom',
+      confidence: 0.95,
+      metrics: { leftKnee: 100, rightKnee: 80 },
+    });
+
+    expect(emissions).toHaveLength(1);
+    expect(emissions[0]?.ruleId).toBe('high');
+    expect(audio.cancel).not.toHaveBeenCalled();
+    expect(onCancellation).not.toHaveBeenCalled();
+  });
+
+  test('cancellation at estimatedPlaybackMs - 1 (elapsed just under the window)', () => {
+    const audio = makeAudioMock();
+    const onCancellation = jest.fn();
+
+    const low = baseRule({
+      id: 'low',
+      priority: 3,
+      metric: 'leftKnee',
+      min: 95,
+      max: 105,
+      cooldownMs: 0,
+      persistMs: 0,
+    });
+    const high = baseRule({
+      id: 'high',
+      priority: 1,
+      metric: 'rightKnee',
+      min: 95,
+      max: 105,
+      cooldownMs: 0,
+      persistMs: 0,
+    });
+
+    const engine = createCueEngine([low, high], {
+      minConfidence: 0.7,
+      audio,
+      onCancellation,
+      estimatedPlaybackMs: 1_500,
+    });
+
+    // t=1000 low fires.
+    engine.evaluate({
+      timestampMs: 1_000,
+      phase: 'bottom',
+      confidence: 0.95,
+      metrics: { leftKnee: 80, rightKnee: 100 },
+    });
+
+    // t=2499 → elapsed=1499 < 1500 → proceeds to priority check →
+    // cancels low because high is strictly higher priority (1 < 3).
+    const emissions = engine.evaluate({
+      timestampMs: 2_499,
+      phase: 'bottom',
+      confidence: 0.95,
+      metrics: { leftKnee: 100, rightKnee: 80 },
+    });
+
+    expect(emissions).toHaveLength(1);
+    expect(emissions[0]?.ruleId).toBe('high');
+    expect(audio.cancel).toHaveBeenCalledTimes(1);
+    expect(onCancellation).toHaveBeenCalledTimes(1);
+    expect(onCancellation.mock.calls[0]?.[0]).toMatchObject({
+      cancelledRuleId: 'low',
+      replacedByRuleId: 'high',
+      timestampMs: 2_499,
+    });
+  });
 });
