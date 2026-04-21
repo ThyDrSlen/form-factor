@@ -12,7 +12,7 @@
  * tracker to navigate here is a follow-up.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,6 +25,8 @@ import {
 import { SessionHighlightCard } from '@/components/form-tracking/SessionHighlightCard';
 import { AskCoachCTA } from '@/components/form-tracking/AskCoachCTA';
 import AutoDebriefCard from '@/components/form-tracking/AutoDebriefCard';
+import { FqiExplainerModal } from '@/components/form-tracking/FqiExplainerModal';
+import { resolveExerciseKey } from '@/lib/services/form-session-history-lookup';
 import { useAutoDebrief } from '@/hooks/use-auto-debrief';
 import { isCoachPipelineV2Enabled } from '@/lib/services/coach-pipeline-v2-flag';
 
@@ -125,6 +127,14 @@ export default function FormTrackingDebriefScreen() {
     router.back();
   }, [router]);
 
+  const [explainerVisible, setExplainerVisible] = useState(false);
+  const handleOpenExplainer = useCallback(() => setExplainerVisible(true), []);
+  const handleCloseExplainer = useCallback(() => setExplainerVisible(false), []);
+  const explainerExerciseId = useMemo(
+    () => resolveExerciseKey(exerciseName) ?? undefined,
+    [exerciseName],
+  );
+
   const hasReps = reps.length > 0;
 
   return (
@@ -168,6 +178,20 @@ export default function FormTrackingDebriefScreen() {
               value={averageFqi != null ? String(Math.round(averageFqi)) : '–'}
             />
           </View>
+          {averageFqi != null ? (
+            <Pressable
+              onPress={handleOpenExplainer}
+              accessibilityRole="button"
+              accessibilityLabel="What does this score mean?"
+              accessibilityHint="Tap to learn what this score means"
+              style={({ pressed }) => [styles.explainerChip, pressed && styles.explainerChipPressed]}
+              testID="form-tracking-debrief-fqi-explainer-chip"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="information-circle-outline" size={14} color="#9AACD1" />
+              <Text style={styles.explainerChipText}>What does this score mean?</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.sectionGap}>
@@ -215,6 +239,13 @@ export default function FormTrackingDebriefScreen() {
         repCount={reps.length}
         averageFqi={averageFqi}
         topFault={topFault}
+      />
+
+      <FqiExplainerModal
+        visible={explainerVisible}
+        onDismiss={handleCloseExplainer}
+        exerciseId={explainerExerciseId}
+        testID="form-tracking-debrief-fqi-explainer"
       />
     </SafeAreaView>
   );
@@ -301,6 +332,27 @@ const styles = StyleSheet.create({
     marginTop: 2,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
+  },
+  explainerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(154, 172, 209, 0.3)',
+    backgroundColor: 'rgba(154, 172, 209, 0.06)',
+  },
+  explainerChipPressed: {
+    backgroundColor: 'rgba(154, 172, 209, 0.16)',
+  },
+  explainerChipText: {
+    color: '#9AACD1',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   sectionGap: {
     marginBottom: 20,
