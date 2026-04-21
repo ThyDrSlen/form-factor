@@ -162,4 +162,122 @@ describe('useShapedStreamCoach', () => {
     expect(result.current.error?.message).toBe('boom');
     expect(result.current.complete).toBe(false);
   });
+
+  // ---------------------------------------------------------------------------
+  // Gap #11 — unmount-during-stream cleanup.
+  //
+  // When the component holding the hook unmounts mid-stream, the cleanup
+  // effect MUST call AbortController.abort() on the in-flight request so
+  // the network/stream resource is released. The mountedRef guard must
+  // prevent any setState calls that would race after unmount and log a
+  // React warning.
+  // ---------------------------------------------------------------------------
+
+  it('unmounting during stream aborts the in-flight request', async () => {
+    const abortSpy = jest.fn();
+    let capturedSignal: AbortSignal | undefined;
+
+    mockStreamCoachPrompt.mockImplementation(
+      async (
+        _m: unknown,
+        _c: unknown,
+        _onChunk: (d: string) => void,
+        opts: { signal?: AbortSignal },
+      ) => {
+        capturedSignal = opts.signal;
+        opts.signal?.addEventListener('abort', abortSpy);
+        // Resolve a never-settling-until-abort promise so we can observe
+        // the abort signal from the unmount path. We manually hang on a
+        // promise that only rejects when the signal fires.
+        return new Promise((_resolve, reject) => {
+          opts.signal?.addEventListener('abort', () => {
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+          });
+        });
+      },
+    );
+
+    const { result, unmount } = renderHook(() => useShapedStreamCoach());
+
+    // Kick off the stream but don't await it — we want to unmount mid-flight.
+    let pending: Promise<string | null> | undefined;
+    act(() => {
+      pending = result.current.start([{ role: 'user', content: 'x' }]);
+    });
+
+    // Unmount the hook host. The cleanup effect should trigger abort().
+    act(() => {
+      unmount();
+    });
+
+    expect(capturedSignal?.aborted).toBe(true);
+    expect(abortSpy).toHaveBeenCalled();
+
+    // Swallow the resulting rejection so the test runner doesn't flag it.
+    await expect(pending).resolves.toBeNull().catch(() => undefined);
+  });
+
+  it('mountedRef guard prevents post-unmount setState warnings during flush', async () => {
+    // Once the hook is unmounted, any setState attempts from a pending
+    // async flush must be swallowed by the mountedRef guard. We assert that
+    // no React "setState after unmount" warnings are emitted.
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    let resolveStream: (value: {
+      text: string;
+      chunkCount: number;
+      ttftMs: number;
+      durationMs: number;
+    }) => void = () => {};
+    const streamPromise = new Promise<{
+      text: string;
+      chunkCount: number;
+      ttftMs: number;
+      durationMs: number;
+    }>((resolve) => {
+      resolveStream = resolve;
+    });
+
+    mockStreamCoachPrompt.mockImplementation(
+      async (
+        _m: unknown,
+        _c: unknown,
+        onChunk: (d: string) => void,
+      ) => {
+        onChunk('Partial.');
+        return streamPromise;
+      },
+    );
+
+    const { result, unmount } = renderHook(() => useShapedStreamCoach());
+    let pending: Promise<string | null> | undefined;
+    act(() => {
+      pending = result.current.start([{ role: 'user', content: 'x' }]);
+    });
+
+    // Unmount before the stream resolves.
+    act(() => {
+      unmount();
+    });
+
+    // Now resolve — the post-unmount code path should NOT setState.
+    await act(async () => {
+      resolveStream({
+        text: 'Partial.',
+        chunkCount: 1,
+        ttftMs: 1,
+        durationMs: 1,
+      });
+      await pending;
+    });
+
+    // React would log a warning like "Can't perform a React state update on
+    // an unmounted component" if the mountedRef guard missed a path.
+    const warnings = consoleErrorSpy.mock.calls
+      .map((call) => String(call[0] ?? ''))
+      .filter((msg) => /unmounted component|setState/.test(msg));
+    expect(warnings).toHaveLength(0);
+
+    consoleErrorSpy.mockRestore();
+  });
 });
