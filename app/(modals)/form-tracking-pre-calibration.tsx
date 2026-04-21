@@ -211,8 +211,11 @@ function CheckStep({ onContinue, onCancel }: CheckStepProps) {
     return () => clearInterval(id);
   }, [permission?.granted]);
 
-  const canContinue = permission?.granted === true && livePill.ready;
-
+  // A8: we surface the Ready pill when the camera preview has confirmed
+  // a stable baseline, but we intentionally do NOT gate Continue on it —
+  // users may arrive here after having already granted camera elsewhere,
+  // and the CheckStep is an informational framing check. The real
+  // confidence gate lives in the PreviewStep (`pre-calibration-confirm`).
   return (
     <>
       <View style={styles.iconWrap}>
@@ -281,14 +284,11 @@ function CheckStep({ onContinue, onCancel }: CheckStepProps) {
           <Text style={styles.secondaryButtonText}>Cancel</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.primaryButton, !canContinue && styles.primaryButtonDisabled]}
+          style={styles.primaryButton}
           onPress={onContinue}
-          disabled={!canContinue}
           testID="pre-calibration-continue"
         >
-          <Text style={styles.primaryButtonText}>
-            {canContinue ? 'Continue' : 'Waiting...'}
-          </Text>
+          <Text style={styles.primaryButtonText}>Continue</Text>
         </TouchableOpacity>
       </View>
     </>
