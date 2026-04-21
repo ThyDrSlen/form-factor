@@ -13,6 +13,7 @@ export interface AppError {
     | 'storage'
     | 'sync'
     | 'auth'
+    | 'coach'
     | 'form-tracking'
     | 'unknown';
   code: string;
@@ -23,7 +24,7 @@ export interface AppError {
 }
 
 export interface ErrorContext {
-  feature: 'auth' | 'form-feedback' | 'workouts' | 'ui' | 'app' | 'form-tracking';
+  feature: 'auth' | 'form-feedback' | 'workouts' | 'ui' | 'app' | 'form-tracking' | 'coach';
   location?: string;
   meta?: Record<string, unknown>;
 }
@@ -99,6 +100,8 @@ export function mapToUserMessage(err: AppError): string {
       return 'Sync issue. We will retry automatically when online.';
     case 'auth':
       return 'Authentication error. Please try again.';
+    case 'coach':
+      return 'Coach service hit an issue. Please try again.';
     case 'form-tracking':
       return mapFormTrackingMessage(err.code);
     default:
