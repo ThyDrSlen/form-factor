@@ -41,7 +41,9 @@ import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type MediaPipePose2D } from '@/lib/arkit/ARKitBodyTracker';
 import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
 import { audioSessionManager } from '@/lib/services/audio-session-manager';
+import { useToast } from '@/contexts/ToastContext';
 import { CrashBoundary } from '@/components/CrashBoundary';
+import { ARKitUnsupportedPlaceholder } from '@/components/form-tracking/ARKitUnsupportedPlaceholder';
 import { ExitMidSessionSheet } from '@/components/form-tracking/ExitMidSessionSheet';
 import { PreSetPreviewCard } from '@/components/form-tracking/PreSetPreviewCard';
 import { usePreSetPreview } from '@/hooks/use-pre-set-preview';
@@ -344,6 +346,7 @@ const PreviewPlayer = ({ uri }: { uri: string }) => {
 export default function ScanARKitScreen() {
   const DEV = __DEV__;
   const router = useRouter();
+  const { show: showToast } = useToast();
   const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string; trackingDebug?: string; templateId?: string }>();
   const fixturePlaybackRequested = params.fixturePlayback === '1';
   // Issue #447 — deep-link / scheduled-workout template binding.
@@ -439,6 +442,13 @@ export default function ScanARKitScreen() {
   }, [activeFormTargets, detectionMode, deepLinkTemplateId]);
   const [activePhase, setActivePhase] = useState<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] = useState(true);
+  // Mirror for callback-stable access inside memoized workout callbacks.
+  // Updating a ref keeps `workoutControllerCallbacks` from churning every
+  // time the user flips the audio-cue switch.
+  const audioFeedbackEnabledRef = React.useRef<boolean>(true);
+  useEffect(() => {
+    audioFeedbackEnabledRef.current = audioFeedbackEnabled;
+  }, [audioFeedbackEnabled]);
   const activePhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   // Tracks the current workout's resting/initial phase so timer callbacks can
   // cheaply skip heavy work while the user is between reps.
@@ -741,6 +751,10 @@ export default function ScanARKitScreen() {
         if (DEV) {
           warnWithTs('[ScanARKit] MediaPipe shadow unavailable, falling back to proxy provider');
         }
+        // Surface the fallback to the user. Previously this was DEV-only,
+        // so prod users would silently drop onto the proxy provider with
+        // no explanation for the accuracy regression.
+        showToast('Pose tracking degraded — using fallback.', { type: 'info' });
       }
     };
 
@@ -750,13 +764,14 @@ export default function ScanARKitScreen() {
       }
       if (!cancelled) {
         setShadowProviderRuntime('mediapipe_proxy');
+        showToast('Pose tracking degraded — using fallback.', { type: 'info' });
       }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [DEV, isTracking, mediaPipeModelPath, shadowModeEnabled]);
+  }, [DEV, isTracking, mediaPipeModelPath, shadowModeEnabled, showToast]);
 
   useEffect(() => {
     const shouldPollMediaPipe =
@@ -924,6 +939,13 @@ export default function ScanARKitScreen() {
       if (__DEV__) {
         warnWithTs('[ScanARKit] Failed to initialize session context', error);
       }
+      // Surface the failure to the user — when the telemetry context
+      // can't initialize, the rep-count pipeline may fail to persist
+      // session metrics, so we owe them an honest warning rather than a
+      // silent session that produces no history entry.
+      showToast('Telemetry unavailable — reps may not be counted.', {
+        type: 'error',
+      });
     });
     resetFrameCounter();
     shadowStatsRef.current = createShadowStatsAccumulator();
@@ -933,7 +955,7 @@ export default function ScanARKitScreen() {
     realtimeFormEngineRef.current = createRealtimeEngineState();
     lastShadowMeanAbsDeltaRef.current = null;
     resetBaselineDebugMetrics();
-  }, [createRealtimeEngineState, resetBaselineDebugMetrics]);
+  }, [createRealtimeEngineState, resetBaselineDebugMetrics, showToast]);
 
   useEffect(() => {
     const countersRef = cueCountersRef;
@@ -1022,6 +1044,18 @@ export default function ScanARKitScreen() {
       }
       if (recordingActiveRef.current && Date.now() >= recordingStartEpochMsRef.current) {
         recordingFqiScoresRef.current.push(fqi);
+      }
+      // Additive rep-complete haptic: the workout controller already fires
+      // a Light impact through the shared haptic bus, but testers reported
+      // that in noisy gym environments the light tap is easy to miss. When
+      // the user has audio/cue feedback enabled we also fire a Heavy impact
+      // here so successful reps register unambiguously. Gated by
+      // audioFeedbackEnabledRef.current (mirrors the cue-audio toggle) so
+      // users who explicitly silenced cues don't get a phantom extra buzz.
+      if (audioFeedbackEnabledRef.current) {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {
+          /* native bridge unavailable — silent */
+        });
       }
     },
     onPullupScoring: (
@@ -2706,7 +2740,7 @@ export default function ScanARKitScreen() {
   }
 
   if (supportStatus === 'unsupported') {
-    // Debug info: Check what BodyTracker reports
+    // Debug info: Check what BodyTracker reports (only surfaced in __DEV__).
     const nativeDiagnostics = BodyTracker.getSupportDiagnostics();
     const debugInfo = {
       platform: Platform.OS,
@@ -2717,19 +2751,7 @@ export default function ScanARKitScreen() {
       isSupportedResult: nativeDiagnostics?.finalSupported ?? nativeSupported,
     };
 
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Ionicons name="warning-outline" size={60} color="#FF6B6B" />
-          <Text style={styles.errorText}>Device not supported</Text>
-          {__DEV__ ? (
-            <Text style={{ color: '#666', fontSize: 10, marginTop: 20, textAlign: 'center' }}>
-              Debug: {JSON.stringify(debugInfo, null, 2)}
-            </Text>
-          ) : null}
-        </View>
-      </SafeAreaView>
-    );
+    return <ARKitUnsupportedPlaceholder debugInfo={debugInfo} />;
   }
 
   const telemetryReps = repCount;
