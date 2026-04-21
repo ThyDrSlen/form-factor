@@ -29,6 +29,7 @@ import {
   getExerciseHistorySummary,
   type ExerciseHistorySummary,
 } from '@/lib/services/exercise-history-service';
+import { isProgressionPlanEnabled } from '@/lib/services/progression-flags';
 import {
   generateProgressionPlan,
   type ProgressionPlan,
@@ -79,6 +80,11 @@ export default function ProgressionPlanModal() {
   const [error, setError] = useState<string | null>(null);
   const [acceptedWeight, setAcceptedWeight] = useState<number | null>(null);
 
+  // EXPO_PUBLIC_PROGRESSION_PLAN gate (#475). When off, the modal renders a
+  // lightweight disabled-state — keeps deep links from crashing the bundler
+  // and doesn't touch the coach-service / local-db while the feature is dark.
+  const planEnabled = isProgressionPlanEnabled();
+
   const loadSummary = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -124,14 +130,19 @@ export default function ProgressionPlanModal() {
   );
 
   useEffect(() => {
+    if (!planEnabled) {
+      setLoading(false);
+      return;
+    }
     loadSummary();
-  }, [loadSummary]);
+  }, [loadSummary, planEnabled]);
 
   useEffect(() => {
+    if (!planEnabled) return;
     if (summary && summary.sets.length > 0) {
       loadPlan(summary);
     }
-  }, [summary, loadPlan]);
+  }, [summary, loadPlan, planEnabled]);
 
   const triggeredPrs = useMemo(
     () => (summary?.prData ?? []).filter((p) => p.isPr),
@@ -164,7 +175,19 @@ export default function ProgressionPlanModal() {
         <View style={{ width: 32 }} />
       </View>
 
-      {loading ? (
+      {!planEnabled ? (
+        <View
+          style={styles.loadingPanel}
+          accessibilityRole="summary"
+          testID="progression-plan-disabled"
+        >
+          <Ionicons name="construct" size={40} color={TEXT_SECONDARY} />
+          <Text style={styles.loadingText}>
+            Progression planner is turned off. Enable it with
+            EXPO_PUBLIC_PROGRESSION_PLAN=on to preview.
+          </Text>
+        </View>
+      ) : loading ? (
         <View style={styles.loadingPanel}>
           <ActivityIndicator size="large" color={ACCENT} />
           <Text style={styles.loadingText}>Building your overload plan…</Text>
