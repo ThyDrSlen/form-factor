@@ -944,6 +944,14 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       totalPausedMs: nextTotalPausedMs,
       pausedRestTimer: null,
       restTimer: nextRestTimer,
+      // Clear any cached per-exercise form-target overrides on resume. A
+      // user can swap exercises mid-pause (ExerciseSwapSheet), and carrying
+      // stale ROM/FQI thresholds from the pre-pause exercise into the
+      // post-pause one would silently mis-score reps. Downstream callers
+      // use `getFormTargetsFor(exerciseId)` which already degrades
+      // gracefully to `getDefaultsForExercise(exerciseId)` when no
+      // override is present, so clearing here is safe.
+      formTargetsByExercise: {},
     });
 
     if (nextRestTimer) {
