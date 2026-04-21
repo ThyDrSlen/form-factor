@@ -32,6 +32,7 @@ import { AskCoachCTA } from '@/components/form-tracking/AskCoachCTA';
 import AutoDebriefCard from '@/components/form-tracking/AutoDebriefCard';
 import { FqiExplainerModal } from '@/components/form-tracking/FqiExplainerModal';
 import { SessionCompareToLastCard } from '@/components/form-tracking/SessionCompareToLastCard';
+import { SessionNotesSheet } from '@/components/debrief/SessionNotesSheet';
 import { resolveExerciseKey } from '@/lib/services/form-session-history-lookup';
 import { useAutoDebrief } from '@/hooks/use-auto-debrief';
 import { useSessionComparisonQuery } from '@/hooks/use-session-comparison';
@@ -346,6 +347,23 @@ export default function FormTrackingDebriefScreen() {
               // your feedback…" copy in the empty grace window — NOT the
               // cold "No debrief yet" history placeholder.
               awaitingResult={hasReps}
+            />
+          </View>
+        ) : null}
+
+        {/* A18: session notes sheet — free-text notes, star the top faults,
+            opt-in to save cues for next time. Only renders when we have a
+            stable sessionId to persist against. */}
+        {routeSessionId && hasReps ? (
+          <View style={styles.sectionGap} testID="form-tracking-debrief-notes-section">
+            <Text style={styles.sectionTitle}>Your notes</Text>
+            <SessionNotesSheet
+              sessionId={routeSessionId}
+              topFaults={(worst?.faults ?? []).slice(0, 2).map((faultId) => ({
+                id: faultId,
+                label: faultId.replace(/_/g, ' '),
+              }))}
+              testID="form-tracking-debrief-notes-sheet"
             />
           </View>
         ) : null}
