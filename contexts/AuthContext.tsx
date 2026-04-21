@@ -117,6 +117,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // A3: guarantee session-warning/expiry timers are cleared on provider
+  // unmount. Previously these were cleared only when the session-watcher
+  // effect re-ran — if the provider itself unmounted (sign-out, app reload
+  // during tests), the timeouts could still fire and Alert into a dead
+  // tree or call signOut against an unmounted React root.
+  useEffect(() => {
+    return () => {
+      clearSessionTimers();
+    };
+  }, [clearSessionTimers]);
+
   // Helper to update auth state
   const updateAuthState = useCallback(async (newSession: Session | null, source: string) => {
     try {
