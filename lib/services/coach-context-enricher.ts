@@ -12,6 +12,8 @@
 
 import { localDB, type LocalWorkout } from '@/lib/services/database/local-db';
 import { warnWithTs } from '@/lib/logger';
+import { hardenAgainstInjection } from './coach-injection-hardener';
+import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
 
 /**
  * Roughly 4 chars per token for English text (OpenAI+Gemma heuristic).
@@ -34,11 +36,19 @@ export interface EnrichedContextOptions {
 /**
  * Format a single workout row as a terse `date — exercise (sets×reps @ weight)`.
  * Omits missing fields so we don't waste tokens on nulls.
+ *
+ * Pipeline-v2: when enabled, `w.exercise` (user-sourced) is passed through
+ * `hardenAgainstInjection()` to neutralise prompt-break tokens, control
+ * characters, and back-ticks before interpolation. Flag-gated so callers
+ * see byte-identical output when the flag is off.
  */
 export function formatWorkoutLine(w: LocalWorkout): string {
   const parts: string[] = [];
   if (w.date) parts.push(w.date);
-  parts.push(w.exercise);
+  const exerciseName = isCoachPipelineV2Enabled()
+    ? hardenAgainstInjection(w.exercise, { maxLength: 80 })
+    : w.exercise;
+  parts.push(exerciseName);
   const setsReps: string[] = [];
   if (typeof w.sets === 'number') setsReps.push(`${w.sets}s`);
   if (typeof w.reps === 'number') setsReps.push(`${w.reps}r`);
