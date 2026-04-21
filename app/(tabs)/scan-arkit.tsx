@@ -849,6 +849,13 @@ export default function ScanARKitScreen() {
 
   const repIndexTrackerRef = React.useRef(new RepIndexTracker());
 
+  // Epoch-ms timestamp of the most recent rep-start phase transition. Used
+  // by the live pullup partial-scoring path so the scoring call reflects
+  // *actual* elapsed time for the in-flight rep instead of a hardcoded
+  // placeholder. Reset to 0 on rep complete, phase reset, and tracking
+  // stop so subsequent scoring calls fall back to the safe default.
+  const repStartTsRef = React.useRef<number>(0);
+
   const lastPoseTimestampRef = React.useRef<number | null>(null);
   const recordingActiveRef = React.useRef(false);
   const recordingStartAtRef = React.useRef<string | null>(null);
@@ -1034,6 +1041,11 @@ export default function ScanARKitScreen() {
       }
       if (nextPhase === activeWorkoutDef.repBoundary.startPhase) {
         repIndexTrackerRef.current.startRep(repCount);
+        // Capture the rep-start epoch timestamp so the live partial-scoring
+        // block below can pass a real elapsed duration into
+        // scorePullupWithComponentAvailability instead of the hardcoded
+        // 1000ms placeholder that was previously used.
+        repStartTsRef.current = Date.now();
         // Start of a new rep: clear the per-rep shadow-drift accumulator so
         // the next rep's delta metrics are not polluted by the previous rep.
         shadowStatsPerRepRef.current = createShadowStatsAccumulator();
@@ -1042,6 +1054,10 @@ export default function ScanARKitScreen() {
     onRepComplete: (repNumber: number, fqi: number) => {
       setRepCount(repNumber);
       repIndexTrackerRef.current.endRep();
+      // Clear the in-flight rep timestamp; live partial scoring between
+      // reps will fall back to the 1000ms safe default until the next
+      // rep-start phase transition captures a fresh epoch.
+      repStartTsRef.current = 0;
       if (Number.isFinite(fqi)) {
         sessionFqiScoresRef.current.push(fqi);
       }
@@ -1548,7 +1564,13 @@ export default function ScanARKitScreen() {
                 rightShoulder: next.rightShoulder,
               },
             },
-            durationMs: 1000,
+            // Use real elapsed time for the in-flight rep when available so
+            // the live partial scoring (visibility badge + component
+            // availability) reflects actual tempo instead of a 1s constant.
+            // Fall back to 1000ms before the first rep-start transition.
+            durationMs: repStartTsRef.current > 0
+              ? Math.max(1, Date.now() - repStartTsRef.current)
+              : 1000,
             joints: canonicalFrame.joints,
           });
 
@@ -1753,6 +1775,7 @@ export default function ScanARKitScreen() {
       resetCueHysteresis();
       repCountdownFiredRef.current = false;
       sessionFqiScoresRef.current = [];
+      repStartTsRef.current = 0;
 
       const startTime = Date.now();
       shadowStatsRef.current = createShadowStatsAccumulator();
@@ -1867,6 +1890,7 @@ export default function ScanARKitScreen() {
       resetCueHysteresis();
       repCountdownFiredRef.current = false;
       sessionFqiScoresRef.current = [];
+      repStartTsRef.current = 0;
 
       if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
