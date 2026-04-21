@@ -66,6 +66,14 @@ export default function WorkoutDebriefChatModal() {
     };
   }, []);
 
+  // Keep the latest askAboutWorkout in a ref so the first-message
+  // effect does not re-fire when the hook returns a fresh closure each
+  // render (matters when consumers don't memoize the hook return).
+  const askRef = useRef(askAboutWorkout);
+  useEffect(() => {
+    askRef.current = askAboutWorkout;
+  }, [askAboutWorkout]);
+
   // First-message stream — triggered once on mount when flag is on.
   useEffect(() => {
     if (!enabled || !workoutId) return;
@@ -74,7 +82,7 @@ export default function WorkoutDebriefChatModal() {
       setFirstLoading(true);
       setError(null);
       try {
-        const reply = await askAboutWorkout(workoutId, '');
+        const reply = await askRef.current(workoutId, '');
         if (cancelled || !mountedRef.current) return;
         if (reply) {
           setBubbles((prev) => [
@@ -94,7 +102,7 @@ export default function WorkoutDebriefChatModal() {
     return () => {
       cancelled = true;
     };
-  }, [enabled, workoutId, askAboutWorkout]);
+  }, [enabled, workoutId]);
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
@@ -109,7 +117,7 @@ export default function WorkoutDebriefChatModal() {
     setSending(true);
     setError(null);
     try {
-      const reply: CoachMessage | null = await askAboutWorkout(workoutId, trimmed);
+      const reply: CoachMessage | null = await askRef.current(workoutId, trimmed);
       if (!mountedRef.current) return;
       if (reply) {
         setBubbles((prev) => [
@@ -125,7 +133,7 @@ export default function WorkoutDebriefChatModal() {
         setSending(false);
       }
     }
-  }, [input, enabled, workoutId, askAboutWorkout]);
+  }, [input, enabled, workoutId]);
 
   const header = useMemo(
     () => (
