@@ -31,10 +31,18 @@ import {
 
 type Step = 'check' | 'preview';
 
+/**
+ * A7: hard timeout for the preview-step frame sampler. If we sit in the
+ * 'pending' state for longer than this, we flip the modal into a failed
+ * state so the user is never stuck staring at "Waiting..." forever.
+ */
+const PREVIEW_TIMEOUT_MS = 30_000;
+
 export default function FormTrackingPreCalibrationModal() {
   const router = useRouter();
   const { status, recordFrame, markSuccess, markFailed, reset } = usePreCalibrationStatus();
   const [step, setStep] = useState<Step>('check');
+  const [timedOut, setTimedOut] = useState(false);
 
   // Simulate per-frame confidence collection on the preview step.
   // The real ARKit subscription wires in via scan-arkit; this fallback keeps
@@ -48,6 +56,21 @@ export default function FormTrackingPreCalibrationModal() {
     }, 100);
     return () => clearInterval(id);
   }, [step, status.status, recordFrame]);
+
+  // A7: force a 'failed' outcome if the preview step takes too long to
+  // converge. The timeout is reset whenever we re-enter pending (e.g. the
+  // user taps Retry).
+  useEffect(() => {
+    if (step !== 'preview' || status.status !== 'pending') {
+      return;
+    }
+    setTimedOut(false);
+    const handle = setTimeout(() => {
+      setTimedOut(true);
+      markFailed();
+    }, PREVIEW_TIMEOUT_MS);
+    return () => clearTimeout(handle);
+  }, [step, status.status, markFailed]);
 
   // Fire a one-shot success haptic when we first enter the success state,
   // immediately before the auto-dismiss timeout. The ref gate prevents the
@@ -86,11 +109,18 @@ export default function FormTrackingPreCalibrationModal() {
     router.back();
   };
 
+  const handleRetryTimeout = () => {
+    setTimedOut(false);
+    reset();
+  };
+
   return (
     <View style={styles.overlay} testID="pre-calibration-modal">
       <View style={styles.card}>
         {step === 'check' ? (
           <CheckStep onContinue={() => setStep('preview')} onCancel={handleCancel} />
+        ) : timedOut ? (
+          <TimeoutStep onRetry={handleRetryTimeout} onCancel={handleCancel} />
         ) : (
           <PreviewStep
             confidencePercent={confidencePercent}
@@ -104,6 +134,42 @@ export default function FormTrackingPreCalibrationModal() {
             onCancel={handleCancel}
           />
         )}
+      </View>
+    </View>
+  );
+}
+
+interface TimeoutStepProps {
+  onRetry: () => void;
+  onCancel: () => void;
+}
+
+function TimeoutStep({ onRetry, onCancel }: TimeoutStepProps) {
+  return (
+    <View testID="pre-calibration-timeout">
+      <View style={styles.iconWrap}>
+        <Ionicons name="time-outline" size={48} color="#FFB84C" />
+      </View>
+      <Text style={styles.title}>Calibration timed out</Text>
+      <Text style={styles.subtitle}>
+        We couldn&apos;t get a stable reading in 30 seconds. Try again with better
+        lighting or step back so your full body is in frame.
+      </Text>
+      <View style={styles.actions}>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={onCancel}
+          testID="pre-calibration-timeout-cancel"
+        >
+          <Text style={styles.secondaryButtonText}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.primaryButton}
+          onPress={onRetry}
+          testID="pre-calibration-timeout-retry"
+        >
+          <Text style={styles.primaryButtonText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
