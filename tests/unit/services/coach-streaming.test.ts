@@ -237,4 +237,105 @@ describe('streamCoachPrompt', () => {
     );
     expect(fakeFetch).toHaveBeenCalledTimes(1);
   });
+
+  // ---------------------------------------------------------------------------
+  // Provider / model propagation (#538)
+  // ---------------------------------------------------------------------------
+
+  describe('StreamCoachResult provider/model (#538)', () => {
+    it('picks up provider + model from an NDJSON tail frame', async () => {
+      const fakeFetch: typeof fetch = jest.fn(
+        async () =>
+          new Response(
+            ndjsonStream([
+              { delta: 'hello' },
+              { done: true, provider: 'openai', model: 'gpt-5.4-mini' },
+            ]),
+            { status: 200 }
+          )
+      );
+
+      const result = await streamCoachPrompt(
+        [{ role: 'user', content: 'x' }],
+        undefined,
+        () => undefined,
+        { fetchImpl: fakeFetch }
+      );
+      expect(result.provider).toBe('openai');
+      expect(result.model).toBe('gpt-5.4-mini');
+    });
+
+    it('falls back to the caller-supplied provider hint when the stream is silent', async () => {
+      // No tail frame with provider/model — streaming result still gets
+      // attributed via opts.provider → CoachProvider mapping.
+      const fakeFetch: typeof fetch = jest.fn(
+        async () => new Response(ndjsonStream([{ delta: 'a' }, { done: true }]), { status: 200 })
+      );
+
+      const openaiResult = await streamCoachPrompt(
+        [{ role: 'user', content: 'x' }],
+        undefined,
+        () => undefined,
+        { fetchImpl: fakeFetch, provider: 'openai' }
+      );
+      expect(openaiResult.provider).toBe('openai');
+      expect(openaiResult.model).toBeUndefined();
+    });
+
+    it('leaves provider undefined when neither the stream nor the caller annotates it', async () => {
+      const fakeFetch: typeof fetch = jest.fn(
+        async () => new Response(ndjsonStream([{ delta: 'a' }, { done: true }]), { status: 200 })
+      );
+
+      const result = await streamCoachPrompt(
+        [{ role: 'user', content: 'x' }],
+        undefined,
+        () => undefined,
+        { fetchImpl: fakeFetch }
+      );
+      expect(result.provider).toBeUndefined();
+      expect(result.model).toBeUndefined();
+    });
+
+    it('Gemma fallback path surfaces provider=gemma-cloud via non-enumerable reply annotation', async () => {
+      // Emulate sendCoachGemmaPrompt's non-enumerable annotations — the
+      // fallback reads them directly off the returned message.
+      const fakeReply = { role: 'assistant' as const, content: 'Gemma says hi.' };
+      Object.defineProperty(fakeReply, 'provider', {
+        value: 'gemma-cloud',
+        enumerable: false,
+      });
+      Object.defineProperty(fakeReply, 'model', {
+        value: 'gemma-3-4b-it',
+        enumerable: false,
+      });
+      const gemmaFallbackImpl = jest.fn().mockResolvedValue(fakeReply);
+
+      const result = await streamCoachPrompt(
+        [{ role: 'user', content: 'x' }],
+        undefined,
+        () => undefined,
+        { provider: 'gemma', gemmaFallbackImpl }
+      );
+
+      expect(result.provider).toBe('gemma-cloud');
+      expect(result.model).toBe('gemma-3-4b-it');
+      expect(result.text).toBe('Gemma says hi.');
+      expect(result.chunkCount).toBe(1);
+    });
+
+    it('Gemma fallback defaults provider to gemma-cloud when reply has no annotation', async () => {
+      const plainReply = { role: 'assistant' as const, content: 'Plain reply.' };
+      const gemmaFallbackImpl = jest.fn().mockResolvedValue(plainReply);
+
+      const result = await streamCoachPrompt(
+        [{ role: 'user', content: 'x' }],
+        undefined,
+        () => undefined,
+        { provider: 'gemma', gemmaFallbackImpl }
+      );
+      expect(result.provider).toBe('gemma-cloud');
+      expect(result.model).toBeUndefined();
+    });
+  });
 });

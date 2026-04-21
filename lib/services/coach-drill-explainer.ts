@@ -79,9 +79,13 @@ export function buildDrillExplainerMessages(input: ExplainDrillInput): CoachMess
  * Gemma-first fallback: when BOTH the pipeline master flag AND the model
  * dispatch flag are on, we attempt Gemma first (regardless of the env
  * resolver, since the cost-aware dispatcher considers drill explanations
- * tactical), and fall back to the cloud on any error. The returned
- * `provider` field reflects whichever path ultimately produced the text.
- * Either flag off preserves legacy single-shot behavior.
+ * tactical), and fall back to the cloud on any error.
+ *
+ * Provider label (#539): the returned `provider` field always reflects
+ * which path actually produced the text — `'gemma'` when the Gemma-first
+ * attempt succeeded, `'openai'` when the OpenAI edge function produced
+ * the reply (either as primary or as the Gemma-fallback). Legacy mode
+ * (pipelineV2 off) still returns `'cloud'` for backward compatibility.
  */
 export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDrillResult> {
   const messages = buildDrillExplainerMessages(input);
@@ -91,12 +95,11 @@ export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDri
   const resolvedProvider: 'gemma' | 'openai' | null = pipelineV2
     ? resolveDrillProvider()
     : null;
-  const returnedProvider: DrillExplainerProvider = resolvedProvider ?? 'cloud';
 
   const context = { focus: 'drill-explainer', sessionId: undefined };
 
   // Gemma-first attempt (both flags on). On any error we fall through to the
-  // env-resolved provider below.
+  // env-resolved provider below. Success returns provider='gemma' (#539).
   if (gemmaFirst) {
     try {
       const reply = await sendCoachPrompt(messages, context, { provider: 'gemma' });
@@ -113,22 +116,30 @@ export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDri
     }
   }
 
+  // Provider label (#539): the fallback path always lands on the OpenAI
+  // edge function — we either hint 'openai' explicitly, let the resolver
+  // resolve to 'openai' (when env=openai), OR we arrive here as the
+  // Gemma-fallback. In every modern case the reply is authored by
+  // OpenAI, so the returned label is 'openai'. Legacy mode (pipelineV2
+  // off) preserves the historical 'cloud' label.
+  const fallbackProvider: DrillExplainerProvider = pipelineV2 ? 'openai' : 'cloud';
+  // Forward an explicit provider hint only when the env-resolver picked one;
+  // otherwise let sendCoachPrompt fall through its own resolution (which
+  // will default to OpenAI when no user preference is set).
+  const sendOpts = resolvedProvider ? { provider: resolvedProvider } : undefined;
+
   try {
-    const reply = await sendCoachPrompt(
-      messages,
-      context,
-      resolvedProvider ? { provider: resolvedProvider } : undefined,
-    );
+    const reply = await sendCoachPrompt(messages, context, sendOpts);
     const text = (reply.content ?? '').trim();
     if (!text) {
-      return { explanation: '', provider: returnedProvider, error: 'Empty response from coach.' };
+      return { explanation: '', provider: fallbackProvider, error: 'Empty response from coach.' };
     }
-    return { explanation: text, provider: returnedProvider };
+    return { explanation: text, provider: fallbackProvider };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown coach error';
     return {
       explanation: '',
-      provider: returnedProvider,
+      provider: fallbackProvider,
       error: message,
     };
   }

@@ -1,4 +1,5 @@
 const mockInvoke = jest.fn();
+const mockRecordCoachUsage = jest.fn().mockResolvedValue(undefined);
 const mockCreateError = jest.fn(
   (
     domain: string,
@@ -23,15 +24,26 @@ jest.mock('@/lib/supabase', () => ({
   },
 }));
 
+const mockLogError = jest.fn();
+
 jest.mock('@/lib/services/ErrorHandler', () => ({
   createError: mockCreateError,
+  logError: mockLogError,
 }));
 
 jest.mock('../../../lib/services/ErrorHandler', () => ({
   createError: mockCreateError,
+  logError: mockLogError,
+}));
+
+// Cost-tracker wiring (#537): intercept recordCoachUsage so we can verify
+// the Gemma service reports usage and doesn't block on tracker failures.
+jest.mock('@/lib/services/coach-cost-tracker', () => ({
+  recordCoachUsage: (...args: unknown[]) => mockRecordCoachUsage(...args),
 }));
 
 let sendCoachGemmaPrompt: typeof import('@/lib/services/coach-gemma-service')['sendCoachGemmaPrompt'];
+type CoachMessage = import('@/lib/services/coach-service').CoachMessage;
 
 describe('coach-gemma-service', () => {
   const baseMessages = [{ role: 'user' as const, content: 'How should I squat?' }];
@@ -357,6 +369,190 @@ describe('coach-gemma-service', () => {
 
     await expect(sendCoachGemmaPrompt(baseMessages)).rejects.toMatchObject({
       code: 'COACH_GEMMA_EMPTY_RESPONSE',
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cost-tracker wiring (#537)
+  // ---------------------------------------------------------------------------
+
+  describe('cost-tracker wiring (#537)', () => {
+    beforeEach(() => {
+      mockRecordCoachUsage.mockClear();
+      mockRecordCoachUsage.mockResolvedValue(undefined);
+    });
+
+    it('records a gemma_cloud usage event on the happy path with estimated tokens', async () => {
+      // 100-char prompt + 50-char reply → ceil(100/4)=25 in, ceil(50/4)=13 out
+      const longPrompt = 'a'.repeat(100);
+      const longReply = 'b'.repeat(50);
+      mockInvoke.mockResolvedValue({
+        data: { message: longReply },
+        error: null,
+      });
+      await sendCoachGemmaPrompt([{ role: 'user', content: longPrompt }]);
+
+      expect(mockRecordCoachUsage).toHaveBeenCalledTimes(1);
+      expect(mockRecordCoachUsage.mock.calls[0][0]).toMatchObject({
+        provider: 'gemma_cloud',
+        taskKind: 'chat',
+        tokensIn: 25,
+        tokensOut: 13,
+      });
+    });
+
+    it('maps taskKind="debrief" into the debrief tracker bucket', async () => {
+      mockInvoke.mockResolvedValue({
+        data: { message: 'debrief reply' },
+        error: null,
+      });
+      await sendCoachGemmaPrompt(baseMessages, undefined, { taskKind: 'debrief' });
+      expect(mockRecordCoachUsage.mock.calls[0][0]).toMatchObject({
+        taskKind: 'debrief',
+      });
+    });
+
+    it('maps taskKind="drill_explainer" into the drill_explainer tracker bucket', async () => {
+      mockInvoke.mockResolvedValue({
+        data: { message: 'explainer' },
+        error: null,
+      });
+      await sendCoachGemmaPrompt(baseMessages, undefined, { taskKind: 'drill_explainer' });
+      expect(mockRecordCoachUsage.mock.calls[0][0]).toMatchObject({
+        taskKind: 'drill_explainer',
+      });
+    });
+
+    it('defaults to chat when taskKind is omitted', async () => {
+      await sendCoachGemmaPrompt(baseMessages);
+      expect(mockRecordCoachUsage.mock.calls[0][0]).toMatchObject({
+        taskKind: 'chat',
+      });
+    });
+
+    it('does not block the reply when recordCoachUsage throws', async () => {
+      mockRecordCoachUsage.mockRejectedValueOnce(new Error('tracker-down'));
+      mockInvoke.mockResolvedValue({
+        data: { message: 'Reply is returned.' },
+        error: null,
+      });
+      const result = await sendCoachGemmaPrompt(baseMessages);
+      // Reply still lands. Fire-and-forget tracker failure is logged as a warn.
+      expect(result.content).toBe('Reply is returned.');
+    });
+
+    it('does not record usage when the call errors out', async () => {
+      mockInvoke.mockResolvedValue({
+        data: null,
+        error: { message: '404 Not Found', status: 404 },
+      });
+      await expect(sendCoachGemmaPrompt(baseMessages)).rejects.toMatchObject({
+        code: 'COACH_GEMMA_NOT_DEPLOYED',
+      });
+      expect(mockRecordCoachUsage).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Model field reliability (fold of Gemma-4)
+  //
+  // The reply must ALWAYS carry a `model` annotation. When the edge function
+  // returns one we use it verbatim; when it doesn't we tag 'gemma-unknown'
+  // and emit a once-per-process warn via logError. Downstream consumers
+  // (provider badges, telemetry) can read `reply.model` without a null-check.
+  // ---------------------------------------------------------------------------
+
+  describe('model field reliability (fold of Gemma-4)', () => {
+    const UNKNOWN_GEMMA_MODEL = 'gemma-unknown';
+    // Use a module-local `send` to guarantee both sendCoachGemmaPrompt and
+    // __resetMissingModelWarnForTests come from the SAME module instance.
+    // A prior test in this file calls `jest.resetModules()`, which blows
+    // away the cached module; the outer `sendCoachGemmaPrompt` captured in
+    // the outer beforeAll then points at a different module than the one
+    // freshly resolved inside this describe — state is split between them
+    // and the warn flag can never be reset cleanly.
+    let send: typeof sendCoachGemmaPrompt;
+
+    beforeEach(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mod = require('@/lib/services/coach-gemma-service');
+      send = mod.sendCoachGemmaPrompt;
+      mod.__resetMissingModelWarnForTests();
+      mockLogError.mockClear();
+    });
+
+    it('uses the edge-function model when provided', async () => {
+      mockInvoke.mockResolvedValue({
+        data: { message: 'ok', model: 'gemma-3-4b-it' },
+        error: null,
+      });
+      const reply = await send(baseMessages);
+      // Non-enumerable — read directly.
+      expect((reply as CoachMessage & { model?: string }).model).toBe('gemma-3-4b-it');
+    });
+
+    it('trims whitespace from the edge-function model', async () => {
+      mockInvoke.mockResolvedValue({
+        data: { message: 'ok', model: '   gemma-3-27b-it  ' },
+        error: null,
+      });
+      const reply = await send(baseMessages);
+      expect((reply as CoachMessage & { model?: string }).model).toBe('gemma-3-27b-it');
+    });
+
+    it('tags reply as UNKNOWN_GEMMA_MODEL when edge function omits model', async () => {
+      mockInvoke.mockResolvedValue({
+        data: { message: 'ok' }, // no model field
+        error: null,
+      });
+      const reply = await send(baseMessages);
+      expect((reply as CoachMessage & { model?: string }).model).toBe(UNKNOWN_GEMMA_MODEL);
+      expect((reply as CoachMessage & { model?: string }).model).toBe('gemma-unknown');
+    });
+
+    it('tags reply as UNKNOWN_GEMMA_MODEL when model is an empty string', async () => {
+      mockInvoke.mockResolvedValue({
+        data: { message: 'ok', model: '' },
+        error: null,
+      });
+      const reply = await send(baseMessages);
+      expect((reply as CoachMessage & { model?: string }).model).toBe('gemma-unknown');
+    });
+
+    it('tags reply as UNKNOWN_GEMMA_MODEL when model is whitespace-only', async () => {
+      mockInvoke.mockResolvedValue({
+        data: { message: 'ok', model: '   ' },
+        error: null,
+      });
+      const reply = await send(baseMessages);
+      expect((reply as CoachMessage & { model?: string }).model).toBe('gemma-unknown');
+    });
+
+    it('logs a warn-classified error exactly once when model is missing', async () => {
+      mockInvoke.mockResolvedValue({
+        data: { message: 'ok' },
+        error: null,
+      });
+      // First call → warn. Second call → no additional warn.
+      await send(baseMessages);
+      await send(baseMessages);
+
+      expect(mockLogError).toHaveBeenCalledTimes(1);
+      const [errArg] = mockLogError.mock.calls[0];
+      expect(errArg).toMatchObject({
+        domain: 'coach',
+        code: 'COACH_GEMMA_MODEL_MISSING',
+        severity: 'warning',
+      });
+    });
+
+    it('does not log when model is present', async () => {
+      mockInvoke.mockResolvedValue({
+        data: { message: 'ok', model: 'gemma-3-4b-it' },
+        error: null,
+      });
+      await send(baseMessages);
+      expect(mockLogError).not.toHaveBeenCalled();
     });
   });
 });
