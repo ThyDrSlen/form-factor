@@ -280,4 +280,61 @@ describe('useShapedStreamCoach', () => {
 
     consoleErrorSpy.mockRestore();
   });
+
+  // ---------------------------------------------------------------------------
+  // Wave-27: MAX_TOKENS truncation handling.
+  //
+  // When Gemini/OpenAI hits its output-token cap mid-response, the
+  // upstream stream closes with `finishReason: 'MAX_TOKENS'` and the
+  // last delta typically ends mid-word (e.g. "Squats are great for buil"
+  // with no terminator). The shaper MUST buffer all received tokens,
+  // then flush the buffered fragment as part of `buffered` on stream
+  // completion so the UI does not drop the truncated tail.
+  //
+  // Failure modes this guards against:
+  //   - Shaper silently drops the un-terminated tail on flush.
+  //   - Hook crashes on non-punctuated final chunk.
+  //   - state.complete never flips to true after MAX_TOKENS close.
+  // ---------------------------------------------------------------------------
+
+  it('handles MAX_TOKENS truncation: buffers all tokens, flushes the mid-word tail on completion', async () => {
+    mockStreamCoachPrompt.mockImplementation(
+      async (
+        _m: unknown,
+        _c: unknown,
+        onChunk: (d: string) => void,
+      ) => {
+        // Three chunks, the last of which ends mid-word (no terminator).
+        onChunk('Squats are great. Bench press');
+        onChunk(' builds the chest. Deadlifts');
+        onChunk(' work every muscle in the buil');
+        return {
+          text: 'Squats are great. Bench press builds the chest. Deadlifts work every muscle in the buil',
+          chunkCount: 3,
+          ttftMs: 5,
+          durationMs: 15,
+          // Note: current StreamCoachResult contract doesn't surface
+          // finishReason to the hook; the shaper's flush path is driven
+          // purely by the upstream stream closing, regardless of why.
+        };
+      },
+    );
+
+    const { result } = renderHook(() => useShapedStreamCoach());
+    await act(async () => {
+      await result.current.start([{ role: 'user', content: 'plan day' }]);
+    });
+
+    // Flush must include the truncated mid-word tail.
+    expect(result.current.buffered).toBe(
+      'Squats are great. Bench press builds the chest. Deadlifts work every muscle in the buil',
+    );
+    // Pending is empty once flushed.
+    expect(result.current.pending).toBe('');
+    // Stream is marked complete even though the final delta had no terminator.
+    expect(result.current.complete).toBe(true);
+    expect(result.current.isStreaming).toBe(false);
+    // No error captured (truncation is not a hook-level error).
+    expect(result.current.error).toBeNull();
+  });
 });
