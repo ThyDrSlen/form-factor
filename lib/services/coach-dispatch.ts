@@ -23,6 +23,8 @@
 import type { CoachMessage, CoachContext } from './coach-service';
 import { sendCoachPrompt } from './coach-service';
 import { recordCounter } from './coach-telemetry';
+import { isInCohort } from './coach-rollout';
+import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
 
 export type CoachRoutingPreference = 'cloud_only' | 'prefer_local' | 'local_only';
 
@@ -106,14 +108,38 @@ export async function dispatchCoachPrompt(
 ): Promise<CoachMessage> {
   const cloudSend = opts.cloudSend ?? sendCoachPrompt;
 
+  // Pipeline v2: cohort-gate on-device selection. Even when the user picks
+  // `prefer_local` / `local_only`, we only honour it if the user is in the
+  // rollout cohort (hashed bucket < EXPO_PUBLIC_COACH_LOCAL_COHORT_PCT).
+  //
+  // - `local_only` out-of-cohort: surface `local_unavailable` so UIs can
+  //   explain the fallback. This preserves the contract that `local_only`
+  //   never silently hits the cloud.
+  // - `prefer_local` out-of-cohort: collapse to cloud immediately, with a
+  //   cohort-specific counter so product can see rollout headroom.
+  // - Flag off: no change to behavior (preserves default 0% cohort rollout).
+  const cohortEnforced = isCoachPipelineV2Enabled();
+  const userId = args.context?.profile?.id;
+  const inCohort = cohortEnforced ? isInCohort(userId) : true;
+
   switch (opts.preference) {
     case 'cloud_only':
       return cloudSend(args.messages, args.context);
 
     case 'local_only':
+      if (cohortEnforced && !inCohort) {
+        throw new CoachDispatchError(
+          'local_unavailable',
+          'On-device coach is not enabled for this user (out of rollout cohort).',
+        );
+      }
       return runLocal(args, opts);
 
     case 'prefer_local': {
+      if (cohortEnforced && !inCohort) {
+        recordCounter('coach_dispatch_prefer_local_cohort_skip');
+        return cloudSend(args.messages, args.context);
+      }
       try {
         return await runLocal(args, opts);
       } catch (err) {
