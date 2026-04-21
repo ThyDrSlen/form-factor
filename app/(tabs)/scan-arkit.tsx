@@ -783,14 +783,23 @@ export default function ScanARKitScreen() {
       shadowModeEnabled &&
       shadowProviderRuntime === 'mediapipe';
 
-    if (!shouldPollMediaPipe) {
+    // Shared teardown helper — called unconditionally from the effect
+    // cleanup so the interval + in-flight flag reset always fire on
+    // unmount regardless of which branch of the effect ran. Previously the
+    // cleanup duplicated this logic and could drift from the guard-block
+    // version if only one site was updated during a refactor.
+    const teardownPoll = () => {
       if (mediaPipePollTimerRef.current) {
         clearInterval(mediaPipePollTimerRef.current);
         mediaPipePollTimerRef.current = null;
       }
       mediaPipePollInFlightRef.current = false;
+    };
+
+    if (!shouldPollMediaPipe) {
+      teardownPoll();
       mediaPipePoseRef.current = null;
-      return;
+      return teardownPoll;
     }
 
     let active = true;
@@ -832,11 +841,10 @@ export default function ScanARKitScreen() {
 
     return () => {
       active = false;
-      if (mediaPipePollTimerRef.current) {
-        clearInterval(mediaPipePollTimerRef.current);
-        mediaPipePollTimerRef.current = null;
-      }
-      mediaPipePollInFlightRef.current = false;
+      // Always run teardown, unconditionally, outside any guard — a
+      // leaked interval keeps waking the native bridge after the user
+      // leaves the scan tab and tanks battery/thermal.
+      teardownPoll();
     };
   }, [DEV, isTracking, shadowModeEnabled, shadowProviderRuntime]);
 
