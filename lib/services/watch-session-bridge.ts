@@ -14,6 +14,10 @@
  *   const teardown = initWatchSessionBridge({ subscribeToEvents });
  *   // ... later
  *   teardown();
+ *
+ * Production mount site: contexts/WatchSessionBridgeContext.tsx, which is
+ * nested inside WorkoutsProvider (see contexts/WorkoutsContext.tsx). The
+ * provider owns the lifecycle so the bridge starts/stops with the app.
  */
 import { sendMessage } from '@/lib/watch-connectivity';
 import type {
