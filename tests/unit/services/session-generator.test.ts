@@ -174,4 +174,52 @@ describe('generateSession', () => {
       generateSession({ intent: 'x' }, { userId: 'u1', dispatch }),
     ).rejects.toThrow('network down');
   });
+
+  describe('EXPO_PUBLIC_GEMMA_SESSION_GEN gate', () => {
+    const ENV_VAR = 'EXPO_PUBLIC_GEMMA_SESSION_GEN';
+    const originalValue = process.env[ENV_VAR];
+
+    afterEach(() => {
+      if (originalValue === undefined) {
+        delete process.env[ENV_VAR];
+      } else {
+        process.env[ENV_VAR] = originalValue;
+      }
+    });
+
+    it('rejects with GEMMA_SESSION_GEN_DISABLED when flag is off and no dispatch override supplied', async () => {
+      delete process.env[ENV_VAR];
+      await expect(
+        generateSession({ intent: 'x' }, { userId: 'u1' }),
+      ).rejects.toMatchObject({ code: 'GEMMA_SESSION_GEN_DISABLED' });
+    });
+
+    it('allows custom dispatch stubs even when flag is off (test ergonomics)', async () => {
+      delete process.env[ENV_VAR];
+      const dispatch = jest.fn<Promise<CoachMessage>, [CoachMessage[]]>().mockResolvedValue({
+        role: 'assistant',
+        content: JSON.stringify(validResponse),
+      });
+      const result = await generateSession(
+        { intent: 'x' },
+        { userId: 'u1', dispatch },
+      );
+      expect(result.template.name).toBe('Quick');
+    });
+
+    it('skipFlagCheck bypasses the gate when no dispatch is supplied (for integration tests)', async () => {
+      delete process.env[ENV_VAR];
+      // Without dispatch AND without skipFlagCheck this would throw; with
+      // skipFlagCheck we expect the error to come from the real coach-service
+      // instead (network / auth), not from the flag gate.
+      try {
+        await generateSession(
+          { intent: 'x' },
+          { userId: 'u1', skipFlagCheck: true },
+        );
+      } catch (err) {
+        expect((err as { code?: string }).code).not.toBe('GEMMA_SESSION_GEN_DISABLED');
+      }
+    });
+  });
 });

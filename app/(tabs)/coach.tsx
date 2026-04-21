@@ -16,6 +16,10 @@ import { spacing } from '../../styles/tabs/_theme-constants';
 import { tabColors } from '@/styles/tabs/_tab-theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useVoiceMode } from '@/hooks/use-voice-mode';
+import { useVoiceControl } from '@/contexts/VoiceControlContext';
+import { isVoiceControlPipelineEnabled } from '@/lib/services/voice-pipeline-flag';
+import { VoiceControlBanner } from '@/components/voice/VoiceControlBanner';
+import { VoiceCommandFeedback } from '@/components/form-tracking/VoiceCommandFeedback';
 
 const COACH_WELCOME_SEEN_KEY = 'coach_welcome_seen';
 
@@ -50,6 +54,9 @@ export default function CoachScreen() {
   const coachListRef = useRef<FlatList<CoachMessage>>(null);
   const voiceMode = useVoiceMode();
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const voiceControl = useVoiceControl();
+  // Flag read at mount — safe to cache since the env var doesn't flip at runtime.
+  const voicePipelineEnabled = useMemo(() => isVoiceControlPipelineEnabled(), []);
   const userMetadata = useMemo(
     () => (user?.user_metadata && typeof user.user_metadata === 'object'
       ? user.user_metadata as Record<string, unknown>
@@ -290,6 +297,16 @@ export default function CoachScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {voicePipelineEnabled ? (
+          <>
+            <VoiceControlBanner
+              style={{ marginHorizontal: spacing.md, marginBottom: spacing.sm }}
+              testID="coach-voice-banner"
+            />
+            <VoiceCommandFeedback latestIntent={voiceControl.latestIntent} />
+          </>
+        ) : null}
 
         <View style={styles.quickPrompts}>
           {coachQuickPrompts.map(prompt => (

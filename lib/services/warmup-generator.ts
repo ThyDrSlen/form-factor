@@ -7,6 +7,7 @@
  */
 import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
 import { parseGemmaJsonResponse, schema, type JsonSchema } from './gemma-json-parser';
+import { assertGemmaSessionGenEnabled } from './gemma-session-gen-flag';
 import {
   buildWarmupGeneratorMessages,
   type WarmupGeneratorInput,
@@ -60,12 +61,21 @@ export interface WarmupGeneratorRuntime {
   coachContext?: CoachContext;
   dispatch?: (messages: CoachMessage[], ctx?: CoachContext) => Promise<CoachMessage>;
   maxRetries?: number;
+  /**
+   * Bypass the EXPO_PUBLIC_GEMMA_SESSION_GEN gate. Intended for integration
+   * tests; unit tests that inject `dispatch` skip the gate automatically.
+   */
+  skipFlagCheck?: boolean;
 }
 
 export async function generateWarmup(
   input: WarmupGeneratorInput,
   runtime: WarmupGeneratorRuntime = {},
 ): Promise<WarmupPlan> {
+  if (!runtime.dispatch && !runtime.skipFlagCheck) {
+    assertGemmaSessionGenEnabled('warmup-generator');
+  }
+
   const messages = buildWarmupGeneratorMessages(input);
   const dispatch = runtime.dispatch ?? sendCoachPrompt;
 

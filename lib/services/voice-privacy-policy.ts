@@ -47,3 +47,22 @@ export function assertPrivacyContract(contract: VoicePrivacyContract): void {
   // The assertion body is empty by design — the type literal is the guard.
   void contract;
 }
+
+/**
+ * Runtime consent check. Returns true when the user has explicitly opted
+ * in to voice control via the `useVoiceControlStore.enabled` flag.
+ *
+ * The voice subsystem MUST NOT start the microphone subscription when
+ * this returns false. Callers (e.g. VoiceControlContext, wave 24 PR-β)
+ * treat this as the single source of truth for consent — no ad-hoc
+ * reads of the underlying store from voice pipeline code.
+ *
+ * Dynamic import keeps this module free of React/Zustand side effects
+ * when imported from non-RN contexts (tests, type-only usage).
+ */
+export function hasConsented(): boolean {
+  // Lazy require so pure-TS callers don't pull Zustand into their graph.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mod = require('@/lib/stores/voice-control-store') as typeof import('@/lib/stores/voice-control-store');
+  return mod.useVoiceControlStore.getState().enabled === true;
+}

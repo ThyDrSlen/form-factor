@@ -10,7 +10,7 @@ describeCue('Cue Audio Generation', () => {
   const TIMEOUT = 20_000;
 
   it('generates an MP3 file for a real form cue', async () => {
-    const { generateCueFile } = await import('@/lib/services/elevenlabs-service');
+    const { generateCueFile } = await import('@/lib/services/elevenlabs-node');
     const { existsSync, unlinkSync, statSync } = await import('node:fs');
     const { join } = await import('node:path');
     const { tmpdir } = await import('node:os');

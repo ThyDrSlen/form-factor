@@ -1,4 +1,5 @@
-import { generateSpeech, streamSpeech, generateCueFile } from '@/lib/services/elevenlabs-service';
+import { generateSpeech, streamSpeech } from '@/lib/services/elevenlabs-service';
+import { generateCueFile } from '@/lib/services/elevenlabs-node';
 
 const mockFetch = jest.fn() as jest.Mock;
 global.fetch = mockFetch;
@@ -113,27 +114,16 @@ describe('streamSpeech', () => {
 // =============================================================================
 
 describe('generateCueFile', () => {
-  it('calls generateSpeech and writes file via node:fs', async () => {
+  it('calls generateSpeech and writes the file', async () => {
     const fakeBuffer = new ArrayBuffer(16);
     mockFetch.mockResolvedValueOnce({
       ok: true,
       arrayBuffer: () => Promise.resolve(fakeBuffer),
     });
 
-    // jest.mock with virtual: true — node:fs isn't resolvable in RN test env
-    const mockWriteFileSync = jest.fn();
-    jest.mock(
-      'node:fs',
-      () => ({ writeFileSync: mockWriteFileSync }),
-      { virtual: true },
-    );
-
-    // generateCueFile uses dynamic import('node:fs') which doesn't resolve
-    // in the jest-expo test environment. This function is Bun/Node-only.
-    // We verify it returns false gracefully (the import fails, caught by try/catch).
     const result = await generateCueFile('Cue text', '/tmp/cue.mp3');
 
-    expect(result).toBe(false); // Expected: dynamic import fails in jest-expo
+    expect(result).toBe(true);
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
