@@ -1589,6 +1589,82 @@ describe('rest timer — unified ownership', () => {
 });
 
 // ===========================================================================
+// 15a. resumeSession — stale formTargets clearing
+// ===========================================================================
+
+describe('resumeSession', () => {
+  it('clears formTargetsByExercise on resume so a mid-pause exercise swap cannot apply stale thresholds', async () => {
+    await state().startSession();
+
+    // Simulate a template having populated per-exercise targets, then
+    // entering the paused state.
+    useSessionRunner.setState({
+      isPaused: true,
+      pausedAt: Date.now() - 5000,
+      totalPausedMs: 0,
+      pausedRestTimer: null,
+      formTargetsByExercise: {
+        'old-ex-id': {
+          romMinDeg: 120,
+          romMaxDeg: 170,
+          fqiFloor: 60,
+        } as unknown as Record<string, unknown>,
+      } as never,
+    } as never);
+
+    state().resumeSession();
+
+    expect(state().isPaused).toBe(false);
+    expect(state().pausedAt).toBeNull();
+    expect(state().formTargetsByExercise).toEqual({});
+  });
+
+  it('getFormTargetsFor still returns defaults after resume clears the overrides', async () => {
+    await state().startSession();
+
+    useSessionRunner.setState({
+      isPaused: true,
+      pausedAt: Date.now() - 1000,
+      totalPausedMs: 0,
+      pausedRestTimer: null,
+      formTargetsByExercise: {
+        'squat': {
+          romMinDeg: 10,
+          romMaxDeg: 20,
+          fqiFloor: 0,
+        } as unknown as Record<string, unknown>,
+      } as never,
+    } as never);
+
+    state().resumeSession();
+
+    const targets = state().getFormTargetsFor('squat');
+    expect(targets).toBeDefined();
+    // After clearing, the exercise falls back to getDefaultsForExercise
+    // defaults — the helper is exercise-resolver-driven so we only assert
+    // the shape + that the targets are not the bogus overrides we staged.
+    expect(targets).not.toMatchObject({ romMinDeg: 10, romMaxDeg: 20 });
+  });
+
+  it('is a no-op when the session is not paused', async () => {
+    await state().startSession();
+    useSessionRunner.setState({
+      formTargetsByExercise: {
+        'deadlift': {
+          romMinDeg: 10,
+          romMaxDeg: 20,
+        } as unknown as Record<string, unknown>,
+      } as never,
+    } as never);
+
+    state().resumeSession(); // not paused — should be a no-op
+
+    // Should NOT clear targets when we weren't paused
+    expect(Object.keys(state().formTargetsByExercise)).toContain('deadlift');
+  });
+});
+
+// ===========================================================================
 // 15. subscribeToEvents (named event listener API)
 // ===========================================================================
 
