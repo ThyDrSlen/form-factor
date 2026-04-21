@@ -141,7 +141,12 @@ export default function FormTrackingDebriefScreen() {
     () => resolveExerciseKey(exerciseName),
     [exerciseName],
   );
-  const { comparison } = useSessionComparisonQuery({
+  const {
+    comparison,
+    loading: comparisonLoading,
+    error: comparisonError,
+    reload: reloadComparison,
+  } = useSessionComparisonQuery({
     currentSessionId: routeSessionId,
     exerciseId: comparisonExerciseId,
     userId,
@@ -268,12 +273,15 @@ export default function FormTrackingDebriefScreen() {
           )}
         </View>
 
-        {comparison?.priorSessionId ? (
+        {comparisonLoading || comparisonError || comparison?.priorSessionId ? (
           <View style={styles.sectionGap} testID="form-tracking-debrief-compare-section">
             <Text style={styles.sectionTitle}>Progress</Text>
             <SessionCompareToLastCard
               comparison={comparison}
-              onPress={handleOpenComparison}
+              loading={comparisonLoading}
+              error={comparisonError}
+              onRetry={reloadComparison}
+              onPress={comparison?.priorSessionId ? handleOpenComparison : undefined}
               testID="form-tracking-debrief-compare-card"
             />
           </View>
