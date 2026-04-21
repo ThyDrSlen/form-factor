@@ -197,6 +197,87 @@ describe('decideCoachModel', () => {
     });
   });
 
+  describe('form_vision_check → multimodal Gemma', () => {
+    it.each<CoachUserTier>(['free', 'pro', 'premium'])(
+      'routes form_vision_check on tier=%s to gemma-4-31b-it by default',
+      (tier) => {
+        const decision = decideCoachModel('form_vision_check', NO_SIGNALS, tier);
+        expect(decision).toEqual({
+          model: 'gemma-4-31b-it',
+          reason: 'vision_gemma',
+          fellBackToCloud: false,
+        });
+      },
+    );
+
+    it('downgrades to gpt-5.4-mini when visionFallbackToCloud is set', () => {
+      const decision = decideCoachModel(
+        'form_vision_check',
+        NO_SIGNALS,
+        'pro',
+        { visionFallbackToCloud: true },
+      );
+      expect(decision).toEqual({
+        model: 'gpt-5.4-mini',
+        reason: 'vision_fallback_cloud',
+        fellBackToCloud: true,
+      });
+    });
+
+    it('dispatchDisabled still beats vision routing (ship-dark guarantee)', () => {
+      const decision = decideCoachModel(
+        'form_vision_check',
+        NO_SIGNALS,
+        'premium',
+        { dispatchDisabled: true },
+      );
+      expect(decision.reason).toBe('dispatch_disabled');
+      expect(decision.model).toBe('gpt-5.4-mini');
+    });
+
+    it('high-fault signal does NOT upgrade form_vision_check (multimodal required)', () => {
+      const decision = decideCoachModel(
+        'form_vision_check',
+        { faultCount: 99 },
+        'free',
+      );
+      expect(decision.model).toBe('gemma-4-31b-it');
+      expect(decision.reason).toBe('vision_gemma');
+    });
+
+    it('forceCloud does NOT downgrade form_vision_check (gpt-5.4-mini is text-only)', () => {
+      const decision = decideCoachModel(
+        'form_vision_check',
+        NO_SIGNALS,
+        'premium',
+        { forceCloud: true },
+      );
+      expect(decision.model).toBe('gemma-4-31b-it');
+      expect(decision.reason).toBe('vision_gemma');
+    });
+
+    it('visionFallbackToCloud on a non-vision task is a no-op', () => {
+      const decision = decideCoachModel(
+        'form_cue_lookup',
+        NO_SIGNALS,
+        'pro',
+        { visionFallbackToCloud: true },
+      );
+      expect(decision.model).toBe('gemma-4-31b-it');
+      expect(decision.reason).toBe('tactical_gemma');
+    });
+
+    it('visionFallbackToCloud stacks with dispatchDisabled (dispatchDisabled wins)', () => {
+      const decision = decideCoachModel(
+        'form_vision_check',
+        NO_SIGNALS,
+        'pro',
+        { visionFallbackToCloud: true, dispatchDisabled: true },
+      );
+      expect(decision.reason).toBe('dispatch_disabled');
+    });
+  });
+
   describe('signal/option shape handling', () => {
     it('treats missing faultCount as 0 (no upgrade)', () => {
       const decision = decideCoachModel('form_cue_lookup', {}, 'free');
