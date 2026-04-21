@@ -11,9 +11,26 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4?target
 
 type Role = 'user' | 'assistant' | 'system';
 
+interface TextContentPart {
+  type: 'text';
+  text: string;
+}
+
+interface ImageContentPart {
+  type: 'image';
+  source: {
+    type: 'base64';
+    media_type: 'image/jpeg';
+    data: string;
+  };
+}
+
+type ContentPart = TextContentPart | ImageContentPart;
+
 interface ChatMessage {
   role: Role;
-  content: string;
+  /** Legacy text shape, or Anthropic/Gemma-style content-parts array (#495). */
+  content: string | ContentPart[];
 }
 
 interface CoachContext {
@@ -27,8 +44,14 @@ interface RequestBody {
   model?: string;
 }
 
+interface GeminiInlineData {
+  mimeType: string;
+  data: string;
+}
+
 interface GeminiPart {
   text?: string;
+  inlineData?: GeminiInlineData;
 }
 
 interface GeminiContent {
@@ -46,6 +69,18 @@ const ALLOWED_MODELS = new Set([
   'gemma-3-12b-it',
   'gemma-3-27b-it',
 ]);
+/**
+ * Multimodal-capable models (#495). The vision dispatcher in
+ * `lib/services/coach-vision.ts` targets `gemma-4-31b-it`. Until #485
+ * extends `ALLOWED_MODELS` to include gemma-4-*, requests carrying
+ * image parts against a gemma-3-* model will have the images stripped
+ * server-side before they reach Gemini.
+ */
+const VISION_CAPABLE_MODELS = new Set([
+  'gemma-4-31b-it',
+  'gemma-4-26b-a4b-it',
+]);
+const MAX_IMAGES_PER_REQUEST = 1;
 const FALLBACK_MODEL = 'gemma-3-4b-it';
 const RAW_MODEL = (Deno.env.get('COACH_GEMMA_MODEL') || FALLBACK_MODEL).trim();
 const DEFAULT_MODEL = ALLOWED_MODELS.has(RAW_MODEL) ? RAW_MODEL : FALLBACK_MODEL;
@@ -113,16 +148,97 @@ function ok(body: Record<string, unknown>) {
   });
 }
 
+function isTextPart(part: unknown): part is TextContentPart {
+  return (
+    typeof part === 'object' &&
+    part !== null &&
+    (part as { type?: unknown }).type === 'text' &&
+    typeof (part as { text?: unknown }).text === 'string'
+  );
+}
+
+function isImagePart(part: unknown): part is ImageContentPart {
+  if (typeof part !== 'object' || part === null) return false;
+  if ((part as { type?: unknown }).type !== 'image') return false;
+  const src = (part as { source?: unknown }).source;
+  if (typeof src !== 'object' || src === null) return false;
+  return (
+    (src as { type?: unknown }).type === 'base64' &&
+    (src as { media_type?: unknown }).media_type === 'image/jpeg' &&
+    typeof (src as { data?: unknown }).data === 'string'
+  );
+}
+
+function isContentPartArray(content: unknown): content is ContentPart[] {
+  return (
+    Array.isArray(content) &&
+    content.every((p) => isTextPart(p) || isImagePart(p))
+  );
+}
+
+function isValidRawMessage(m: unknown): m is ChatMessage {
+  if (typeof m !== 'object' || m === null) return false;
+  const role = (m as { role?: unknown }).role;
+  const content = (m as { content?: unknown }).content;
+  if (typeof role !== 'string') return false;
+  return typeof content === 'string' || isContentPartArray(content);
+}
+
+function normalizeContent(content: string | ContentPart[]): string | ContentPart[] {
+  if (typeof content === 'string') {
+    return content.slice(0, MAX_CONTENT_LENGTH);
+  }
+  return content.map((part) =>
+    part.type === 'text'
+      ? { type: 'text', text: part.text.slice(0, MAX_CONTENT_LENGTH) }
+      : part,
+  );
+}
+
 function sanitizeMessages(messages: ChatMessage[] = []): ChatMessage[] {
   return messages
-    .filter((m) => m && typeof m.content === 'string' && typeof m.role === 'string')
+    .filter(isValidRawMessage)
     .map((m) => ({
       role: (['user', 'assistant', 'system'] as Role[]).includes(m.role as Role)
         ? (m.role as Role)
         : 'user',
-      content: m.content.slice(0, MAX_CONTENT_LENGTH),
+      content: normalizeContent(m.content),
     }))
     .slice(-MAX_MESSAGES);
+}
+
+function countImageParts(messages: ChatMessage[]): number {
+  let total = 0;
+  for (const m of messages) {
+    if (Array.isArray(m.content)) {
+      for (const part of m.content) {
+        if (isImagePart(part)) total += 1;
+      }
+    }
+  }
+  return total;
+}
+
+function stripImageParts(messages: ChatMessage[]): ChatMessage[] {
+  const result: ChatMessage[] = [];
+  for (const m of messages) {
+    if (typeof m.content === 'string') {
+      result.push(m);
+      continue;
+    }
+    const textParts = m.content.filter(isTextPart);
+    if (textParts.length === 0) continue;
+    if (textParts.length === 1) {
+      result.push({ role: m.role, content: textParts[0].text });
+    } else {
+      result.push({ role: m.role, content: textParts });
+    }
+  }
+  return result;
+}
+
+function supportsVision(model: string): boolean {
+  return VISION_CAPABLE_MODELS.has(model);
 }
 
 /** Strip control chars, prompt delimiters, and cap length to prevent injection. */
@@ -151,23 +267,54 @@ function buildSystemInstruction(context?: CoachContext): string {
   ].join(' ');
 }
 
+function collectTextFromContent(content: string | ContentPart[]): string {
+  if (typeof content === 'string') return content;
+  return content
+    .filter(isTextPart)
+    .map((p) => p.text)
+    .join('\n');
+}
+
+function collectImageParts(
+  content: string | ContentPart[],
+): ImageContentPart[] {
+  if (typeof content === 'string') return [];
+  return content.filter(isImagePart);
+}
+
 function toGeminiContents(messages: ChatMessage[]): GeminiContent[] {
   const contents: GeminiContent[] = [];
   const pendingSystem: string[] = [];
 
   for (const m of messages) {
     if (m.role === 'system') {
-      if (m.content.trim()) pendingSystem.push(m.content.trim());
+      const text = collectTextFromContent(m.content).trim();
+      if (text) pendingSystem.push(text);
       continue;
     }
 
     const role = m.role === 'assistant' ? 'model' : 'user';
-    let text = m.content;
+    let text = collectTextFromContent(m.content);
     if (role === 'user' && pendingSystem.length > 0) {
       text = `[System]: ${pendingSystem.join('\n')}\n\n${text}`;
       pendingSystem.length = 0;
     }
-    contents.push({ role, parts: [{ text }] });
+    const parts: GeminiPart[] = [];
+    if (text.trim() || role === 'model') {
+      parts.push({ text });
+    }
+    for (const img of collectImageParts(m.content)) {
+      parts.push({
+        inlineData: {
+          mimeType: img.source.media_type,
+          data: img.source.data,
+        },
+      });
+    }
+    if (parts.length === 0) {
+      parts.push({ text: '' });
+    }
+    contents.push({ role, parts });
   }
 
   if (pendingSystem.length > 0) {
@@ -231,6 +378,17 @@ async function generateReply(body: RequestBody) {
     return badRequest('messages array is required');
   }
 
+  // #495 multimodal guard: cap image parts regardless of model. Even if the
+  // eventual model is vision-capable, more than one image explodes token
+  // cost without a clear coaching win.
+  const imageCount = countImageParts(inputMessages);
+  if (imageCount > MAX_IMAGES_PER_REQUEST) {
+    return badRequest(
+      `Too many images (${imageCount}). Max ${MAX_IMAGES_PER_REQUEST} per request.`,
+      { status: 400 },
+    );
+  }
+
   const rawRequestedModel = typeof body.model === 'string' ? body.model.trim() : '';
   if (rawRequestedModel && !ALLOWED_MODELS.has(rawRequestedModel)) {
     return badRequest(
@@ -240,7 +398,14 @@ async function generateReply(body: RequestBody) {
   }
 
   const model = resolveRequestedModel(body.model);
-  const payload = buildGeminiPayload(inputMessages, body.context, {
+  // #495 multimodal guard: strip images when the resolved model does not
+  // support vision so the payload we send to Gemini is text-only. This is
+  // a server-side safety net — `coach-vision.ts` already won't dispatch to
+  // a non-vision model, but an older client might.
+  const payloadMessages = supportsVision(model)
+    ? inputMessages
+    : stripImageParts(inputMessages);
+  const payload = buildGeminiPayload(payloadMessages, body.context, {
     temperature: TEMPERATURE,
     maxOutputTokens: MAX_TOKENS,
   });
