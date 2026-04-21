@@ -2229,6 +2229,14 @@ export default function ScanARKitScreen() {
 
       watchMirrorInFlightRef.current = true;
 
+      // INVARIANT: every exit path below (success, early return, any
+      // synchronous throw from BodyTracker.getCurrentFrameSnapshot or
+      // sendMessage, and any rejection from the awaited native promise)
+      // MUST fall through to the outer finally so the in-flight flag is
+      // reset — otherwise a single failed snapshot wedges the watch-mirror
+      // timer forever. If this function is ever refactored to split the
+      // snapshot call into a helper, wrap that helper in its own
+      // try-finally as well.
       try {
         let base64: string | null = null;
         let width: number | undefined;
