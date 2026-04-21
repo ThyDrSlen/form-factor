@@ -328,6 +328,18 @@ export interface EmitFormMilestoneArgs {
   consistencyBand?: number;
   consistencyWindow?: number;
   consistencyMinScore?: number;
+  /**
+   * Optional: how many PBs the user has set this calendar month across
+   * any exercise, *including* the one about to fire if applicable.
+   * When ≥ 2 the detector adds ordinal context to the PB message.
+   */
+  priorPbCount?: number;
+  /**
+   * Optional: consecutive days (including today) with at least one
+   * completed session. When ≥ 3 the detector adds streak context to
+   * the consistency message.
+   */
+  weekStreakDays?: number;
 }
 
 /**
@@ -346,6 +358,8 @@ export async function emitFormMilestone(
     consistencyBand: args.consistencyBand,
     consistencyWindow: args.consistencyWindow,
     consistencyMinScore: args.consistencyMinScore,
+    priorPbCount: args.priorPbCount,
+    weekStreakDays: args.weekStreakDays,
   });
 
   if (result.kind) {
@@ -354,6 +368,8 @@ export async function emitFormMilestone(
       message: result.message,
       score: result.score,
       exercise_key: args.exerciseKey,
+      prior_pb_count: args.priorPbCount ?? null,
+      week_streak_days: args.weekStreakDays ?? null,
     });
   }
   return result;
