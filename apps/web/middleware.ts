@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 const PUBLIC_ROUTES = ['/', '/sign-in', '/sign-up', '/forgot-password', '/callback'];
+const PUBLIC_PREFIXES = ['/u/', '/debug/', '/api/fixtures'];
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -33,9 +34,9 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-  const isPublicRoute = PUBLIC_ROUTES.some(
-    (route) => pathname === route || pathname.startsWith('/callback')
-  ) || pathname.startsWith('/u/');
+  const isPublicRoute =
+    PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith('/callback')) ||
+    PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
   // Redirect unauthenticated users to sign-in (except public routes)
   if (!user && !isPublicRoute) {

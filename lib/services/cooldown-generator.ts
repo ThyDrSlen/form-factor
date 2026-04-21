@@ -5,6 +5,7 @@
  */
 import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
 import { parseGemmaJsonResponse, schema, type JsonSchema } from './gemma-json-parser';
+import { assertGemmaSessionGenEnabled } from './gemma-session-gen-flag';
 import {
   buildCooldownGeneratorMessages,
   type CooldownGeneratorInput,
@@ -52,12 +53,21 @@ export interface CooldownGeneratorRuntime {
   coachContext?: CoachContext;
   dispatch?: (messages: CoachMessage[], ctx?: CoachContext) => Promise<CoachMessage>;
   maxRetries?: number;
+  /**
+   * Bypass the EXPO_PUBLIC_GEMMA_SESSION_GEN gate. Intended for integration
+   * tests; unit tests that inject `dispatch` skip the gate automatically.
+   */
+  skipFlagCheck?: boolean;
 }
 
 export async function generateCooldown(
   input: CooldownGeneratorInput,
   runtime: CooldownGeneratorRuntime = {},
 ): Promise<CooldownPlan> {
+  if (!runtime.dispatch && !runtime.skipFlagCheck) {
+    assertGemmaSessionGenEnabled('cooldown-generator');
+  }
+
   const messages = buildCooldownGeneratorMessages(input);
   const dispatch = runtime.dispatch ?? sendCoachPrompt;
 

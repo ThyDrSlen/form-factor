@@ -318,3 +318,72 @@ export function resolveWeightUnit(
   if (params.weightUnit) return params.weightUnit;
   return preferred === 'metric' ? 'kg' : 'lb';
 }
+
+// ---------------------------------------------------------------------------
+// Gemma NLU fallback (#wave24-voice)
+// ---------------------------------------------------------------------------
+
+/**
+ * Async classifier that routes low-confidence transcripts to a Gemma NLU
+ * prompt when the voice-control pipeline flag is on. The sync
+ * `classifyIntent` is unchanged — callers that want the fallback behavior
+ * opt in by calling this async variant.
+ *
+ * Fail-safe defaults:
+ *   - Flag off → identical to `classifyIntent` (never touches Gemma).
+ *   - Gemma throws / times out → fall back to the regex result.
+ *
+ * The classifier module does not import `coach-service` directly; the
+ * caller injects the `sendPrompt` function. This keeps the voice
+ * subsystem unit-testable without a live edge function + avoids any
+ * hard coupling between the voice path and the coach path.
+ */
+export interface ClassifyIntentWithFallbackOptions {
+  /** Read the master flag — injected so tests can force-enable/disable. */
+  isPipelineEnabled?: () => boolean;
+  /** Gemma NLU dispatcher — injected so tests can stub the reply. */
+  sendGemmaPrompt?: (
+    transcript: string,
+  ) => Promise<ClassifiedIntent>;
+}
+
+export async function classifyIntentWithFallback(
+  raw: string,
+  options: ClassifyIntentWithFallbackOptions = {},
+): Promise<ClassifiedIntent> {
+  const primary = classifyIntent(raw);
+  if (primary.intent !== 'none') return primary;
+
+  // Lazy import so the sync classifier has no dependency on the flag
+  // module (keeps static analysis clean).
+  const {
+    isVoiceControlPipelineEnabled,
+  }: typeof import('./voice-pipeline-flag') =
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('./voice-pipeline-flag');
+  const pipelineOn = (options.isPipelineEnabled ?? isVoiceControlPipelineEnabled)();
+  if (!pipelineOn) return primary;
+
+  // Resolve the Gemma dispatcher. Default wires the prompt builder to
+  // `sendCoachPrompt`; tests inject a mock.
+  const dispatcher =
+    options.sendGemmaPrompt ??
+    (async (transcript: string) => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { classifyViaGemma }: typeof import('./voice-gemma-nlu-fallback') =
+        require('./voice-gemma-nlu-fallback');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { sendCoachPrompt }: typeof import('./coach-service') =
+        require('./coach-service');
+      return classifyViaGemma(transcript, sendCoachPrompt);
+    });
+
+  const transcript = primary.normalized || stripWakeWord(raw ?? '');
+  const fallback = await dispatcher(transcript);
+  // Prefer the fallback ONLY when it crosses the confidence threshold;
+  // otherwise stick with the primary 'none'.
+  if (fallback.intent !== 'none' && fallback.confidence >= CONFIDENCE_THRESHOLD) {
+    return fallback;
+  }
+  return primary;
+}
