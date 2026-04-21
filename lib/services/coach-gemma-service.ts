@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { createError } from './ErrorHandler';
 import type { CoachContext, CoachMessage } from './coach-service';
+import type { CoachProvider } from './coach-provider-types';
 
 interface RawCoachGemmaResponse {
   message?: string;
@@ -100,10 +101,36 @@ export async function sendCoachGemmaPrompt(
       );
     }
 
-    return {
+    // Annotate the reply with provider + model so the UI + telemetry can
+    // distinguish Gemma responses from OpenAI without re-inferring from the
+    // model string. `model` is an optional passthrough — the coach-gemma
+    // edge function returns it at `{ message, model }` (see
+    // supabase/functions/coach-gemma/index.ts).
+    //
+    // WHY non-enumerable: `provider` / `model` are supplementary annotations.
+    // Keeping them non-enumerable preserves backward-compatible equality
+    // semantics for consumers (and tests) that shallow/deep-compare replies,
+    // while still letting TypeScript + the UI read the fields directly. This
+    // mirrors the pattern in `coach-service.sendCoachPromptInner`.
+    const reply: CoachMessage = {
       role: 'assistant',
       content: responseText,
     };
+    Object.defineProperty(reply, 'provider', {
+      value: 'gemma-cloud' satisfies CoachProvider,
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    });
+    if (typeof data?.model === 'string' && data.model.trim().length > 0) {
+      Object.defineProperty(reply, 'model', {
+        value: data.model.trim(),
+        enumerable: false,
+        configurable: true,
+        writable: true,
+      });
+    }
+    return reply;
   } catch (err) {
     if (err && typeof err === 'object' && 'domain' in err) {
       throw err;
