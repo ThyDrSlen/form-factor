@@ -13,6 +13,19 @@
 
 import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
 import type { ExerciseHistorySummary } from './exercise-history-service';
+import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
+
+/**
+ * Pipeline-v2: resolve the provider from env. Mirrors
+ * `coach-auto-debrief.resolveCloudProvider` and `coach-drill-explainer`.
+ */
+function resolveProgressionProvider(): 'gemma' | 'openai' {
+  const raw = (process.env.EXPO_PUBLIC_COACH_CLOUD_PROVIDER ?? 'openai')
+    .trim()
+    .toLowerCase();
+  if (raw === 'gemma') return 'gemma';
+  return 'openai';
+}
 
 export interface ProgressionPlanInput {
   userId: string;
@@ -116,7 +129,15 @@ export async function generateProgressionPlan(
     { role: 'user', content: prompt },
   ];
 
-  const response = await sendCoachPrompt(messages, input.context);
+  // Pipeline v2: route by provider dispatch. The planner is "complex" in
+  // dispatch-router terms, so when the flag is on we pass the env-resolved
+  // provider as an explicit hint; flag-off preserves the legacy two-arg
+  // call (which defaults to the resolved cloud provider inside
+  // coach-service). Lands the TODO from line 6.
+  const opts = isCoachPipelineV2Enabled()
+    ? { provider: resolveProgressionProvider() }
+    : undefined;
+  const response = await sendCoachPrompt(messages, input.context, opts);
   const plan: ProgressionPlan = {
     text: response.content,
     promptPreview: prompt,
