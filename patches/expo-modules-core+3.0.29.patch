@@ -1,0 +1,22 @@
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
+--- a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
+@@ -7,6 +7,7 @@
+ #import <jsi/jsi.h>
+ #import <React/RCTBridgeModule.h>
+ #import <ReactCommon/TurboModuleUtils.h>
++#import <ReactCommon/CallInvoker.h>
+ #import <ExpoModulesCore/ObjectDeallocator.h>
+ 
+ namespace jsi = facebook::jsi;
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm
+--- a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm
++++ b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.mm
+@@ -2,6 +2,7 @@
+ 
+ #import <sstream>
+ 
++#import <react/bridging/CallbackWrapper.h>
+ #import <ExpoModulesCore/EXJSIConversions.h>
+ #import <ExpoModulesCore/EXJSIUtils.h>
+ #import <ExpoModulesCore/JSIUtils.h>
