@@ -42,7 +42,7 @@ import {
   type VoiceSessionState,
 } from '@/lib/services/voice-session-manager';
 import {
-  classifyIntent,
+  classifyIntentWithFallback,
   type ClassifiedIntent,
 } from '@/lib/services/voice-intent-classifier';
 import {
@@ -147,7 +147,7 @@ export function VoiceControlProvider({
     try {
       const stripped = managerRef.current.ingestTranscript(raw);
       if (stripped === null) return;
-      const classified = classifyIntent(raw);
+      const classified = await classifyIntentWithFallback(raw);
       setLatestIntent(classified);
       if (classified.intent === 'none') return;
       const runner = buildRunnerRef.current
