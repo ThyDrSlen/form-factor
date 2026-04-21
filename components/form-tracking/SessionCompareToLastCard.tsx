@@ -11,8 +11,14 @@
  * load matter more than completeness. When the user taps it we jump to
  * the dedicated `form-comparison` modal for the richer view.
  *
- * Renders null when there is no prior session — callers should gate on
- * `comparison?.priorSessionId` and skip mounting.
+ * Render gate:
+ *   - `loading === true` → skeleton (3 placeholder delta cells + shimmer)
+ *   - `error` + `onRetry` → error callout with retry pressable
+ *   - settled + `comparison?.priorSessionId` → full card
+ *   - settled + no prior session → null
+ *
+ * Callers should mount whenever `loading || error || comparison?.priorSessionId`
+ * so the user sees the fetch state instead of a silent nothing (#540).
  */
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -20,13 +26,35 @@ import { Ionicons } from '@expo/vector-icons';
 import type { SessionComparison } from '@/lib/services/session-comparison-aggregator';
 
 export interface SessionCompareToLastCardProps {
-  comparison: SessionComparison;
+  /**
+   * Optional in the loading / error states so callers can mount the card
+   * while the async fetch is still in flight. Required once settled — if
+   * null/undefined with `loading === false` and no `error`, the card
+   * renders null.
+   */
+  comparison?: SessionComparison | null;
   /**
    * Optional tap handler. When provided, the whole card becomes pressable
    * and should route to the full comparison modal. When omitted the card
    * renders as a plain non-interactive summary.
    */
   onPress?: () => void;
+  /**
+   * When true, renders a skeleton placeholder (no pressable) so the user
+   * sees visible progress while `useSessionComparisonQuery` is fetching.
+   */
+  loading?: boolean;
+  /**
+   * When non-null, renders an error callout. Paired with `onRetry` to
+   * offer a recovery path.
+   */
+  error?: Error | null;
+  /**
+   * Retry handler wired to `useSessionComparisonQuery().reload`. When
+   * present alongside `error`, the error callout shows a pressable
+   * "Retry" button.
+   */
+  onRetry?: () => void;
   testID?: string;
 }
 
@@ -74,9 +102,63 @@ function toneColor(tone: 'neutral' | 'positive' | 'negative'): string {
 export function SessionCompareToLastCard({
   comparison,
   onPress,
+  loading = false,
+  error = null,
+  onRetry,
   testID = 'session-compare-to-last-card',
 }: SessionCompareToLastCardProps) {
-  if (!comparison.priorSessionId) return null;
+  // Error state wins over loading so a retry is always reachable.
+  if (error && onRetry) {
+    return (
+      <View style={styles.card} testID={`${testID}-error`}>
+        <View style={styles.header}>
+          <Ionicons name="alert-circle-outline" size={16} color="#EF4444" />
+          <Text style={styles.title}>Couldn&apos;t load last session</Text>
+        </View>
+        <Pressable
+          onPress={onRetry}
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading last session comparison"
+          accessibilityHint="Re-runs the comparison query"
+          style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
+          testID={`${testID}-retry`}
+        >
+          <Ionicons name="refresh" size={14} color="#F5F7FF" />
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (loading) {
+    return (
+      <View style={styles.card} testID={`${testID}-loading`}>
+        <View style={styles.header}>
+          <Ionicons name="trending-up" size={16} color="#4C8CFF" />
+          <Text style={styles.title}>Compare to last session</Text>
+        </View>
+        <View
+          style={styles.deltaRow}
+          accessible
+          accessibilityLabel="Loading last session comparison"
+        >
+          {[0, 1, 2].map((i) => (
+            <View
+              key={`skeleton-${i}`}
+              style={[styles.deltaCell, styles.skeletonCell]}
+              testID={`${testID}-skeleton-${i}`}
+            >
+              <View style={styles.skeletonLabel} />
+              <View style={styles.skeletonValue} />
+              <View style={styles.skeletonUnit} />
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  if (!comparison || !comparison.priorSessionId) return null;
 
   const deltas: DeltaSpec[] = [
     {
@@ -227,6 +309,45 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.8,
+  },
+  skeletonCell: {
+    gap: 6,
+  },
+  skeletonLabel: {
+    height: 10,
+    width: '60%',
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  skeletonValue: {
+    height: 18,
+    width: '50%',
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  skeletonUnit: {
+    height: 10,
+    width: '35%',
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(76, 140, 255, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(76, 140, 255, 0.32)',
+  },
+  retryButtonText: {
+    color: '#F5F7FF',
+    fontFamily: 'Lexend_500Medium',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
 

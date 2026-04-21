@@ -132,4 +132,92 @@ describe('SessionCompareToLastCard', () => {
       getByTestId('session-compare-to-last-card-pressable').props.accessibilityRole,
     ).toBe('button');
   });
+
+  describe('loading state', () => {
+    it('renders 3 skeleton cells when loading', () => {
+      const { getByTestId } = render(<SessionCompareToLastCard loading />);
+      expect(getByTestId('session-compare-to-last-card-loading')).toBeTruthy();
+      expect(getByTestId('session-compare-to-last-card-skeleton-0')).toBeTruthy();
+      expect(getByTestId('session-compare-to-last-card-skeleton-1')).toBeTruthy();
+      expect(getByTestId('session-compare-to-last-card-skeleton-2')).toBeTruthy();
+    });
+
+    it('does not render delta values while loading', () => {
+      const { queryByTestId } = render(
+        <SessionCompareToLastCard loading comparison={buildComparison()} />,
+      );
+      expect(queryByTestId('session-compare-to-last-card-delta-reps-value')).toBeNull();
+      expect(queryByTestId('session-compare-to-last-card')).toBeNull();
+    });
+  });
+
+  describe('error state', () => {
+    it('renders the error callout + accessible retry button', () => {
+      const onRetry = jest.fn();
+      const { getByTestId, getByText } = render(
+        <SessionCompareToLastCard
+          error={new Error('Network down')}
+          onRetry={onRetry}
+        />,
+      );
+      expect(getByTestId('session-compare-to-last-card-error')).toBeTruthy();
+      expect(getByText("Couldn't load last session")).toBeTruthy();
+      const retry = getByTestId('session-compare-to-last-card-retry');
+      expect(retry.props.accessibilityRole).toBe('button');
+      expect(retry.props.accessibilityLabel).toBe(
+        'Retry loading last session comparison',
+      );
+    });
+
+    it('invokes onRetry when the retry button is pressed', () => {
+      const onRetry = jest.fn();
+      const { getByTestId } = render(
+        <SessionCompareToLastCard
+          error={new Error('Network down')}
+          onRetry={onRetry}
+        />,
+      );
+      fireEvent.press(getByTestId('session-compare-to-last-card-retry'));
+      expect(onRetry).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders the full card when error is cleared and comparison is available', () => {
+      const onRetry = jest.fn();
+      const { queryByTestId, rerender } = render(
+        <SessionCompareToLastCard
+          error={new Error('Network down')}
+          onRetry={onRetry}
+        />,
+      );
+      expect(queryByTestId('session-compare-to-last-card-error')).toBeTruthy();
+
+      rerender(
+        <SessionCompareToLastCard comparison={buildComparison()} onRetry={onRetry} />,
+      );
+      expect(queryByTestId('session-compare-to-last-card-error')).toBeNull();
+      expect(queryByTestId('session-compare-to-last-card')).toBeTruthy();
+    });
+
+    it('falls back to null when error is set but no onRetry is given', () => {
+      const { queryByTestId } = render(
+        <SessionCompareToLastCard error={new Error('x')} />,
+      );
+      expect(queryByTestId('session-compare-to-last-card-error')).toBeNull();
+    });
+  });
+
+  it('settles to null when not loading, no error, no prior session', () => {
+    const { queryByTestId } = render(
+      <SessionCompareToLastCard
+        comparison={buildComparison({
+          priorSessionId: null,
+          priorSummary: null,
+          overallTrend: 'baseline',
+        })}
+      />,
+    );
+    expect(queryByTestId('session-compare-to-last-card')).toBeNull();
+    expect(queryByTestId('session-compare-to-last-card-loading')).toBeNull();
+    expect(queryByTestId('session-compare-to-last-card-error')).toBeNull();
+  });
 });

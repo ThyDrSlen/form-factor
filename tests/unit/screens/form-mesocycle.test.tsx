@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 const mockPush = jest.fn();
 const mockBack = jest.fn();
@@ -13,6 +13,11 @@ const mockRefresh = jest.fn(async () => {});
 const mockUseFormMesocycle = jest.fn();
 jest.mock('@/hooks/use-form-mesocycle', () => ({
   useFormMesocycle: () => mockUseFormMesocycle(),
+}));
+
+const mockSendCoachPrompt = jest.fn();
+jest.mock('@/lib/services/coach-service', () => ({
+  sendCoachPrompt: (...args: unknown[]) => mockSendCoachPrompt(...args),
 }));
 
 import FormMesocycleModal from '@/app/(modals)/form-mesocycle';
@@ -42,6 +47,7 @@ beforeEach(() => {
   mockBack.mockReset();
   mockRefresh.mockReset();
   mockUseFormMesocycle.mockReset();
+  mockSendCoachPrompt.mockReset();
 });
 
 describe('FormMesocycleModal', () => {
@@ -108,22 +114,53 @@ describe('FormMesocycleModal', () => {
     expect(mockBack).toHaveBeenCalledTimes(1);
   });
 
-  it('routes to /coach with the analyst prompt when Ask-coach is tapped', async () => {
+  it('renders analyst review inline when Ask-coach is tapped (no auto push)', async () => {
     mockUseFormMesocycle.mockReturnValue({
       loading: false,
       error: null,
       insights: insights(),
       refresh: mockRefresh,
     });
-    const { getByTestId } = render(<FormMesocycleModal />);
-    fireEvent.press(getByTestId('form-mesocycle-ask-coach'));
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledTimes(1);
+    mockSendCoachPrompt.mockResolvedValueOnce({
+      role: 'assistant',
+      content: 'Steady FQI gains; focus on depth next week.',
+      provider: 'gemma-cloud',
     });
+    const { getByTestId } = render(<FormMesocycleModal />);
+    await act(async () => {
+      fireEvent.press(getByTestId('form-mesocycle-ask-coach'));
+    });
+    await waitFor(() => {
+      expect(getByTestId('form-mesocycle-analyst-result')).toBeTruthy();
+    });
+    // The inline flow does NOT push by itself — that's the whole point
+    // of #541 (no context-switch unless the user explicitly opts in).
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('routes to /coach with the analyst prompt when Continue-in-chat is tapped', async () => {
+    mockUseFormMesocycle.mockReturnValue({
+      loading: false,
+      error: null,
+      insights: insights(),
+      refresh: mockRefresh,
+    });
+    mockSendCoachPrompt.mockResolvedValueOnce({
+      role: 'assistant',
+      content: 'Inline result.',
+    });
+    const { getByTestId } = render(<FormMesocycleModal />);
+    await act(async () => {
+      fireEvent.press(getByTestId('form-mesocycle-ask-coach'));
+    });
+    await waitFor(() => {
+      expect(getByTestId('form-mesocycle-analyst-continue-chat')).toBeTruthy();
+    });
+    fireEvent.press(getByTestId('form-mesocycle-analyst-continue-chat'));
+    expect(mockPush).toHaveBeenCalledTimes(1);
     const url = mockPush.mock.calls[0][0] as string;
     expect(url).toMatch(/\/\(tabs\)\/coach\?prefill=/);
     expect(url).toMatch(/focus=mesocycle-analyst/);
-    // The prompt is URL-encoded — decode and check the natural-language hint landed.
     expect(decodeURIComponent(url)).toMatch(/4 weeks of form tracking/);
   });
 });

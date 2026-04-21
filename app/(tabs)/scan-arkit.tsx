@@ -124,6 +124,7 @@ import bounceNoiseFixture from '@/tests/fixtures/pullup-tracking/bounce-noise.js
 import { styles } from '../../styles/tabs/_scan-arkit.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
 import { VoiceCommandFeedback } from '@/components/form-tracking/VoiceCommandFeedback';
+import { CameraPermissionBanner } from '@/components/form-tracking/CameraPermissionBanner';
 // W3-A resilience (#445) — hooks + services.
 import { isAROverlaysV2Enabled } from '@/lib/services/ar-overlays-v2-flag';
 import { useSubjectIdentity } from '@/hooks/use-subject-identity';
@@ -1924,7 +1925,20 @@ export default function ScanARKitScreen() {
               sessionId: sessionIdAtStop,
             });
           } catch (error) {
-            if (DEV) warnWithTs('[ScanARKit] milestone post-session failed', error);
+            // Production: surface a non-blocking toast so the user knows
+            // the achievement wasn't persisted but sync will retry. Dev
+            // keeps the detailed warn for debugging.
+            if (DEV) {
+              warnWithTs('[ScanARKit] milestone post-session failed', error);
+            }
+            try {
+              showToast(
+                "Achievement couldn't be saved — we'll retry on next sync",
+                { type: 'error', duration: 5000 },
+              );
+            } catch {
+              /* toast provider absent in headless tests — ignore */
+            }
           }
         })();
       }
@@ -2936,6 +2950,25 @@ export default function ScanARKitScreen() {
             </TouchableOpacity>
           </View>
         </View>
+      </View>
+
+      {/*
+        Camera-permission banner (#542) — renders only when the scan
+        surface is mounted without live camera access. Banner self-gates
+        via useCameraPermissionGuard and is absolutely positioned so the
+        underlying tracking canvas is never obscured by an empty wrapper.
+      */}
+      <View
+        pointerEvents="box-none"
+        style={{
+          position: 'absolute',
+          top: topBarBottom + 8,
+          left: 12,
+          right: 12,
+          zIndex: 130,
+        }}
+      >
+        <CameraPermissionBanner testID="scan-arkit-camera-permission-banner" />
       </View>
 
       {/* Tracking view */}
