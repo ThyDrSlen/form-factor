@@ -12,7 +12,7 @@
  * tracker to navigate here is a follow-up.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,8 +26,11 @@ import { SessionHighlightCard } from '@/components/form-tracking/SessionHighligh
 import { AskCoachCTA } from '@/components/form-tracking/AskCoachCTA';
 import AutoDebriefCard from '@/components/form-tracking/AutoDebriefCard';
 import { FqiExplainerModal } from '@/components/form-tracking/FqiExplainerModal';
+import { SessionCompareToLastCard } from '@/components/form-tracking/SessionCompareToLastCard';
 import { resolveExerciseKey } from '@/lib/services/form-session-history-lookup';
 import { useAutoDebrief } from '@/hooks/use-auto-debrief';
+import { useSessionComparisonQuery } from '@/hooks/use-session-comparison';
+import { supabase } from '@/lib/supabase';
 import { isCoachPipelineV2Enabled } from '@/lib/services/coach-pipeline-v2-flag';
 
 function safeParseReps(raw: string | undefined): RepSummary[] {
@@ -89,10 +92,38 @@ function pickBestAndWorst(reps: RepSummary[]): {
 
 export default function FormTrackingDebriefScreen() {
   const router = useRouter();
+  const [userId, setUserId] = useState<string | null>(null);
+  useEffect(() => {
+    // Resolve the current user lazily via supabase.auth.getSession() rather
+    // than via AuthContext so this screen stays test-friendly (AuthContext
+    // pulls expo-linking at import time, which the existing debrief test
+    // suite's module graph doesn't set up). supabase itself is already
+    // globally mocked in tests so this is a no-op there.
+    let cancelled = false;
+    void supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setUserId(data.session?.user.id ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setUserId(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const params = useLocalSearchParams<{
     exerciseName?: string;
     durationSeconds?: string;
     reps?: string;
+    /**
+     * Optional: when passed, the debrief hydrates a "Compare to last
+     * session" card by calling the session-comparison aggregator. Recap
+     * routes fired from the legacy in-session path omit this param and
+     * the card simply does not render.
+     */
+    sessionId?: string;
   }>();
 
   const exerciseName = params.exerciseName?.trim() ? params.exerciseName : 'Session recap';
@@ -101,6 +132,29 @@ export default function FormTrackingDebriefScreen() {
   const averageFqi = useMemo(() => computeAverageFqi(reps), [reps]);
   const { best, worst } = useMemo(() => pickBestAndWorst(reps), [reps]);
   const topFault = worst?.faults[0] ?? null;
+  const routeSessionId = useMemo(() => {
+    const raw = params.sessionId;
+    if (!raw || typeof raw !== 'string') return null;
+    return raw.trim() || null;
+  }, [params.sessionId]);
+  const comparisonExerciseId = useMemo(
+    () => resolveExerciseKey(exerciseName),
+    [exerciseName],
+  );
+  const { comparison } = useSessionComparisonQuery({
+    currentSessionId: routeSessionId,
+    exerciseId: comparisonExerciseId,
+    userId,
+  });
+  const handleOpenComparison = useCallback(() => {
+    if (!comparison?.priorSessionId || !comparisonExerciseId || !routeSessionId) return;
+    const qs = new URLSearchParams({
+      sessionId: routeSessionId,
+      exerciseId: comparisonExerciseId,
+      priorSessionId: comparison.priorSessionId,
+    }).toString();
+    router.push(`/(modals)/form-comparison?${qs}` as `/${string}`);
+  }, [router, comparison?.priorSessionId, comparisonExerciseId, routeSessionId]);
 
   // Pipeline v2: synthesize a stable sessionId from the recap payload so the
   // auto-debrief hook can dedupe via AsyncStorage. We derive from exercise
@@ -213,6 +267,17 @@ export default function FormTrackingDebriefScreen() {
             </View>
           )}
         </View>
+
+        {comparison?.priorSessionId ? (
+          <View style={styles.sectionGap} testID="form-tracking-debrief-compare-section">
+            <Text style={styles.sectionTitle}>Progress</Text>
+            <SessionCompareToLastCard
+              comparison={comparison}
+              onPress={handleOpenComparison}
+              testID="form-tracking-debrief-compare-card"
+            />
+          </View>
+        ) : null}
 
         {pipelineV2 ? (
           <View style={styles.sectionGap} testID="form-tracking-debrief-auto-section">

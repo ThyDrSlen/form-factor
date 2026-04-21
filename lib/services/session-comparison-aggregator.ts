@@ -28,6 +28,14 @@ export interface ExerciseSessionSummary {
   avgDepthRatio: number | null;
   /** Mean left/right asymmetry in degrees. Higher = worse. */
   avgSymmetryDeg: number | null;
+  /**
+   * Mean inter-rep pause in seconds (end of rep N → start of rep N+1).
+   * `null` (or omitted) when there are fewer than 2 reps or timestamps are
+   * missing. Optional so callers built before this field existed compile
+   * unchanged; the aggregator + delta helpers treat missing the same as
+   * `null`.
+   */
+  avgRestSec?: number | null;
   /** fault_id → number of reps with that fault detected in this session. */
   faultCounts: Record<string, number>;
 }
@@ -52,6 +60,15 @@ export interface SessionComparison {
   depthDeltaRatio: number | null;
   /** Current minus prior. Negative = improvement (less asymmetry). */
   symmetryDeltaDeg: number | null;
+  /** Current minus prior. Positive = added reps. `null` when baseline. */
+  repCountDelta: number | null;
+  /**
+   * Current minus prior average inter-rep rest in seconds. Direction is not
+   * a straight win/loss — callers decide how to color a swing (e.g. shorter
+   * rest on a conditioning block is positive; longer rest on a strength
+   * session can also be positive).
+   */
+  restDeltaSec: number | null;
   /** Current minus prior total fault events. Negative = improvement. */
   faultCountDelta: number | null;
   /** Fault ids that appeared in current but not prior. */
@@ -151,6 +168,8 @@ export function buildSessionComparison(
       romDeltaDeg: null,
       depthDeltaRatio: null,
       symmetryDeltaDeg: null,
+      repCountDelta: null,
+      restDeltaSec: null,
       faultCountDelta: null,
       newFaults: [],
       resolvedFaults: [],
@@ -162,6 +181,8 @@ export function buildSessionComparison(
   const romDeltaDeg = subtract(current.avgRomDeg, prior.avgRomDeg);
   const depthDeltaRatio = subtract(current.avgDepthRatio, prior.avgDepthRatio);
   const symmetryDeltaDeg = subtract(current.avgSymmetryDeg, prior.avgSymmetryDeg);
+  const repCountDelta = current.repCount - prior.repCount;
+  const restDeltaSec = subtract(current.avgRestSec ?? null, prior.avgRestSec ?? null);
   const faultCountDelta =
     totalFaultCount(current.faultCounts) - totalFaultCount(prior.faultCounts);
   const { newFaults, resolvedFaults } = diffFaultIds(
@@ -178,6 +199,8 @@ export function buildSessionComparison(
     romDeltaDeg,
     depthDeltaRatio,
     symmetryDeltaDeg,
+    repCountDelta,
+    restDeltaSec,
     faultCountDelta,
     newFaults,
     resolvedFaults,
@@ -248,6 +271,8 @@ export function summarizeSessionFromReps({
       ? null
       : Math.round((values.reduce((sum, v) => sum + v, 0) / values.length) * 100) / 100;
 
+  const avgRestSec = computeAvgRestSec(filtered);
+
   return {
     sessionId,
     exerciseId,
@@ -257,8 +282,31 @@ export function summarizeSessionFromReps({
     avgRomDeg: mean(roms),
     avgDepthRatio: mean(depths),
     avgSymmetryDeg: mean(symmetries),
+    avgRestSec,
     faultCounts,
   };
+}
+
+/**
+ * Mean gap between the end of rep N and the start of rep N+1, in seconds.
+ * Skips negative gaps (malformed data) and returns `null` when we cannot
+ * derive at least one valid gap (e.g. a single-rep session).
+ */
+function computeAvgRestSec(rows: RepRow[]): number | null {
+  if (rows.length < 2) return null;
+  const sorted = [...rows].sort((a, b) => (a.start_ts < b.start_ts ? -1 : 1));
+  const gaps: number[] = [];
+  for (let i = 1; i < sorted.length; i += 1) {
+    const prevEnd = Date.parse(sorted[i - 1].end_ts);
+    const thisStart = Date.parse(sorted[i].start_ts);
+    if (!Number.isFinite(prevEnd) || !Number.isFinite(thisStart)) continue;
+    const gapMs = thisStart - prevEnd;
+    if (gapMs <= 0) continue;
+    gaps.push(gapMs / 1000);
+  }
+  if (gaps.length === 0) return null;
+  const sum = gaps.reduce((acc, v) => acc + v, 0);
+  return Math.round((sum / gaps.length) * 10) / 10;
 }
 
 export interface FetchComparisonArgs {
