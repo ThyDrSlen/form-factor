@@ -102,6 +102,14 @@ export default function ModalsLayout() {
           contentStyle: { backgroundColor: '#050E1F' },
         }}
       />
+      <Stack.Screen
+        name="workout-debrief-chat"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#0B1626' },
+        }}
+      />
     </Stack>
   );
 }
