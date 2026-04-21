@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -16,17 +16,65 @@ import type {
   MesocycleFaultCount,
   MesocycleWeekBucket,
 } from '@/lib/services/form-mesocycle-aggregator';
-import { buildMesocycleAnalystPrompt } from '@/lib/services/coach-mesocycle-analyst';
+import {
+  buildMesocycleAnalystPrompt,
+  requestMesocycleAnalysis,
+  type MesocycleAnalystResult,
+  type SendCoachPromptFn,
+} from '@/lib/services/coach-mesocycle-analyst';
+import { sendCoachPrompt } from '@/lib/services/coach-service';
+
+/**
+ * Adapter between the coach-service positional API
+ * (`sendCoachPrompt(messages, context)`) and the analyst's
+ * options-object contract (`{ messages, context }`).
+ *
+ * Kept local to the modal so `coach-mesocycle-analyst.ts` stays adapter-agnostic
+ * and unit-testable without pulling the real coach-service.
+ */
+const sendCoachPromptAdapter: SendCoachPromptFn = async ({ messages, context }) => {
+  const result = await sendCoachPrompt(messages, context);
+  if (!result) return null;
+  return {
+    message: { role: result.role, content: result.content },
+    provider: result.provider,
+  };
+};
 
 export default function FormMesocycleModal() {
   const router = useRouter();
   const { loading, error, insights, refresh } = useFormMesocycle();
+  const [analystResult, setAnalystResult] = useState<MesocycleAnalystResult | null>(
+    null,
+  );
+  const [analystLoading, setAnalystLoading] = useState(false);
+  const [analystError, setAnalystError] = useState<string | null>(null);
+  const [analystExpanded, setAnalystExpanded] = useState(true);
 
   const handleClose = useCallback(() => {
     router.back();
   }, [router]);
 
-  const handleAskCoach = useCallback(() => {
+  const handleAnalyze = useCallback(async () => {
+    if (!insights || analystLoading) return;
+    setAnalystLoading(true);
+    setAnalystError(null);
+    try {
+      const result = await requestMesocycleAnalysis(insights, sendCoachPromptAdapter);
+      setAnalystResult(result);
+      setAnalystExpanded(true);
+      if (!result) {
+        setAnalystError('Coach returned no response. Try again in a moment.');
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setAnalystError(msg);
+    } finally {
+      setAnalystLoading(false);
+    }
+  }, [insights, analystLoading]);
+
+  const handleContinueInChat = useCallback(() => {
     if (!insights) return;
     const prompt = buildMesocycleAnalystPrompt(insights);
     const url =
@@ -34,6 +82,10 @@ export default function FormMesocycleModal() {
       `&focus=mesocycle-analyst`;
     router.push(url as Parameters<typeof router.push>[0]);
   }, [insights, router]);
+
+  const handleToggleAnalystExpanded = useCallback(() => {
+    setAnalystExpanded((prev) => !prev);
+  }, []);
 
   const weekRows = useMemo(() => insights?.weeks ?? [], [insights]);
 
@@ -73,11 +125,23 @@ export default function FormMesocycleModal() {
       <FormMesocycleCard
         insights={insights}
         loading={loading}
-        onAskCoach={insights && !insights.isEmpty ? handleAskCoach : undefined}
+        onAskCoach={insights && !insights.isEmpty ? handleAnalyze : undefined}
       />
 
       {loading && !insights ? (
         <ActivityIndicator color="#4C8CFF" style={styles.loader} />
+      ) : null}
+
+      {insights && !insights.isEmpty ? (
+        <AnalystSection
+          result={analystResult}
+          loading={analystLoading}
+          errorMessage={analystError}
+          expanded={analystExpanded}
+          onToggleExpanded={handleToggleAnalystExpanded}
+          onRetry={handleAnalyze}
+          onContinueInChat={handleContinueInChat}
+        />
       ) : null}
 
       {insights && !insights.isEmpty ? (
@@ -156,6 +220,134 @@ function FaultRow({ fault }: { fault: MesocycleFaultCount }) {
       <Text style={styles.faultName}>{formatFault(fault.fault)}</Text>
       <Text style={styles.faultCount}>{fault.count}×</Text>
       <Text style={styles.faultShare}>{formatPct(fault.share)}</Text>
+    </View>
+  );
+}
+
+interface AnalystSectionProps {
+  result: MesocycleAnalystResult | null;
+  loading: boolean;
+  errorMessage: string | null;
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  onRetry: () => void;
+  onContinueInChat: () => void;
+}
+
+function AnalystSection({
+  result,
+  loading,
+  errorMessage,
+  expanded,
+  onToggleExpanded,
+  onRetry,
+  onContinueInChat,
+}: AnalystSectionProps) {
+  const hasBody = loading || errorMessage != null || result != null;
+  return (
+    <View style={styles.section} testID="form-mesocycle-analyst-section">
+      <Pressable
+        onPress={onToggleExpanded}
+        accessibilityRole="button"
+        accessibilityLabel={
+          expanded ? 'Collapse analyst review' : 'Expand analyst review'
+        }
+        style={styles.analystHeader}
+        testID="form-mesocycle-analyst-toggle"
+      >
+        <Text style={styles.sectionTitle}>Analyst review</Text>
+        <Ionicons
+          name={expanded ? 'chevron-up' : 'chevron-down'}
+          size={18}
+          color="#8FA2B8"
+        />
+      </Pressable>
+      {expanded ? (
+        <View style={styles.sectionBody}>
+          {loading ? (
+            <View
+              style={styles.analystRow}
+              accessible
+              accessibilityLabel="Coach is reviewing your mesocycle"
+              testID="form-mesocycle-analyst-loading"
+            >
+              <ActivityIndicator color="#4C8CFF" />
+              <Text style={styles.analystBody}>Reviewing your last 4 weeks…</Text>
+            </View>
+          ) : null}
+          {!loading && errorMessage ? (
+            <View style={styles.analystRow} testID="form-mesocycle-analyst-error">
+              <Ionicons name="alert-circle" size={18} color="#FF6B6B" />
+              <View style={styles.analystErrorBody}>
+                <Text style={styles.analystErrorText}>{errorMessage}</Text>
+                <Pressable
+                  onPress={onRetry}
+                  accessibilityRole="button"
+                  accessibilityLabel="Retry analyst review"
+                  style={styles.retryLink}
+                  testID="form-mesocycle-analyst-retry"
+                >
+                  <Text style={styles.retryLinkText}>Retry</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+          {!loading && !errorMessage && result ? (
+            <View testID="form-mesocycle-analyst-result">
+              <Text style={styles.analystBody}>{result.text}</Text>
+              <Text style={styles.analystMeta} testID="form-mesocycle-analyst-provider">
+                via {result.provider === 'gemma-cloud' ? 'Gemma' : 'coach'}
+              </Text>
+              <View style={styles.analystActions}>
+                <Pressable
+                  onPress={onRetry}
+                  accessibilityRole="button"
+                  accessibilityLabel="Regenerate analyst review"
+                  style={styles.analystSecondaryAction}
+                  testID="form-mesocycle-analyst-regenerate"
+                >
+                  <Ionicons name="refresh" size={14} color="#8FA2B8" />
+                  <Text style={styles.analystSecondaryActionText}>Regenerate</Text>
+                </Pressable>
+                <Pressable
+                  onPress={onContinueInChat}
+                  accessibilityRole="button"
+                  accessibilityLabel="Continue this review in the coach chat"
+                  style={styles.analystPrimaryAction}
+                  testID="form-mesocycle-analyst-continue-chat"
+                >
+                  <Ionicons name="chatbubble-ellipses" size={14} color="#FFFFFF" />
+                  <Text style={styles.analystPrimaryActionText}>
+                    Continue in chat
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+          {!loading && !errorMessage && !result && !hasBody ? (
+            <Text style={styles.analystEmpty} testID="form-mesocycle-analyst-empty">
+              Tap &quot;Ask coach&quot; to get a natural-language review of your last
+              4 weeks.
+            </Text>
+          ) : null}
+          {!hasBody ? (
+            <View style={styles.analystRow}>
+              <Pressable
+                onPress={onContinueInChat}
+                accessibilityRole="button"
+                accessibilityLabel="Continue in the coach chat"
+                style={styles.analystSecondaryAction}
+                testID="form-mesocycle-analyst-continue-chat-empty"
+              >
+                <Ionicons name="chatbubble-ellipses" size={14} color="#8FA2B8" />
+                <Text style={styles.analystSecondaryActionText}>
+                  Continue in chat
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -313,5 +505,94 @@ const styles = StyleSheet.create({
     fontSize: 12,
     paddingHorizontal: 16,
     paddingBottom: 16,
+  },
+  analystHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  analystRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+  },
+  analystBody: {
+    color: '#E1E8EF',
+    fontFamily: 'Lexend_400Regular',
+    fontSize: 14,
+    lineHeight: 20,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  analystMeta: {
+    color: '#6F80A0',
+    fontFamily: 'Lexend_400Regular',
+    fontSize: 11,
+    letterSpacing: 0.2,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  analystErrorBody: {
+    flex: 1,
+    gap: 6,
+  },
+  analystErrorText: {
+    color: '#FF6B6B',
+    fontFamily: 'Lexend_400Regular',
+    fontSize: 13,
+  },
+  analystEmpty: {
+    color: '#8FA2B8',
+    fontFamily: 'Lexend_400Regular',
+    fontSize: 13,
+    padding: 16,
+  },
+  retryLink: {
+    alignSelf: 'flex-start',
+  },
+  retryLinkText: {
+    color: '#4C8CFF',
+    fontFamily: 'Lexend_500Medium',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  analystActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  analystPrimaryAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#4C8CFF',
+  },
+  analystPrimaryActionText: {
+    color: '#FFFFFF',
+    fontFamily: 'Lexend_500Medium',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  analystSecondaryAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(143, 162, 184, 0.12)',
+  },
+  analystSecondaryActionText: {
+    color: '#8FA2B8',
+    fontFamily: 'Lexend_500Medium',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
