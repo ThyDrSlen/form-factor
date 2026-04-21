@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { localDB } from '@/lib/services/database/local-db';
 import { tabColors } from '@/styles/tabs/_tab-theme';
+import { EmptySessionState } from '@/components/form-tracking/EmptySessionState';
 
 interface SessionSummary {
   id: string;
@@ -162,13 +163,7 @@ export default function SessionHistoryScreen() {
           </TouchableOpacity>
         </View>
       ) : sessions.length === 0 ? (
-        <View style={historyStyles.stateContainer}>
-          <Ionicons name="barbell-outline" size={48} color={tabColors.textSecondary} />
-          <Text style={historyStyles.emptyText}>No completed sessions yet</Text>
-          <Text style={historyStyles.emptySubtext}>
-            Start a workout session to see your history here
-          </Text>
-        </View>
+        <EmptySessionState />
       ) : (
         <FlatList
           data={sessions}
@@ -280,18 +275,5 @@ const historyStyles = StyleSheet.create({
   retryButtonText: {
     color: '#fff',
     fontFamily: 'Lexend_700Bold',
-  },
-  emptyText: {
-    fontSize: 16,
-    fontFamily: 'Lexend_500Medium',
-    color: tabColors.textPrimary,
-    marginTop: 16,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    fontFamily: 'Lexend_400Regular',
-    color: tabColors.textSecondary,
-    textAlign: 'center',
-    marginTop: 8,
   },
 });

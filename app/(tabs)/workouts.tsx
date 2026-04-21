@@ -3,7 +3,8 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { DeleteAction } from '@/components';
-import { FormQualityBadge } from '@/components/form-tracking/FormQualityBadge';
+import { AskCoachCTA } from '@/components/form-tracking/AskCoachCTA';
+import { FormQualityBadgeRow } from '@/components/workouts/FormQualityBadgeRow';
 import { OverloadAnalyticsCard } from '@/components/workouts/OverloadAnalyticsCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnits } from '@/contexts/UnitsContext';
@@ -14,6 +15,7 @@ import {
   isProgressionPlanEnabled,
 } from '@/lib/services/progression-flags';
 import { exportSession } from '@/lib/services/session-export-service';
+import { isWorkoutCoachRecallEnabled } from '@/lib/services/workout-coach-recall-flag';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -62,6 +64,19 @@ export default function WorkoutsScreen() {
   const [formQualityByExercise, setFormQualityByExercise] = useState<
     Record<string, number | null>
   >({});
+  // Wave-25 master flag — when off, the per-row AskCoachCTA is not
+  // rendered. Read once on mount to match other flag consumers.
+  const coachRecallEnabled = useMemo(() => isWorkoutCoachRecallEnabled(), []);
+
+  const handleAskCoachAboutWorkout = useCallback(
+    (workoutId: string) => {
+      Haptics.selectionAsync().catch(() => {});
+      router.push(
+        `/(modals)/workout-debrief-chat?workoutId=${encodeURIComponent(workoutId)}`,
+      );
+    },
+    [router],
+  );
 
   // Pick the most recently logged exercise for the overload card. We fall
   // back to the first row when dates are missing; if the list is empty, the
@@ -322,11 +337,12 @@ export default function WorkoutsScreen() {
               </View>
             </View>
 
-            {formQualityByExercise[item.exercise] != null ? (
-              <View style={workoutCardStyles.badgeRow}>
-                <FormQualityBadge score={formQualityByExercise[item.exercise]} />
-              </View>
-            ) : null}
+            <FormQualityBadgeRow
+              exerciseName={item.exercise}
+              score={formQualityByExercise[item.exercise]}
+              style={workoutCardStyles.badgeRow}
+            />
+
 
             <View style={styles.cardDetails}>
               <View style={styles.detailItem}>
@@ -398,6 +414,18 @@ export default function WorkoutsScreen() {
                 style={styles.deleteAction}
               />
             </View>
+            {coachRecallEnabled ? (
+              <View style={workoutCardStyles.askCoachRow} testID={`ask-coach-row-${item.id}`}>
+                <AskCoachCTA
+                  exerciseName={item.exercise}
+                  repCount={typeof item.reps === 'number' ? item.reps : 0}
+                  averageFqi={formQualityByExercise[item.exercise] ?? null}
+                  onPress={() => handleAskCoachAboutWorkout(item.id)}
+                  label="Ask Gemma about this workout"
+                  testID={`ask-coach-cta-${item.id}`}
+                />
+              </View>
+            ) : null}
           </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -508,6 +536,13 @@ const workoutCardStyles = StyleSheet.create({
   badgeRow: {
     marginTop: 6,
     marginBottom: 2,
+  },
+  // Wave-25: pulled-in padding on the embedded AskCoachCTA so it does
+  // not break out of the card gradient. The CTA wraps itself in its
+  // own padding; this container just tightens the vertical margin.
+  askCoachRow: {
+    marginTop: 4,
+    marginBottom: -4,
   },
 });
 

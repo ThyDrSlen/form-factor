@@ -103,6 +103,14 @@ export default function ModalsLayout() {
         }}
       />
       <Stack.Screen
+        name="workout-debrief-chat"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#0B1626' },
+        }}
+      />
+      <Stack.Screen
         name="session-warmup-coach"
         options={{
           presentation: 'modal',
