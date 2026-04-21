@@ -102,6 +102,14 @@ export default function ModalsLayout() {
           contentStyle: { backgroundColor: '#050E1F' },
         }}
       />
+      <Stack.Screen
+        name="session-warmup-coach"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#050E1F' },
+        }}
+      />
     </Stack>
   );
 }
