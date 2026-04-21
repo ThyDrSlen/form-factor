@@ -237,4 +237,88 @@ describe('streamCoachPrompt', () => {
     );
     expect(fakeFetch).toHaveBeenCalledTimes(1);
   });
+
+  // ---------------------------------------------------------------------------
+  // Wave-29 T2: transient retryable HTTP statuses (429 / 408).
+  //
+  // lib/services/coach-streaming.ts:142-153 classifies a non-2xx response as
+  // COACH_STREAM_HTTP_ERROR. `retryable` is set true for 5xx and 429. The
+  // existing suite already covers 503 (line 149) and 400 (non-retryable, line
+  // 168). These cases close the gap on:
+  //   - 429 Too Many Requests: upstream rate limit — caller should retry after
+  //     backoff. `retryable: true` is what drives the retry path in the UI
+  //     layer (CoachChatScreen + coach-session-manager).
+  //   - 408 Request Timeout: unlike 5xx/429, the current impl classifies 408
+  //     as `retryable: false` because it does not match the `>= 500 || === 429`
+  //     rule. Document that contract here so any future refinement (e.g. adding
+  //     408 to the retry set, or a dedicated COACH_STREAM_TIMEOUT code) tightens
+  //     this test rather than regressing it silently.
+  // ---------------------------------------------------------------------------
+  it('classifies 429 Too Many Requests as COACH_STREAM_HTTP_ERROR with retryable=true', async () => {
+    const fakeFetch: typeof fetch = jest.fn(
+      async () => new Response('too many', { status: 429 })
+    );
+
+    await expect(
+      streamCoachPrompt(
+        [{ role: 'user', content: 'x' }],
+        undefined,
+        () => undefined,
+        { fetchImpl: fakeFetch }
+      )
+    ).rejects.toMatchObject({
+      domain: 'network',
+      code: 'COACH_STREAM_HTTP_ERROR',
+      retryable: true,
+    });
+  });
+
+  // 408 Request Timeout: the wave-29 spec requires `retryable: true` but the
+  // current implementation at lib/services/coach-streaming.ts:150 flags only
+  // `status >= 500 || status === 429` as retryable. 408 is semantically a
+  // transient timeout (RFC 7231 §6.5.7) and SHOULD be retryable — but asserting
+  // that today would require a prod change to add `|| status === 408` to the
+  // retryable predicate, which this test-only wave explicitly excludes.
+  //
+  // Assert today's contract (`retryable: false`) so the intent is documented,
+  // and add a sibling skipped test that encodes the desired future contract.
+  it('classifies 408 Request Timeout as COACH_STREAM_HTTP_ERROR (current contract: retryable=false)', async () => {
+    const fakeFetch: typeof fetch = jest.fn(
+      async () => new Response('timeout', { status: 408 })
+    );
+
+    await expect(
+      streamCoachPrompt(
+        [{ role: 'user', content: 'x' }],
+        undefined,
+        () => undefined,
+        { fetchImpl: fakeFetch }
+      )
+    ).rejects.toMatchObject({
+      domain: 'network',
+      code: 'COACH_STREAM_HTTP_ERROR',
+      retryable: false,
+    });
+  });
+
+  // TODO(wave-29-C-T2): un-skip once coach-streaming.ts:150 adds 408 to the
+  // retryable predicate. 408 is semantically a transient timeout per RFC 7231
+  // §6.5.7 and parity with 429 is the expected future state.
+  it.skip('classifies 408 Request Timeout as retryable=true (future contract)', async () => {
+    const fakeFetch: typeof fetch = jest.fn(
+      async () => new Response('timeout', { status: 408 })
+    );
+
+    await expect(
+      streamCoachPrompt(
+        [{ role: 'user', content: 'x' }],
+        undefined,
+        () => undefined,
+        { fetchImpl: fakeFetch }
+      )
+    ).rejects.toMatchObject({
+      code: 'COACH_STREAM_HTTP_ERROR',
+      retryable: true,
+    });
+  });
 });
