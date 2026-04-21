@@ -78,14 +78,29 @@ export default function AutoDebriefCard({
   // Track whether we are still within the awaiting-grace window. Starts true
   // when `awaitingResult` is first seen and flips to false after the grace
   // timeout — at which point the card falls back to the history empty copy.
+  //
+  // `graceEpochRef` is incremented every time `awaitingResult` flips true.
+  // The timeout callback captures its own epoch and only commits state when
+  // its epoch still matches the current ref. This prevents a stale timeout
+  // from a prior grace window flipping `inGrace` back to false on top of a
+  // freshly-started grace window (A1 — epoch-keyed setInGrace).
   const [inGrace, setInGrace] = useState(awaitingResult);
+  const graceEpochRef = useRef(0);
   useEffect(() => {
     if (!awaitingResult) {
+      // A new awaitingResult=true will start a new epoch; we still bump
+      // here so any in-flight "set false after grace" timer from a previous
+      // window can be treated as stale when/if the next true arrives.
       setInGrace(false);
       return;
     }
+    graceEpochRef.current += 1;
+    const myEpoch = graceEpochRef.current;
     setInGrace(true);
-    const handle = setTimeout(() => setInGrace(false), AUTO_DEBRIEF_EMPTY_GRACE_MS);
+    const handle = setTimeout(() => {
+      if (graceEpochRef.current !== myEpoch) return;
+      setInGrace(false);
+    }, AUTO_DEBRIEF_EMPTY_GRACE_MS);
     return () => clearTimeout(handle);
   }, [awaitingResult]);
 
