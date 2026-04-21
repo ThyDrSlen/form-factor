@@ -14,7 +14,7 @@
  * calling screen decides what each CTA does.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -25,6 +25,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 
 const REASON_LABELS: Record<string, string> = {
   low_stability: 'Low stability',
@@ -98,6 +99,13 @@ export default function CalibrationFailureRecoveryModal(): React.ReactElement {
   const handleClose = useCallback(() => {
     router.back();
   }, [router]);
+
+  // Fire a warning haptic on mount so users get tactile feedback that
+  // calibration failed — parity with the native iOS recovery pattern and
+  // makes the modal feel less silent when it slides in.
+  useEffect(() => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  }, []);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
