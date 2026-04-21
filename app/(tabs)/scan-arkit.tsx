@@ -41,6 +41,7 @@ import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type MediaPipePose2D } from '@/lib/arkit/ARKitBodyTracker';
 import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
 import { audioSessionManager } from '@/lib/services/audio-session-manager';
+import { useToast } from '@/contexts/ToastContext';
 import { CrashBoundary } from '@/components/CrashBoundary';
 import { ARKitUnsupportedPlaceholder } from '@/components/form-tracking/ARKitUnsupportedPlaceholder';
 import { ExitMidSessionSheet } from '@/components/form-tracking/ExitMidSessionSheet';
@@ -345,6 +346,7 @@ const PreviewPlayer = ({ uri }: { uri: string }) => {
 export default function ScanARKitScreen() {
   const DEV = __DEV__;
   const router = useRouter();
+  const { show: showToast } = useToast();
   const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string; trackingDebug?: string; templateId?: string }>();
   const fixturePlaybackRequested = params.fixturePlayback === '1';
   // Issue #447 — deep-link / scheduled-workout template binding.
@@ -749,6 +751,10 @@ export default function ScanARKitScreen() {
         if (DEV) {
           warnWithTs('[ScanARKit] MediaPipe shadow unavailable, falling back to proxy provider');
         }
+        // Surface the fallback to the user. Previously this was DEV-only,
+        // so prod users would silently drop onto the proxy provider with
+        // no explanation for the accuracy regression.
+        showToast('Pose tracking degraded — using fallback.', { type: 'info' });
       }
     };
 
@@ -758,13 +764,14 @@ export default function ScanARKitScreen() {
       }
       if (!cancelled) {
         setShadowProviderRuntime('mediapipe_proxy');
+        showToast('Pose tracking degraded — using fallback.', { type: 'info' });
       }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [DEV, isTracking, mediaPipeModelPath, shadowModeEnabled]);
+  }, [DEV, isTracking, mediaPipeModelPath, shadowModeEnabled, showToast]);
 
   useEffect(() => {
     const shouldPollMediaPipe =
