@@ -137,4 +137,23 @@ describe('FormQualityRecoveryCard', () => {
     );
     expect(getByTestId('custom-id')).toBeTruthy();
   });
+
+  it('shows "Finding a drill for you…" caption when isFetchingDrill is true', () => {
+    const { getByTestId, queryByText, getByText } = render(
+      <FormQualityRecoveryCard prescription={PRESCRIPTION} isFetchingDrill />,
+    );
+    expect(getByTestId('drill-fetching-tempo-squat-320')).toBeTruthy();
+    expect(getByText('Finding a drill for you…')).toBeTruthy();
+    // Static reason copy is swapped out while the fetch is in flight.
+    expect(queryByText(PRESCRIPTION.reason)).toBeNull();
+  });
+
+  it('restores the reason copy when isFetchingDrill flips back to false', () => {
+    const { getByText, rerender, queryByTestId } = render(
+      <FormQualityRecoveryCard prescription={PRESCRIPTION} isFetchingDrill />,
+    );
+    rerender(<FormQualityRecoveryCard prescription={PRESCRIPTION} isFetchingDrill={false} />);
+    expect(queryByTestId('drill-fetching-tempo-squat-320')).toBeNull();
+    expect(getByText(PRESCRIPTION.reason)).toBeTruthy();
+  });
 });
