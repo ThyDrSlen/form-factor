@@ -29,6 +29,7 @@ import { synthesizeMemoryClause } from './coach-memory-context';
 import { getExercisePreferences, type CuePreference } from './coach-cue-feedback';
 import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
 import { isDispatchEnabled } from './coach-model-dispatch-flag';
+import { assertUnderWeeklyCap } from './coach-cost-guard';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -226,9 +227,22 @@ async function dispatch(
   // OpenAI path. This lets the ops team pause Gemma rollouts without
   // redeploying — any caller that resolved `provider: 'gemma'` via env
   // still lands on OpenAI.
+  //
+  // Cost-guard (#537): before attempting Gemma, check the weekly cap — if
+  // this user has blown past their budget, silently switch to the OpenAI
+  // path. The guard is a no-op when the env cap is unset.
   if (provider === 'gemma' && isDispatchEnabled()) {
     try {
-      return await sendCoachGemmaPrompt(messages, context);
+      await assertUnderWeeklyCap('gemma_cloud');
+    } catch (capErr) {
+      warnWithTs(
+        '[coach-auto-debrief] weekly Gemma cap hit, falling back to openai',
+        capErr,
+      );
+      return sendCoachPrompt(messages, { ...context, focus: 'post_session_debrief' });
+    }
+    try {
+      return await sendCoachGemmaPrompt(messages, context, { taskKind: 'debrief' });
     } catch (err) {
       warnWithTs('[coach-auto-debrief] gemma dispatch failed, falling back to openai', err);
       return sendCoachPrompt(messages, { ...context, focus: 'post_session_debrief' });

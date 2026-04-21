@@ -221,3 +221,73 @@ describe('coach-cost-tracker — recordCoachUsage + getWeeklyAggregate', () => {
     expect(rehydrated.totalCalls).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Integration smoke: coach-service Gemma path records usage (#537).
+//
+// The production wiring fires recordCoachUsage fire-and-forget so a coach
+// turn never blocks on the tracker. Here we call recordCoachUsage directly
+// to mirror what the wiring does, then read getWeeklyAggregate back — if
+// the bucket shape / provider enum drift, this catches it.
+// ---------------------------------------------------------------------------
+describe('coach-cost-tracker — wiring smoke (#537)', () => {
+  it('records a gemma_cloud chat event that rolls up into the weekly aggregate', async () => {
+    await recordCoachUsage({
+      at: '2026-04-17T10:00:00.000Z',
+      provider: 'gemma_cloud',
+      taskKind: 'chat',
+      tokensIn: 25, // 100 chars of prompt / 4
+      tokensOut: 13, // 50 chars of reply / 4
+    });
+    const agg = await getWeeklyAggregate('2026-04-17T12:00:00.000Z');
+    expect(agg.byProvider.gemma_cloud.calls).toBe(1);
+    expect(agg.byProvider.gemma_cloud.tokensIn).toBe(25);
+    expect(agg.byProvider.gemma_cloud.tokensOut).toBe(13);
+    expect(agg.byTaskKind.chat.calls).toBe(1);
+  });
+
+  it('records an openai debrief event with estimated tokens', async () => {
+    await recordCoachUsage({
+      at: '2026-04-17T10:00:00.000Z',
+      provider: 'openai',
+      taskKind: 'debrief',
+      tokensIn: 120,
+      tokensOut: 80,
+    });
+    const agg = await getWeeklyAggregate('2026-04-17T12:00:00.000Z');
+    expect(agg.byProvider.openai.calls).toBe(1);
+    expect(agg.byTaskKind.debrief.tokensIn).toBe(120);
+    expect(agg.byTaskKind.debrief.tokensOut).toBe(80);
+  });
+
+  it('rolls up mixed provider/taskKind events across the week', async () => {
+    await recordCoachUsage({
+      at: '2026-04-17T10:00:00.000Z',
+      provider: 'gemma_cloud',
+      taskKind: 'chat',
+      tokensIn: 10,
+      tokensOut: 10,
+    });
+    await recordCoachUsage({
+      at: '2026-04-17T11:00:00.000Z',
+      provider: 'gemma_cloud',
+      taskKind: 'debrief',
+      tokensIn: 40,
+      tokensOut: 20,
+    });
+    await recordCoachUsage({
+      at: '2026-04-16T10:00:00.000Z',
+      provider: 'openai',
+      taskKind: 'drill_explainer',
+      tokensIn: 30,
+      tokensOut: 15,
+    });
+    const agg = await getWeeklyAggregate('2026-04-17T12:00:00.000Z');
+    expect(agg.totalCalls).toBe(3);
+    expect(agg.byProvider.gemma_cloud.calls).toBe(2);
+    expect(agg.byProvider.openai.calls).toBe(1);
+    expect(agg.byTaskKind.chat.calls).toBe(1);
+    expect(agg.byTaskKind.debrief.calls).toBe(1);
+    expect(agg.byTaskKind.drill_explainer.calls).toBe(1);
+  });
+});

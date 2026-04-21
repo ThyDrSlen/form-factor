@@ -102,7 +102,13 @@ describe('coach-service provider dispatch', () => {
 
     expect(result.content).toBe('Drive through the floor.');
     expect(mockSendCoachGemmaPrompt).toHaveBeenCalledTimes(1);
-    expect(mockSendCoachGemmaPrompt).toHaveBeenCalledWith(baseMessages, undefined);
+    // Third arg is the Gemma opts object — contains `taskKind` (undefined
+    // when no task kind was passed) used by the cost-tracker wiring.
+    expect(mockSendCoachGemmaPrompt).toHaveBeenCalledWith(
+      baseMessages,
+      undefined,
+      { taskKind: undefined },
+    );
     expect(mockInvoke).not.toHaveBeenCalled();
     expect(mockResolveCloudProvider).not.toHaveBeenCalled();
   });
@@ -111,7 +117,11 @@ describe('coach-service provider dispatch', () => {
     const context = { profile: { id: 'u1', name: 'Pat' }, focus: 'squat' };
     await sendCoachPrompt(baseMessages, context, { provider: 'gemma' });
 
-    expect(mockSendCoachGemmaPrompt).toHaveBeenCalledWith(baseMessages, context);
+    expect(mockSendCoachGemmaPrompt).toHaveBeenCalledWith(
+      baseMessages,
+      context,
+      { taskKind: undefined },
+    );
   });
 
   // ---------------------------------------------------------------------------

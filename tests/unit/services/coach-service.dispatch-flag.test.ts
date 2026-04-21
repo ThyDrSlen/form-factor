@@ -6,6 +6,7 @@
 const mockInvoke = jest.fn();
 const mockSendCoachGemmaPrompt = jest.fn();
 const mockResolveCloudProvider = jest.fn();
+const mockAssertUnderWeeklyCap = jest.fn().mockResolvedValue(undefined);
 const mockCreateError = jest.fn(
   (
     domain: string,
@@ -47,6 +48,10 @@ jest.mock('@/lib/services/coach-cloud-provider', () => ({
   resolveCloudProvider: mockResolveCloudProvider,
 }));
 
+jest.mock('@/lib/services/coach-cost-guard', () => ({
+  assertUnderWeeklyCap: (...args: unknown[]) => mockAssertUnderWeeklyCap(...args),
+}));
+
 let sendCoachPrompt: typeof import('@/lib/services/coach-service')['sendCoachPrompt'];
 
 const DISPATCH_ENV = 'EXPO_PUBLIC_COACH_DISPATCH';
@@ -61,6 +66,7 @@ describe('coach-service dispatch-flag gate (#536)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAssertUnderWeeklyCap.mockResolvedValue(undefined);
     mockInvoke.mockResolvedValue({
       data: { message: 'OpenAI reply.' },
       error: null,
@@ -148,5 +154,44 @@ describe('coach-service dispatch-flag gate (#536)', () => {
       expect(mockInvoke).toHaveBeenCalledTimes(1);
       expect(mockSendCoachGemmaPrompt).not.toHaveBeenCalled();
     }
+  });
+
+  it('falls back to OpenAI when weekly Gemma cap is exceeded (#537)', async () => {
+    // Dispatch flag is on but the cost guard throws — coach-service catches
+    // the COACH_COST_CAP_EXCEEDED error and silently routes the turn to the
+    // OpenAI edge function. Gemma is never called.
+    process.env[DISPATCH_ENV] = 'on';
+    mockAssertUnderWeeklyCap.mockRejectedValueOnce({
+      domain: 'validation',
+      code: 'COACH_COST_CAP_EXCEEDED',
+      message: 'cap blown',
+    });
+
+    const result = await sendCoachPrompt(baseMessages, undefined, { provider: 'gemma' });
+
+    expect(mockAssertUnderWeeklyCap).toHaveBeenCalledTimes(1);
+    expect(mockSendCoachGemmaPrompt).not.toHaveBeenCalled();
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    expect(result.content).toBe('OpenAI reply.');
+  });
+
+  it('propagates non-cap errors from the cost guard without falling back (#537)', async () => {
+    // If assertUnderWeeklyCap throws a different error code (bug in tracker
+    // etc.), we do NOT silently collapse to OpenAI — re-throw so callers see
+    // the fault.
+    process.env[DISPATCH_ENV] = 'on';
+    const unrelated = {
+      domain: 'storage',
+      code: 'TRACKER_CORRUPT',
+      message: 'corrupt state',
+    };
+    mockAssertUnderWeeklyCap.mockRejectedValueOnce(unrelated);
+
+    await expect(
+      sendCoachPrompt(baseMessages, undefined, { provider: 'gemma' }),
+    ).rejects.toBe(unrelated);
+
+    expect(mockSendCoachGemmaPrompt).not.toHaveBeenCalled();
+    expect(mockInvoke).not.toHaveBeenCalled();
   });
 });

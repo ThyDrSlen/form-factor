@@ -1,4 +1,5 @@
 const mockInvoke = jest.fn();
+const mockRecordCoachUsage = jest.fn().mockResolvedValue(undefined);
 const mockCreateError = jest.fn(
   (
     domain: string,
@@ -29,6 +30,12 @@ jest.mock('@/lib/services/ErrorHandler', () => ({
 
 jest.mock('../../../lib/services/ErrorHandler', () => ({
   createError: mockCreateError,
+}));
+
+// Cost-tracker wiring (#537): intercept recordCoachUsage so we can verify
+// the Gemma service reports usage and doesn't block on tracker failures.
+jest.mock('@/lib/services/coach-cost-tracker', () => ({
+  recordCoachUsage: (...args: unknown[]) => mockRecordCoachUsage(...args),
 }));
 
 let sendCoachGemmaPrompt: typeof import('@/lib/services/coach-gemma-service')['sendCoachGemmaPrompt'];
@@ -357,6 +364,87 @@ describe('coach-gemma-service', () => {
 
     await expect(sendCoachGemmaPrompt(baseMessages)).rejects.toMatchObject({
       code: 'COACH_GEMMA_EMPTY_RESPONSE',
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cost-tracker wiring (#537)
+  // ---------------------------------------------------------------------------
+
+  describe('cost-tracker wiring (#537)', () => {
+    beforeEach(() => {
+      mockRecordCoachUsage.mockClear();
+      mockRecordCoachUsage.mockResolvedValue(undefined);
+    });
+
+    it('records a gemma_cloud usage event on the happy path with estimated tokens', async () => {
+      // 100-char prompt + 50-char reply → ceil(100/4)=25 in, ceil(50/4)=13 out
+      const longPrompt = 'a'.repeat(100);
+      const longReply = 'b'.repeat(50);
+      mockInvoke.mockResolvedValue({
+        data: { message: longReply },
+        error: null,
+      });
+      await sendCoachGemmaPrompt([{ role: 'user', content: longPrompt }]);
+
+      expect(mockRecordCoachUsage).toHaveBeenCalledTimes(1);
+      expect(mockRecordCoachUsage.mock.calls[0][0]).toMatchObject({
+        provider: 'gemma_cloud',
+        taskKind: 'chat',
+        tokensIn: 25,
+        tokensOut: 13,
+      });
+    });
+
+    it('maps taskKind="debrief" into the debrief tracker bucket', async () => {
+      mockInvoke.mockResolvedValue({
+        data: { message: 'debrief reply' },
+        error: null,
+      });
+      await sendCoachGemmaPrompt(baseMessages, undefined, { taskKind: 'debrief' });
+      expect(mockRecordCoachUsage.mock.calls[0][0]).toMatchObject({
+        taskKind: 'debrief',
+      });
+    });
+
+    it('maps taskKind="drill_explainer" into the drill_explainer tracker bucket', async () => {
+      mockInvoke.mockResolvedValue({
+        data: { message: 'explainer' },
+        error: null,
+      });
+      await sendCoachGemmaPrompt(baseMessages, undefined, { taskKind: 'drill_explainer' });
+      expect(mockRecordCoachUsage.mock.calls[0][0]).toMatchObject({
+        taskKind: 'drill_explainer',
+      });
+    });
+
+    it('defaults to chat when taskKind is omitted', async () => {
+      await sendCoachGemmaPrompt(baseMessages);
+      expect(mockRecordCoachUsage.mock.calls[0][0]).toMatchObject({
+        taskKind: 'chat',
+      });
+    });
+
+    it('does not block the reply when recordCoachUsage throws', async () => {
+      mockRecordCoachUsage.mockRejectedValueOnce(new Error('tracker-down'));
+      mockInvoke.mockResolvedValue({
+        data: { message: 'Reply is returned.' },
+        error: null,
+      });
+      const result = await sendCoachGemmaPrompt(baseMessages);
+      // Reply still lands. Fire-and-forget tracker failure is logged as a warn.
+      expect(result.content).toBe('Reply is returned.');
+    });
+
+    it('does not record usage when the call errors out', async () => {
+      mockInvoke.mockResolvedValue({
+        data: null,
+        error: { message: '404 Not Found', status: 404 },
+      });
+      await expect(sendCoachGemmaPrompt(baseMessages)).rejects.toMatchObject({
+        code: 'COACH_GEMMA_NOT_DEPLOYED',
+      });
+      expect(mockRecordCoachUsage).not.toHaveBeenCalled();
     });
   });
 });

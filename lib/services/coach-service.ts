@@ -20,6 +20,12 @@ import {
 } from './coach-model-dispatch';
 import { isDispatchEnabled } from './coach-model-dispatch-flag';
 import { recordDispatchDecision } from './coach-model-dispatch-telemetry';
+import {
+  recordCoachUsage,
+  type CoachTaskKind as TrackerTaskKind,
+  type CoachProvider as TrackerProvider,
+} from './coach-cost-tracker';
+import { assertUnderWeeklyCap } from './coach-cost-guard';
 
 export type { CoachProvider } from './coach-provider-types';
 import type { LiveSessionSnapshot } from './coach-live-snapshot';
@@ -130,6 +136,85 @@ const DEFAULT_MODEL_ID = 'gpt-5.4-mini';
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
 
 /**
+ * Cost-tracker wiring helpers (#537).
+ *
+ * The edge function does not currently return OpenAI/Gemini usage counts,
+ * so we estimate tokens as `ceil(chars/4)` — a conservative industry rule
+ * of thumb. When the edge function starts emitting `usage` (promptTokens /
+ * completionTokens), callers can pass those through and the stub estimate
+ * is bypassed.
+ */
+function estimateTokens(text: string): number {
+  // STUB: replace when the edge function returns real token usage.
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
+function mapTaskKindToTracker(
+  kind: CoachTaskKind | undefined,
+): TrackerTaskKind {
+  switch (kind) {
+    case 'multi_turn_debrief':
+      return 'debrief';
+    case 'fault_explainer':
+      return 'drill_explainer';
+    case 'session_generator':
+      return 'session_generator';
+    case 'program_design':
+      return 'progression_planner';
+    case 'form_cue_lookup':
+    case 'rest_calc':
+    case 'encouragement':
+    case 'form_vision_check':
+    case 'nutrition_balance':
+    case 'general_chat':
+    case undefined:
+      return 'chat';
+    default:
+      return 'other';
+  }
+}
+
+function mapProviderToTracker(
+  provider: CoachProvider,
+): TrackerProvider {
+  switch (provider) {
+    case 'openai':
+      return 'openai';
+    case 'gemma-cloud':
+      return 'gemma_cloud';
+    case 'gemma-on-device':
+      return 'gemma_ondevice';
+    case 'cached':
+    case 'local-fallback':
+      return 'stub';
+    default:
+      return 'stub';
+  }
+}
+
+function fireAndForgetRecordUsage(
+  provider: CoachProvider,
+  taskKind: CoachTaskKind | undefined,
+  promptText: string,
+  completionText: string,
+  cacheHit = false,
+): void {
+  // Fire-and-forget: tracker persistence is background work; never block
+  // the user-visible coach response on it, and swallow any error so
+  // tracker fault never escalates to a coach failure.
+  void recordCoachUsage({
+    provider: mapProviderToTracker(provider),
+    taskKind: mapTaskKindToTracker(taskKind),
+    tokensIn: estimateTokens(promptText),
+    tokensOut: estimateTokens(completionText),
+    cacheHit,
+  }).catch((err) => {
+    warnWithTs('[coach-service] recordCoachUsage failed', err);
+  });
+}
+
+/**
  * Feature-flag gate for prepending cross-session memory to coach prompts.
  * Defaults to ON (value 'true' or unset). Any other value disables the
  * memory clause so the coach behaves as before.
@@ -214,7 +299,7 @@ export async function sendCoachPrompt(
       messages,
       context,
       opts.cacheMs,
-      () => sendCoachPromptInner(messages, context),
+      () => sendCoachPromptInner(messages, context, opts?.taskKind),
       { shaper: opts.shaper }
     );
   }
@@ -255,9 +340,31 @@ export async function sendCoachPrompt(
   // branch above is already gated, so this check only matters for the explicit
   // / env-resolved paths.
   if (provider === 'gemma' && isDispatchEnabled()) {
-    return sendCoachGemmaPrompt(messages, context);
+    // Cost-guard (#537): before attempting the Gemma edge function, check
+    // the weekly cap. When exceeded we silently fall through to the OpenAI
+    // path — the fallback provider stays usable and the user sees no
+    // billing-shaped error. The guard is a no-op when the env cap is unset.
+    try {
+      await assertUnderWeeklyCap('gemma_cloud');
+      return await sendCoachGemmaPrompt(messages, context, {
+        taskKind: opts?.taskKind as string | undefined,
+      });
+    } catch (err) {
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? (err as { code?: string }).code
+          : undefined;
+      if (code === 'COACH_COST_CAP_EXCEEDED') {
+        warnWithTs(
+          '[coach-service] weekly Gemma cap hit, falling back to OpenAI',
+          err,
+        );
+        return sendCoachPromptInner(messages, context, opts?.taskKind);
+      }
+      throw err;
+    }
   }
-  return sendCoachPromptInner(messages, context);
+  return sendCoachPromptInner(messages, context, opts?.taskKind);
 }
 
 async function sendCoachPromptStreaming(
@@ -311,7 +418,8 @@ async function sendCoachPromptStreaming(
 
 async function sendCoachPromptInner(
   messages: CoachMessage[],
-  context?: CoachContext
+  context?: CoachContext,
+  taskKind?: CoachTaskKind,
 ): Promise<CoachMessage> {
   try {
     const memoryClause = await resolveMemoryClause(context);
@@ -506,6 +614,19 @@ async function sendCoachPromptInner(
         hasSessionId: Boolean(context?.sessionId),
       });
     }
+
+    // Cost-tracker wiring (#537). Fire-and-forget so persistence never
+    // blocks the coach response. Token counts are estimated from char
+    // length since the edge function doesn't yet emit `usage` — see
+    // `estimateTokens()` for the stub contract.
+    const promptText = messages.map((m) => m.content ?? '').join('\n');
+    fireAndForgetRecordUsage(
+      provider,
+      taskKind,
+      promptText,
+      responseText,
+      signal.source === 'cache',
+    );
 
     // WHY non-enumerable: `provider` is a supplementary annotation on the
     // assistant reply. Keeping it non-enumerable preserves backward-compatible
