@@ -224,6 +224,14 @@ export default function ShareThreadModal() {
             placeholderTextColor="#6781A6"
             style={styles.composerInput}
             multiline
+            // A10: keyboard "send" action submits the reply so users don't have
+            // to tap the Send button. blurOnSubmit drops the keyboard after.
+            returnKeyType="send"
+            blurOnSubmit
+            onSubmitEditing={() => {
+              if (!replyInput.trim() || sending) return;
+              void handleSendReply();
+            }}
           />
           <TouchableOpacity
             style={[styles.sendButton, (!replyInput.trim() || sending) && styles.sendButtonDisabled]}

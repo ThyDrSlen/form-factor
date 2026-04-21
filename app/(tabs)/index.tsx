@@ -7,6 +7,7 @@ import {
   Image,
   RefreshControl,
   Share,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -688,12 +689,13 @@ export default function HomeScreen() {
       <Text style={styles.sectionTitle}>Quick Actions</Text>
       
       <View style={styles.actionGrid}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.actionCardWrapper}
           onPress={() => {
             logWithTs('Navigating to workout-session');
             router.push('/(modals)/workout-session');
           }}
+          testID="home-quick-action-log-workout"
         >
           <LinearGradient
             colors={['#0F2339', '#081526']}
@@ -706,6 +708,13 @@ export default function HomeScreen() {
             </View>
             <Text style={styles.actionTitle}>Log Workout</Text>
             <Text style={styles.actionSubtitle}>Track your exercise</Text>
+            {/* A13: call out that a subset of exercises support live form
+                tracking so the "Form" badges in the exercise picker aren't a
+                surprise. */}
+            <View style={homeQuickActionStyles.formBadge} testID="home-quick-action-form-badge">
+              <Ionicons name="videocam" size={10} color="#4C8CFF" />
+              <Text style={homeQuickActionStyles.formBadgeText}>Form-tracked</Text>
+            </View>
           </LinearGradient>
         </TouchableOpacity>
         
@@ -963,3 +972,26 @@ export default function HomeScreen() {
     </View>
   );
 }
+
+const homeQuickActionStyles = StyleSheet.create({
+  formBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: 'rgba(76, 140, 255, 0.14)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(76, 140, 255, 0.45)',
+  },
+  formBadgeText: {
+    color: '#4C8CFF',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+});
