@@ -93,4 +93,34 @@ describe('generateWarmup', () => {
       generateWarmup({ exerciseSlugs: ['x'] }, { dispatch, maxRetries: 1 }),
     ).rejects.toMatchObject({ code: 'GEMMA_JSON_RETRY_EXHAUSTED' });
   });
+
+  describe('EXPO_PUBLIC_GEMMA_SESSION_GEN gate', () => {
+    const ENV_VAR = 'EXPO_PUBLIC_GEMMA_SESSION_GEN';
+    const originalValue = process.env[ENV_VAR];
+
+    afterEach(() => {
+      if (originalValue === undefined) {
+        delete process.env[ENV_VAR];
+      } else {
+        process.env[ENV_VAR] = originalValue;
+      }
+    });
+
+    it('rejects with GEMMA_SESSION_GEN_DISABLED when flag off and no dispatch override', async () => {
+      delete process.env[ENV_VAR];
+      await expect(
+        generateWarmup({ exerciseSlugs: ['squat'] }),
+      ).rejects.toMatchObject({ code: 'GEMMA_SESSION_GEN_DISABLED' });
+    });
+
+    it('runs normally when flag off but dispatch override is supplied', async () => {
+      delete process.env[ENV_VAR];
+      const dispatch = jest.fn<Promise<CoachMessage>, [CoachMessage[]]>().mockResolvedValue({
+        role: 'assistant',
+        content: JSON.stringify(VALID_PLAN),
+      });
+      const plan = await generateWarmup({ exerciseSlugs: ['squat'] }, { dispatch });
+      expect(plan.name).toBe('Test Warmup');
+    });
+  });
 });
