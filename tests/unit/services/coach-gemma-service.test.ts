@@ -279,4 +279,84 @@ describe('coach-gemma-service', () => {
       retryable: true,
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Wave-27: Gemma edge cases (safety-filter rejection + schema drift).
+  //
+  // The Gemma edge function is a thin proxy over Google's Gemini
+  // generateContent endpoint. Gemini can return:
+  //   - A safety-filtered response: `finishReason: 'SAFETY'` with no
+  //     content (the model refused to answer). The edge function
+  //     normally strips this to `{ error: ... }` or a blank message,
+  //     but if it ever leaks the raw shape, the client must still
+  //     classify it as a non-crashing typed error.
+  //   - A schema-drift response: a well-formed HTTP 200 with NONE of
+  //     the expected `message` / `content` / `reply` fields populated
+  //     (e.g. the edge function returns the raw Gemini `candidates`
+  //     array instead of the coach-service contract).
+  //
+  // Both cases must surface COACH_GEMMA_EMPTY_RESPONSE (validation
+  // domain) per the current impl at
+  // lib/services/coach-gemma-service.ts:95-101 -- no content keys
+  // present means empty response.
+  // ---------------------------------------------------------------------------
+
+  it('classifies safety-filtered responses (finishReason=SAFETY, no content) as COACH_GEMMA_EMPTY_RESPONSE', async () => {
+    // Gemini returns a candidates array with no content when the model
+    // refuses to answer on safety grounds. The edge function does not
+    // currently distinguish SAFETY from other empty cases, so the
+    // client collapses all no-content responses to EMPTY_RESPONSE --
+    // assert exactly that shape so a future dedicated
+    // COACH_GEMMA_SAFETY_REJECTED code tightens this test rather than
+    // regressing it.
+    mockInvoke.mockResolvedValue({
+      data: {
+        finishReason: 'SAFETY',
+        candidates: [
+          {
+            finishReason: 'SAFETY',
+            safetyRatings: [
+              { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', probability: 'HIGH' },
+            ],
+          },
+        ],
+      },
+      error: null,
+    });
+
+    await expect(sendCoachGemmaPrompt(baseMessages)).rejects.toMatchObject({
+      domain: 'validation',
+      code: 'COACH_GEMMA_EMPTY_RESPONSE',
+    });
+  });
+
+  it('classifies schema-drift responses (raw Gemini candidates shape, no message/content/reply) as COACH_GEMMA_EMPTY_RESPONSE', async () => {
+    // If the edge function ever drifts to returning the raw Gemini
+    // shape (`candidates: [{ content: { parts: [{ text }] } }]`)
+    // instead of the coach-service contract (`{ message: string }`),
+    // the client-side extraction at
+    // lib/services/coach-gemma-service.ts:92-93 will miss it because
+    // it only checks the top-level `message` / `content` (string) /
+    // `reply` keys -- `data.content` here is an OBJECT, not a string,
+    // so `data.content.trim()` would throw. The safe-fallthrough must
+    // still reach the EMPTY_RESPONSE path.
+    mockInvoke.mockResolvedValue({
+      data: {
+        candidates: [
+          {
+            content: {
+              parts: [{ text: 'This field should have been flattened to data.message' }],
+            },
+            finishReason: 'STOP',
+          },
+        ],
+        promptFeedback: { blockReason: null },
+      },
+      error: null,
+    });
+
+    await expect(sendCoachGemmaPrompt(baseMessages)).rejects.toMatchObject({
+      code: 'COACH_GEMMA_EMPTY_RESPONSE',
+    });
+  });
 });
