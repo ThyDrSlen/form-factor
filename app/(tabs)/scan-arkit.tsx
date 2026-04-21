@@ -466,6 +466,22 @@ export default function ScanARKitScreen() {
   const [gestureRecordingEnabled, setGestureRecordingEnabled] = useState(true);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  // Retry-able upload failure surface. When a manual video upload
+  // rejects (network blip, auth refresh, 5xx), we stash the last
+  // attempted payload so the banner's "Retry" action can re-invoke
+  // uploadRecordedVideo without requiring the user to re-encode or
+  // navigate back to the preview. Cleared on success / dismiss.
+  const [uploadRetryPayload, setUploadRetryPayload] = useState<{
+    uri: string;
+    exercise: string;
+    metrics: ClipUploadMetrics;
+    message: string;
+  } | null>(null);
+  const lastUploadPayloadRef = React.useRef<{
+    uri: string;
+    exercise: string;
+    metrics: ClipUploadMetrics;
+  } | null>(null);
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [isExitMidSessionSheetVisible, setIsExitMidSessionSheetVisible] = useState(false);
   const [showDebugStats, setShowDebugStats] = useState(false);
@@ -2478,6 +2494,9 @@ export default function ScanARKitScreen() {
 
     const uploadRecordedVideo = useCallback(async (payload: { uri: string; exercise: string; metrics: ClipUploadMetrics }) => {
       if (uploading) return false;
+      // Stash the payload up-front so a post-failure Retry can re-invoke
+      // without requiring the preview sheet to stay mounted.
+      lastUploadPayloadRef.current = payload;
       try {
         setPreviewError(null);
         const info = await FileSystem.getInfoAsync(payload.uri);
@@ -2499,17 +2518,48 @@ export default function ScanARKitScreen() {
           exercise: payload.exercise,
           metrics: payload.metrics,
         });
+        // Clear any retry affordance on success.
+        setUploadRetryPayload(null);
         return true;
       } catch (error) {
         errorWithTs('[ScanARKit] Upload recorded video failed', error);
         const message = error instanceof Error ? error.message : 'Could not upload recording.';
         setPreviewError(message);
+        // Keep the Alert for the active preview flow, but also surface a
+        // persistent banner with a Retry button that stays visible after
+        // the user dismisses the Alert and closes the preview.
+        setUploadRetryPayload({
+          uri: payload.uri,
+          exercise: payload.exercise,
+          metrics: payload.metrics,
+          message,
+        });
         Alert.alert('Upload failed', message);
         return false;
       } finally {
         setUploading(false);
       }
     }, [uploading]);
+
+    const retryUploadRecordedVideo = useCallback(() => {
+      const pending = uploadRetryPayload ?? lastUploadPayloadRef.current;
+      if (!pending) {
+        setUploadRetryPayload(null);
+        return;
+      }
+      // Clear the banner optimistically; uploadRecordedVideo will
+      // re-arm it on a subsequent failure and will clear on success.
+      setUploadRetryPayload(null);
+      void uploadRecordedVideo({
+        uri: pending.uri,
+        exercise: pending.exercise,
+        metrics: pending.metrics,
+      });
+    }, [uploadRetryPayload, uploadRecordedVideo]);
+
+    const dismissUploadRetry = useCallback(() => {
+      setUploadRetryPayload(null);
+    }, []);
 
     const autoUploadAnalysisVideo = useCallback(async (payload: { uri: string; exercise: string; metrics: ClipUploadMetrics }) => {
       try {
@@ -3307,6 +3357,52 @@ export default function ScanARKitScreen() {
           ) : null}
 
           {/*
+           * Video-upload retry banner (#551).
+           *
+           * When uploadRecordedVideo rejects, the try-catch already fires
+           * an Alert and sets previewError, but the user loses the
+           * affordance once they dismiss the Alert and close the preview.
+           * This banner persists with a Retry pill that re-invokes the
+           * upload using the stored URI — no re-encoding, no re-navigate.
+           */}
+          {uploadRetryPayload ? (
+            <View
+              style={[scanArV2Styles.banner, scanArV2Styles.bannerError]}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              testID="scan-arkit-upload-retry-banner"
+            >
+              <Ionicons name="cloud-offline-outline" size={18} color="#FCA5A5" />
+              <Text style={scanArV2Styles.bannerText}>
+                Upload failed — {uploadRetryPayload.message}
+              </Text>
+              <TouchableOpacity
+                onPress={retryUploadRecordedVideo}
+                style={scanArV2Styles.bannerAction}
+                accessibilityRole="button"
+                accessibilityLabel="Retry video upload"
+                disabled={uploading}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                testID="scan-arkit-upload-retry-button"
+              >
+                <Text style={scanArV2Styles.bannerActionText}>
+                  {uploading ? 'Retrying…' : 'Retry'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={dismissUploadRetry}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss upload retry banner"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={scanArV2Styles.bannerDismiss}
+                testID="scan-arkit-upload-retry-dismiss"
+              >
+                <Ionicons name="close" size={14} color="#F5F7FF" />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {/*
            * Persistent sustained-occlusion banner (#551).
            *
            * Replaces the 3.2s micro-toast. The banner sticks until the
@@ -3909,6 +4005,15 @@ const scanArV2Styles = StyleSheet.create({
     color: '#F5F7FF',
     fontSize: 12,
     fontWeight: '700',
+  },
+  bannerDismiss: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    marginLeft: 6,
   },
   microToast: {
     position: 'absolute',
