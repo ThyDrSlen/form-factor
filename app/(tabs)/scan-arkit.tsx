@@ -18,7 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
-import { Svg, Circle, Line } from 'react-native-svg';
+import { Svg, Circle, Line, Rect } from 'react-native-svg';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -2837,6 +2837,34 @@ export default function ScanARKitScreen() {
           onStartShouldSetResponder={() => !isTracking}
           onLayout={handleOverlayLayout}
         >
+
+          {/*
+            Overlay-alignment diagnostic (dev only). If corner dots don't
+            sit at the actual screen corners and the border doesn't trace
+            the visible camera rect, the SVG container is not the same
+            rect as the native ARView — that's the overlay misalignment bug.
+          */}
+          {DEV && (
+            <Svg
+              style={styles.fullFill}
+              viewBox="0 0 1 1"
+              preserveAspectRatio="none"
+              pointerEvents="none"
+            >
+              <Rect x="0" y="0" width="1" height="1" fill="none" stroke="#FF00FF" strokeWidth="0.004" />
+              <Circle cx="0" cy="0" r="0.012" fill="#FF00FF" />
+              <Circle cx="1" cy="0" r="0.012" fill="#FF00FF" />
+              <Circle cx="0" cy="1" r="0.012" fill="#FF00FF" />
+              <Circle cx="1" cy="1" r="0.012" fill="#FF00FF" />
+              <Line x1="0.45" y1="0.5" x2="0.55" y2="0.5" stroke="#FFFF00" strokeWidth="0.004" />
+              <Line x1="0.5" y1="0.45" x2="0.5" y2="0.55" stroke="#FFFF00" strokeWidth="0.004" />
+              <Circle cx="0.5" cy="0.5" r="0.006" fill="#FFFF00" />
+              <Line x1="0.25" y1="0.48" x2="0.25" y2="0.52" stroke="#00FFFF" strokeWidth="0.003" />
+              <Line x1="0.75" y1="0.48" x2="0.75" y2="0.52" stroke="#00FFFF" strokeWidth="0.003" />
+              <Line x1="0.48" y1="0.25" x2="0.52" y2="0.25" stroke="#00FFFF" strokeWidth="0.003" />
+              <Line x1="0.48" y1="0.75" x2="0.52" y2="0.75" stroke="#00FFFF" strokeWidth="0.003" />
+            </Svg>
+          )}
 
           {!showTelemetry && (
             <Animated.View style={[styles.topGuide, { top: topBarBottom + 16, opacity: textOpacity }]}>
