@@ -9,6 +9,8 @@ import {
   type CoachProviderSignal,
 } from './coach-provider-types';
 import { synthesizeMemoryClause } from './coach-memory-context';
+import { shapeFinalResponse } from './coach-output-shaper';
+import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
 
 export type { CoachProvider } from './coach-provider-types';
 import type { LiveSessionSnapshot } from './coach-live-snapshot';
@@ -308,18 +310,25 @@ async function sendCoachPromptInner(
       );
     }
 
-    const responseText =
+    const rawResponseText =
       data?.message?.trim() ||
       data?.content?.trim() ||
       data?.reply?.trim();
 
-    if (!responseText) {
+    if (!rawResponseText) {
       throw createError(
         'validation',
         'COACH_EMPTY_RESPONSE',
         'Coach did not return a reply'
       );
     }
+
+    // Pipeline v2: shape the synchronous response (strips filler, normalizes
+    // lists, caps budget — see coach-output-shaper.ts). Flag-gated so existing
+    // callers keep the raw text until rollout.
+    const responseText = isCoachPipelineV2Enabled()
+      ? shapeFinalResponse(rawResponseText)
+      : rawResponseText;
 
     // WHY: the edge function today only returns text (no provider field). We
     // infer the provider from whatever signal it does emit (model name +
