@@ -13,7 +13,7 @@
  * *every* workout if calibration is not yet ready.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   StyleSheet,
@@ -23,6 +23,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import {
   PRE_CALIBRATION_CONSTANTS,
   usePreCalibrationStatus,
@@ -48,9 +49,24 @@ export default function FormTrackingPreCalibrationModal() {
     return () => clearInterval(id);
   }, [step, status.status, recordFrame]);
 
+  // Fire a one-shot success haptic when we first enter the success state,
+  // immediately before the auto-dismiss timeout. The ref gate prevents the
+  // effect from re-firing if the status transitions back and forth (the
+  // expo-haptics call is a no-op on Android if the device doesn't support
+  // the taptic engine, and silently resolves on web — safe to call blind).
+  const successHapticFiredRef = useRef(false);
+
   // Auto-dismiss on success.
   useEffect(() => {
     if (status.status === 'success') {
+      if (!successHapticFiredRef.current) {
+        successHapticFiredRef.current = true;
+        // Fire-and-forget: haptic feedback is decorative and must never
+        // block the dismissal path.
+        void Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        ).catch(() => undefined);
+      }
       const timeout = setTimeout(() => {
         router.back();
       }, 800);

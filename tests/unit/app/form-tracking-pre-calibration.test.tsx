@@ -7,12 +7,21 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ back: mockBack }),
 }));
 
+const mockNotificationAsync = jest.fn((_type: string) => Promise.resolve());
+jest.mock('expo-haptics', () => ({
+  notificationAsync: (type: string) => mockNotificationAsync(type),
+  NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
+  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
+  impactAsync: jest.fn(() => Promise.resolve()),
+}));
+
 import FormTrackingPreCalibrationModal from '@/app/(modals)/form-tracking-pre-calibration';
 import { PRE_CALIBRATION_CONSTANTS } from '@/hooks/use-pre-calibration-status';
 
 describe('<FormTrackingPreCalibrationModal />', () => {
   beforeEach(async () => {
     mockBack.mockClear();
+    mockNotificationAsync.mockClear();
     await AsyncStorage.clear();
   });
 
@@ -65,5 +74,27 @@ describe('<FormTrackingPreCalibrationModal />', () => {
       const stored = await AsyncStorage.getItem(PRE_CALIBRATION_CONSTANTS.STORAGE_KEY);
       expect(stored).toBe('1');
     });
+  });
+
+  it('fires a success haptic exactly once on reaching the success state', async () => {
+    const { getByTestId } = render(<FormTrackingPreCalibrationModal />);
+    fireEvent.press(getByTestId('pre-calibration-continue'));
+
+    // Drive the preview step forward via recordFrame until success.
+    await waitFor(
+      () => {
+        const confirm = getByTestId('pre-calibration-confirm');
+        expect(confirm.props.accessibilityState?.disabled).toBeFalsy();
+      },
+      { timeout: 3000 }
+    );
+
+    fireEvent.press(getByTestId('pre-calibration-confirm'));
+
+    await waitFor(() => {
+      expect(mockNotificationAsync).toHaveBeenCalledWith('success');
+    });
+    // Idempotent — shouldn't double-fire on subsequent effect runs.
+    expect(mockNotificationAsync).toHaveBeenCalledTimes(1);
   });
 });
