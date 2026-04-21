@@ -25,6 +25,40 @@ import {
   onSessionFinished,
   type SessionFinishedEvent,
 } from '@/lib/stores/session-runner';
+import { cacheSessionBrief, type SessionBrief } from '@/lib/services/coach-memory';
+import { isCoachPipelineV2Enabled } from '@/lib/services/coach-pipeline-v2-flag';
+
+/**
+ * Pipeline-v2: build a compact SessionBrief from the debrief input. Used to
+ * prime `coach-memory` so the next coach turn has cross-session context.
+ *
+ * Returns null when input doesn't carry enough signal to persist (no
+ * sessionId or no reps). The memory layer already handles stale/empty reads
+ * gracefully, so we just skip.
+ */
+function buildSessionBriefFromInput(
+  input: GenerateAutoDebriefInput,
+): SessionBrief | null {
+  if (!input.sessionId) return null;
+  const { analytics } = input;
+  if (!analytics || analytics.repCount <= 0) return null;
+  const nowIso = new Date().toISOString();
+  return {
+    sessionId: input.sessionId,
+    startedAt: nowIso,
+    endedAt: nowIso,
+    durationMinutes: null,
+    goalProfile: null,
+    topExerciseName: analytics.exerciseName ?? null,
+    totalSets: 0,
+    totalReps: analytics.repCount,
+    avgRpe: null,
+    avgFqi: analytics.avgFqi ?? null,
+    notablePositive: null,
+    notableNegative: analytics.topFault ?? null,
+    cachedAt: nowIso,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,6 +117,19 @@ export function useAutoDebrief(opts: UseAutoDebriefOptions): UseAutoDebriefState
     try {
       const result = await generateAutoDebrief(input);
       setData(result);
+      // Pipeline v2: persist a compact SessionBrief so the next coach turn
+      // can prepend cross-session memory (closes gap 1 of intersection-audit
+      // and half of #458). Flag-gated; off by default. Runs only on success.
+      if (isCoachPipelineV2Enabled()) {
+        const brief = buildSessionBriefFromInput(input);
+        if (brief) {
+          try {
+            await cacheSessionBrief(brief);
+          } catch (err) {
+            warnWithTs('[use-auto-debrief] cacheSessionBrief failed', err);
+          }
+        }
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to generate debrief';
       warnWithTs('[use-auto-debrief] generate failed', err);
