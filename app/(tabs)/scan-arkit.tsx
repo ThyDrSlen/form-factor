@@ -51,6 +51,8 @@ import { generateSessionId, logCueEvent, upsertSessionMetrics } from '@/lib/serv
 import { logPoseSample, flushPoseBuffer, resetFrameCounter } from '@/lib/services/pose-logger';
 import {
   appendFormSessionHistory,
+  countConsecutiveSessionDays,
+  countPbsThisMonth,
   getFormSessionHistory,
 } from '@/lib/services/form-session-history';
 import { playRepCountdown } from '@/lib/services/rep-countdown-audio';
@@ -1881,6 +1883,29 @@ export default function ScanARKitScreen() {
         (async () => {
           try {
             const prior = await getFormSessionHistory(exerciseKeyAtStop);
+            // Enrichment: count PBs set so far this month (including the
+            // candidate session if it would land a PB) and the day-streak
+            // ending today. These are best-effort — failures don't block
+            // milestone emission.
+            let priorPbCount = 0;
+            let weekStreakDays = 0;
+            try {
+              priorPbCount = await countPbsThisMonth({
+                now: new Date(endedAt),
+                candidate: { exerciseKey: exerciseKeyAtStop, avgFqi },
+              });
+            } catch {
+              /* ignore */
+            }
+            try {
+              // +1 for today's session even though it isn't persisted yet —
+              // match the "today counts once a session lands" contract the
+              // streak helper uses on already-appended entries.
+              weekStreakDays =
+                (await countConsecutiveSessionDays({ now: new Date(endedAt) })) + 1;
+            } catch {
+              /* ignore */
+            }
             await emitFormMilestone({
               sessionId: sessionIdAtStop,
               exerciseKey: exerciseKeyAtStop,
@@ -1889,6 +1914,8 @@ export default function ScanARKitScreen() {
                 avgFqi: p.avgFqi,
                 endedAt: p.endedAt,
               })),
+              priorPbCount,
+              weekStreakDays,
             });
             await appendFormSessionHistory({
               exerciseKey: exerciseKeyAtStop,
