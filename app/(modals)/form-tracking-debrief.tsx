@@ -12,7 +12,7 @@
  * tracker to navigate here is a follow-up.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,7 +25,12 @@ import {
 import { SessionHighlightCard } from '@/components/form-tracking/SessionHighlightCard';
 import { AskCoachCTA } from '@/components/form-tracking/AskCoachCTA';
 import AutoDebriefCard from '@/components/form-tracking/AutoDebriefCard';
+import { FqiExplainerModal } from '@/components/form-tracking/FqiExplainerModal';
+import { SessionCompareToLastCard } from '@/components/form-tracking/SessionCompareToLastCard';
+import { resolveExerciseKey } from '@/lib/services/form-session-history-lookup';
 import { useAutoDebrief } from '@/hooks/use-auto-debrief';
+import { useSessionComparisonQuery } from '@/hooks/use-session-comparison';
+import { supabase } from '@/lib/supabase';
 import { isCoachPipelineV2Enabled } from '@/lib/services/coach-pipeline-v2-flag';
 
 function safeParseReps(raw: string | undefined): RepSummary[] {
@@ -87,10 +92,38 @@ function pickBestAndWorst(reps: RepSummary[]): {
 
 export default function FormTrackingDebriefScreen() {
   const router = useRouter();
+  const [userId, setUserId] = useState<string | null>(null);
+  useEffect(() => {
+    // Resolve the current user lazily via supabase.auth.getSession() rather
+    // than via AuthContext so this screen stays test-friendly (AuthContext
+    // pulls expo-linking at import time, which the existing debrief test
+    // suite's module graph doesn't set up). supabase itself is already
+    // globally mocked in tests so this is a no-op there.
+    let cancelled = false;
+    void supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setUserId(data.session?.user.id ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setUserId(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const params = useLocalSearchParams<{
     exerciseName?: string;
     durationSeconds?: string;
     reps?: string;
+    /**
+     * Optional: when passed, the debrief hydrates a "Compare to last
+     * session" card by calling the session-comparison aggregator. Recap
+     * routes fired from the legacy in-session path omit this param and
+     * the card simply does not render.
+     */
+    sessionId?: string;
   }>();
 
   const exerciseName = params.exerciseName?.trim() ? params.exerciseName : 'Session recap';
@@ -99,6 +132,29 @@ export default function FormTrackingDebriefScreen() {
   const averageFqi = useMemo(() => computeAverageFqi(reps), [reps]);
   const { best, worst } = useMemo(() => pickBestAndWorst(reps), [reps]);
   const topFault = worst?.faults[0] ?? null;
+  const routeSessionId = useMemo(() => {
+    const raw = params.sessionId;
+    if (!raw || typeof raw !== 'string') return null;
+    return raw.trim() || null;
+  }, [params.sessionId]);
+  const comparisonExerciseId = useMemo(
+    () => resolveExerciseKey(exerciseName),
+    [exerciseName],
+  );
+  const { comparison } = useSessionComparisonQuery({
+    currentSessionId: routeSessionId,
+    exerciseId: comparisonExerciseId,
+    userId,
+  });
+  const handleOpenComparison = useCallback(() => {
+    if (!comparison?.priorSessionId || !comparisonExerciseId || !routeSessionId) return;
+    const qs = new URLSearchParams({
+      sessionId: routeSessionId,
+      exerciseId: comparisonExerciseId,
+      priorSessionId: comparison.priorSessionId,
+    }).toString();
+    router.push(`/(modals)/form-comparison?${qs}` as `/${string}`);
+  }, [router, comparison?.priorSessionId, comparisonExerciseId, routeSessionId]);
 
   // Pipeline v2: synthesize a stable sessionId from the recap payload so the
   // auto-debrief hook can dedupe via AsyncStorage. We derive from exercise
@@ -124,6 +180,14 @@ export default function FormTrackingDebriefScreen() {
   const handleClose = useCallback(() => {
     router.back();
   }, [router]);
+
+  const [explainerVisible, setExplainerVisible] = useState(false);
+  const handleOpenExplainer = useCallback(() => setExplainerVisible(true), []);
+  const handleCloseExplainer = useCallback(() => setExplainerVisible(false), []);
+  const explainerExerciseId = useMemo(
+    () => resolveExerciseKey(exerciseName) ?? undefined,
+    [exerciseName],
+  );
 
   const hasReps = reps.length > 0;
 
@@ -168,6 +232,20 @@ export default function FormTrackingDebriefScreen() {
               value={averageFqi != null ? String(Math.round(averageFqi)) : '–'}
             />
           </View>
+          {averageFqi != null ? (
+            <Pressable
+              onPress={handleOpenExplainer}
+              accessibilityRole="button"
+              accessibilityLabel="What does this score mean?"
+              accessibilityHint="Tap to learn what this score means"
+              style={({ pressed }) => [styles.explainerChip, pressed && styles.explainerChipPressed]}
+              testID="form-tracking-debrief-fqi-explainer-chip"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="information-circle-outline" size={14} color="#9AACD1" />
+              <Text style={styles.explainerChipText}>What does this score mean?</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.sectionGap}>
@@ -189,6 +267,17 @@ export default function FormTrackingDebriefScreen() {
             </View>
           )}
         </View>
+
+        {comparison?.priorSessionId ? (
+          <View style={styles.sectionGap} testID="form-tracking-debrief-compare-section">
+            <Text style={styles.sectionTitle}>Progress</Text>
+            <SessionCompareToLastCard
+              comparison={comparison}
+              onPress={handleOpenComparison}
+              testID="form-tracking-debrief-compare-card"
+            />
+          </View>
+        ) : null}
 
         {pipelineV2 ? (
           <View style={styles.sectionGap} testID="form-tracking-debrief-auto-section">
@@ -215,6 +304,13 @@ export default function FormTrackingDebriefScreen() {
         repCount={reps.length}
         averageFqi={averageFqi}
         topFault={topFault}
+      />
+
+      <FqiExplainerModal
+        visible={explainerVisible}
+        onDismiss={handleCloseExplainer}
+        exerciseId={explainerExerciseId}
+        testID="form-tracking-debrief-fqi-explainer"
       />
     </SafeAreaView>
   );
@@ -301,6 +397,27 @@ const styles = StyleSheet.create({
     marginTop: 2,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
+  },
+  explainerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(154, 172, 209, 0.3)',
+    backgroundColor: 'rgba(154, 172, 209, 0.06)',
+  },
+  explainerChipPressed: {
+    backgroundColor: 'rgba(154, 172, 209, 0.16)',
+  },
+  explainerChipText: {
+    color: '#9AACD1',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   sectionGap: {
     marginBottom: 20,

@@ -39,6 +39,19 @@ export interface DetectMilestoneInput {
   consistencyWindow?: number;
   /** Floor for the consistency signal to fire (default 70). */
   consistencyMinScore?: number;
+  /**
+   * Aggregate count of PBs the user has set this calendar month across any
+   * exercise, *including* the one about to fire if applicable. Enables
+   * ordinal context in the PB message ("3rd PB this month — on fire").
+   * Callers can pass 0 or omit when the data is unavailable.
+   */
+  priorPbCount?: number;
+  /**
+   * Consecutive days (including today) with at least one completed session
+   * on any exercise. Enables streak context in the consistency message
+   * ("5-day streak, keep it rolling"). Omit or pass 0 to suppress.
+   */
+  weekStreakDays?: number;
 }
 
 export interface MilestoneResult {
@@ -78,6 +91,8 @@ export function detectMilestone(input: DetectMilestoneInput): MilestoneResult {
     consistencyBand = DEFAULTS.consistencyBand,
     consistencyWindow = DEFAULTS.consistencyWindow,
     consistencyMinScore = DEFAULTS.consistencyMinScore,
+    priorPbCount,
+    weekStreakDays,
   } = input;
 
   const score = safeNumber(currentAvgFqi);
@@ -96,7 +111,7 @@ export function detectMilestone(input: DetectMilestoneInput): MilestoneResult {
     if (score >= pbMinScore && pbMinScore > 0) {
       return {
         kind: 'new_pb',
-        message: buildPbMessage(score, exerciseKey),
+        message: buildPbMessage(score, exerciseKey, priorPbCount),
         score,
       };
     }
@@ -105,7 +120,7 @@ export function detectMilestone(input: DetectMilestoneInput): MilestoneResult {
     if (score - priorBest >= pbMargin && score >= pbMinScore) {
       return {
         kind: 'new_pb',
-        message: buildPbMessage(score, exerciseKey),
+        message: buildPbMessage(score, exerciseKey, priorPbCount),
         score,
       };
     }
@@ -123,7 +138,12 @@ export function detectMilestone(input: DetectMilestoneInput): MilestoneResult {
     if (min >= consistencyMinScore && max - min <= consistencyBand) {
       return {
         kind: 'week_consistency',
-        message: buildConsistencyMessage(score, exerciseKey, consistencyWindow),
+        message: buildConsistencyMessage(
+          score,
+          exerciseKey,
+          consistencyWindow,
+          weekStreakDays,
+        ),
         score,
       };
     }
@@ -139,14 +159,41 @@ function safeNumber(raw: number | null | undefined): number | null {
   return raw;
 }
 
-function buildPbMessage(score: number, exerciseKey: string): string {
-  return `New record: ${formatScore(score)}/100 form on ${exerciseLabel(exerciseKey)}`;
+function buildPbMessage(
+  score: number,
+  exerciseKey: string,
+  priorPbCount?: number,
+): string {
+  const base = `New record: ${formatScore(score)}/100 form on ${exerciseLabel(exerciseKey)}`;
+  const count = safeNumber(priorPbCount ?? null);
+  if (count != null && count > 1) {
+    return `${base} — ${formatOrdinal(count)} PB this month, on fire`;
+  }
+  return base;
 }
 
 function buildConsistencyMessage(
   score: number,
   exerciseKey: string,
   window: number,
+  weekStreakDays?: number,
 ): string {
-  return `Dialed in: ${window} straight ${exerciseLabel(exerciseKey)} sessions around ${formatScore(score)}/100`;
+  const base = `Dialed in: ${window} straight ${exerciseLabel(exerciseKey)} sessions around ${formatScore(score)}/100`;
+  const streak = safeNumber(weekStreakDays ?? null);
+  if (streak != null && streak >= 3) {
+    return `${base} — ${Math.floor(streak)}-day streak, keep it rolling`;
+  }
+  return base;
+}
+
+/** Tiny 1/2/3 → "1st/2nd/3rd" formatter — handles the English 11/12/13 case. */
+function formatOrdinal(raw: number): string {
+  const n = Math.abs(Math.floor(raw));
+  const mod100 = n % 100;
+  const mod10 = n % 10;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  if (mod10 === 1) return `${n}st`;
+  if (mod10 === 2) return `${n}nd`;
+  if (mod10 === 3) return `${n}rd`;
+  return `${n}th`;
 }
