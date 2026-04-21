@@ -62,6 +62,16 @@ describe('AutoDebriefCard', () => {
     expect(getByText(/No debrief yet/i)).toBeTruthy();
   });
 
+  it('renders the awaiting-grace copy when awaitingResult=true and no data', () => {
+    const { getByTestId, getByText, queryByTestId } = render(
+      <AutoDebriefCard loading={false} error={null} data={null} awaitingResult />,
+    );
+    expect(getByTestId('auto-debrief-preparing')).toBeTruthy();
+    expect(getByText(/Coach is preparing your feedback/i)).toBeTruthy();
+    // The cold "no debrief yet" placeholder must NOT be rendered simultaneously.
+    expect(queryByTestId('auto-debrief-empty')).toBeNull();
+  });
+
   it('renders the shaped brief and the OpenAI provider badge by default', () => {
     const { getByTestId, getByText } = render(
       <AutoDebriefCard loading={false} error={null} data={result()} />,

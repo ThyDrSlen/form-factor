@@ -36,7 +36,7 @@ jest.mock('@/lib/stores/session-runner', () => ({
   },
 }));
 
-import { useAutoDebrief } from '@/hooks/use-auto-debrief';
+import { AUTO_DEBRIEF_TIMEOUT_MESSAGE, useAutoDebrief } from '@/hooks/use-auto-debrief';
 
 function makeEvent() {
   return {
@@ -241,6 +241,32 @@ describe('useAutoDebrief', () => {
     expect(mockGenerate).not.toHaveBeenCalled();
     expect(result.current.data).toBeNull();
   });
+
+  it('surfaces a timeout error when generate hangs past the budget', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    // generate resolves never — we want the timeout race to win.
+    mockGenerate.mockImplementation(() => new Promise<never>(() => {}));
+
+    const { result } = renderHook(() =>
+      useAutoDebrief({
+        buildInput: () => ({ sessionId: 'sess-1', analytics: makeAnalytics() }),
+      }),
+    );
+
+    await act(async () => {
+      await triggerFinished(makeEvent());
+    });
+
+    // The hook's timeout is 8s. Real timers keep the test contained to a
+    // single file and avoid polluting neighbouring tests with fake-timers.
+    await waitFor(
+      () => {
+        expect(result.current.error).toBe(AUTO_DEBRIEF_TIMEOUT_MESSAGE);
+        expect(result.current.loading).toBe(false);
+      },
+      { timeout: 9000, interval: 100 },
+    );
+  }, 12000);
 
   it('surfaces errors from buildInput', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});

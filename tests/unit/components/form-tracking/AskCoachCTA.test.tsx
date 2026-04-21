@@ -7,6 +7,7 @@ import {
 } from '@/components/form-tracking/AskCoachCTA';
 
 const mockPush = jest.fn();
+const mockNetwork = { isOnline: true, isConnected: true, networkType: 'wifi' as string | null };
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({
@@ -14,9 +15,15 @@ jest.mock('expo-router', () => ({
   }),
 }));
 
+jest.mock('@/contexts/NetworkContext', () => ({
+  useNetwork: () => mockNetwork,
+}));
+
 describe('AskCoachCTA', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockNetwork.isOnline = true;
+    mockNetwork.isConnected = true;
   });
 
   describe('buildCoachPrefill', () => {
@@ -126,6 +133,38 @@ describe('AskCoachCTA', () => {
       const button = getByTestId('ask-coach-cta');
       expect(button.props.accessibilityRole).toBe('button');
       expect(button.props.accessibilityLabel).toBe('Ask coach about this session');
+    });
+  });
+
+  describe('offline state', () => {
+    it('swallows taps and shows "Check your connection" subtext when offline', () => {
+      mockNetwork.isOnline = false;
+      const { getByTestId } = render(
+        <AskCoachCTA
+          exerciseName="Squat"
+          repCount={3}
+          averageFqi={60}
+          topFault="Hips rising"
+        />,
+      );
+
+      fireEvent.press(getByTestId('ask-coach-cta'));
+      expect(mockPush).not.toHaveBeenCalled();
+      expect(getByTestId('ask-coach-cta-offline-hint')).toBeTruthy();
+    });
+
+    it('marks the button disabled via accessibility state when offline', () => {
+      mockNetwork.isOnline = false;
+      const { getByTestId } = render(
+        <AskCoachCTA
+          exerciseName="Squat"
+          repCount={3}
+          averageFqi={60}
+        />,
+      );
+      const button = getByTestId('ask-coach-cta');
+      expect(button.props.accessibilityState?.disabled).toBe(true);
+      expect(button.props.accessibilityLabel).toContain('Offline');
     });
   });
 });

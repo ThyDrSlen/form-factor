@@ -182,9 +182,9 @@ export default function FormTrackingDebriefScreen() {
           ) : (
             <View style={styles.emptyState} testID="form-tracking-debrief-empty">
               <Ionicons name="information-circle-outline" size={28} color="#9AACD1" />
-              <Text style={styles.emptyTitle}>No reps recorded</Text>
+              <Text style={styles.emptyTitle}>No reps recorded yet</Text>
               <Text style={styles.emptyBody}>
-                Finish a live tracking set to see your rep-by-rep breakdown here.
+                Start a live tracking set to see your breakdown.
               </Text>
             </View>
           )}
@@ -198,6 +198,11 @@ export default function FormTrackingDebriefScreen() {
               error={autoDebrief.error}
               data={autoDebrief.data}
               onRetry={autoDebrief.retry}
+              // Reps in the URL params indicate the user just finished a
+              // session (recap route), so we want the friendly "preparing
+              // your feedback…" copy in the empty grace window — NOT the
+              // cold "No debrief yet" history placeholder.
+              awaitingResult={hasReps}
             />
           </View>
         ) : null}

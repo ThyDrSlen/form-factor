@@ -19,7 +19,6 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,6 +28,8 @@ import * as Haptics from 'expo-haptics';
 import { tabColors } from '@/styles/tabs/_tab-theme';
 import { sessionStyles } from '@/styles/workout-session.styles';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
+import { CrashBoundary } from '@/components/CrashBoundary';
 import { useSessionGenerator } from '@/hooks/use-session-generator';
 import {
   getSessionFallback,
@@ -41,6 +42,7 @@ import {
 import { localDB } from '@/lib/services/database/local-db';
 import { genericLocalUpsert } from '@/lib/services/database/generic-sync';
 import { isWarmupCoachFlowEnabled } from '@/lib/services/coach-warmup-provider';
+import { createError, logError } from '@/lib/services/ErrorHandler';
 import type { Exercise, GoalProfile } from '@/lib/types/workout-session';
 import type { HydratedTemplate } from '@/lib/services/session-generator';
 
@@ -129,8 +131,20 @@ async function persistHydrated(hydrated: HydratedTemplate): Promise<void> {
 }
 
 export default function GenerateSessionScreen() {
+  return (
+    <CrashBoundary
+      fallbackTitle="Generator crashed"
+      fallbackMessage="The session generator hit an unexpected error. Close this modal and try again, or pick from the Templates tab."
+    >
+      <GenerateSessionScreenBody />
+    </CrashBoundary>
+  );
+}
+
+function GenerateSessionScreenBody() {
   const router = useRouter();
   const { user } = useAuth();
+  const { show: showToast } = useToast();
   const [intent, setIntent] = useState('');
   const [goalProfile, setGoalProfile] = useState<GoalProfile>('hypertrophy');
   const [durationMin, setDurationMin] = useState<number>(30);
@@ -148,11 +162,24 @@ export default function GenerateSessionScreen() {
   const [lastTemplateId, setLastTemplateId] = useState<string | null>(null);
   const warmupCoachEnabled = isWarmupCoachFlowEnabled();
 
+  // Resolve exercise slugs from the local DB; if that throws (missing table
+  // during migration, SQLite closed on web, etc.) we return an empty list so
+  // the AI can still attempt a generation using its built-in catalogue.
   const availableSlugsPromise = useMemo(async () => {
-    const db = localDB.db;
-    if (!db) return [];
-    const rows = await db.getAllAsync<Exercise>('SELECT name FROM exercises LIMIT 64');
-    return rows.map((r) => r.name.toLowerCase().replace(/[^a-z0-9]/g, '_'));
+    try {
+      const db = localDB.db;
+      if (!db) return [] as string[];
+      const rows = await db.getAllAsync<Exercise>('SELECT name FROM exercises LIMIT 64');
+      return rows.map((r) => r.name.toLowerCase().replace(/[^a-z0-9]/g, '_'));
+    } catch (err) {
+      logError(
+        createError('storage', 'EXERCISE_SLUGS_QUERY_FAILED',
+          err instanceof Error ? err.message : 'Failed to read exercise slugs.',
+          { details: err, severity: 'warning' }),
+        { feature: 'workouts', location: 'generate-session.availableSlugsPromise' },
+      );
+      return [] as string[];
+    }
   }, []);
 
   const handleOfflineFallback = useCallback(async () => {
@@ -169,7 +196,7 @@ export default function GenerateSessionScreen() {
   const handleGenerate = useCallback(async () => {
     const trimmed = intent.trim();
     if (trimmed.length === 0) {
-      Alert.alert('Describe the session', 'Tell the AI what you want to train.');
+      showToast('Tell the AI what you want to train.', { type: 'info' });
       return;
     }
     // Flag off: skip the dispatch entirely and use the offline library so the
@@ -202,6 +229,7 @@ export default function GenerateSessionScreen() {
     generate,
     handleOfflineFallback,
     router,
+    showToast,
   ]);
 
   const handleWarmupCoach = useCallback(() => {
