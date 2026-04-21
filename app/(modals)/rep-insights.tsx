@@ -10,7 +10,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,10 +25,17 @@ import { RomProgressionCard } from '@/components/insights/RomProgressionCard';
 import { SymmetryCard } from '@/components/insights/SymmetryCard';
 import { RepRewindCarousel } from '@/components/insights/RepRewindCarousel';
 import { shareRepData } from '@/lib/services/rep-export';
+import {
+  FormTrackingErrorCode,
+  createError,
+  withErrorHandling,
+} from '@/lib/services/ErrorHandler';
+import { useToast } from '@/contexts/ToastContext';
 import type { FaultHeatmapScope } from '@/lib/services/rep-analytics';
 
 export default function RepInsightsModal() {
   const router = useRouter();
+  const { show: showToast } = useToast();
   const params = useLocalSearchParams<{ exerciseId?: string; sessionId?: string }>();
   const exerciseId = typeof params.exerciseId === 'string' ? params.exerciseId : '';
   const sessionId = typeof params.sessionId === 'string' ? params.sessionId : undefined;
@@ -48,32 +54,45 @@ export default function RepInsightsModal() {
   const handleExport = useCallback(
     async (format: 'csv' | 'json') => {
       if (!exerciseId && !sessionId) {
-        Alert.alert('Nothing to export', 'Open this screen from a session or exercise to enable export.');
+        showToast('Open this screen from a session or exercise to enable export.', { type: 'info' });
         return;
       }
-      try {
-        setExporting(format);
-        setExportError(null);
-        const result = await shareRepData(
+      setExporting(format);
+      setExportError(null);
+
+      const outcome = await withErrorHandling(
+        () => shareRepData(
           sessionId ? { sessionId } : { exerciseId, days: 30 },
           format,
+        ),
+        (err) => createError(
+          'form-tracking',
+          FormTrackingErrorCode.EXPORT_FAILED,
+          err instanceof Error ? err.message : 'Unknown export error',
+          { details: err, retryable: true },
+        ),
+        { feature: 'form-tracking', location: `rep-insights.handleExport.${format}` },
+      );
+
+      setExporting(null);
+
+      if (!outcome.ok) {
+        setExportError({ format, message: outcome.error.message });
+        showToast(`Export failed: ${outcome.error.message}`, { type: 'error' });
+        return;
+      }
+
+      const result = outcome.data;
+      if (!result.shared) {
+        showToast(
+          result.fileUri
+            ? 'Export ready — sharing unavailable; file written locally.'
+            : 'Sharing is unavailable on this build.',
+          { type: 'info' },
         );
-        if (!result.shared) {
-          Alert.alert(
-            'Export ready',
-            result.fileUri
-              ? `File written to:\n${result.fileUri}\n\nSharing is unavailable on this build.`
-              : 'Sharing is unavailable on this build. Data was generated but could not be written to disk.',
-          );
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        setExportError({ format, message });
-      } finally {
-        setExporting(null);
       }
     },
-    [exerciseId, sessionId],
+    [exerciseId, sessionId, showToast],
   );
 
   const handleDismissExportError = useCallback(() => {

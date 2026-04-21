@@ -50,6 +50,8 @@ export const FormTrackingErrorCode = {
   CUE_PREEMPTION_FAILED: 'CUE_PREEMPTION_FAILED',
   /** Session-runner state went out of sync with rep-logger expectations. */
   SESSION_STATE_DESYNC: 'SESSION_STATE_DESYNC',
+  /** Rep data export (CSV/JSON) failed to generate or persist a file. */
+  EXPORT_FAILED: 'EXPORT_FAILED',
 } as const;
 export type FormTrackingErrorCodeValue =
   typeof FormTrackingErrorCode[keyof typeof FormTrackingErrorCode];
@@ -161,6 +163,8 @@ function mapFormTrackingMessage(code: string): string {
       return 'A coaching cue could not be played. Continuing without it.';
     case FormTrackingErrorCode.SESSION_STATE_DESYNC:
       return 'Session state got out of sync. Restart the set to continue.';
+    case FormTrackingErrorCode.EXPORT_FAILED:
+      return 'Export failed. Please try again.';
     default:
       return 'Form tracking ran into an issue. Try repositioning your camera.';
   }
