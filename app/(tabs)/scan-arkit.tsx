@@ -2838,17 +2838,27 @@ export default function ScanARKitScreen() {
   if (supportStatus === 'unknown') {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loaderContainer}>
-          <View style={styles.loaderCard}>
+        <View
+          style={styles.loaderContainer}
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel="Loading body tracking"
+          accessibilityState={{ busy: true }}
+          testID="scan-arkit-loader"
+        >
+          <View style={styles.loaderCard} accessibilityElementsHidden>
             <View style={styles.loaderLineShort} />
             <View style={styles.loaderLine} />
             <View style={styles.loaderLine} />
           </View>
-          <View style={styles.loaderCard}>
+          <View style={styles.loaderCard} accessibilityElementsHidden>
             <View style={styles.loaderLineShort} />
             <View style={styles.loaderLine} />
             <View style={styles.loaderLine} />
           </View>
+          <Text style={styles.loaderCaption} accessibilityElementsHidden>
+            Initializing form tracking…
+          </Text>
         </View>
       </SafeAreaView>
     );

@@ -778,6 +778,14 @@ export const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.08)',
     marginBottom: spacing.xs,
   },
+  loaderCaption: {
+    marginTop: spacing.md,
+    textAlign: 'center',
+    color: scanPalette.accentAlt,
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
   anglesDisplay: {
     position: 'absolute',
     left: spacing.md,
