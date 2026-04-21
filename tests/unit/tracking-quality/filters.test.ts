@@ -99,4 +99,114 @@ describe('tracking-quality filters', () => {
     const value = smoothAngleEMA({ previous: 100, incoming: 110, alpha: 0.24 });
     expect(value).toBeCloseTo(102.4, 6);
   });
+
+  // ---------------------------------------------------------------------------
+  // Wave 30 C3 — internal-helper edge-case coverage.
+  //
+  // clampPointDelta / sanitizeAlpha / sanitizeJointForOutput / collectKeys
+  // are private to the module, so we drive them through the public
+  // clampVelocity / smoothCoordinateEMA / smoothAngleEMA entrypoints.
+  // Every assertion below exercises one NaN / Infinity / missing-field
+  // guard that caused silent corruption in prior regressions.
+  // ---------------------------------------------------------------------------
+
+  describe('numeric / structural guards (wave-30 C3)', () => {
+    test('clampVelocity treats Infinity delta as non-finite and falls back to previous point', () => {
+      // Incoming has Infinity / -Infinity coordinates. clampPointDelta's
+      // inner `Number.isFinite(dx)` guard must short-circuit before the
+      // hypot() call — otherwise we'd scale by maxDelta/Infinity = 0 and
+      // output NaN.
+      const previous = makeMap([['joint', { x: 5, y: 5, isTracked: true }]]);
+      const incoming = makeMap([
+        ['joint', { x: Number.POSITIVE_INFINITY, y: Number.NEGATIVE_INFINITY, isTracked: true }],
+      ]);
+
+      const clamped = clampVelocity({ previous, incoming, maxDelta: 10, jointKeys: ['joint'] });
+      const out = clamped.get('joint');
+
+      expect(out).toBeTruthy();
+      // Fails safe: incoming is invalid so the prev point is retained
+      // and the joint is flagged as untracked rather than polluting the
+      // pipeline with NaN/Infinity.
+      expect(out?.x).toBe(5);
+      expect(out?.y).toBe(5);
+      expect(out?.isTracked).toBe(false);
+      expect(Number.isFinite(out?.x)).toBe(true);
+      expect(Number.isFinite(out?.y)).toBe(true);
+    });
+
+    test('sanitizeAlpha coerces NaN alpha to 0 (no EMA applied — previous point is held)', () => {
+      // alpha=NaN reaches sanitizeAlpha via the public EMA entrypoint.
+      // The sanitizer returns 0, which the smoother interprets as
+      // "no blending" and falls back to the previous coordinate. The
+      // key invariant is that no NaN is propagated through the EMA.
+      const previous = makeMap([['k', { x: 10, y: 10, isTracked: true }]]);
+      const incoming = makeMap([['k', { x: 50, y: 50, isTracked: true }]]);
+
+      const smoothed = smoothCoordinateEMA({
+        previous,
+        incoming,
+        alpha: Number.NaN,
+        jointKeys: ['k'],
+      });
+      const out = smoothed.get('k');
+
+      expect(out).toBeTruthy();
+      expect(Number.isFinite(out?.x)).toBe(true);
+      expect(Number.isFinite(out?.y)).toBe(true);
+      // alpha=0 path: previous coordinates are retained verbatim.
+      expect(out?.x).toBe(10);
+      expect(out?.y).toBe(10);
+    });
+
+    test('sanitizeJointForOutput inherits previous confidence when incoming omits it', () => {
+      // Incoming joint ships x/y/isTracked but no confidence field.
+      // sanitizeJointForOutput should inherit the previous confidence
+      // rather than leaking `undefined` through (which some downstream
+      // consumers short-circuit on).
+      const previous = makeMap([['k', { x: 0, y: 0, isTracked: true, confidence: 0.77 }]]);
+      const incoming = makeMap([['k', { x: 1, y: 1, isTracked: true }]]);
+
+      const smoothed = smoothCoordinateEMA({
+        previous,
+        incoming,
+        alpha: 0.5,
+        jointKeys: ['k'],
+      });
+      const out = smoothed.get('k');
+
+      expect(out).toBeTruthy();
+      expect(out?.confidence).toBe(0.77);
+    });
+
+    test('clampVelocity with null previous and no jointKeys iterates only incoming keys without throwing', () => {
+      // collectKeys(null previous) should return an empty set unioned
+      // with whatever incoming ships. If the internal null-guard is
+      // removed, Map iteration on `null` throws a TypeError.
+      const incoming = makeMap([['only_incoming', { x: 3, y: 3, isTracked: true }]]);
+
+      expect(() =>
+        clampVelocity({ previous: null, incoming, maxDelta: 10 }),
+      ).not.toThrow();
+
+      const out = clampVelocity({ previous: null, incoming, maxDelta: 10 });
+      expect(out.get('only_incoming')).toBeTruthy();
+      expect(out.get('only_incoming')?.x).toBe(3);
+    });
+
+    test('smoothAngleEMA returns default behaviour when both previous and incoming are null/undefined', () => {
+      // previous=null, incoming=undefined → public API contract is that
+      // we stay at null (no blending, nothing to blend toward). This
+      // guards the confidence-inheritance path for the parallel
+      // coordinate EMA: both branches must fail safe to the previous
+      // value (which is null here) rather than crash or emit NaN.
+      const prev = smoothAngleEMA({ previous: null, incoming: null });
+      expect(prev).toBeNull();
+
+      // And with a finite prev + missing incoming, we retain the prev
+      // rather than collapsing to null.
+      const held = smoothAngleEMA({ previous: 42, incoming: null });
+      expect(held).toBe(42);
+    });
+  });
 });
