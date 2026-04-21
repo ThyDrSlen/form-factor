@@ -13,9 +13,18 @@
  * when to render it.
  */
 
-import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { AutoDebriefResult, CoachProvider } from '@/lib/services/coach-auto-debrief';
+
+/**
+ * Grace window for the "Coach is preparing your feedback…" empty copy.
+ * After a session ends we may sit in the `data === null && !loading && !error`
+ * window briefly (event bus fanout, buildInput async). During that grace we
+ * want a friendly "we're on it" line rather than the cold "No debrief yet"
+ * placeholder. After the window elapses, we fall back to the history copy.
+ */
+export const AUTO_DEBRIEF_EMPTY_GRACE_MS = 30_000;
 
 // ---------------------------------------------------------------------------
 // Props
@@ -26,6 +35,13 @@ export interface AutoDebriefCardProps {
   error: string | null;
   data: AutoDebriefResult | null;
   onRetry?: () => void;
+  /**
+   * True when the parent considers the user "fresh off a session" — e.g.
+   * the debrief screen was opened right after session end. Signals the card
+   * to show the reassuring "Coach is preparing your feedback…" copy instead
+   * of the cold "No debrief yet" placeholder for up to 30s.
+   */
+  awaitingResult?: boolean;
   /**
    * Optional testID prefix so consumers can target sub-elements without
    * the card hardcoding its own name into the tree.
@@ -56,8 +72,23 @@ export default function AutoDebriefCard({
   error,
   data,
   onRetry,
+  awaitingResult = false,
   testIDPrefix = 'auto-debrief',
 }: AutoDebriefCardProps) {
+  // Track whether we are still within the awaiting-grace window. Starts true
+  // when `awaitingResult` is first seen and flips to false after the grace
+  // timeout — at which point the card falls back to the history empty copy.
+  const [inGrace, setInGrace] = useState(awaitingResult);
+  useEffect(() => {
+    if (!awaitingResult) {
+      setInGrace(false);
+      return;
+    }
+    setInGrace(true);
+    const handle = setTimeout(() => setInGrace(false), AUTO_DEBRIEF_EMPTY_GRACE_MS);
+    return () => clearTimeout(handle);
+  }, [awaitingResult]);
+
   if (loading) {
     return (
       <View
@@ -68,7 +99,7 @@ export default function AutoDebriefCard({
       >
         <View style={styles.header}>
           <Text style={styles.title}>Session debrief</Text>
-          <ActivityIndicator size="small" />
+          <PulsingDot />
         </View>
         <View style={[styles.skeleton, { width: '80%' }]} />
         <View style={[styles.skeleton, { width: '95%' }]} />
@@ -103,6 +134,22 @@ export default function AutoDebriefCard({
   }
 
   if (!data) {
+    if (inGrace) {
+      return (
+        <View
+          testID={`${testIDPrefix}-preparing`}
+          accessibilityRole="alert"
+          accessibilityLabel="Coach is preparing your feedback"
+          style={styles.card}
+        >
+          <View style={styles.header}>
+            <Text style={styles.title}>Session debrief</Text>
+            <PulsingDot />
+          </View>
+          <Text style={styles.empty}>Coach is preparing your feedback…</Text>
+        </View>
+      );
+    }
     return (
       <View testID={`${testIDPrefix}-empty`} style={styles.card}>
         <Text style={styles.title}>Session debrief</Text>
@@ -128,6 +175,41 @@ export default function AutoDebriefCard({
         {data.brief}
       </Text>
     </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function PulsingDot() {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.3,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+  return (
+    <Animated.View
+      accessibilityElementsHidden
+      importantForAccessibility="no"
+      style={[styles.pulsingDot, { opacity }]}
+    />
   );
 }
 
@@ -200,5 +282,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
+  },
+  pulsingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#60A5FA',
   },
 });
