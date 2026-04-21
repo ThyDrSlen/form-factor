@@ -53,6 +53,7 @@ import {
 import { useSessionRunner } from '@/lib/stores/session-runner';
 import { isVoiceControlPipelineEnabled } from '@/lib/services/voice-pipeline-flag';
 import { hasConsented as defaultHasConsented } from '@/lib/services/voice-privacy-policy';
+import { useVoiceControlStore } from '@/lib/stores/voice-control-store';
 import { warnWithTs } from '@/lib/logger';
 
 /**
@@ -130,8 +131,17 @@ export function VoiceControlProvider({
   const [latestIntent, setLatestIntent] = useState<ClassifiedIntent | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
 
+  // Subscribe to the Zustand consent store so flipping `enabled` at runtime
+  // takes effect without a full re-mount. The custom hasConsented override
+  // (used by tests) short-circuits this — we only observe the store when
+  // production's default helper is in play.
+  const storeEnabled = useVoiceControlStore((s) => s.enabled);
   const pipelineDisabled = !isPipelineEnabled();
-  const consented = pipelineDisabled ? false : hasConsented();
+  const consented = pipelineDisabled
+    ? false
+    : hasConsented === defaultHasConsented
+      ? storeEnabled
+      : hasConsented();
 
   // Refs for hot-path callbacks so the subscribe effect doesn't churn.
   const managerRef = useRef(manager);
