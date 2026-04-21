@@ -190,4 +190,49 @@ describe('coach-dispatch', () => {
     await dispatchCoachPrompt({ messages, context: { focus: 'squat' } }, opts);
     expect(cloudSend).toHaveBeenCalledWith(messages, { focus: 'squat' });
   });
+
+  // ---------------------------------------------------------------------------
+  // Gap #6 — combined unavailability conditions on `prefer_local`.
+  //
+  // coach-dispatch.ts:86-91 bundles the "model not ready" and "no localGenerate
+  // wired" guards under the same `local_unavailable` code. When BOTH hold
+  // simultaneously (user picked prefer_local but nothing is mounted), the
+  // dispatcher must still route the cloud path AND still log a single
+  // fallback telemetry — not throw or double-count.
+  // ---------------------------------------------------------------------------
+
+  it('prefer_local: model downloading AND missing localGenerate → cloud fallback with single telemetry log', async () => {
+    const cloudSend = jest
+      .fn()
+      .mockResolvedValue({ role: 'assistant', content: 'cloud combined-fallback' });
+
+    const opts: CoachDispatchOptions = {
+      preference: 'prefer_local',
+      modelManager: makeManager('downloading'),
+      // localGenerate deliberately omitted so both guards trip.
+      cloudSend,
+    };
+
+    const result = await dispatchCoachPrompt({ messages }, opts);
+    expect(result).toEqual({ role: 'assistant', content: 'cloud combined-fallback' });
+    expect(cloudSend).toHaveBeenCalledTimes(1);
+    expect(getCounter('coach_dispatch_prefer_local_fallback')).toBe(1);
+  });
+
+  it('local_only: missing localGenerate AND status=downloading both surface local_unavailable', async () => {
+    // Exercises the combined unavailability path under the stricter preference
+    // to ensure both guards still collapse to the same typed error code.
+    const opts: CoachDispatchOptions = {
+      preference: 'local_only',
+      modelManager: makeManager('downloading'),
+      // localGenerate omitted.
+    };
+
+    await expect(dispatchCoachPrompt({ messages }, opts)).rejects.toBeInstanceOf(
+      CoachDispatchError,
+    );
+    await expect(dispatchCoachPrompt({ messages }, opts)).rejects.toMatchObject({
+      code: 'local_unavailable',
+    });
+  });
 });

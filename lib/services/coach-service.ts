@@ -19,6 +19,7 @@ import {
   type CoachSignals,
 } from './coach-model-dispatch';
 import { isDispatchEnabled } from './coach-model-dispatch-flag';
+import { recordDispatchDecision } from './coach-model-dispatch-telemetry';
 
 export type { CoachProvider } from './coach-provider-types';
 import type { LiveSessionSnapshot } from './coach-live-snapshot';
@@ -215,7 +216,8 @@ export async function sendCoachPrompt(
   // hint is applied. When the model dispatcher picks a Gemma model and the
   // caller hasn't already pinned a provider, route to Gemma. Otherwise fall
   // through to the existing provider resolution. READ-ONLY on
-  // coach-model-dispatch.ts itself.
+  // coach-model-dispatch.ts itself. Fires a single-shot telemetry counter so
+  // product can track dispatch decisions as rollout progresses.
   let routedProvider: 'gemma' | 'openai' | undefined;
   if (
     isCoachPipelineV2Enabled() &&
@@ -228,6 +230,12 @@ export async function sendCoachPrompt(
       opts.dispatchSignals ?? {},
       opts.userTier ?? 'free',
     );
+    try {
+      recordDispatchDecision(decision);
+    } catch {
+      // Telemetry is never load-bearing; swallow any recorder fault so the
+      // coach turn still proceeds.
+    }
     routedProvider = decision.model.startsWith('gemma-') ? 'gemma' : 'openai';
   }
 

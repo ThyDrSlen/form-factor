@@ -15,6 +15,8 @@ import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-s
 import type { ExerciseHistorySummary } from './exercise-history-service';
 import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
 
+type SendCoachPromptOpts = Parameters<typeof sendCoachPrompt>[2];
+
 /**
  * Pipeline-v2: resolve the provider from env. Mirrors
  * `coach-auto-debrief.resolveCloudProvider` and `coach-drill-explainer`.
@@ -48,6 +50,12 @@ export interface ProgressionPlan {
   horizonWeeks: number;
   /** Unique cache key used. */
   cacheKey: string;
+  /**
+   * Provider that produced the plan, when the coach reply exposes a
+   * `provider` annotation. Omitted for legacy replies without the
+   * discriminator.
+   */
+  provider?: string;
 }
 
 const DEFAULT_HORIZON_WEEKS = 3;
@@ -114,6 +122,7 @@ export function clearProgressionPlanCache(): void {
 
 export async function generateProgressionPlan(
   input: ProgressionPlanInput,
+  opts?: SendCoachPromptOpts,
 ): Promise<ProgressionPlan> {
   const prompt = buildProgressionPrompt(input);
   const cacheKey = cacheKeyFor(input);
@@ -134,16 +143,27 @@ export async function generateProgressionPlan(
   // provider as an explicit hint; flag-off preserves the legacy two-arg
   // call (which defaults to the resolved cloud provider inside
   // coach-service). Lands the TODO from line 6.
-  const opts = isCoachPipelineV2Enabled()
+  //
+  // When callers explicitly supply an `opts` object, it wins over the
+  // env-resolved default — same precedence rule used in coach-service
+  // (`opts.provider ?? routedProvider ?? resolveCloudProvider()`). This
+  // lets callers bypass the env-resolved provider when they already know
+  // what they want (e.g. pre-wired task-kind dispatch).
+  const pipelineOpts: SendCoachPromptOpts | undefined = isCoachPipelineV2Enabled()
     ? { provider: resolveProgressionProvider() }
     : undefined;
-  const response = await sendCoachPrompt(messages, input.context, opts);
+  const mergedOpts: SendCoachPromptOpts | undefined =
+    opts !== undefined
+      ? { ...pipelineOpts, ...opts }
+      : pipelineOpts;
+  const response = await sendCoachPrompt(messages, input.context, mergedOpts);
   const plan: ProgressionPlan = {
     text: response.content,
     promptPreview: prompt,
     generatedAt: new Date().toISOString(),
     horizonWeeks: input.horizonWeeks ?? DEFAULT_HORIZON_WEEKS,
     cacheKey,
+    ...(response.provider ? { provider: response.provider } : {}),
   };
   insertCacheEntry({ key: cacheKey, value: plan });
   return plan;
