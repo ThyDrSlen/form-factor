@@ -939,6 +939,13 @@ export default function ScanARKitScreen() {
       if (__DEV__) {
         warnWithTs('[ScanARKit] Failed to initialize session context', error);
       }
+      // Surface the failure to the user — when the telemetry context
+      // can't initialize, the rep-count pipeline may fail to persist
+      // session metrics, so we owe them an honest warning rather than a
+      // silent session that produces no history entry.
+      showToast('Telemetry unavailable — reps may not be counted.', {
+        type: 'error',
+      });
     });
     resetFrameCounter();
     shadowStatsRef.current = createShadowStatsAccumulator();
@@ -948,7 +955,7 @@ export default function ScanARKitScreen() {
     realtimeFormEngineRef.current = createRealtimeEngineState();
     lastShadowMeanAbsDeltaRef.current = null;
     resetBaselineDebugMetrics();
-  }, [createRealtimeEngineState, resetBaselineDebugMetrics]);
+  }, [createRealtimeEngineState, resetBaselineDebugMetrics, showToast]);
 
   useEffect(() => {
     const countersRef = cueCountersRef;
