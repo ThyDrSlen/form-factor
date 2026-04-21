@@ -20,6 +20,17 @@ interface FormQualityRecoveryCardProps {
   onRequestExplanation?: (drill: Drill) => void;
   onMarkDone?: (drillId: string) => void;
   isDone?: boolean;
+  /**
+   * When true, the card swaps the static reason copy for an inline
+   * spinner + "Finding a drill for you…" caption. Use this while a
+   * parent-controlled drill fetch (e.g. Gemma drill explainer, fault-
+   * drill aggregator round-trip) is in flight so the user sees the
+   * card is actively resolving instead of appearing frozen.
+   *
+   * Does NOT interact with the existing `explanation.isLoading` flag,
+   * which remains scoped to the "Ask coach why" button's state.
+   */
+  isFetchingDrill?: boolean;
   testID?: string;
 }
 
@@ -52,6 +63,7 @@ export function FormQualityRecoveryCard({
   onRequestExplanation,
   onMarkDone,
   isDone = false,
+  isFetchingDrill = false,
   testID,
 }: FormQualityRecoveryCardProps): React.ReactElement {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -95,9 +107,20 @@ export function FormQualityRecoveryCard({
         )}
       </View>
 
-      <Text style={cardStyles.reason} testID={`drill-reason-${drill.id}`}>
-        {reason}
-      </Text>
+      {isFetchingDrill ? (
+        <View
+          style={cardStyles.fetchingRow}
+          testID={`drill-fetching-${drill.id}`}
+          accessibilityLiveRegion="polite"
+        >
+          <ActivityIndicator color={tabColors.accent} size="small" />
+          <Text style={cardStyles.fetchingText}>Finding a drill for you…</Text>
+        </View>
+      ) : (
+        <Text style={cardStyles.reason} testID={`drill-reason-${drill.id}`}>
+          {reason}
+        </Text>
+      )}
 
       <TouchableOpacity
         style={cardStyles.whyRow}
@@ -236,6 +259,19 @@ const cardStyles = StyleSheet.create({
     color: tabColors.textSecondary,
     marginBottom: 10,
     lineHeight: 18,
+  },
+  fetchingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  fetchingText: {
+    fontSize: 13,
+    fontFamily: 'Lexend_400Regular',
+    color: tabColors.textSecondary,
+    lineHeight: 18,
+    flexShrink: 1,
   },
   whyRow: {
     flexDirection: 'row',
