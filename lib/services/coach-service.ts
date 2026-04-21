@@ -11,6 +11,7 @@ import {
 import { synthesizeMemoryClause } from './coach-memory-context';
 import { shapeFinalResponse } from './coach-output-shaper';
 import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
+import { evaluateSafety } from './coach-safety';
 
 export type { CoachProvider } from './coach-provider-types';
 import type { LiveSessionSnapshot } from './coach-live-snapshot';
@@ -212,6 +213,40 @@ async function sendCoachPromptStreaming(
   const result = await streamCoachPrompt(messages, context, onChunk, {
     provider: opts.provider,
   });
+
+  // Pipeline v2: apply the post-generation safety filter to the resolved
+  // full-buffer text. Mirrors the non-stream path in sendCoachPromptInner.
+  // On violation we throw `COACH_CLOUD_UNSAFE`; the UI surfaces it and the
+  // dispatcher can choose a fallback string. Flag-gated.
+  if (isCoachPipelineV2Enabled()) {
+    const safety = evaluateSafety(result.text);
+    if (!safety.ok) {
+      logError(
+        createError(
+          'ml',
+          'COACH_CLOUD_UNSAFE',
+          `Cloud coach stream rejected: ${safety.reason}`,
+          {
+            retryable: false,
+            severity: 'warning',
+            details: { metric: safety.metric, reason: safety.reason },
+          }
+        ),
+        { feature: 'workouts', location: 'coach-service.sendCoachPromptStreaming' }
+      );
+      throw createError(
+        'ml',
+        'COACH_CLOUD_UNSAFE',
+        'Coach reply failed safety check',
+        {
+          retryable: false,
+          severity: 'warning',
+          details: { metric: safety.metric, reason: safety.reason },
+        }
+      );
+    }
+    return { role: 'assistant', content: shapeFinalResponse(safety.output) };
+  }
   return { role: 'assistant', content: result.text };
 }
 
@@ -323,12 +358,49 @@ async function sendCoachPromptInner(
       );
     }
 
+    // Pipeline v2: apply the post-generation safety filter to cloud responses
+    // before returning. Mirrors `coach-local.ts:finalizeOutput` so cloud and
+    // on-device paths enforce the same safety rules. On violation we log and
+    // throw `COACH_CLOUD_UNSAFE` so the UI can surface an error state; the
+    // dispatcher catches it and can fall back to a fallback-response string.
+    let safeResponseText = rawResponseText;
+    if (isCoachPipelineV2Enabled()) {
+      const safety = evaluateSafety(rawResponseText);
+      if (!safety.ok) {
+        logError(
+          createError(
+            'ml',
+            'COACH_CLOUD_UNSAFE',
+            `Cloud coach response rejected: ${safety.reason}`,
+            {
+              retryable: false,
+              severity: 'warning',
+              details: { metric: safety.metric, reason: safety.reason },
+            }
+          ),
+          { feature: 'workouts', location: 'coach-service.sendCoachPromptInner' }
+        );
+        throw createError(
+          'ml',
+          'COACH_CLOUD_UNSAFE',
+          'Coach reply failed safety check',
+          {
+            retryable: false,
+            severity: 'warning',
+            details: { metric: safety.metric, reason: safety.reason },
+          }
+        );
+      }
+      // evaluateSafety returns the possibly-word-capped text on pass.
+      safeResponseText = safety.output;
+    }
+
     // Pipeline v2: shape the synchronous response (strips filler, normalizes
     // lists, caps budget — see coach-output-shaper.ts). Flag-gated so existing
     // callers keep the raw text until rollout.
     const responseText = isCoachPipelineV2Enabled()
-      ? shapeFinalResponse(rawResponseText)
-      : rawResponseText;
+      ? shapeFinalResponse(safeResponseText)
+      : safeResponseText;
 
     // WHY: the edge function today only returns text (no provider field). We
     // infer the provider from whatever signal it does emit (model name +
