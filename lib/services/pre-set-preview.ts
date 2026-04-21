@@ -12,15 +12,11 @@
  *   coach-live-snapshot.buildLiveSessionSnapshot() once #443 lands on
  *   main. For now we inline a minimal joints-to-text serializer so this
  *   PR stands on its own.
- * - TODO(#454): replace the sendCoachPrompt fallback with the dedicated
- *   coach-gemma-service.sendCoachGemmaPrompt() once #457 lands. For now
- *   we route every request through sendCoachPrompt with a provider hint
- *   in the context; the Edge Function may ignore it until #454 wires it
- *   through.
  */
 
 import type { FrameSnapshot, JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 import { sendCoachPrompt, type CoachMessage } from './coach-service';
+import { sendCoachGemmaPrompt } from './coach-gemma-service';
 
 export type PreSetPreviewProvider = 'gemma' | 'openai';
 
@@ -87,11 +83,11 @@ function isGemmaEnabled(): boolean {
 }
 
 async function callGemma(prompt: string): Promise<string> {
-  // TODO(#454): swap for sendCoachGemmaPrompt(...) once coach-gemma-service
-  // lands. Until then, route through the generic coach prompt with a
-  // provider hint so the Edge Function can dispatch once #454 is merged.
+  // Direct call to the canonical Gemma service — routes through the
+  // coach-gemma edge function rather than the generic `coach` function so
+  // model-specific parameters and provider annotations flow through cleanly.
   const messages: CoachMessage[] = [{ role: 'user', content: prompt }];
-  const reply = await sendCoachPrompt(messages, {
+  const reply = await sendCoachGemmaPrompt(messages, {
     focus: 'pre-set-stance-preview-gemma',
   });
   return reply.content;

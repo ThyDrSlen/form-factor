@@ -8,6 +8,7 @@
 
 import { supabase } from '@/lib/supabase';
 import { createError } from './ErrorHandler';
+import { sendCoachGemmaPrompt } from './coach-gemma-service';
 import type { CoachContext, CoachMessage } from './coach-service';
 
 export interface StreamCoachOptions {
@@ -21,6 +22,24 @@ export interface StreamCoachOptions {
   fetchImpl?: typeof fetch;
   /** Override the Supabase functions base URL (defaults to `${SUPABASE_URL}/functions/v1`). */
   baseUrlOverride?: string;
+  /**
+   * Test-only injection: override the non-streaming Gemma fallback producer.
+   * When the coach-gemma edge function doesn't yet support SSE we route
+   * `provider: 'gemma'` through a synchronous sendCoachGemmaPrompt and emit
+   * the full buffer as a single chunk (see `streamCoachPrompt`). Injecting
+   * here lets tests exercise the fallback without hitting supabase.
+   */
+  gemmaFallbackImpl?: (
+    messages: CoachMessage[],
+    context?: CoachContext,
+  ) => Promise<CoachMessage>;
+  /**
+   * Force the streaming-over-HTTP path even for `provider: 'gemma'`. Exposed
+   * so tests can exercise the existing NDJSON reader with a fake fetch; real
+   * callers never set this. Remove once the coach-gemma edge function lands
+   * server-side SSE (tracked as wave-27 streaming path follow-up).
+   */
+  forceServerStream?: boolean;
 }
 
 export interface StreamCoachResult {
@@ -51,6 +70,19 @@ const DEFAULT_FUNCTION_NAME = (
  * Stream the coach reply, invoking `onChunk(delta)` for every text fragment.
  * Resolves with summary stats once the stream closes; rejects on transport
  * errors or `?stream=1` HTTP non-2xx responses.
+ *
+ * Provider routing:
+ *   - `provider: 'gemma'` → route to the non-streaming Gemma service
+ *     (sendCoachGemmaPrompt) and deliver the resolved text as one chunk to
+ *     satisfy the streaming API contract. The coach-gemma edge function
+ *     does not yet implement server-side SSE (see
+ *     `supabase/functions/coach-gemma/streaming.ts` — infrastructure exists
+ *     but is not wired into `index.ts`'s dispatch). Follow-up: wave-27
+ *     streaming path.
+ *   - otherwise → POST to the coach-gemma edge function with `?stream=1`
+ *     and parse NDJSON frames (existing behavior).
+ *
+ * `forceServerStream` bypasses the fallback for tests.
  */
 export async function streamCoachPrompt(
   messages: CoachMessage[],
@@ -58,6 +90,15 @@ export async function streamCoachPrompt(
   onChunk: (delta: string) => void,
   opts?: StreamCoachOptions
 ): Promise<StreamCoachResult> {
+  // Gemma fallback: coach-gemma/index.ts has no `?stream=1` dispatch today,
+  // so invoking the streaming endpoint with provider=gemma would either 404
+  // or fall through to the synchronous JSON response (not NDJSON), which the
+  // NDJSON reader below cannot consume. Route through the canonical Gemma
+  // service instead and fulfill the streaming contract by emitting one chunk.
+  if (opts?.provider === 'gemma' && !opts?.forceServerStream) {
+    return streamGemmaViaNonStreamingFallback(messages, context, onChunk, opts);
+  }
+
   const fetchImpl = opts?.fetchImpl ?? fetch;
   const functionName = opts?.functionName ?? DEFAULT_FUNCTION_NAME;
   const baseUrl = opts?.baseUrlOverride ?? resolveFunctionsBaseUrl();
@@ -198,4 +239,70 @@ function safeParseFrame(line: string): StreamFrame | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Route `provider: 'gemma'` streaming requests through the non-streaming
+ * Gemma service and synthesize a single chunk from the full response buffer.
+ *
+ * WHY: the coach-gemma edge function has not yet wired its SSE streaming
+ * adapter (`streaming.ts`) into `index.ts`'s dispatch. Streaming
+ * infrastructure exists on the Deno side but there is no `?stream=1`
+ * handler, so attempting to stream from it returns the synchronous JSON
+ * response body which this module's NDJSON reader cannot parse. This
+ * preserves the streaming API contract (single onChunk call + shaped
+ * result object) until server-side SSE lands.
+ *
+ * Follow-up: wave-27 streaming path — once `coach-gemma/index.ts` accepts
+ * `?stream=1` and returns NDJSON, drop this branch and let the normal HTTP
+ * path handle `provider: 'gemma'`.
+ */
+async function streamGemmaViaNonStreamingFallback(
+  messages: CoachMessage[],
+  context: CoachContext | undefined,
+  onChunk: (delta: string) => void,
+  opts?: StreamCoachOptions
+): Promise<StreamCoachResult> {
+  const startedAt = Date.now();
+  const fallback = opts?.gemmaFallbackImpl ?? sendCoachGemmaPrompt;
+
+  // Cooperate with caller-provided AbortSignal: if already aborted, bail
+  // without hitting the network.
+  if (opts?.signal?.aborted) {
+    throw createError('network', 'COACH_STREAM_ABORTED', 'Coach stream aborted', {
+      retryable: false,
+    });
+  }
+
+  let reply: CoachMessage;
+  try {
+    reply = await fallback(messages, context);
+  } catch (err) {
+    // Preserve domain-shaped errors from sendCoachGemmaPrompt untouched so
+    // callers can switch on `COACH_GEMMA_*` codes just like the sync path.
+    if (err && typeof err === 'object' && 'domain' in err) {
+      throw err;
+    }
+    throw createError(
+      'network',
+      'COACH_STREAM_FAILED',
+      'Failed to open coach stream',
+      { details: err, retryable: true }
+    );
+  }
+
+  const text = (reply.content ?? '').trim();
+  const now = Date.now();
+  const ttftMs = now - startedAt;
+
+  if (text.length > 0) {
+    onChunk(text);
+  }
+
+  return {
+    text,
+    chunkCount: text.length > 0 ? 1 : 0,
+    ttftMs,
+    durationMs: Date.now() - startedAt,
+  };
 }

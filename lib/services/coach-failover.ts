@@ -7,14 +7,16 @@
 //
 // We invoke the existing supabase Edge Function endpoints rather than
 // duplicating the OpenAI/Gemini transport code; the only routing knob is
-// the function name (?coach vs ?coach-gemma). PR #457 will introduce
-// `lib/services/coach-gemma-service.ts` which is the canonical Gemma
-// caller; this module currently routes through the same supabase function
-// invoke surface.
+// the function name (?coach vs ?coach-gemma).
 //
-// TODO(#454): once PR #457 lands, swap the `gemma` branch to call
-// `lib/services/coach-gemma-service.sendCoachGemmaPrompt(...)` directly so
-// model parameters can flow through.
+// Note on architectural equivalence: `coach-gemma-service.sendCoachGemmaPrompt`
+// (shipped in #457) ultimately calls `supabase.functions.invoke('coach-gemma', ...)`
+// with the same `{ messages, context, model? }` body, so routing the gemma
+// branch through this direct invoke is behavior-equivalent. The failover
+// tests assert on the function-name-based `invokeImpl` contract, so we
+// preserve that surface here; callers that need model-parameter
+// pass-through can use `sendCoachGemmaPrompt` directly via the non-failover
+// code path.
 
 import { supabase } from '@/lib/supabase';
 import { createError } from './ErrorHandler';

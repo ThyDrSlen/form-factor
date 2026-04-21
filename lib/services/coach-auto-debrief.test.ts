@@ -16,6 +16,12 @@ jest.mock('@/lib/services/coach-service', () => ({
   sendCoachPrompt: (...args: unknown[]) => mockSendCoachPrompt(...args),
 }));
 
+// ---- sendCoachGemmaPrompt mock ---------------------------------------------
+const mockSendCoachGemmaPrompt = jest.fn();
+jest.mock('@/lib/services/coach-gemma-service', () => ({
+  sendCoachGemmaPrompt: (...args: unknown[]) => mockSendCoachGemmaPrompt(...args),
+}));
+
 // ---- synthesizeMemoryClause mock -------------------------------------------
 const mockSynth = jest.fn();
 jest.mock('@/lib/services/coach-memory-context', () => ({
@@ -52,6 +58,7 @@ describe('coach-auto-debrief', () => {
   beforeEach(async () => {
     await AsyncStorage.clear();
     mockSendCoachPrompt.mockReset();
+    mockSendCoachGemmaPrompt.mockReset();
     mockSynth.mockReset();
     mockSynth.mockResolvedValue({ text: null, lastBrief: null, weekSummary: null });
     delete process.env.EXPO_PUBLIC_COACH_AUTO_DEBRIEF_ENABLED;
@@ -234,11 +241,14 @@ describe('coach-auto-debrief', () => {
       ).rejects.toMatchObject({ message: 'boom' });
     });
 
-    it('gemma provider falls back to a second sendCoachPrompt call on failure', async () => {
-      // First call (gemma path) rejects; retry path resolves.
-      mockSendCoachPrompt
-        .mockRejectedValueOnce(new Error('gemma unavailable'))
-        .mockResolvedValueOnce({ role: 'assistant', content: 'Fallback brief.' });
+    it('gemma provider falls back to sendCoachPrompt on sendCoachGemmaPrompt failure', async () => {
+      // Gemma path now calls sendCoachGemmaPrompt directly; on failure we
+      // fall back to sendCoachPrompt (the OpenAI-backed generic path).
+      mockSendCoachGemmaPrompt.mockRejectedValueOnce(new Error('gemma unavailable'));
+      mockSendCoachPrompt.mockResolvedValueOnce({
+        role: 'assistant',
+        content: 'Fallback brief.',
+      });
       jest.spyOn(console, 'warn').mockImplementation(() => {});
 
       const result = await generateAutoDebrief({
@@ -247,7 +257,8 @@ describe('coach-auto-debrief', () => {
         provider: 'gemma',
       });
 
-      expect(mockSendCoachPrompt).toHaveBeenCalledTimes(2);
+      expect(mockSendCoachGemmaPrompt).toHaveBeenCalledTimes(1);
+      expect(mockSendCoachPrompt).toHaveBeenCalledTimes(1);
       expect(result.brief).toBe('Fallback brief.');
       expect(result.provider).toBe('gemma');
     });

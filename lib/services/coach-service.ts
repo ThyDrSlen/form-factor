@@ -35,6 +35,13 @@ export interface CoachMessage {
    * returned by `sendCoachPrompt`. Absent on user / system turns.
    */
   provider?: CoachProvider;
+  /**
+   * Model identifier returned by the upstream function (e.g. `gemma-3-4b-it`,
+   * `gpt-5.4-mini`). Additive — callers may inspect for telemetry or model
+   * routing audits; older producers that don't surface `model` leave it
+   * undefined.
+   */
+  model?: string;
 }
 
 export interface CoachContext {

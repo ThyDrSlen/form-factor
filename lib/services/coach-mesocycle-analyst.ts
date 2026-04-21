@@ -33,7 +33,20 @@ export interface SendCoachPromptFn {
   (options: {
     messages: { role: 'user' | 'assistant' | 'system'; content: string }[];
     context?: { focus?: string; [key: string]: unknown };
-  }): Promise<{ message?: { role: string; content: string } } | null | undefined>;
+  }): Promise<
+    | {
+        message?: { role: string; content: string };
+        /**
+         * Optional provider annotation surfaced by `sendCoachGemmaPrompt`
+         * (and the generic `sendCoachPrompt`) on assistant replies. When
+         * present, we honor it so the analyst result reports `gemma-cloud`
+         * vs the generic `cloud` label.
+         */
+        provider?: 'openai' | 'gemma-cloud' | 'gemma-on-device' | 'local-fallback' | 'cached' | string;
+      }
+    | null
+    | undefined
+  >;
 }
 
 /**
@@ -95,8 +108,14 @@ export async function requestMesocycleAnalysis(
   const text = response?.message?.content?.trim();
   if (!text) return null;
 
-  // TODO(#454/#457): once the Edge Function dispatches on focus, read the
-  // provider hint off the response and annotate as `'gemma-cloud'` when
-  // appropriate. Until then every cloud response is labeled generically.
+  // Honor the provider annotation the caller's sendCoachPrompt may surface
+  // on the response (coach-service and coach-gemma-service both set
+  // `provider` on successful replies). When present and gemma-cloud,
+  // label accordingly; otherwise fall back to the generic `cloud` tag
+  // so legacy adapters that don't emit `provider` still work.
+  const provider = response?.provider;
+  if (provider === 'gemma-cloud') {
+    return { text, provider: 'gemma-cloud' };
+  }
   return { text, provider: 'cloud' };
 }
