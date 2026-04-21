@@ -18,6 +18,20 @@
  */
 
 import type { CoachMessage } from './coach-service';
+import { hardenAgainstInjection } from './coach-injection-hardener';
+import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
+import type { CuePreference } from './coach-cue-feedback';
+
+/**
+ * Pipeline-v2 helper: when the master flag is on, harden a user-sourced
+ * string before it gets interpolated into a debrief prompt template. When
+ * the flag is off, pass through untouched.
+ */
+function maybeHarden(value: string, maxLength: number): string {
+  return isCoachPipelineV2Enabled()
+    ? hardenAgainstInjection(value, { maxLength })
+    : value;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -170,14 +184,16 @@ export function deriveDebriefAnalytics(
  */
 function summarizeAnalyticsForPrompt(a: DebriefAnalytics): string {
   const parts: string[] = [];
-  parts.push(`Exercise: ${a.exerciseName}.`);
+  // Pipeline-v2: user-sourced exercise name + fault label pass through the
+  // injection hardener before interpolation. Flag-off keeps the raw values.
+  parts.push(`Exercise: ${maybeHarden(a.exerciseName, 80)}.`);
   parts.push(`Reps logged: ${a.repCount}.`);
   if (a.avgFqi !== null) parts.push(`Average FQI: ${a.avgFqi.toFixed(2)}.`);
   if (a.fqiTrendSlope !== null) {
     const direction = a.fqiTrendSlope > 0.005 ? 'improving' : a.fqiTrendSlope < -0.005 ? 'fatiguing' : 'flat';
     parts.push(`FQI trend: ${direction} (slope ${a.fqiTrendSlope.toFixed(3)}).`);
   }
-  if (a.topFault) parts.push(`Most-common fault: ${a.topFault}.`);
+  if (a.topFault) parts.push(`Most-common fault: ${maybeHarden(a.topFault, 80)}.`);
   if (a.maxSymmetryPct !== null) parts.push(`Peak asymmetry: ${a.maxSymmetryPct.toFixed(0)}%.`);
   if (a.tempoTrendSlope !== null) {
     const tempoDir =
@@ -192,6 +208,47 @@ export interface BuildDebriefPromptOptions {
   athleteName?: string | null;
   /** Optional memory clause (re-used from coach-memory-context). */
   memoryClause?: string | null;
+  /**
+   * Optional user cue preferences for the top exercise. When provided AND
+   * the pipeline-v2 master flag is on, a "User prefers X / dislikes Y" clause
+   * is rendered into the system prompt so the coach can weight its advice.
+   *
+   * Caller is responsible for fetching these via
+   * `coach-cue-feedback.getExercisePreferences(exerciseName)` — the builder
+   * stays synchronous.
+   */
+  cuePreferences?: CuePreference[] | null;
+}
+
+/**
+ * Pipeline-v2: render a short "user prefers X, dislikes Y" clause from cue
+ * preferences. Returns '' when there's nothing to say. Exported for tests.
+ */
+export function renderCuePreferenceClause(
+  prefs: CuePreference[] | null | undefined,
+): string {
+  if (!prefs || prefs.length === 0) return '';
+  // Only consider preferences with a non-trivial sample and a clear signal.
+  const preferred = prefs
+    .filter((p) => p.score >= 0.3 && p.voteCount >= 1)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map((p) => p.cueKey);
+  const disliked = prefs
+    .filter((p) => p.score <= -0.3 && p.voteCount >= 1)
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 3)
+    .map((p) => p.cueKey);
+
+  const segments: string[] = [];
+  if (preferred.length > 0) {
+    segments.push(`User prefers ${preferred.join(', ')} cues`);
+  }
+  if (disliked.length > 0) {
+    segments.push(`dislikes ${disliked.join(', ')} cues`);
+  }
+  if (segments.length === 0) return '';
+  return `${segments.join('; ')}.`;
 }
 
 /** Shape of the coach payload we hand to `sendCoachPrompt` / equivalent. */
@@ -199,8 +256,19 @@ export function buildDebriefPrompt(
   analytics: DebriefAnalytics,
   opts: BuildDebriefPromptOptions = {},
 ): CoachMessage[] {
-  const nameLine = opts.athleteName ? `You are debriefing ${opts.athleteName}.` : '';
-  const memoryLine = opts.memoryClause ? ` Prior context: ${opts.memoryClause}` : '';
+  const nameLine = opts.athleteName
+    ? `You are debriefing ${maybeHarden(opts.athleteName, 60)}.`
+    : '';
+  const memoryLine = opts.memoryClause
+    ? ` Prior context: ${maybeHarden(opts.memoryClause, 400)}`
+    : '';
+  // Pipeline v2: inject user cue preferences so the coach can weight its
+  // language toward the athlete's preferred framings. Flag-gated; empty
+  // clause when the flag is off or no strong preferences exist.
+  const cueLine =
+    isCoachPipelineV2Enabled() && opts.cuePreferences
+      ? renderCuePreferenceClause(opts.cuePreferences)
+      : '';
   const systemContent = [
     "You are Form Factor's post-session coach.",
     nameLine,
@@ -208,6 +276,7 @@ export function buildDebriefPrompt(
     'Tone: warm, specific, zero fluff. Avoid medical claims.',
     'Format: 1 short paragraph, then a 1-line "Next session:" directive.',
     memoryLine,
+    cueLine,
   ]
     .filter(Boolean)
     .join(' ');

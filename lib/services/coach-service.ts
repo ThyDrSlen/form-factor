@@ -9,6 +9,16 @@ import {
   type CoachProviderSignal,
 } from './coach-provider-types';
 import { synthesizeMemoryClause } from './coach-memory-context';
+import { shapeFinalResponse } from './coach-output-shaper';
+import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
+import { evaluateSafety } from './coach-safety';
+import {
+  decideCoachModel,
+  type CoachTaskKind,
+  type CoachUserTier,
+  type CoachSignals,
+} from './coach-model-dispatch';
+import { isDispatchEnabled } from './coach-model-dispatch-flag';
 
 export type { CoachProvider } from './coach-provider-types';
 import type { LiveSessionSnapshot } from './coach-live-snapshot';
@@ -82,6 +92,17 @@ export interface CoachSendOptions {
    * already-shaped response (#465 Item 5). Internal; callers shouldn't need it.
    */
   shaper?: boolean;
+  /**
+   * Pipeline-v2 task kind hint. When the master flag is on AND
+   * `EXPO_PUBLIC_COACH_DISPATCH=on`, the task kind is fed to
+   * `decideCoachModel()` to pick a provider (tactical → Gemma, complex → GPT)
+   * before the legacy provider hint runs. Omitted means "general_chat".
+   */
+  taskKind?: CoachTaskKind;
+  /** Pipeline-v2 user tier for cost-aware model routing. Defaults to 'free'. */
+  userTier?: CoachUserTier;
+  /** Pipeline-v2 optional signals fed into the model dispatcher. */
+  dispatchSignals?: CoachSignals;
 }
 
 interface RawCoachResponse {
@@ -190,8 +211,28 @@ export async function sendCoachPrompt(
     );
   }
 
-  // No advanced opts: pick cloud provider (explicit hint, user pref, env, or openai default).
-  const provider = opts?.provider ?? (await resolveCloudProvider());
+  // Pipeline v2: consult the task-kind router BEFORE the legacy provider
+  // hint is applied. When the model dispatcher picks a Gemma model and the
+  // caller hasn't already pinned a provider, route to Gemma. Otherwise fall
+  // through to the existing provider resolution. READ-ONLY on
+  // coach-model-dispatch.ts itself.
+  let routedProvider: 'gemma' | 'openai' | undefined;
+  if (
+    isCoachPipelineV2Enabled() &&
+    isDispatchEnabled() &&
+    opts?.taskKind &&
+    opts.provider === undefined
+  ) {
+    const decision = decideCoachModel(
+      opts.taskKind,
+      opts.dispatchSignals ?? {},
+      opts.userTier ?? 'free',
+    );
+    routedProvider = decision.model.startsWith('gemma-') ? 'gemma' : 'openai';
+  }
+
+  // No advanced opts: pick cloud provider (explicit hint, dispatcher, user pref, env, or openai default).
+  const provider = opts?.provider ?? routedProvider ?? (await resolveCloudProvider());
   if (provider === 'gemma') {
     return sendCoachGemmaPrompt(messages, context);
   }
@@ -210,6 +251,40 @@ async function sendCoachPromptStreaming(
   const result = await streamCoachPrompt(messages, context, onChunk, {
     provider: opts.provider,
   });
+
+  // Pipeline v2: apply the post-generation safety filter to the resolved
+  // full-buffer text. Mirrors the non-stream path in sendCoachPromptInner.
+  // On violation we throw `COACH_CLOUD_UNSAFE`; the UI surfaces it and the
+  // dispatcher can choose a fallback string. Flag-gated.
+  if (isCoachPipelineV2Enabled()) {
+    const safety = evaluateSafety(result.text);
+    if (!safety.ok) {
+      logError(
+        createError(
+          'ml',
+          'COACH_CLOUD_UNSAFE',
+          `Cloud coach stream rejected: ${safety.reason}`,
+          {
+            retryable: false,
+            severity: 'warning',
+            details: { metric: safety.metric, reason: safety.reason },
+          }
+        ),
+        { feature: 'workouts', location: 'coach-service.sendCoachPromptStreaming' }
+      );
+      throw createError(
+        'ml',
+        'COACH_CLOUD_UNSAFE',
+        'Coach reply failed safety check',
+        {
+          retryable: false,
+          severity: 'warning',
+          details: { metric: safety.metric, reason: safety.reason },
+        }
+      );
+    }
+    return { role: 'assistant', content: shapeFinalResponse(safety.output) };
+  }
   return { role: 'assistant', content: result.text };
 }
 
@@ -308,18 +383,60 @@ async function sendCoachPromptInner(
       );
     }
 
-    const responseText =
+    const rawResponseText =
       data?.message?.trim() ||
       data?.content?.trim() ||
       data?.reply?.trim();
 
-    if (!responseText) {
+    if (!rawResponseText) {
       throw createError(
         'validation',
         'COACH_EMPTY_RESPONSE',
         'Coach did not return a reply'
       );
     }
+
+    // Pipeline v2: apply the post-generation safety filter to cloud responses
+    // before returning. Mirrors `coach-local.ts:finalizeOutput` so cloud and
+    // on-device paths enforce the same safety rules. On violation we throw
+    // `COACH_CLOUD_UNSAFE`; the dispatcher/UI surfaces it or falls back to
+    // a fallback-response string.
+    let safeResponseText = rawResponseText;
+    if (isCoachPipelineV2Enabled()) {
+      const safety = evaluateSafety(rawResponseText);
+      if (!safety.ok) {
+        const unsafeErr = createError(
+          'ml',
+          'COACH_CLOUD_UNSAFE',
+          'Coach reply failed safety check',
+          {
+            retryable: false,
+            severity: 'warning',
+            details: { metric: safety.metric, reason: safety.reason },
+          }
+        );
+        try {
+          logError(unsafeErr, {
+            feature: 'workouts',
+            location: 'coach-service.sendCoachPromptInner',
+          });
+        } catch {
+          // logError should never throw in prod; swallow in case test env
+          // misconfigures expo-constants/Platform so the safety rejection
+          // still reaches the caller with the right code.
+        }
+        throw unsafeErr;
+      }
+      // evaluateSafety returns the possibly-word-capped text on pass.
+      safeResponseText = safety.output;
+    }
+
+    // Pipeline v2: shape the synchronous response (strips filler, normalizes
+    // lists, caps budget — see coach-output-shaper.ts). Flag-gated so existing
+    // callers keep the raw text until rollout.
+    const responseText = isCoachPipelineV2Enabled()
+      ? shapeFinalResponse(safeResponseText)
+      : safeResponseText;
 
     // WHY: the edge function today only returns text (no provider field). We
     // infer the provider from whatever signal it does emit (model name +
