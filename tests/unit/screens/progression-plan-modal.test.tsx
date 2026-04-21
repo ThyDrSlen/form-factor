@@ -73,8 +73,13 @@ function sampleSummary() {
 }
 
 describe('ProgressionPlanModal', () => {
+  const originalPlanFlag = process.env.EXPO_PUBLIC_PROGRESSION_PLAN;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    // Engaged-behavior tests assume the progression plan flag is on (#475).
+    // A dedicated disabled-state test below asserts the off-by-default path.
+    process.env.EXPO_PUBLIC_PROGRESSION_PLAN = 'on';
     mockGetExerciseHistorySummary.mockResolvedValue(sampleSummary());
     mockGenerateProgressionPlan.mockResolvedValue({
       text: 'Week 1: 5x5 @ 230.',
@@ -83,6 +88,14 @@ describe('ProgressionPlanModal', () => {
       horizonWeeks: 3,
       cacheKey: 'cache-key',
     });
+  });
+
+  afterAll(() => {
+    if (originalPlanFlag === undefined) {
+      delete process.env.EXPO_PUBLIC_PROGRESSION_PLAN;
+    } else {
+      process.env.EXPO_PUBLIC_PROGRESSION_PLAN = originalPlanFlag;
+    }
   });
 
   it('renders a loading state before data resolves', () => {
@@ -127,6 +140,17 @@ describe('ProgressionPlanModal', () => {
       expect(getByText(/No sets logged yet for this exercise/)).toBeTruthy(),
     );
     // Planner should not be invoked when there is no history.
+    expect(mockGenerateProgressionPlan).not.toHaveBeenCalled();
+  });
+
+  it('renders disabled-state and skips services when flag is off', async () => {
+    // Override the engaged-behavior flag set in beforeEach.
+    delete process.env.EXPO_PUBLIC_PROGRESSION_PLAN;
+    const { getByTestId } = render(<ProgressionPlanModal />);
+    expect(getByTestId('progression-plan-disabled')).toBeTruthy();
+    // Wait a tick to confirm no async service calls leaked through.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(mockGetExerciseHistorySummary).not.toHaveBeenCalled();
     expect(mockGenerateProgressionPlan).not.toHaveBeenCalled();
   });
 });

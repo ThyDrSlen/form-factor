@@ -12,7 +12,7 @@
  * Requires: ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID
  */
 
-import { generateCueFile } from '@/lib/services/elevenlabs-service';
+import { generateCueFile } from '@/lib/services/elevenlabs-node';
 import { mkdirSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';

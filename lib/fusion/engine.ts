@@ -45,6 +45,16 @@ export interface FusionFrameInput {
   cuePasses?: Array<(ctx: FusionFrameContext) => void>;
   /** Override FRAME_STALENESS_MS for this frame if needed. */
   stalenessMs?: number;
+  /**
+   * Adaptive-FPS stride driven by thermal state. When >1 the engine
+   * processes every Nth frame and returns `frameSkipped: true` for the
+   * rest, letting hosts drop work without changing call sites.
+   *
+   *   stride 1 → 60fps (every frame)
+   *   stride 2 → 30fps
+   *   stride 4 → 15fps
+   */
+  thermalStride?: number;
 }
 
 export interface FusionFrameOutput {
@@ -60,6 +70,12 @@ export interface FusionFrameOutput {
   anglesStale: boolean;
   /** Age (ms) of the angles used in this frame. 0 when freshly computed. */
   anglesAgeMs: number;
+  /**
+   * True when the adaptive-FPS gate dropped this frame. Callers should
+   * treat it like a stale frame — skip rep detection / cue updates rather
+   * than run them on uncomputed angles.
+   */
+  frameSkipped: boolean;
   debug: {
     anglesComputeCount: number;
   };
@@ -116,6 +132,36 @@ export function runFusionFrame(input: FusionFrameInput): FusionFrameOutput {
   // of angles that were served from last frame's cache.
   const stalenessMs = typeof input.stalenessMs === 'number' ? input.stalenessMs : FRAME_STALENESS_MS;
   const preStale = isFusionStateStale(input.state, input.timestampMs, stalenessMs);
+
+  // Adaptive-FPS gate: skip this frame when thermal stride says so. We
+  // still bump frameIndex so the stride rhythm is deterministic across
+  // skipped / processed frames. No compute runs, cached angles remain
+  // in registry, and the output signals frameSkipped=true.
+  const thermalStride = Number.isFinite(input.thermalStride) && (input.thermalStride as number) > 1
+    ? Math.floor(input.thermalStride as number)
+    : 1;
+  const nextFrameIndex = input.state.frameIndex + 1;
+  if (thermalStride > 1 && nextFrameIndex % thermalStride !== 0) {
+    input.state.frameIndex = nextFrameIndex;
+    input.state.lastFrameTimestampMs = Number.isFinite(input.timestampMs) ? input.timestampMs : null;
+    const mode: FusionMode = input.cameraConfidence < 0.5 ? 'degraded' : 'full';
+    const confidence = clamp(mode === 'degraded' ? input.cameraConfidence * 0.75 : input.cameraConfidence, 0, 1);
+    const bodyState = createInitialBodyState(input.timestampMs);
+    bodyState.confidence = confidence;
+    const anglesAgeMs =
+      input.state.lastAnglesTimestampMs === null
+        ? 0
+        : Math.max(0, input.timestampMs - input.state.lastAnglesTimestampMs);
+    return {
+      bodyState,
+      mode,
+      fallbackModeEnabled: mode !== 'full',
+      anglesStale: preStale,
+      anglesAgeMs,
+      frameSkipped: true,
+      debug: { anglesComputeCount: 0 },
+    };
+  }
 
   input.state.registry.reset();
   input.state.frameIndex += 1;
@@ -180,6 +226,7 @@ export function runFusionFrame(input: FusionFrameInput): FusionFrameOutput {
     fallbackModeEnabled: mode !== 'full',
     anglesStale: !computedThisFrame && preStale,
     anglesAgeMs,
+    frameSkipped: false,
     debug: {
       anglesComputeCount,
     },
