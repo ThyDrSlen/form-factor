@@ -79,7 +79,7 @@ describeOrSkip('ElevenLabs Integration', () => {
 
   describe('generateCueFile', () => {
     it('writes an MP3 file to disk', async () => {
-      const { generateCueFile } = await import('@/lib/services/elevenlabs-service');
+      const { generateCueFile } = await import('@/lib/services/elevenlabs-node');
       const { existsSync, unlinkSync, statSync } = await import('node:fs');
       const { join } = await import('node:path');
       const { tmpdir } = await import('node:os');

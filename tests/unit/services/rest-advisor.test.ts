@@ -123,4 +123,48 @@ describe('suggestRestSeconds', () => {
     );
     expect(advice.reasoning).toMatch(/Heuristic/);
   });
+
+  describe('EXPO_PUBLIC_GEMMA_SESSION_GEN gate', () => {
+    const ENV_VAR = 'EXPO_PUBLIC_GEMMA_SESSION_GEN';
+    const originalValue = process.env[ENV_VAR];
+
+    afterEach(() => {
+      if (originalValue === undefined) {
+        delete process.env[ENV_VAR];
+      } else {
+        process.env[ENV_VAR] = originalValue;
+      }
+    });
+
+    it('short-circuits to heuristic when flag is off and no dispatch override', async () => {
+      delete process.env[ENV_VAR];
+      const advice = await suggestRestSeconds({
+        lastRepTempoMs: 1200,
+        goalProfile: 'hypertrophy',
+      });
+      expect(advice.reasoning).toMatch(/Heuristic/);
+      expect(advice.seconds).toBe(75);
+    });
+
+    it('does NOT throw when flag is off — in-loop UX smoothness', async () => {
+      delete process.env[ENV_VAR];
+      await expect(
+        suggestRestSeconds({ lastRepTempoMs: 1200 }),
+      ).resolves.toMatchObject({ reasoning: expect.stringMatching(/Heuristic/) });
+    });
+
+    it('respects a custom dispatch override even when flag is off', async () => {
+      delete process.env[ENV_VAR];
+      const dispatch = jest.fn<Promise<CoachMessage>, [CoachMessage[]]>().mockResolvedValue({
+        role: 'assistant',
+        content: JSON.stringify({ seconds: 120, reasoning: 'override' }),
+      });
+      const advice = await suggestRestSeconds(
+        { lastRepTempoMs: 1200 },
+        { dispatch, timeoutMs: 500 },
+      );
+      expect(advice.seconds).toBe(120);
+      expect(advice.reasoning).toBe('override');
+    });
+  });
 });

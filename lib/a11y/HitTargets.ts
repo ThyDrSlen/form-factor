@@ -4,6 +4,13 @@
  * Apple HIG and WCAG 2.5.5 both call for a minimum 44x44pt touch target.
  * Components that render smaller should still grow their effective hit
  * region via `hitSlop` to meet the spec.
+ *
+ * TODO(#428): the scan-arkit record-button a11y wiring
+ * (accessibilityRole/Label/State/Hint for start/stop/finalising) is deferred
+ * until PR #505 (`feat/445-form-resilience-ar-overlays`) merges and releases
+ * ownership of `app/(tabs)/scan-arkit.tsx`. The record button currently has
+ * no a11y props so VoiceOver announces only the generic 'button' role.
+ * Re-wire once #505 lands.
  */
 
 import type { Insets } from 'react-native';
