@@ -9,6 +9,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useUnits } from '@/contexts/UnitsContext';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import { getMostRecentAvgFqi } from '@/lib/services/form-session-history-lookup';
+import {
+  isOverloadCardEnabled,
+  isProgressionPlanEnabled,
+} from '@/lib/services/progression-flags';
 import { exportSession } from '@/lib/services/session-export-service';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -74,6 +78,10 @@ export default function WorkoutsScreen() {
 
   const openProgressionPlan = useCallback(() => {
     if (!featuredExercise) return;
+    // Gated on EXPO_PUBLIC_PROGRESSION_PLAN — no-op when flag is off so the
+    // analytics card can still render (in "view only" mode) without opening
+    // the modal. Issue #475.
+    if (!isProgressionPlanEnabled()) return;
     Haptics.selectionAsync().catch(() => {});
     router.push(
       `/(modals)/progression-plan?exercise=${encodeURIComponent(featuredExercise)}`,
@@ -463,7 +471,7 @@ export default function WorkoutsScreen() {
               {lastUpdatedLabel ? (
                 <Text style={{ color: '#8E8E93', fontSize: 12, marginBottom: 12, textAlign: 'center' }}>{lastUpdatedLabel}</Text>
               ) : null}
-              {featuredExercise ? (
+              {featuredExercise && isOverloadCardEnabled() ? (
                 <OverloadAnalyticsCard
                   userId={user?.id ?? 'local-user'}
                   exercise={featuredExercise}
