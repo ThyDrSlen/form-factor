@@ -1,7 +1,12 @@
 const mockSendCoachPrompt = jest.fn();
+const mockSendCoachGemmaPrompt = jest.fn();
 
 jest.mock('@/lib/services/coach-service', () => ({
   sendCoachPrompt: (...args: unknown[]) => mockSendCoachPrompt(...args),
+}));
+
+jest.mock('@/lib/services/coach-gemma-service', () => ({
+  sendCoachGemmaPrompt: (...args: unknown[]) => mockSendCoachGemmaPrompt(...args),
 }));
 
 // The service imports FrameSnapshot + JointAngles from the ARKit tracker
@@ -49,6 +54,7 @@ describe('checkPreSetStance', () => {
 
   beforeEach(() => {
     mockSendCoachPrompt.mockReset();
+    mockSendCoachGemmaPrompt.mockReset();
     delete process.env.EXPO_PUBLIC_COACH_CLOUD_PROVIDER;
   });
 
@@ -91,7 +97,7 @@ describe('checkPreSetStance', () => {
 
   it('routes through Gemma when EXPO_PUBLIC_COACH_CLOUD_PROVIDER=gemma', async () => {
     process.env.EXPO_PUBLIC_COACH_CLOUD_PROVIDER = 'gemma';
-    mockSendCoachPrompt.mockResolvedValueOnce({
+    mockSendCoachGemmaPrompt.mockResolvedValueOnce({
       role: 'assistant',
       content: '✓ Good setup',
     });
@@ -100,28 +106,30 @@ describe('checkPreSetStance', () => {
 
     expect(result.provider).toBe('gemma');
     expect(result.isFormGood).toBe(true);
-    const [, context] = mockSendCoachPrompt.mock.calls[0];
+    expect(mockSendCoachGemmaPrompt).toHaveBeenCalledTimes(1);
+    expect(mockSendCoachPrompt).not.toHaveBeenCalled();
+    const [, context] = mockSendCoachGemmaPrompt.mock.calls[0];
     expect(context.focus).toBe('pre-set-stance-preview-gemma');
   });
 
   it('falls back to OpenAI when the Gemma path throws', async () => {
     process.env.EXPO_PUBLIC_COACH_CLOUD_PROVIDER = 'gemma';
-    mockSendCoachPrompt
-      .mockRejectedValueOnce(new Error('gemma-offline'))
-      .mockResolvedValueOnce({
-        role: 'assistant',
-        content: '✓ Good',
-      });
+    mockSendCoachGemmaPrompt.mockRejectedValueOnce(new Error('gemma-offline'));
+    mockSendCoachPrompt.mockResolvedValueOnce({
+      role: 'assistant',
+      content: '✓ Good',
+    });
 
     const result = await checkPreSetStance(snapshot, 'squat', angles);
 
     expect(result.provider).toBe('openai');
     expect(result.isFormGood).toBe(true);
-    expect(mockSendCoachPrompt).toHaveBeenCalledTimes(2);
-    expect(mockSendCoachPrompt.mock.calls[0][1].focus).toBe(
+    expect(mockSendCoachGemmaPrompt).toHaveBeenCalledTimes(1);
+    expect(mockSendCoachPrompt).toHaveBeenCalledTimes(1);
+    expect(mockSendCoachGemmaPrompt.mock.calls[0][1].focus).toBe(
       'pre-set-stance-preview-gemma'
     );
-    expect(mockSendCoachPrompt.mock.calls[1][1].focus).toBe(
+    expect(mockSendCoachPrompt.mock.calls[0][1].focus).toBe(
       'pre-set-stance-preview'
     );
   });

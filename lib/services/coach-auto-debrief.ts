@@ -14,14 +14,12 @@
  * Cross-PR stubs (to be reconciled after dependent PRs merge):
  *   - TODO(#446): output shaper is inlined — swap for
  *     `@/lib/services/coach-output-shaper.shapeReply` once #448 lands.
- *   - TODO(#454): provider resolver reads `EXPO_PUBLIC_COACH_CLOUD_PROVIDER`
- *     directly and routes through `sendCoachPrompt`; swap for
- *     `resolveCloudProvider` + `sendCoachGemmaPrompt` once #457 lands.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { warnWithTs } from '@/lib/logger';
 import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
+import { sendCoachGemmaPrompt } from './coach-gemma-service';
 import {
   buildDebriefPrompt,
   type BuildDebriefPromptOptions,
@@ -68,7 +66,6 @@ export function isAutoDebriefEnabled(): boolean {
 
 // ---------------------------------------------------------------------------
 // Provider resolution
-// (TODO(#454): swap for resolveCloudProvider + sendCoachGemmaPrompt once #457 lands.)
 // ---------------------------------------------------------------------------
 
 export function resolveCloudProvider(): CoachProvider {
@@ -196,9 +193,8 @@ export async function generateAutoDebrief(
     focus: 'post_session_debrief',
     memoryClause,
   };
-  // Note: provider currently carried as a comment-only concern until #457
-  // lands `sendCoachGemmaPrompt`. We still send through the stable
-  // sendCoachPrompt so the edge function receives the prompt.
+  // Provider dispatch: gemma → sendCoachGemmaPrompt (direct call to
+  // coach-gemma edge function); openai → sendCoachPrompt (generic path).
   const reply = await dispatch(provider, messages, context);
   const brief = shapeBriefOutput(reply.content);
 
@@ -218,12 +214,14 @@ async function dispatch(
   messages: CoachMessage[],
   context: CoachContext,
 ): Promise<CoachMessage> {
-  // TODO(#454): when #457 lands, swap the gemma branch to
-  // sendCoachGemmaPrompt(messages, context). Today both providers route
-  // through sendCoachPrompt so the flow stays testable on main.
+  // Direct-call routing: the gemma branch now targets the coach-gemma edge
+  // function directly so Gemma-specific parameters (model, etc.) flow
+  // through without going through the generic `coach` function. Failures
+  // on the Gemma path still fall back to OpenAI via sendCoachPrompt so a
+  // transient Gemma outage doesn't break the auto-debrief.
   if (provider === 'gemma') {
     try {
-      return await sendCoachPrompt(messages, context);
+      return await sendCoachGemmaPrompt(messages, context);
     } catch (err) {
       warnWithTs('[coach-auto-debrief] gemma dispatch failed, falling back to openai', err);
       return sendCoachPrompt(messages, { ...context, focus: 'post_session_debrief' });
