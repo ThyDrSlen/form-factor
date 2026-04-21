@@ -42,6 +42,7 @@ import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type Medi
 import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
 import { audioSessionManager } from '@/lib/services/audio-session-manager';
 import { CrashBoundary } from '@/components/CrashBoundary';
+import { ARKitUnsupportedPlaceholder } from '@/components/form-tracking/ARKitUnsupportedPlaceholder';
 import { ExitMidSessionSheet } from '@/components/form-tracking/ExitMidSessionSheet';
 import { PreSetPreviewCard } from '@/components/form-tracking/PreSetPreviewCard';
 import { usePreSetPreview } from '@/hooks/use-pre-set-preview';
@@ -2706,7 +2707,7 @@ export default function ScanARKitScreen() {
   }
 
   if (supportStatus === 'unsupported') {
-    // Debug info: Check what BodyTracker reports
+    // Debug info: Check what BodyTracker reports (only surfaced in __DEV__).
     const nativeDiagnostics = BodyTracker.getSupportDiagnostics();
     const debugInfo = {
       platform: Platform.OS,
@@ -2717,19 +2718,7 @@ export default function ScanARKitScreen() {
       isSupportedResult: nativeDiagnostics?.finalSupported ?? nativeSupported,
     };
 
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Ionicons name="warning-outline" size={60} color="#FF6B6B" />
-          <Text style={styles.errorText}>Device not supported</Text>
-          {__DEV__ ? (
-            <Text style={{ color: '#666', fontSize: 10, marginTop: 20, textAlign: 'center' }}>
-              Debug: {JSON.stringify(debugInfo, null, 2)}
-            </Text>
-          ) : null}
-        </View>
-      </SafeAreaView>
-    );
+    return <ARKitUnsupportedPlaceholder debugInfo={debugInfo} />;
   }
 
   const telemetryReps = repCount;
