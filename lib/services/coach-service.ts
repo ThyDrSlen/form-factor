@@ -398,27 +398,14 @@ async function sendCoachPromptInner(
 
     // Pipeline v2: apply the post-generation safety filter to cloud responses
     // before returning. Mirrors `coach-local.ts:finalizeOutput` so cloud and
-    // on-device paths enforce the same safety rules. On violation we log and
-    // throw `COACH_CLOUD_UNSAFE` so the UI can surface an error state; the
-    // dispatcher catches it and can fall back to a fallback-response string.
+    // on-device paths enforce the same safety rules. On violation we throw
+    // `COACH_CLOUD_UNSAFE`; the dispatcher/UI surfaces it or falls back to
+    // a fallback-response string.
     let safeResponseText = rawResponseText;
     if (isCoachPipelineV2Enabled()) {
       const safety = evaluateSafety(rawResponseText);
       if (!safety.ok) {
-        logError(
-          createError(
-            'ml',
-            'COACH_CLOUD_UNSAFE',
-            `Cloud coach response rejected: ${safety.reason}`,
-            {
-              retryable: false,
-              severity: 'warning',
-              details: { metric: safety.metric, reason: safety.reason },
-            }
-          ),
-          { feature: 'workouts', location: 'coach-service.sendCoachPromptInner' }
-        );
-        throw createError(
+        const unsafeErr = createError(
           'ml',
           'COACH_CLOUD_UNSAFE',
           'Coach reply failed safety check',
@@ -428,6 +415,17 @@ async function sendCoachPromptInner(
             details: { metric: safety.metric, reason: safety.reason },
           }
         );
+        try {
+          logError(unsafeErr, {
+            feature: 'workouts',
+            location: 'coach-service.sendCoachPromptInner',
+          });
+        } catch {
+          // logError should never throw in prod; swallow in case test env
+          // misconfigures expo-constants/Platform so the safety rejection
+          // still reaches the caller with the right code.
+        }
+        throw unsafeErr;
       }
       // evaluateSafety returns the possibly-word-capped text on pass.
       safeResponseText = safety.output;
