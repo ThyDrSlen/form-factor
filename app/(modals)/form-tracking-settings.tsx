@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   BackHandler,
+  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -22,6 +23,7 @@ import {
   OVERLAY_OPACITY_MIN,
   type CueVerbosity,
 } from '@/lib/services/form-tracking-settings';
+import { FqiExplainerModal } from '@/components/form-tracking/FqiExplainerModal';
 
 const FQI_STEP = 0.05;
 const OPACITY_STEP = 0.05;
@@ -162,6 +164,7 @@ export default function FormTrackingSettingsModal() {
     update,
     reset,
   }: UseFormTrackingSettingsResult = useFormTrackingSettings();
+  const [explainerVisible, setExplainerVisible] = useState(false);
 
   React.useEffect(() => {
     const handler = () => {
@@ -210,6 +213,56 @@ export default function FormTrackingSettingsModal() {
           <Text style={styles.helperText}>
             Reps below this score are flagged. Lower = more forgiving, higher = stricter.
           </Text>
+
+          {/* A15: inline preview row — three example reps color-coded
+              against the current threshold so the user can see at a glance
+              which reps would be flagged at the chosen value. */}
+          <View style={fqiPreviewStyles.previewRow} testID="ft-settings-fqi-preview">
+            {[0.45, 0.7, 0.9].map((repFqi) => {
+              const passed = repFqi >= settings.fqiThreshold;
+              return (
+                <View
+                  key={repFqi}
+                  style={[
+                    fqiPreviewStyles.chip,
+                    passed
+                      ? fqiPreviewStyles.chipPassed
+                      : fqiPreviewStyles.chipFailed,
+                  ]}
+                  testID={`ft-settings-fqi-preview-${Math.round(repFqi * 100)}`}
+                >
+                  <Ionicons
+                    name={passed ? 'checkmark-circle' : 'close-circle'}
+                    size={14}
+                    color={passed ? '#3CC8A9' : '#FF5C5C'}
+                  />
+                  <Text
+                    style={[
+                      fqiPreviewStyles.chipText,
+                      { color: passed ? '#3CC8A9' : '#FF5C5C' },
+                    ]}
+                  >
+                    {Math.round(repFqi * 100)}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+
+          <Text style={fqiPreviewStyles.recommendedLabel}>
+            Recommended for: Strength 0.75 · Endurance 0.60
+          </Text>
+
+          <Pressable
+            style={fqiPreviewStyles.explainLink}
+            onPress={() => setExplainerVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="What is FQI?"
+            testID="ft-settings-fqi-explainer-link"
+          >
+            <Ionicons name="information-circle-outline" size={14} color="#4C8CFF" />
+            <Text style={fqiPreviewStyles.explainLinkText}>What is FQI?</Text>
+          </Pressable>
         </View>
 
         <Text style={styles.sectionTitle}>Feedback</Text>
@@ -306,9 +359,64 @@ export default function FormTrackingSettingsModal() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <FqiExplainerModal
+        visible={explainerVisible}
+        onDismiss={() => setExplainerVisible(false)}
+        testID="ft-settings-fqi-explainer"
+      />
     </View>
   );
 }
+
+const fqiPreviewStyles = StyleSheet.create({
+  previewRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  chipPassed: {
+    backgroundColor: 'rgba(60, 200, 169, 0.12)',
+    borderColor: 'rgba(60, 200, 169, 0.35)',
+  },
+  chipFailed: {
+    backgroundColor: 'rgba(255, 92, 92, 0.12)',
+    borderColor: 'rgba(255, 92, 92, 0.35)',
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  recommendedLabel: {
+    color: '#6781A6',
+    fontSize: 11,
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+    fontStyle: 'italic',
+  },
+  explainLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+  },
+  explainLinkText: {
+    color: '#4C8CFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#050E1F' },
