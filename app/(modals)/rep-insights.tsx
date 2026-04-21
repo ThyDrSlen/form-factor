@@ -35,6 +35,10 @@ export default function RepInsightsModal() {
   const sessionId = typeof params.sessionId === 'string' ? params.sessionId : undefined;
 
   const [exporting, setExporting] = useState<'csv' | 'json' | null>(null);
+  // GAP-6: persist the last export error (plus its format) so the UI
+  // can render an inline retry banner instead of an Alert that users
+  // dismiss without context. `message` keeps the original error text.
+  const [exportError, setExportError] = useState<{ format: 'csv' | 'json'; message: string } | null>(null);
 
   const faultScope = useMemo<FaultHeatmapScope>(
     () => (sessionId ? { sessionId } : { exerciseId, days: 30 }),
@@ -49,6 +53,7 @@ export default function RepInsightsModal() {
       }
       try {
         setExporting(format);
+        setExportError(null);
         const result = await shareRepData(
           sessionId ? { sessionId } : { exerciseId, days: 30 },
           format,
@@ -62,13 +67,23 @@ export default function RepInsightsModal() {
           );
         }
       } catch (error) {
-        Alert.alert('Export failed', error instanceof Error ? error.message : 'Unknown error');
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        setExportError({ format, message });
       } finally {
         setExporting(null);
       }
     },
     [exerciseId, sessionId],
   );
+
+  const handleDismissExportError = useCallback(() => {
+    setExportError(null);
+  }, []);
+
+  const handleRetryExport = useCallback(() => {
+    if (!exportError) return;
+    void handleExport(exportError.format);
+  }, [exportError, handleExport]);
 
   if (!exerciseId && !sessionId) {
     return (
@@ -126,6 +141,45 @@ export default function RepInsightsModal() {
           <Text style={styles.exportSubtitle}>
             Share your rep telemetry with a coach or import into a spreadsheet.
           </Text>
+          {exportError ? (
+            <View style={styles.exportErrorBanner} testID="rep-export-error-banner">
+              <View style={styles.exportErrorHeader}>
+                <Ionicons name="alert-circle" size={18} color="#EF4444" />
+                <Text style={styles.exportErrorTitle}>
+                  {exportError.format.toUpperCase()} export failed
+                </Text>
+              </View>
+              <Text
+                style={styles.exportErrorMessage}
+                numberOfLines={3}
+                accessibilityLabel={`Export error: ${exportError.message}`}
+                testID="rep-export-error-message"
+              >
+                {exportError.message}
+              </Text>
+              <View style={styles.exportErrorRow}>
+                <TouchableOpacity
+                  style={styles.exportRetryButton}
+                  onPress={handleRetryExport}
+                  accessibilityRole="button"
+                  accessibilityLabel="Retry export"
+                  testID="rep-export-retry-button"
+                >
+                  <Ionicons name="refresh" size={14} color="#F5F7FF" />
+                  <Text style={styles.exportRetryText}>Retry</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.exportDismissButton}
+                  onPress={handleDismissExportError}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss export error"
+                  testID="rep-export-dismiss-button"
+                >
+                  <Text style={styles.exportDismissText}>Dismiss</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
           <View style={styles.exportRow}>
             <TouchableOpacity
               style={[styles.exportButton, exporting !== null && styles.exportButtonDisabled]}
@@ -292,5 +346,64 @@ const styles = StyleSheet.create({
   },
   exportButtonDisabled: {
     opacity: 0.5,
+  },
+  exportErrorBanner: {
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+  },
+  exportErrorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  exportErrorTitle: {
+    color: '#F5F7FF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  exportErrorMessage: {
+    color: '#DCE5F5',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6,
+  },
+  exportErrorRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  exportRetryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: '#4C8CFF',
+  },
+  exportRetryText: {
+    color: '#F5F7FF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  exportDismissButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 36,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(154, 172, 209, 0.3)',
+    backgroundColor: 'transparent',
+  },
+  exportDismissText: {
+    color: '#9AACD1',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
