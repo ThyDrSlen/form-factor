@@ -24,6 +24,13 @@ jest.mock('@/lib/services/rep-export', () => ({
   shareRepData: (...args: unknown[]) => mockShareRepData(...args),
 }));
 
+// Rep-insights now surfaces export failures via both the inline banner and
+// a Toast. These tests target the banner UI, so a cheap useToast mock keeps
+// them isolated from the ToastProvider tree.
+jest.mock('@/contexts/ToastContext', () => ({
+  useToast: () => ({ show: jest.fn() }),
+}));
+
 // Stub heavy insight widgets so the test only exercises the export card.
 jest.mock('@/components/insights/FqiTrendChart', () => ({
   FqiTrendChart: () => null,

@@ -189,9 +189,14 @@ export default function ProgressionPlanModal() {
           </Text>
         </View>
       ) : loading ? (
-        <View style={styles.loadingPanel}>
+        <View
+          style={styles.loadingPanel}
+          accessibilityRole="alert"
+          accessibilityLabel="Analyzing your history"
+          testID="progression-plan-loading"
+        >
           <ActivityIndicator size="large" color={ACCENT} />
-          <Text style={styles.loadingText}>Building your overload plan…</Text>
+          <Text style={styles.loadingText}>Analyzing your history…</Text>
         </View>
       ) : error ? (
         <View style={styles.errorPanel}>

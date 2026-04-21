@@ -13,6 +13,7 @@ export interface AppError {
     | 'storage'
     | 'sync'
     | 'auth'
+    | 'coach'
     | 'form-tracking'
     | 'unknown';
   code: string;
@@ -23,7 +24,7 @@ export interface AppError {
 }
 
 export interface ErrorContext {
-  feature: 'auth' | 'form-feedback' | 'workouts' | 'ui' | 'app' | 'form-tracking';
+  feature: 'auth' | 'form-feedback' | 'workouts' | 'ui' | 'app' | 'form-tracking' | 'coach';
   location?: string;
   meta?: Record<string, unknown>;
 }
@@ -50,6 +51,8 @@ export const FormTrackingErrorCode = {
   CUE_PREEMPTION_FAILED: 'CUE_PREEMPTION_FAILED',
   /** Session-runner state went out of sync with rep-logger expectations. */
   SESSION_STATE_DESYNC: 'SESSION_STATE_DESYNC',
+  /** Rep data export (CSV/JSON) failed to generate or persist a file. */
+  EXPORT_FAILED: 'EXPORT_FAILED',
 } as const;
 export type FormTrackingErrorCodeValue =
   typeof FormTrackingErrorCode[keyof typeof FormTrackingErrorCode];
@@ -97,6 +100,8 @@ export function mapToUserMessage(err: AppError): string {
       return 'Sync issue. We will retry automatically when online.';
     case 'auth':
       return 'Authentication error. Please try again.';
+    case 'coach':
+      return 'Coach service hit an issue. Please try again.';
     case 'form-tracking':
       return mapFormTrackingMessage(err.code);
     default:
@@ -161,6 +166,8 @@ function mapFormTrackingMessage(code: string): string {
       return 'A coaching cue could not be played. Continuing without it.';
     case FormTrackingErrorCode.SESSION_STATE_DESYNC:
       return 'Session state got out of sync. Restart the set to continue.';
+    case FormTrackingErrorCode.EXPORT_FAILED:
+      return 'Export failed. Please try again.';
     default:
       return 'Form tracking ran into an issue. Try repositioning your camera.';
   }

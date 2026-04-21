@@ -64,6 +64,16 @@ function buildSessionBriefFromInput(
 // Types
 // ---------------------------------------------------------------------------
 
+/**
+ * Hard timeout for a single generateAutoDebrief attempt. The coach pipeline
+ * has its own per-leg timeouts, but a transport-level hang (e.g. kept-alive
+ * connection stalled behind a captive portal) can still cascade into the UI
+ * showing a forever-spinner. 8s gives the happy path plenty of room and
+ * trips fast enough to let the user retry.
+ */
+export const AUTO_DEBRIEF_TIMEOUT_MS = 8000;
+export const AUTO_DEBRIEF_TIMEOUT_MESSAGE = 'Debrief is taking longer than expected';
+
 export interface UseAutoDebriefState {
   /** Most-recent result (cached or freshly generated). null until first run. */
   data: AutoDebriefResult | null;
@@ -114,8 +124,17 @@ export function useAutoDebrief(opts: UseAutoDebriefOptions): UseAutoDebriefState
     lastInputRef.current = input;
     setLoading(true);
     setError(null);
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     try {
-      const result = await generateAutoDebrief(input);
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new Error(AUTO_DEBRIEF_TIMEOUT_MESSAGE));
+        }, AUTO_DEBRIEF_TIMEOUT_MS);
+      });
+      const result = (await Promise.race([
+        generateAutoDebrief(input),
+        timeoutPromise,
+      ])) as AutoDebriefResult;
       setData(result);
       // Pipeline v2: persist a compact SessionBrief so the next coach turn
       // can prepend cross-session memory (closes gap 1 of intersection-audit
@@ -135,6 +154,7 @@ export function useAutoDebrief(opts: UseAutoDebriefOptions): UseAutoDebriefState
       warnWithTs('[use-auto-debrief] generate failed', err);
       setError(message);
     } finally {
+      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
       setLoading(false);
     }
   }, []);

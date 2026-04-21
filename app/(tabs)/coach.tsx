@@ -9,7 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { fetchTodaySession, fetchCoachSessionMessages } from '@/lib/services/coach-history-service';
-import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
+import { AppError, createError, logError, mapToUserMessage } from '@/lib/services/ErrorHandler';
 import { CoachProviderBadge } from '@/components/coach/CoachProviderBadge';
 import { styles } from '../../styles/tabs/_index.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
@@ -138,7 +138,15 @@ export default function CoachScreen() {
           setShowCoachWelcome(true);
         }
       } catch (err) {
-        console.error('[Coach] Failed to check welcome seen status:', err);
+        logError(
+          createError(
+            'coach',
+            'WELCOME_CHECK_FAILED',
+            err instanceof Error ? err.message : 'Failed to check welcome seen status',
+            { details: err, severity: 'warning' },
+          ),
+          { feature: 'coach', location: 'coach.checkWelcomeSeen' },
+        );
         // Default to not showing welcome on error
       }
     };
@@ -159,7 +167,15 @@ export default function CoachScreen() {
           setCoachSessionId(session.sessionId);
         }
       } catch (error) {
-        console.error('[Coach][fetchTodaySession] Failed to restore today session', error);
+        logError(
+          createError(
+            'coach',
+            'SESSION_RESTORE_FAILED',
+            error instanceof Error ? error.message : 'Failed to restore today session',
+            { details: error },
+          ),
+          { feature: 'coach', location: 'coach.fetchTodaySession' },
+        );
         if (!cancelled) {
           showToast('Unable to restore today\'s coach session.', { type: 'error' });
         }
@@ -184,7 +200,15 @@ export default function CoachScreen() {
         const session = await fetchCoachSessionMessages(restoreSessionId);
         if (cancelled) return;
         if (!session) {
-          console.error('[Coach][fetchCoachSessionMessages] No session found', { restoreSessionId });
+          logError(
+            createError(
+              'coach',
+              'SESSION_NOT_FOUND',
+              'No session found for the requested id',
+              { details: { restoreSessionId }, severity: 'warning' },
+            ),
+            { feature: 'coach', location: 'coach.fetchCoachSessionMessages' },
+          );
           if (!cancelled) {
             showToast('Unable to restore that coach session.', { type: 'error' });
           }
@@ -194,7 +218,15 @@ export default function CoachScreen() {
         setCoachMessages(session.messages.map((m, i) => ({ ...m, id: `restored-${i}` })));
         setCoachSessionId(session.sessionId);
       } catch (error) {
-        console.error('[Coach][fetchCoachSessionMessages] Failed to restore session', error);
+        logError(
+          createError(
+            'coach',
+            'SESSION_RESTORE_FAILED',
+            error instanceof Error ? error.message : 'Failed to restore coach session',
+            { details: error },
+          ),
+          { feature: 'coach', location: 'coach.fetchCoachSessionMessages' },
+        );
         if (!cancelled) {
           showToast('Unable to restore that coach session.', { type: 'error' });
         }
