@@ -65,6 +65,8 @@
     <string>Allow Form Factor to save workout recordings to your camera roll.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Allow access to your photo library to save workout recordings.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Form Factor uses speech recognition for hands-free voice commands during workouts (e.g., start set, pause, log reps).</string>
     <key>NSUserActivityTypes</key>
     <array>
       <string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>

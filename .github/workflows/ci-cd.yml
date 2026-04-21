@@ -204,7 +204,7 @@ jobs:
         run: bun install --frozen-lockfile --backend=copyfile
 
       - name: Run voice integration tests
-        run: bun test tests/integration/voice/
+        run: bun test tests/integration/voice/*.ts
         env:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}

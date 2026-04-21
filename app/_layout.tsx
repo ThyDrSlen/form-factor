@@ -17,6 +17,8 @@ import { SocialProvider } from '../contexts/SocialContext';
 import { useFonts, Lexend_400Regular, Lexend_500Medium, Lexend_700Bold } from '@expo-google-fonts/lexend';
 import { ToastProvider } from '../contexts/ToastContext';
 import { HapticPreferencesProvider } from '../contexts/HapticPreferencesContext';
+import { VoiceControlProvider } from '../contexts/VoiceControlContext';
+import { isVoiceControlPipelineEnabled } from '@/lib/services/voice-pipeline-flag';
 import { logWithTs, warnWithTs } from '@/lib/logger';
 import { isOnboardingCompleted } from '@/lib/services/onboarding';
 import { hasSeenWelcome } from '@/app/(onboarding)/welcome';
@@ -64,6 +66,20 @@ class RootErrorBoundary extends Component<{ children: React.ReactNode }, ErrorBo
   }
 }
 
+/**
+ * Wraps children with VoiceControlProvider when
+ * EXPO_PUBLIC_VOICE_CONTROL_PIPELINE is on; otherwise falls through so the
+ * provider tree looks exactly like it did before wave 24 PR-β. Evaluated
+ * once per mount — the flag is read from module scope and never flips at
+ * runtime.
+ */
+function MaybeVoiceControlProvider({ children }: { children: React.ReactNode }) {
+  if (!isVoiceControlPipelineEnabled()) {
+    return <>{children}</>;
+  }
+  return <VoiceControlProvider>{children}</VoiceControlProvider>;
+}
+
 // This layout wraps the entire app with providers
 function RootLayoutNav() {
   // Load Lexend fonts globally
@@ -98,31 +114,33 @@ function RootLayoutNav() {
           <ToastProvider>
             <HapticPreferencesProvider>
               <AuthProvider>
-                <NetworkProvider>
-                  <UnitsProvider>
-                    <HealthKitProvider>
-                      <WorkoutsProvider>
-                        <NutritionGoalsProvider>
-                          <SocialProvider>
-                            <FoodProvider>
-                              {!fontsLoaded ? (
-                                <View style={styles.splash}>
-                                  <ActivityIndicator color="#4C8CFF" />
-                                </View>
-                              ) : (
-                                <>
-                                  <SessionTelemetryBinder />
-                                  <MilestoneToastBridge />
-                                  <InitialLayout />
-                                </>
-                              )}
-                            </FoodProvider>
-                          </SocialProvider>
-                        </NutritionGoalsProvider>
-                      </WorkoutsProvider>
-                    </HealthKitProvider>
-                  </UnitsProvider>
-                </NetworkProvider>
+                <MaybeVoiceControlProvider>
+                  <NetworkProvider>
+                    <UnitsProvider>
+                      <HealthKitProvider>
+                        <WorkoutsProvider>
+                          <NutritionGoalsProvider>
+                            <SocialProvider>
+                              <FoodProvider>
+                                {!fontsLoaded ? (
+                                  <View style={styles.splash}>
+                                    <ActivityIndicator color="#4C8CFF" />
+                                  </View>
+                                ) : (
+                                  <>
+                                    <SessionTelemetryBinder />
+                                    <MilestoneToastBridge />
+                                    <InitialLayout />
+                                  </>
+                                )}
+                              </FoodProvider>
+                            </SocialProvider>
+                          </NutritionGoalsProvider>
+                        </WorkoutsProvider>
+                      </HealthKitProvider>
+                    </UnitsProvider>
+                  </NetworkProvider>
+                </MaybeVoiceControlProvider>
               </AuthProvider>
             </HapticPreferencesProvider>
           </ToastProvider>

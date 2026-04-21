@@ -34,6 +34,10 @@ import {
   getSessionFallback,
   withFallback,
 } from '@/lib/services/session-generator-fallback';
+import {
+  isGemmaSessionGenEnabled,
+  FLAG_DISABLED_ERROR_CODE,
+} from '@/lib/services/gemma-session-gen-flag';
 import { localDB } from '@/lib/services/database/local-db';
 import { genericLocalUpsert } from '@/lib/services/database/generic-sync';
 import type { Exercise, GoalProfile } from '@/lib/types/workout-session';
@@ -131,6 +135,7 @@ export default function GenerateSessionScreen() {
   const [durationMin, setDurationMin] = useState<number>(30);
 
   const userId = user?.id ?? 'local-user';
+  const aiEnabled = isGemmaSessionGenEnabled();
 
   const { loading, error, result, generate, reset } = useSessionGenerator({
     runtime: { userId, maxRetries: 1 },
@@ -143,10 +148,27 @@ export default function GenerateSessionScreen() {
     return rows.map((r) => r.name.toLowerCase().replace(/[^a-z0-9]/g, '_'));
   }, []);
 
+  const handleOfflineFallback = useCallback(async () => {
+    const hydrated = await withFallback(
+      async () => getSessionFallback({ goalProfile, durationMin }, { userId }),
+      () => getSessionFallback({}, { userId }),
+    );
+    await persistHydrated(hydrated);
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    router.replace(`/(modals)/template-builder?templateId=${hydrated.template.id}` as never);
+  }, [goalProfile, durationMin, userId, router]);
+
   const handleGenerate = useCallback(async () => {
     const trimmed = intent.trim();
     if (trimmed.length === 0) {
       Alert.alert('Describe the session', 'Tell the AI what you want to train.');
+      return;
+    }
+    // Flag off: skip the dispatch entirely and use the offline library so the
+    // user still walks out with a template instead of hitting a disabled error.
+    if (!aiEnabled) {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await handleOfflineFallback();
       return;
     }
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -162,17 +184,16 @@ export default function GenerateSessionScreen() {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace(`/(modals)/template-builder?templateId=${hydrated.template.id}` as never);
     }
-  }, [intent, goalProfile, durationMin, availableSlugsPromise, generate, router]);
-
-  const handleOfflineFallback = useCallback(async () => {
-    const hydrated = await withFallback(
-      async () => getSessionFallback({ goalProfile, durationMin }, { userId }),
-      () => getSessionFallback({}, { userId }),
-    );
-    await persistHydrated(hydrated);
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    router.replace(`/(modals)/template-builder?templateId=${hydrated.template.id}` as never);
-  }, [goalProfile, durationMin, userId, router]);
+  }, [
+    intent,
+    aiEnabled,
+    goalProfile,
+    durationMin,
+    availableSlugsPromise,
+    generate,
+    handleOfflineFallback,
+    router,
+  ]);
 
   const handleClose = useCallback(() => {
     reset();
@@ -256,24 +277,37 @@ export default function GenerateSessionScreen() {
           onPress={handleGenerate}
           disabled={loading}
           accessibilityRole="button"
-          accessibilityLabel="Generate session"
+          accessibilityLabel={aiEnabled ? 'Generate session with AI' : 'Generate from offline library'}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <>
               <Ionicons name="sparkles-outline" size={18} color="#fff" />
-              <Text style={styles.primaryBtnText}>Generate</Text>
+              <Text style={styles.primaryBtnText}>
+                {aiEnabled ? 'Generate' : 'Use offline library'}
+              </Text>
             </>
           )}
         </TouchableOpacity>
+
+        {!aiEnabled && !loading && (
+          <View style={styles.infoCard} accessibilityRole="alert">
+            <Ionicons name="information-circle-outline" size={18} color={tabColors.accent} />
+            <Text style={styles.infoText}>
+              AI generation is disabled on this build. Tapping Generate will pull a handcrafted template from the offline library.
+            </Text>
+          </View>
+        )}
 
         {error && !loading && (
           <View style={styles.errorCard}>
             <Ionicons name="alert-circle-outline" size={18} color={tabColors.error} />
             <View style={{ flex: 1 }}>
               <Text style={styles.errorText}>
-                {(error as { message?: string }).message ?? 'Generation failed.'}
+                {(error as { code?: string }).code === FLAG_DISABLED_ERROR_CODE
+                  ? 'AI generation is disabled on this build. Use the offline library below.'
+                  : ((error as { message?: string }).message ?? 'Generation failed.')}
               </Text>
               <TouchableOpacity onPress={handleOfflineFallback}>
                 <Text style={styles.offlineLink}>Use offline suggestion</Text>
@@ -393,6 +427,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 59, 48, 0.08)',
     borderWidth: 1,
     borderColor: 'rgba(255, 59, 48, 0.3)',
+  },
+  infoCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(10, 132, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(10, 132, 255, 0.2)',
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: 'Lexend_400Regular',
+    color: tabColors.textSecondary,
+    lineHeight: 16,
   },
   errorText: {
     fontSize: 13,

@@ -56,5 +56,19 @@ jest.mock('@/lib/supabase', () => {
   };
 });
 
+// Global Moti mock — many components use Moti for fade-in animations but
+// Moti pulls react-native-reanimated which needs Worklets native init. In
+// jest we swap the animated primitives for plain RN Views. Individual
+// tests that want a different shape still override via jest.mock locally
+// (jest.mock is hoisted and takes precedence).
+jest.mock('moti', () => {
+  const { View, Text: RNText } = jest.requireActual('react-native');
+  return {
+    MotiView: View,
+    MotiText: RNText,
+    AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
+  };
+});
+
 // Silence console warnings in tests (optional)
 // console.warn = jest.fn();

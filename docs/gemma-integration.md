@@ -46,6 +46,36 @@ re-prompts the LLM with the validation issues.
 - `rest-advisor.ts` has its own inline `heuristicRestSeconds` fallback so it does
   not depend on the session-generator-fallback module.
 
+### Feature flag: `EXPO_PUBLIC_GEMMA_SESSION_GEN`
+
+All four generators are gated by `lib/services/gemma-session-gen-flag.ts` so
+production can ship the services dark while beta testers opt in via env.
+
+| Value | Behavior |
+|---|---|
+| `on`, `1`, `true` (case-insensitive, whitespace-trimmed) | Generators dispatch to the real coach-service |
+| unset, `off`, anything else | Generators reject with `GEMMA_SESSION_GEN_DISABLED` — except `rest-advisor`, which short-circuits to `heuristicRestSeconds` since it runs in-loop during a set |
+
+Guard behavior:
+
+- `generateSession` / `generateWarmup` / `generateCooldown` call
+  `assertGemmaSessionGenEnabled(surface)` before dispatch, throwing
+  `GemmaSessionGenDisabledError` (`code: 'GEMMA_SESSION_GEN_DISABLED'`).
+- `suggestRestSeconds` calls `isGemmaSessionGenEnabled()` and returns the
+  deterministic heuristic if false. This keeps rest recommendations flowing
+  during a live set even when the flag is off.
+- Every generator runtime has a `skipFlagCheck` escape hatch for integration
+  tests that want to exercise the real dispatcher without toggling env.
+- Custom `dispatch` overrides (all unit tests) bypass the gate automatically.
+
+UI behavior:
+
+- `app/(modals)/generate-session.tsx` calls `isGemmaSessionGenEnabled()` on
+  mount. When false, the primary button label flips to "Use offline library"
+  and a soft info banner explains the state. Tapping the button routes
+  directly to the offline-library path instead of kicking off a dispatch
+  that would reject.
+
 ### UI entry points
 
 - **Template Builder** (`app/(modals)/template-builder.tsx`) — "Generate from AI"

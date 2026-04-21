@@ -29,12 +29,14 @@ import {
   getExerciseHistorySummary,
   type ExerciseHistorySummary,
 } from '@/lib/services/exercise-history-service';
+import { isProgressionPlanEnabled } from '@/lib/services/progression-flags';
 import {
   generateProgressionPlan,
   type ProgressionPlan,
 } from '@/lib/services/progression-planner';
 import { suggestWeight, type WeightSuggestion } from '@/lib/services/weight-suggester';
 import type { PrResult } from '@/lib/services/pr-detector-overload';
+import { ProgressionPlanView } from '@/components/ProgressionPlanView';
 
 const BG = '#050E1F';
 const PANEL = '#0E1A2E';
@@ -78,6 +80,11 @@ export default function ProgressionPlanModal() {
   const [planLoading, setPlanLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [acceptedWeight, setAcceptedWeight] = useState<number | null>(null);
+
+  // EXPO_PUBLIC_PROGRESSION_PLAN gate (#475). When off, the modal renders a
+  // lightweight disabled-state — keeps deep links from crashing the bundler
+  // and doesn't touch the coach-service / local-db while the feature is dark.
+  const planEnabled = isProgressionPlanEnabled();
 
   const loadSummary = useCallback(async () => {
     setLoading(true);
@@ -124,14 +131,19 @@ export default function ProgressionPlanModal() {
   );
 
   useEffect(() => {
+    if (!planEnabled) {
+      setLoading(false);
+      return;
+    }
     loadSummary();
-  }, [loadSummary]);
+  }, [loadSummary, planEnabled]);
 
   useEffect(() => {
+    if (!planEnabled) return;
     if (summary && summary.sets.length > 0) {
       loadPlan(summary);
     }
-  }, [summary, loadPlan]);
+  }, [summary, loadPlan, planEnabled]);
 
   const triggeredPrs = useMemo(
     () => (summary?.prData ?? []).filter((p) => p.isPr),
@@ -164,7 +176,19 @@ export default function ProgressionPlanModal() {
         <View style={{ width: 32 }} />
       </View>
 
-      {loading ? (
+      {!planEnabled ? (
+        <View
+          style={styles.loadingPanel}
+          accessibilityRole="summary"
+          testID="progression-plan-disabled"
+        >
+          <Ionicons name="construct" size={40} color={TEXT_SECONDARY} />
+          <Text style={styles.loadingText}>
+            Progression planner is turned off. Enable it with
+            EXPO_PUBLIC_PROGRESSION_PLAN=on to preview.
+          </Text>
+        </View>
+      ) : loading ? (
         <View style={styles.loadingPanel}>
           <ActivityIndicator size="large" color={ACCENT} />
           <Text style={styles.loadingText}>Building your overload plan…</Text>
@@ -241,7 +265,12 @@ export default function ProgressionPlanModal() {
                 <Text style={styles.loadingText}>Asking the coach…</Text>
               </View>
             ) : plan ? (
-              <Text style={styles.planText}>{plan.text}</Text>
+              <ProgressionPlanView
+                source={plan.text}
+                textColor={TEXT_PRIMARY}
+                mutedColor={TEXT_SECONDARY}
+                accentColor={ACCENT}
+              />
             ) : (
               <Text style={styles.cardBody}>
                 The coach service is unavailable — your suggested weight above still applies.
