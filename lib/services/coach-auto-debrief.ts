@@ -28,6 +28,8 @@ import {
   type DebriefAnalytics,
 } from './coach-debrief-prompt';
 import { synthesizeMemoryClause } from './coach-memory-context';
+import { getExercisePreferences, type CuePreference } from './coach-cue-feedback';
+import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -169,9 +171,23 @@ export async function generateAutoDebrief(
     }
   }
 
+  // Pipeline v2: prefetch cue preferences for the top exercise so the
+  // debrief prompt can render a "user prefers X / dislikes Y" clause. We
+  // swallow errors: empty prefs → empty clause, never block the debrief.
+  let cuePreferences: CuePreference[] | null = null;
+  if (isCoachPipelineV2Enabled() && input.analytics.exerciseName) {
+    try {
+      cuePreferences = await getExercisePreferences(input.analytics.exerciseName);
+    } catch (err) {
+      warnWithTs('[coach-auto-debrief] cue-prefs lookup failed', err);
+      cuePreferences = null;
+    }
+  }
+
   const promptOpts: BuildDebriefPromptOptions = {
     athleteName: input.athleteName ?? null,
     memoryClause,
+    cuePreferences,
   };
   const messages = buildDebriefPrompt(input.analytics, promptOpts);
 
