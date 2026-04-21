@@ -36,6 +36,7 @@ import {
 } from '@/lib/services/session-generator-fallback';
 import { localDB } from '@/lib/services/database/local-db';
 import { genericLocalUpsert } from '@/lib/services/database/generic-sync';
+import { isWarmupCoachFlowEnabled } from '@/lib/services/coach-warmup-provider';
 import type { Exercise, GoalProfile } from '@/lib/types/workout-session';
 import type { HydratedTemplate } from '@/lib/services/session-generator';
 
@@ -136,6 +137,12 @@ export default function GenerateSessionScreen() {
     runtime: { userId, maxRetries: 1 },
   });
 
+  // Capture the last successfully persisted template id so the warmup CTA
+  // survives after the user navigates to the builder and back. Separate
+  // from `result` because the generator hook may reset on subsequent calls.
+  const [lastTemplateId, setLastTemplateId] = useState<string | null>(null);
+  const warmupCoachEnabled = isWarmupCoachFlowEnabled();
+
   const availableSlugsPromise = useMemo(async () => {
     const db = localDB.db;
     if (!db) return [];
@@ -159,6 +166,7 @@ export default function GenerateSessionScreen() {
     });
     if (hydrated) {
       await persistHydrated(hydrated);
+      setLastTemplateId(hydrated.template.id);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace(`/(modals)/template-builder?templateId=${hydrated.template.id}` as never);
     }
@@ -170,9 +178,17 @@ export default function GenerateSessionScreen() {
       () => getSessionFallback({}, { userId }),
     );
     await persistHydrated(hydrated);
+    setLastTemplateId(hydrated.template.id);
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     router.replace(`/(modals)/template-builder?templateId=${hydrated.template.id}` as never);
   }, [goalProfile, durationMin, userId, router]);
+
+  const handleWarmupCoach = useCallback(() => {
+    if (!lastTemplateId) return;
+    router.push(
+      `/(modals)/session-warmup-coach?sessionId=${encodeURIComponent(lastTemplateId)}` as never,
+    );
+  }, [lastTemplateId, router]);
 
   const handleClose = useCallback(() => {
     reset();
@@ -292,6 +308,19 @@ export default function GenerateSessionScreen() {
               {result.raw.exercises.length} exercises · {result.raw.goal_profile}
             </Text>
           </View>
+        )}
+
+        {warmupCoachEnabled && lastTemplateId && !loading && (
+          <TouchableOpacity
+            onPress={handleWarmupCoach}
+            style={styles.warmupCta}
+            accessibilityRole="button"
+            accessibilityLabel="Warm up with coach for this session"
+            testID="generate-session-warmup-cta"
+          >
+            <Ionicons name="flame-outline" size={18} color={tabColors.accent} />
+            <Text style={styles.warmupCtaText}>Warm up with coach</Text>
+          </TouchableOpacity>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -429,5 +458,22 @@ const styles = StyleSheet.create({
     fontFamily: 'Lexend_500Medium',
     color: tabColors.accent,
     marginTop: 8,
+  },
+  warmupCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: tabColors.accent,
+    backgroundColor: 'rgba(76, 140, 255, 0.12)',
+  },
+  warmupCtaText: {
+    fontSize: 14,
+    fontFamily: 'Lexend_700Bold',
+    color: tabColors.accent,
   },
 });
