@@ -12,6 +12,13 @@ import { synthesizeMemoryClause } from './coach-memory-context';
 import { shapeFinalResponse } from './coach-output-shaper';
 import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
 import { evaluateSafety } from './coach-safety';
+import {
+  decideCoachModel,
+  type CoachTaskKind,
+  type CoachUserTier,
+  type CoachSignals,
+} from './coach-model-dispatch';
+import { isDispatchEnabled } from './coach-model-dispatch-flag';
 
 export type { CoachProvider } from './coach-provider-types';
 import type { LiveSessionSnapshot } from './coach-live-snapshot';
@@ -85,6 +92,17 @@ export interface CoachSendOptions {
    * already-shaped response (#465 Item 5). Internal; callers shouldn't need it.
    */
   shaper?: boolean;
+  /**
+   * Pipeline-v2 task kind hint. When the master flag is on AND
+   * `EXPO_PUBLIC_COACH_DISPATCH=on`, the task kind is fed to
+   * `decideCoachModel()` to pick a provider (tactical → Gemma, complex → GPT)
+   * before the legacy provider hint runs. Omitted means "general_chat".
+   */
+  taskKind?: CoachTaskKind;
+  /** Pipeline-v2 user tier for cost-aware model routing. Defaults to 'free'. */
+  userTier?: CoachUserTier;
+  /** Pipeline-v2 optional signals fed into the model dispatcher. */
+  dispatchSignals?: CoachSignals;
 }
 
 interface RawCoachResponse {
@@ -193,8 +211,28 @@ export async function sendCoachPrompt(
     );
   }
 
-  // No advanced opts: pick cloud provider (explicit hint, user pref, env, or openai default).
-  const provider = opts?.provider ?? (await resolveCloudProvider());
+  // Pipeline v2: consult the task-kind router BEFORE the legacy provider
+  // hint is applied. When the model dispatcher picks a Gemma model and the
+  // caller hasn't already pinned a provider, route to Gemma. Otherwise fall
+  // through to the existing provider resolution. READ-ONLY on
+  // coach-model-dispatch.ts itself.
+  let routedProvider: 'gemma' | 'openai' | undefined;
+  if (
+    isCoachPipelineV2Enabled() &&
+    isDispatchEnabled() &&
+    opts?.taskKind &&
+    opts.provider === undefined
+  ) {
+    const decision = decideCoachModel(
+      opts.taskKind,
+      opts.dispatchSignals ?? {},
+      opts.userTier ?? 'free',
+    );
+    routedProvider = decision.model.startsWith('gemma-') ? 'gemma' : 'openai';
+  }
+
+  // No advanced opts: pick cloud provider (explicit hint, dispatcher, user pref, env, or openai default).
+  const provider = opts?.provider ?? routedProvider ?? (await resolveCloudProvider());
   if (provider === 'gemma') {
     return sendCoachGemmaPrompt(messages, context);
   }
