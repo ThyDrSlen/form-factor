@@ -18,6 +18,20 @@ export interface AskCoachCTAProps {
   averageFqi: number | null;
   topFault?: string | null;
   testID?: string;
+  /**
+   * Optional tap handler override. When provided, the CTA calls this
+   * instead of navigating to the coach tab with a prefill. Used by
+   * the workouts-tab rows to route into the retrospective chat modal
+   * under EXPO_PUBLIC_WORKOUT_COACH_RECALL. Defaults to the original
+   * coach-tab navigation so existing consumers keep working.
+   */
+  onPress?: () => void;
+  /**
+   * Optional label override; defaults to
+   * "Ask coach about this session". The workouts-tab row uses a
+   * shorter label to fit inside the card footer.
+   */
+  label?: string;
 }
 
 export function buildCoachPrefill({
@@ -42,28 +56,36 @@ export function AskCoachCTA({
   averageFqi,
   topFault,
   testID = 'ask-coach-cta',
+  onPress,
+  label,
 }: AskCoachCTAProps) {
   const router = useRouter();
 
   const handlePress = useCallback(() => {
+    if (onPress) {
+      onPress();
+      return;
+    }
     const prefill = buildCoachPrefill({ exerciseName, repCount, averageFqi, topFault });
     router.push({
       pathname: '/(tabs)/coach',
       params: { prefill },
     } as never);
-  }, [router, exerciseName, repCount, averageFqi, topFault]);
+  }, [onPress, router, exerciseName, repCount, averageFqi, topFault]);
+
+  const buttonLabel = label ?? 'Ask coach about this session';
 
   return (
     <View style={styles.container}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Ask coach about this session"
+        accessibilityLabel={buttonLabel}
         onPress={handlePress}
         style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
         testID={testID}
       >
         <Ionicons name="sparkles" size={18} color="#FFFFFF" />
-        <Text style={styles.buttonText}>Ask coach about this session</Text>
+        <Text style={styles.buttonText}>{buttonLabel}</Text>
         <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
       </Pressable>
     </View>
