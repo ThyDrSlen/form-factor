@@ -220,7 +220,11 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
-    const pendingTimers: ReturnType<typeof setTimeout>[] = [];
+    // A2: hold pending deferred timers in a Set so we can guarantee every
+    // outstanding timer is cleared on unmount even if multiple metrics cycles
+    // overlap. An AbortController could replace this once we migrate the
+    // underlying healthkit fetches to AbortSignal (followup).
+    const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
 
     async function loadMetrics() {
       try {
@@ -327,9 +331,10 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
 
           if (!cancelled) {
             const analysisTimer = setTimeout(() => {
+              pendingTimers.delete(analysisTimer);
               if (!cancelled) refreshWeightAnalysis();
             }, 100);
-            pendingTimers.push(analysisTimer);
+            pendingTimers.add(analysisTimer);
           }
 
           const metricsSignature = JSON.stringify({
@@ -449,8 +454,11 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         clearTimeout(timeout);
         timeout = null;
       }
+      // A2: clear every deferred timer the effect queued. Using a Set
+      // guarantees we don't miss timers added while another iteration was
+      // still executing loadMetrics.
       pendingTimers.forEach(clearTimeout);
-      pendingTimers.length = 0;
+      pendingTimers.clear();
       // Prevent any post-cleanup reschedule call from restarting the loop
       rescheduleRef.current = () => {};
       // Cancel any deferred reschedule triggered by syncAllHistoricalData
