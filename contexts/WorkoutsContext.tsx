@@ -5,6 +5,7 @@ import { syncService } from '../lib/services/database/sync-service';
 import { useNetwork } from './NetworkContext';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
+import { WatchSessionBridgeProvider } from './WatchSessionBridgeContext';
 
 export interface Workout {
   id: string;
@@ -223,7 +224,7 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <WorkoutsContext.Provider value={value}>
-      {children}
+      <WatchSessionBridgeProvider>{children}</WatchSessionBridgeProvider>
     </WorkoutsContext.Provider>
   );
 };

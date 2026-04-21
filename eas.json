@@ -64,7 +64,7 @@
       "android": { "track": "internal", "releaseStatus": "draft" },
       "ios": {
         "appleTeamId": "NCTLNFGC6G",
-        "ascAppId": "675470330",
+        "ascAppId": "6747464974",
         "ascApiKeyId": "6FV4342769",
         "ascApiKeyIssuerId": "4d1b697a-a73c-4aac-ad7d-42a68983b43a",
         "ascApiKeyPath": ".eas/asc-api-key.p8"
@@ -74,7 +74,7 @@
       "android": { "track": "production", "releaseStatus": "draft" },
       "ios": {
         "appleTeamId": "NCTLNFGC6G",
-        "ascAppId": "675470330",
+        "ascAppId": "6747464974",
         "ascApiKeyId": "6FV4342769",
         "ascApiKeyIssuerId": "4d1b697a-a73c-4aac-ad7d-42a68983b43a",
         "ascApiKeyPath": ".eas/asc-api-key.p8"

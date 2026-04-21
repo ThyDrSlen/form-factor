@@ -5,18 +5,24 @@
 import {
   ALLOWED_MODELS,
   FALLBACK_MODEL,
+  MAX_IMAGES_PER_REQUEST,
+  VISION_CAPABLE_MODELS,
   buildGeminiPayload,
   buildGeminiUrl,
   buildSystemInstruction,
+  countImageParts,
   extractGeminiText,
   isAllowedModel,
   resolveModel,
   sanitizeMessages,
   sanitizeName,
+  stripImageParts,
+  supportsVision,
   toGeminiContents,
   MAX_CONTENT_LENGTH,
   MAX_MESSAGES,
   type ChatMessage,
+  type ContentPart,
 } from './translation';
 
 describe('coach-gemma translation helpers', () => {
@@ -252,6 +258,176 @@ describe('coach-gemma translation helpers', () => {
       expect(url).toBe(
         'https://generativelanguage.googleapis.com/v1beta/models/gemma-3-4b-it:generateContent?key=abc%2B%2F%3Dspecial',
       );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Multimodal extensions (#495)
+  // ---------------------------------------------------------------------------
+
+  describe('multimodal content parts', () => {
+    const imgPart: ContentPart = {
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/jpeg', data: 'IMG_B64' },
+    };
+    const textPart: ContentPart = { type: 'text', text: 'Critique my squat.' };
+
+    describe('sanitizeMessages', () => {
+      it('accepts a content-parts array on a valid message', () => {
+        const out = sanitizeMessages([
+          { role: 'user', content: [textPart, imgPart] },
+        ]);
+        expect(out).toHaveLength(1);
+        expect(Array.isArray(out[0].content)).toBe(true);
+      });
+
+      it('drops content-parts that have an invalid shape', () => {
+        const out = sanitizeMessages([
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          { role: 'user', content: [{ type: 'video', url: 'x' } as any] },
+        ]);
+        expect(out).toHaveLength(0);
+      });
+
+      it('drops messages where the image source is malformed', () => {
+        const out = sanitizeMessages([
+          {
+            role: 'user',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            content: [{ type: 'image', source: { data: 'no-type' } } as any],
+          },
+        ]);
+        expect(out).toHaveLength(0);
+      });
+
+      it('truncates text parts within content arrays', () => {
+        const huge = 'a'.repeat(MAX_CONTENT_LENGTH + 100);
+        const out = sanitizeMessages([
+          { role: 'user', content: [{ type: 'text', text: huge }] },
+        ]);
+        const first = out[0].content as ContentPart[];
+        expect((first[0] as { text: string }).text.length).toBe(
+          MAX_CONTENT_LENGTH,
+        );
+      });
+
+      it('preserves string-shape content for legacy callers', () => {
+        const out = sanitizeMessages([{ role: 'user', content: 'Hello' }]);
+        expect(out[0].content).toBe('Hello');
+      });
+    });
+
+    describe('countImageParts', () => {
+      it('counts images across messages', () => {
+        expect(
+          countImageParts([
+            { role: 'user', content: [textPart, imgPart] },
+            { role: 'user', content: [imgPart] },
+          ]),
+        ).toBe(2);
+      });
+
+      it('returns 0 for text-only messages', () => {
+        expect(
+          countImageParts([
+            { role: 'user', content: 'hi' },
+            { role: 'user', content: [textPart] },
+          ]),
+        ).toBe(0);
+      });
+
+      it('MAX_IMAGES_PER_REQUEST is the 1-per-request cap', () => {
+        expect(MAX_IMAGES_PER_REQUEST).toBe(1);
+      });
+    });
+
+    describe('stripImageParts', () => {
+      it('removes image parts and preserves text content', () => {
+        const out = stripImageParts([
+          { role: 'user', content: [textPart, imgPart] },
+        ]);
+        expect(out).toEqual([
+          { role: 'user', content: 'Critique my squat.' },
+        ]);
+      });
+
+      it('drops a message that is image-only', () => {
+        const out = stripImageParts([
+          { role: 'user', content: [imgPart] },
+          { role: 'user', content: 'kept' },
+        ]);
+        expect(out).toEqual([{ role: 'user', content: 'kept' }]);
+      });
+
+      it('passes through string-content messages untouched', () => {
+        const legacy: ChatMessage = { role: 'user', content: 'legacy' };
+        const out = stripImageParts([legacy]);
+        expect(out[0]).toBe(legacy);
+      });
+    });
+
+    describe('supportsVision / VISION_CAPABLE_MODELS', () => {
+      it('accepts gemma-4 multimodal variants only', () => {
+        expect(supportsVision('gemma-4-31b-it')).toBe(true);
+        expect(supportsVision('gemma-4-26b-a4b-it')).toBe(true);
+      });
+
+      it('rejects every gemma-3-* variant and OpenAI models', () => {
+        expect(supportsVision('gemma-3-4b-it')).toBe(false);
+        expect(supportsVision('gemma-3-27b-it')).toBe(false);
+        expect(supportsVision('gpt-5.4-mini')).toBe(false);
+      });
+
+      it('VISION_CAPABLE_MODELS is disjoint from ALLOWED_MODELS', () => {
+        for (const m of VISION_CAPABLE_MODELS) {
+          expect(ALLOWED_MODELS.has(m)).toBe(false);
+        }
+      });
+    });
+
+    describe('toGeminiContents with image parts', () => {
+      it('emits inlineData for image parts alongside text', () => {
+        const contents = toGeminiContents([
+          { role: 'user', content: [textPart, imgPart] },
+        ]);
+        expect(contents).toHaveLength(1);
+        const parts = contents[0].parts ?? [];
+        expect(parts[0]).toEqual({ text: 'Critique my squat.' });
+        expect(parts[1]).toEqual({
+          inlineData: { mimeType: 'image/jpeg', data: 'IMG_B64' },
+        });
+      });
+
+      it('joins multi-text parts with newlines before the image', () => {
+        const contents = toGeminiContents([
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'line one' },
+              { type: 'text', text: 'line two' },
+              imgPart,
+            ],
+          },
+        ]);
+        const parts = contents[0].parts ?? [];
+        expect(parts[0]).toEqual({ text: 'line one\nline two' });
+        expect(parts[1]).toEqual({
+          inlineData: { mimeType: 'image/jpeg', data: 'IMG_B64' },
+        });
+      });
+
+      it('still merges system-string messages with a subsequent multimodal user turn', () => {
+        const contents = toGeminiContents([
+          { role: 'system', content: 'Be concise.' },
+          { role: 'user', content: [textPart, imgPart] },
+        ]);
+        const parts = contents[0].parts ?? [];
+        expect((parts[0] as { text: string }).text).toContain('[System]: Be concise.');
+        expect((parts[0] as { text: string }).text).toContain('Critique my squat.');
+        expect(parts[1]).toEqual({
+          inlineData: { mimeType: 'image/jpeg', data: 'IMG_B64' },
+        });
+      });
     });
   });
 });

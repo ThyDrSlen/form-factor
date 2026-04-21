@@ -11,6 +11,7 @@
  */
 import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
 import { parseGemmaJsonResponse, schema, type JsonSchema } from './gemma-json-parser';
+import { isGemmaSessionGenEnabled } from './gemma-session-gen-flag';
 import { getFewShots } from './template-generation-few-shots';
 
 export interface RestAdvisorInput {
@@ -53,6 +54,11 @@ export interface RestAdvisorRuntime {
   /** Timeout for the Gemma call before falling back to the heuristic. Default 2000ms. */
   timeoutMs?: number;
   maxRetries?: number;
+  /**
+   * Bypass the EXPO_PUBLIC_GEMMA_SESSION_GEN gate and always call the real
+   * dispatcher. Intended for integration tests.
+   */
+  skipFlagCheck?: boolean;
 }
 
 /**
@@ -123,6 +129,14 @@ export async function suggestRestSeconds(
   input: RestAdvisorInput,
   runtime: RestAdvisorRuntime = {},
 ): Promise<RestAdvice> {
+  // Flag gate: rest-advisor is called in-loop during an active set, so a
+  // disabled flag should short-circuit to the deterministic heuristic rather
+  // than throw. This keeps the workout UX smooth even when Gemma is off.
+  // Custom dispatch overrides (tests) and `skipFlagCheck` bypass the gate.
+  if (!runtime.dispatch && !runtime.skipFlagCheck && !isGemmaSessionGenEnabled()) {
+    return heuristicRestSeconds(input);
+  }
+
   const dispatch = runtime.dispatch ?? sendCoachPrompt;
   const timeoutMs = runtime.timeoutMs ?? 2000;
 

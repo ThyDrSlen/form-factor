@@ -138,23 +138,9 @@ export async function streamSpeech(
 /**
  * Generate MP3 to a file path (for build scripts — Node.js / Bun only).
  * Returns true on success, false on error.
+ *
+ * NOTE: This helper lives in scripts/generate-cue-audio.ts, not here.
+ * Putting filesystem writes in this file pulled `node:fs` into the Metro
+ * bundle (via `import('node:fs')`), which landed in main.jsbundle and
+ * broke Xcode's App Intents metadata extractor.
  */
-export async function generateCueFile(
-  text: string,
-  outputPath: string,
-  options?: ElevenLabsOptions,
-): Promise<boolean> {
-  try {
-    const arrayBuffer = await generateSpeech(text, options);
-    if (!arrayBuffer) return false;
-
-    // Dynamic import so Metro bundler doesn't pull in node:fs for RN builds.
-    // Bun / Node.js resolve this fine; React Native will never call this path.
-    const { writeFileSync } = await import(/* webpackIgnore: true */ 'node:fs');
-    writeFileSync(outputPath, Buffer.from(arrayBuffer));
-    return true;
-  } catch (error) {
-    console.warn('[ElevenLabs] generateCueFile failed:', error);
-    return false;
-  }
-}
