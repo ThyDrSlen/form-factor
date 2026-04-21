@@ -1688,11 +1688,22 @@ export default function ScanARKitScreen() {
       }
       const key = joint.name.toLowerCase();
       seenKeys.add(key);
-      const prev = cache.get(key);
+      let prev = cache.get(key);
+      // Drop any cached entry that was ever poisoned with a non-finite
+      // component (NaN / +-Infinity). Without this guard a single bad
+      // incoming frame would contaminate every subsequent eased value
+      // because `prev.x + (target - prev.x) * alpha` === NaN, and the
+      // result gets written back into the cache forever.
+      if (prev && (!Number.isFinite(prev.x) || !Number.isFinite(prev.y))) {
+        cache.delete(key);
+        prev = undefined;
+      }
       const targetX = joint.x;
       const targetY = joint.y;
-      const easedX = prev ? prev.x + (targetX - prev.x) * alpha : targetX;
-      const easedY = prev ? prev.y + (targetY - prev.y) * alpha : targetY;
+      const safeTargetX = Number.isFinite(targetX) ? targetX : prev?.x ?? 0;
+      const safeTargetY = Number.isFinite(targetY) ? targetY : prev?.y ?? 0;
+      const easedX = prev ? prev.x + (safeTargetX - prev.x) * alpha : safeTargetX;
+      const easedY = prev ? prev.y + (safeTargetY - prev.y) * alpha : safeTargetY;
       // Reinsert to move this key to the tail (most-recently-used) slot; Map
       // preserves insertion order so the head is always the oldest entry.
       if (prev) cache.delete(key);
