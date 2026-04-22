@@ -1937,6 +1937,20 @@ export default function ScanARKitScreen() {
         });
       }
     } catch (error) {
+      // Native start can throw AFTER `useBodyTracking` has already flipped
+      // its internal isTracking to true (see ARKitBodyTracker.ios.ts
+      // startTracking — setIsTracking(true) runs before the async body can
+      // reject asynchronously). Call stopNativeTracking() here so the hook
+      // resets isTracking -> false, tears down its pose-polling interval,
+      // and we don't keep the UI rendered as if tracking were live. Also
+      // clear the rep-countdown latch so a retry fires the pre-announce
+      // again.
+      try {
+        stopNativeTracking();
+      } catch (stopError) {
+        if (DEV) warnWithTs('[ScanARKit] stopNativeTracking after failed start also threw', stopError);
+      }
+      repCountdownFiredRef.current = false;
       errorWithTs('[ScanARKit] ❌ Failed to start tracking:', error);
       if (DEV) {
         errorWithTs('[ScanARKit] Error details:', {
@@ -1948,6 +1962,7 @@ export default function ScanARKitScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     startNativeTracking,
+    stopNativeTracking,
     transitionPhase,
     cameraPosition,
     logWithTs,
