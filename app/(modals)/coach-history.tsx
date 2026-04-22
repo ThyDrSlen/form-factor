@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRelativeTime } from '@/hooks/use-relative-time';
 import {
   fetchCoachSessions,
   type CoachSessionSummary,
@@ -57,6 +58,9 @@ function SessionCard({
     session.firstMessage.length > 80
       ? session.firstMessage.slice(0, 77) + '...'
       : session.firstMessage;
+  // Re-render the "Xm ago" label every minute so stale sessions don't
+  // freeze at their initial-mount value.
+  const relativeTime = useRelativeTime(session.createdAt, formatRelativeTime);
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
@@ -71,7 +75,7 @@ function SessionCard({
       <Text style={styles.cardPreview} numberOfLines={2}>
         {preview}
       </Text>
-      <Text style={styles.cardTime}>{formatRelativeTime(session.createdAt)}</Text>
+      <Text style={styles.cardTime}>{relativeTime}</Text>
     </TouchableOpacity>
   );
 }
