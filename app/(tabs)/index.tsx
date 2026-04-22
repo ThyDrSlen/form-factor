@@ -259,6 +259,7 @@ const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: Fee
               onPress={toggleMuted}
               accessibilityLabel={isMuted ? 'Unmute' : 'Mute'}
               accessibilityRole="button"
+              hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
             >
               <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={14} color="#DDE6FF" />
             </TouchableOpacity>
@@ -267,6 +268,7 @@ const FeedVideoPlayer = ({ uri, thumbnailUrl, overlaySummary, overlayTime }: Fee
               onPress={enterFullscreen}
               accessibilityLabel="Enter fullscreen"
               accessibilityRole="button"
+              hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
             >
               <Ionicons name="scan-outline" size={14} color="#DDE6FF" />
             </TouchableOpacity>
