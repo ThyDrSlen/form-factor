@@ -46,6 +46,11 @@ export function useFormQualityRecovery(sessionId: string | null | undefined): Us
   const [summary, setSummary] = useState<RecoverySummary | null>(null);
   const [explanations, setExplanations] = useState<Record<string, DrillExplanationState>>({});
   const mountedRef = useRef(true);
+  // Request-ID token so a slow in-flight fetch for an earlier sessionId
+  // cannot clobber the state of a newer, fresher fetch. Every call bumps
+  // the counter; completions compare their captured id against the latest
+  // value and bail silently if outdated.
+  const latestRequestIdRef = useRef(0);
 
   const load = useCallback(async () => {
     if (!sessionId) {
@@ -55,6 +60,7 @@ export function useFormQualityRecovery(sessionId: string | null | undefined): Us
       setSummary(null);
       return;
     }
+    const requestId = ++latestRequestIdRef.current;
     setIsLoading(true);
     setError(null);
     try {
@@ -63,6 +69,8 @@ export function useFormQualityRecovery(sessionId: string | null | undefined): Us
         getSessionAggregates(sessionId),
       ]);
       if (!mountedRef.current) return;
+      // Drop stale response — a newer load() has already superseded us.
+      if (requestId !== latestRequestIdRef.current) return;
       setPrescriptions(prescribeDrills(faults as FormTrackingFault[]));
       setSummary({
         sessionId,
@@ -73,12 +81,15 @@ export function useFormQualityRecovery(sessionId: string | null | undefined): Us
       });
     } catch (err) {
       if (!mountedRef.current) return;
+      if (requestId !== latestRequestIdRef.current) return;
       const message = err instanceof Error ? err.message : 'Failed to load session faults.';
       setError(message);
       setPrescriptions([]);
       setSummary(null);
     } finally {
-      if (mountedRef.current) setIsLoading(false);
+      if (mountedRef.current && requestId === latestRequestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [sessionId]);
 
