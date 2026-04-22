@@ -5,13 +5,21 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { CoachModelCard } from '@/components/settings/CoachModelCard';
+import { CoachModelTierCard } from '@/components/settings/CoachModelTierCard';
 import { CoachRoutingPreference } from '@/components/settings/CoachRoutingPreference';
+import { CostDashboardCard } from '@/components/settings/CostDashboardCard';
 import {
   getStatus as getCoachModelStatus,
   subscribe as subscribeCoachModel,
   type CoachModelState,
 } from '@/lib/services/coach-model-manager';
 import type { CoachRoutingPreference as RoutingPref } from '@/lib/services/coach-dispatch';
+import {
+  DEFAULT_COACH_MODEL_TIER,
+  getModelTier,
+  setModelTier,
+  type CoachModelTier,
+} from '@/lib/services/coach-model-tier-preference';
 import { useSafeBack } from '@/hooks/use-safe-back';
 
 export const COACH_ROUTING_PREFERENCE_KEY = 'coach_routing_preference';
@@ -26,6 +34,7 @@ export default function SettingsCoachingModal() {
   const safeBack = useSafeBack(['/(tabs)/profile', '/profile'], { alwaysReplace: true });
   const [modelState, setModelState] = useState<CoachModelState>(getCoachModelStatus());
   const [preference, setPreference] = useState<RoutingPref>('cloud_only');
+  const [tier, setTier] = useState<CoachModelTier>(DEFAULT_COACH_MODEL_TIER);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -37,11 +46,15 @@ export default function SettingsCoachingModal() {
 
   useEffect(() => {
     let alive = true;
-    AsyncStorage.getItem(COACH_ROUTING_PREFERENCE_KEY).then((stored) => {
+    Promise.all([
+      AsyncStorage.getItem(COACH_ROUTING_PREFERENCE_KEY),
+      getModelTier(),
+    ]).then(([storedPref, storedTier]) => {
       if (!alive) return;
-      if (isRoutingPref(stored)) {
-        setPreference(stored);
+      if (isRoutingPref(storedPref)) {
+        setPreference(storedPref);
       }
+      setTier(storedTier);
       setLoaded(true);
     });
     return () => {
@@ -55,6 +68,11 @@ export default function SettingsCoachingModal() {
       // Non-fatal — UI already reflects the choice. A future sync will
       // re-attempt on navigation.
     });
+  }, []);
+
+  const handleTierChange = useCallback((next: CoachModelTier) => {
+    setTier(next);
+    void setModelTier(next);
   }, []);
 
   const localDisabled = modelState.status !== 'ready';
@@ -91,6 +109,20 @@ export default function SettingsCoachingModal() {
             localDisabled={localDisabled}
           />
         )}
+
+        <View style={styles.divider} />
+
+        <Text variant="titleMedium" style={styles.sectionTitle}>
+          Speed vs quality
+        </Text>
+        {loaded && <CoachModelTierCard value={tier} onChange={handleTierChange} />}
+
+        <View style={styles.divider} />
+
+        <Text variant="titleMedium" style={styles.sectionTitle}>
+          Weekly usage
+        </Text>
+        <CostDashboardCard />
       </ScrollView>
     </View>
   );
