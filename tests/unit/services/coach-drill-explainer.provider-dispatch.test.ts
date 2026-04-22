@@ -65,7 +65,9 @@ describe('coach-drill-explainer provider dispatch (pipeline-v2)', () => {
 
     expect(mockSendCoachPrompt).toHaveBeenCalledTimes(1);
     const [, , opts] = mockSendCoachPrompt.mock.calls[0];
-    expect(opts).toEqual({ provider: 'gemma' });
+    // V2 adds the fault_explainer taskKind so the dispatcher can pick the
+    // tactical tier and cost-tracker (#537) records the right bucket.
+    expect(opts).toEqual({ taskKind: 'fault_explainer', provider: 'gemma' });
     expect(result.provider).toBe('gemma');
   });
 
@@ -77,7 +79,7 @@ describe('coach-drill-explainer provider dispatch (pipeline-v2)', () => {
     const result = await explainDrill(baseInput);
 
     const [, , opts] = mockSendCoachPrompt.mock.calls[0];
-    expect(opts).toEqual({ provider: 'openai' });
+    expect(opts).toEqual({ taskKind: 'fault_explainer', provider: 'openai' });
     expect(result.provider).toBe('openai');
   });
 

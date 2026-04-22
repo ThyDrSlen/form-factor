@@ -216,6 +216,14 @@ async function dispatch(
   messages: CoachMessage[],
   context: CoachContext,
 ): Promise<CoachMessage> {
+  // Pipeline-v2: pass taskKind so the cost-aware dispatcher recognises
+  // this as a complex task (multi_turn_debrief → GPT, not the default
+  // general_chat fallback) and so downstream telemetry (#537) can label
+  // the usage. Flag-off preserves the prior two-arg call shape.
+  const v2Opts = isCoachPipelineV2Enabled()
+    ? ({ taskKind: 'multi_turn_debrief' as const })
+    : undefined;
+
   // Direct-call routing: the gemma branch targets the coach-gemma edge
   // function directly so Gemma-specific parameters (model, etc.) flow
   // through without going through the generic `coach` function. Failures
@@ -239,14 +247,18 @@ async function dispatch(
         '[coach-auto-debrief] weekly Gemma cap hit, falling back to openai',
         capErr,
       );
-      return sendCoachPrompt(messages, { ...context, focus: 'post_session_debrief' });
+      return sendCoachPrompt(messages, { ...context, focus: 'post_session_debrief' }, v2Opts);
     }
     try {
-      return await sendCoachGemmaPrompt(messages, context, { taskKind: 'debrief' });
+      return await sendCoachGemmaPrompt(
+        messages,
+        context,
+        v2Opts ? { taskKind: v2Opts.taskKind } : { taskKind: 'debrief' },
+      );
     } catch (err) {
       warnWithTs('[coach-auto-debrief] gemma dispatch failed, falling back to openai', err);
-      return sendCoachPrompt(messages, { ...context, focus: 'post_session_debrief' });
+      return sendCoachPrompt(messages, { ...context, focus: 'post_session_debrief' }, v2Opts);
     }
   }
-  return sendCoachPrompt(messages, context);
+  return sendCoachPrompt(messages, context, v2Opts);
 }
