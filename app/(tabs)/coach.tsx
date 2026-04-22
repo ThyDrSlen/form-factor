@@ -48,6 +48,7 @@ export default function CoachScreen() {
   const [coachError, setCoachError] = useState<string | null>(null);
   const [coachErrorDomain, setCoachErrorDomain] = useState<AppError['domain'] | null>(null);
   const [coachErrorCode, setCoachErrorCode] = useState<string | null>(null);
+  const [coachRetryAfterMs, setCoachRetryAfterMs] = useState<number | null>(null);
   const [coachSending, setCoachSending] = useState(false);
   const [showCoachWelcome, setShowCoachWelcome] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
@@ -99,6 +100,7 @@ export default function CoachScreen() {
     setCoachError(null);
     setCoachErrorDomain(null);
     setCoachErrorCode(null);
+    setCoachRetryAfterMs(null);
     setCoachSending(true);
 
     try {
@@ -118,6 +120,15 @@ export default function CoachScreen() {
       setCoachError(hasDomain ? mapToUserMessage(appErr as AppError) : fallback);
       setCoachErrorDomain(hasDomain ? (appErr as AppError).domain : null);
       setCoachErrorCode(hasDomain ? (appErr as AppError).code : null);
+      // Extract retry-after (parsed from the upstream Retry-After header) from
+      // the error details so we can show a concrete countdown rather than a
+      // generic "try again in a moment".
+      const details = hasDomain ? (appErr as AppError).details : undefined;
+      const retryAfterMs =
+        details && typeof details === 'object' && 'retryAfterMs' in details
+          ? Number((details as { retryAfterMs?: unknown }).retryAfterMs)
+          : NaN;
+      setCoachRetryAfterMs(Number.isFinite(retryAfterMs) ? retryAfterMs : null);
     } finally {
       setCoachSending(false);
     }
@@ -245,6 +256,7 @@ export default function CoachScreen() {
     setCoachError(null);
     setCoachErrorDomain(null);
     setCoachErrorCode(null);
+    setCoachRetryAfterMs(null);
   }, []);
 
   const handleVoiceStart = useCallback(async () => {
@@ -356,7 +368,8 @@ export default function CoachScreen() {
         {coachError && (
           <View style={styles.coachError} testID="coach-error-banner">
             <Text style={styles.coachErrorTitle}>
-              {coachErrorCode === 'COACH_RATE_LIMITED'
+              {coachErrorCode === 'COACH_RATE_LIMITED' ||
+              coachErrorCode === 'COACH_GEMMA_RATE_LIMITED'
                 ? 'Coach is rate-limited'
                 : coachErrorDomain === 'network'
                   ? 'Connection error'
@@ -364,7 +377,13 @@ export default function CoachScreen() {
                     ? 'Coach is busy'
                     : 'Service unavailable'}
             </Text>
-            <Text style={styles.coachErrorText}>{coachError}</Text>
+            <Text style={styles.coachErrorText}>
+              {coachRetryAfterMs !== null &&
+              (coachErrorCode === 'COACH_RATE_LIMITED' ||
+                coachErrorCode === 'COACH_GEMMA_RATE_LIMITED')
+                ? `Try again in ${Math.max(1, Math.ceil(coachRetryAfterMs / 1000))}s.`
+                : coachError}
+            </Text>
           </View>
         )}
 

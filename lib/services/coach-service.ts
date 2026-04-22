@@ -136,6 +136,55 @@ const DEFAULT_MODEL_ID = 'gpt-5.4-mini';
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
 
 /**
+ * Parse a `Retry-After` header value per RFC 7231. The header carries either
+ * an integer number of seconds OR an HTTP-date. Returns the delay in
+ * milliseconds, or undefined if the value can't be parsed.
+ *
+ * Exported for reuse by `coach-gemma-service.ts` — the two services share the
+ * same 429 handling contract.
+ */
+export function parseRetryAfterMs(raw: string | null | undefined): number | undefined {
+  if (!raw) return undefined;
+  const asInt = Number.parseInt(raw, 10);
+  if (Number.isFinite(asInt) && asInt >= 0 && /^\d+$/.test(raw.trim())) {
+    return asInt * 1000;
+  }
+  const asDate = Date.parse(raw);
+  if (Number.isFinite(asDate)) {
+    return Math.max(0, asDate - Date.now());
+  }
+  return undefined;
+}
+
+/**
+ * Extract a `Retry-After` delay (ms) from a Supabase Edge Functions failure
+ * tuple. Handles both shapes the SDK returns on 429:
+ *   - `response.headers.get('Retry-After')` — the raw Response from a
+ *     FunctionsHttpError.
+ *   - `error.context.headers.get('Retry-After')` — the same Response, but
+ *     surfaced via the error wrapper.
+ * Returns undefined when neither path yields a header.
+ */
+function extractRetryAfterMs(
+  response: Response | undefined,
+  error: unknown,
+): number | undefined {
+  const fromResponse = response?.headers?.get?.('Retry-After');
+  if (fromResponse) {
+    const parsed = parseRetryAfterMs(fromResponse);
+    if (parsed !== undefined) return parsed;
+  }
+  const ctx = (error as { context?: unknown } | null | undefined)?.context;
+  if (ctx && typeof ctx === 'object' && 'headers' in ctx) {
+    const headers = (ctx as { headers?: { get?: (k: string) => string | null } }).headers;
+    const raw = headers?.get?.('Retry-After') ?? null;
+    const parsed = parseRetryAfterMs(raw);
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
+}
+
+/**
  * Feature-flag gate for prepending cross-session memory to coach prompts.
  * Defaults to ON (value 'true' or unset). Any other value disables the
  * memory clause so the coach behaves as before.
@@ -321,7 +370,7 @@ async function sendCoachPromptInner(
         ? { ...(context ?? {}), memoryClause }
         : context;
 
-    const { data, error } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
+    const { data, error, response } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
       body: { messages: outgoingMessages, context: outgoingContext },
     });
 
@@ -359,11 +408,15 @@ async function sendCoachPromptInner(
       }
 
       if (isRateLimited) {
+        const retryAfterMs = extractRetryAfterMs(response, error);
         throw createError(
           'network',
           'COACH_RATE_LIMITED',
           'Coach is rate-limited — try again in a moment.',
-          { details: error, retryable: true }
+          {
+            details: retryAfterMs !== undefined ? { error, retryAfterMs } : error,
+            retryable: true,
+          }
         );
       }
 
@@ -388,11 +441,18 @@ async function sendCoachPromptInner(
         /too many requests/i.test(data.error);
 
       if (isRateLimitedPayload) {
+        const retryAfterMs = extractRetryAfterMs(response, error);
         throw createError(
           'network',
           'COACH_RATE_LIMITED',
           'Coach is rate-limited — try again in a moment.',
-          { details: data.error, retryable: true }
+          {
+            details:
+              retryAfterMs !== undefined
+                ? { error: data.error, retryAfterMs }
+                : data.error,
+            retryable: true,
+          }
         );
       }
 
