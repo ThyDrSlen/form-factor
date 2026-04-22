@@ -138,8 +138,33 @@ export default function FoodScreen() {
     </TouchableOpacity>
   );
 
+  // Wave-31 Pack A / A6 (#562): long meal names ("Slow Cooker Chicken Teriyaki
+  // w/ Rice & Broccoli") get truncated to `numberOfLines=1` on the card title.
+  // Long-pressing the title now surfaces a full-text Alert with the macro
+  // breakdown so users don't have to open the detail view just to see the
+  // full name.
+  const handleLongPressFood = useCallback((item: FoodEntry) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    const dateLabel = new Date(item.date).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    const macros = [
+      typeof item.protein === 'number' ? `${item.protein}g protein` : null,
+      typeof item.carbs === 'number' ? `${item.carbs}g carbs` : null,
+      typeof item.fat === 'number' ? `${item.fat}g fat` : null,
+    ].filter(Boolean) as string[];
+    const body = [
+      dateLabel,
+      typeof item.calories === 'number' ? `${item.calories} kcal` : null,
+      macros.length > 0 ? macros.join(' • ') : null,
+    ].filter(Boolean) as string[];
+    Alert.alert(item.name, body.join('\n'), [{ text: 'OK' }]);
+  }, []);
+
   const renderItem = ({ item }: { item: FoodEntry }) => (
-    <Swipeable 
+    <Swipeable
       ref={(ref) => {
         if (ref) {
           swipeableRefs.current.set(item.id, ref);
@@ -147,14 +172,16 @@ export default function FoodScreen() {
       }}
       renderRightActions={() => renderRightActions(item.id, item.name)}
     >
-      <TouchableOpacity 
+      <TouchableOpacity
         activeOpacity={0.9}
         accessibilityLabel={`${item.name} meal`}
-        accessibilityHint="Swipe left to reveal delete actions"
+        accessibilityHint="Swipe left to reveal delete actions, or long-press for full name and macros"
         onPress={() => {
           Haptics.selectionAsync();
           // Navigate to food detail
         }}
+        onLongPress={() => handleLongPressFood(item)}
+        delayLongPress={400}
         style={styles.cardWrapper}
       >
         <LinearGradient
