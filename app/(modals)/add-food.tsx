@@ -238,6 +238,9 @@ export default function AddFoodScreen() {
               returnKeyType="next"
               onSubmitEditing={() => caloriesRef.current?.focus()}
               blurOnSubmit={false}
+              textContentType="none"
+              autoComplete="off"
+              autoCorrect={false}
             />
             {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
           </View>
