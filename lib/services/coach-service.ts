@@ -298,9 +298,39 @@ async function sendCoachPromptStreaming(
         }
       );
     }
-    return { role: 'assistant', content: shapeFinalResponse(safety.output) };
+    return attachStreamingProvenance({ role: 'assistant', content: shapeFinalResponse(safety.output) }, result);
   }
-  return { role: 'assistant', content: result.text };
+  return attachStreamingProvenance({ role: 'assistant', content: result.text }, result);
+}
+
+/**
+ * Mirror `sendCoachPromptInner`'s non-enumerable provider/model annotation
+ * so streamed replies carry the same provenance the sync path exposes.
+ * The streaming result may or may not include these fields — only the Gemma
+ * non-streaming fallback populates them today (see `coach-streaming.ts`);
+ * server-side NDJSON frames do not yet emit provider metadata. Closes #538.
+ */
+function attachStreamingProvenance(
+  reply: CoachMessage,
+  result: { provider?: CoachProvider | string; model?: string },
+): CoachMessage {
+  if (result.provider) {
+    Object.defineProperty(reply, 'provider', {
+      value: result.provider,
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    });
+  }
+  if (result.model) {
+    Object.defineProperty(reply, 'model', {
+      value: result.model,
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    });
+  }
+  return reply;
 }
 
 async function sendCoachPromptInner(

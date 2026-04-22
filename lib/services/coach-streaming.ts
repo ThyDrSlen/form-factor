@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { createError } from './ErrorHandler';
 import { sendCoachGemmaPrompt } from './coach-gemma-service';
 import type { CoachContext, CoachMessage } from './coach-service';
+import type { CoachProvider } from './coach-provider-types';
 
 export interface StreamCoachOptions {
   /** Provider hint forwarded as `?provider=` (gemma|openai). */
@@ -53,6 +54,19 @@ export interface StreamCoachResult {
   durationMs: number;
   /** finishReason from the upstream provider, when present. */
   finishReason?: string;
+  /**
+   * Coach provider that produced the stream. Populated when the producer
+   * emits a provider annotation (e.g. the Gemma non-streaming fallback
+   * preserves `gemma-cloud`); otherwise undefined so the synchronous paths'
+   * `inferCoachProvider()` remains the single source of truth for
+   * unannotated cases. Closes #538.
+   */
+  provider?: CoachProvider;
+  /**
+   * Model identifier returned by the upstream producer (e.g. `gemma-3-4b-it`).
+   * Same policy as `provider` — only set when the producer annotates the reply.
+   */
+  model?: string;
 }
 
 interface StreamFrame {
@@ -299,10 +313,17 @@ async function streamGemmaViaNonStreamingFallback(
     onChunk(text);
   }
 
+  // The coach-gemma service attaches `provider` + `model` as non-enumerable
+  // properties on the reply (see coach-gemma-service.ts:119). Forward them
+  // onto the StreamCoachResult so the streaming caller can annotate its
+  // final CoachMessage with the same provenance the sync path surfaces.
+  // Closes #538.
   return {
     text,
     chunkCount: text.length > 0 ? 1 : 0,
     ttftMs,
     durationMs: Date.now() - startedAt,
+    ...(reply.provider ? { provider: reply.provider } : {}),
+    ...(reply.model ? { model: reply.model } : {}),
   };
 }
