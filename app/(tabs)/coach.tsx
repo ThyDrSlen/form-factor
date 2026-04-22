@@ -348,6 +348,7 @@ export default function CoachScreen() {
               onPress={() => handleCoachSend(prompt)}
               accessibilityRole="button"
               accessibilityLabel={`Quick prompt: ${prompt}`}
+              accessibilityHint="Sends this suggested message to the coach"
             >
               <Text style={styles.quickPromptText}>{prompt}</Text>
             </TouchableOpacity>
@@ -355,18 +356,34 @@ export default function CoachScreen() {
         </View>
 
         {coachError && (
-          <View style={styles.coachError} testID="coach-error-banner">
+          <TouchableOpacity
+            style={styles.coachError}
+            testID="coach-error-banner"
+            onPress={() => {
+              const lastUserMessage = [...coachMessages].reverse().find(msg => msg.role === 'user');
+              if (lastUserMessage?.content) {
+                void handleCoachSend(lastUserMessage.content);
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              coachErrorCode === 'COACH_RATE_LIMITED'
+                ? 'Coach is busy. Tap to retry.'
+                : 'Coach unavailable. Tap to retry.'
+            }
+            accessibilityHint="Retries the last message you sent"
+          >
             <Text style={styles.coachErrorTitle}>
               {coachErrorCode === 'COACH_RATE_LIMITED'
-                ? 'Coach is rate-limited'
+                ? 'Coach is busy — try again in a few minutes. Tap to retry.'
                 : coachErrorDomain === 'network'
-                  ? 'Connection error'
+                  ? 'Connection error. Tap to retry.'
                   : coachErrorDomain === 'unknown' || coachErrorDomain == null
-                    ? 'Coach is busy'
-                    : 'Service unavailable'}
+                    ? 'Coach is busy. Tap to retry.'
+                    : 'Service unavailable. Tap to retry.'}
             </Text>
             <Text style={styles.coachErrorText}>{coachError}</Text>
-          </View>
+          </TouchableOpacity>
         )}
 
         {sessionLoading ? (
