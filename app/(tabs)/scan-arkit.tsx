@@ -3287,10 +3287,22 @@ export default function ScanARKitScreen() {
               accessibilityRole="alert"
             >
               <Ionicons name="eye-off-outline" size={14} color="#F5F7FF" />
-              <Text style={scanArV2Styles.microToastText}>
-                Adjust clothing — {sustainedOcclusionHint.jointNames.length} joint
-                {sustainedOcclusionHint.jointNames.length === 1 ? '' : 's'} hidden
+              <Text
+                style={scanArV2Styles.microToastText}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                Adjust clothing —{' '}
+                {sustainedOcclusionHint.jointNames.slice(0, 3).join(', ')} hidden
               </Text>
+              {sustainedOcclusionHint.jointNames.length > 3 ? (
+                <Text
+                  style={scanArV2Styles.microToastText}
+                  numberOfLines={1}
+                >
+                  +{sustainedOcclusionHint.jointNames.length - 3} more
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
