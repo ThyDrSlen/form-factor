@@ -433,6 +433,9 @@ export default function SignInScreen() {
               style={[styles.socialButton, isSigningIn && styles.buttonDisabled]}
               onPress={() => handleSocialAuth('google')}
               disabled={isSigningIn}
+              accessibilityRole="button"
+              accessibilityLabel="Sign in with Google"
+              accessibilityHint="Double-tap to authenticate"
             >
               <Text style={styles.socialButtonText}>
                 Continue with Google
@@ -444,6 +447,9 @@ export default function SignInScreen() {
                 style={[styles.socialButton, isSigningIn && styles.buttonDisabled]}
                 onPress={() => handleSocialAuth('apple')}
                 disabled={isSigningIn}
+                accessibilityRole="button"
+                accessibilityLabel="Sign in with Apple"
+                accessibilityHint="Double-tap to authenticate"
               >
                 <Text style={styles.socialButtonText}>
                   Continue with Apple

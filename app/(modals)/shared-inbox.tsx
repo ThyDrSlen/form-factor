@@ -156,16 +156,22 @@ export default function SharedInboxModal() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.tabRow}>
+      <View style={styles.tabRow} accessibilityRole="tablist">
         <TouchableOpacity
           style={[styles.tabButton, activeTab === 'inbox' && styles.tabButtonActive]}
           onPress={() => setActiveTab('inbox')}
+          accessibilityRole="tab"
+          accessibilityLabel="Inbox"
+          accessibilityState={{ selected: activeTab === 'inbox' }}
         >
           <Text style={[styles.tabText, activeTab === 'inbox' && styles.tabTextActive]}>Inbox</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tabButton, activeTab === 'sent' && styles.tabButtonActive]}
           onPress={() => setActiveTab('sent')}
+          accessibilityRole="tab"
+          accessibilityLabel="Sent"
+          accessibilityState={{ selected: activeTab === 'sent' }}
         >
           <Text style={[styles.tabText, activeTab === 'sent' && styles.tabTextActive]}>Sent</Text>
         </TouchableOpacity>

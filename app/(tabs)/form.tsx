@@ -4,6 +4,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -83,6 +84,18 @@ export default function FormHomeScreen() {
             <Text style={styles.errorText}>
               Could not load form data: {formHome.error.message}
             </Text>
+            <TouchableOpacity
+              onPress={() => {
+                void formHome.refresh();
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading form data"
+              accessibilityHint="Double-tap to reload your form metrics"
+              style={styles.retryButton}
+            >
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -153,9 +166,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 12,
     padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   errorText: {
     color: '#F5F7FF',
     fontSize: 13,
+    flex: 1,
+  },
+  retryButton: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  retryText: {
+    color: '#4C8CFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
