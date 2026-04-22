@@ -6,6 +6,7 @@ import { DeleteAction } from '@/components';
 import { AskCoachCTA } from '@/components/form-tracking/AskCoachCTA';
 import { FormQualityBadgeRow } from '@/components/workouts/FormQualityBadgeRow';
 import { OverloadAnalyticsCard } from '@/components/workouts/OverloadAnalyticsCard';
+import { WorkoutCardSkeleton } from '@/components/workouts/WorkoutCardSkeleton';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnits } from '@/contexts/UnitsContext';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
@@ -18,7 +19,6 @@ import { exportSession } from '@/lib/services/session-export-service';
 import { isWorkoutCoachRecallEnabled } from '@/lib/services/workout-coach-recall-flag';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
     Alert,
     FlatList,
     RefreshControl,
@@ -433,11 +433,19 @@ export default function WorkoutsScreen() {
     );
   };
 
+  // Skeleton placeholders on cold-load keep the tab usable on slow networks
+  // (#562/A1). Render 3 shimmer cards that mirror the real-card dimensions so
+  // users see structure instead of a blank spinner. When the fetch completes,
+  // the FlatList below takes over; when the list arrives empty, the empty
+  // state with illustration + CTA takes over.
   if (loading && !workouts.length) {
     return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Loading your workouts</Text>
+      <View style={styles.container} testID="workouts-skeleton-container">
+        <View style={styles.list}>
+          <WorkoutCardSkeleton testID="workout-card-skeleton-0" />
+          <WorkoutCardSkeleton testID="workout-card-skeleton-1" />
+          <WorkoutCardSkeleton testID="workout-card-skeleton-2" />
+        </View>
       </View>
     );
   }
