@@ -95,11 +95,23 @@ export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDri
 
   const context = { focus: 'drill-explainer', sessionId: undefined };
 
+  // Pipeline-v2: pass taskKind so the dispatcher recognises this as a
+  // tactical `fault_explainer` (→ Gemma tier) rather than falling back to
+  // general_chat, and so cost-tracker telemetry (#537) labels correctly.
+  // When V2 is off we omit opts entirely to preserve the two-arg call
+  // shape that existing tests assert against.
+  const taskKindOpts = pipelineV2
+    ? ({ taskKind: 'fault_explainer' as const })
+    : null;
+
   // Gemma-first attempt (both flags on). On any error we fall through to the
   // env-resolved provider below.
   if (gemmaFirst) {
     try {
-      const reply = await sendCoachPrompt(messages, context, { provider: 'gemma' });
+      const reply = await sendCoachPrompt(messages, context, {
+        ...(taskKindOpts ?? {}),
+        provider: 'gemma',
+      });
       const text = (reply.content ?? '').trim();
       if (text) {
         return { explanation: text, provider: 'gemma' };
@@ -114,11 +126,11 @@ export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDri
   }
 
   try {
-    const reply = await sendCoachPrompt(
-      messages,
-      context,
-      resolvedProvider ? { provider: resolvedProvider } : undefined,
-    );
+    const cloudOpts =
+      resolvedProvider
+        ? { ...(taskKindOpts ?? {}), provider: resolvedProvider }
+        : taskKindOpts ?? undefined;
+    const reply = await sendCoachPrompt(messages, context, cloudOpts);
     const text = (reply.content ?? '').trim();
     if (!text) {
       return { explanation: '', provider: returnedProvider, error: 'Empty response from coach.' };
