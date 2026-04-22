@@ -35,6 +35,20 @@ import { isCoachPipelineV2Enabled } from '@/lib/services/coach-pipeline-v2-flag'
 import { createError, logError } from '@/lib/services/ErrorHandler';
 import { useToast } from '@/contexts/ToastContext';
 
+/**
+ * Thin wrapper around `useToast` that degrades gracefully to a no-op when
+ * the component is rendered outside a ToastProvider (e.g. older unit tests
+ * that didn't wrap the tree). Ensures navigation-error toasts don't crash
+ * existing test renderings that don't mount the app's provider stack.
+ */
+function useOptionalToast(): { show: (msg: string, opts?: { type?: 'info' | 'success' | 'error' }) => void } {
+  try {
+    return useToast();
+  } catch {
+    return { show: () => undefined };
+  }
+}
+
 function safeParseReps(raw: string | undefined): RepSummary[] {
   if (!raw) return [];
   try {
@@ -94,7 +108,7 @@ function pickBestAndWorst(reps: RepSummary[]): {
 
 export default function FormTrackingDebriefScreen() {
   const router = useRouter();
-  const { show: showToast } = useToast();
+  const { show: showToast } = useOptionalToast();
   const [userId, setUserId] = useState<string | null>(null);
   useEffect(() => {
     // Resolve the current user lazily via supabase.auth.getSession() rather
@@ -307,7 +321,7 @@ export default function FormTrackingDebriefScreen() {
           )}
         </View>
 
-        {comparisonLoading || comparisonError || comparison?.priorSessionId ? (
+        {comparisonLoading || comparisonError || comparison ? (
           <View style={styles.sectionGap} testID="form-tracking-debrief-compare-section">
             <Text style={styles.sectionTitle}>Progress</Text>
             <SessionCompareToLastCard
@@ -316,6 +330,7 @@ export default function FormTrackingDebriefScreen() {
               error={comparisonError}
               onRetry={reloadComparison}
               onPress={comparison?.priorSessionId ? handleOpenComparison : undefined}
+              exerciseName={exerciseName}
               testID="form-tracking-debrief-compare-card"
             />
           </View>
