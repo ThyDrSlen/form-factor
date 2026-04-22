@@ -97,13 +97,14 @@ import {
   type PullupScoringResult,
 } from '@/lib/tracking-quality';
 import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
-import { useWorkoutController } from '@/hooks/use-workout-controller';
+import { useWorkoutController, isPendingRepsAtStopSignal } from '@/hooks/use-workout-controller';
 import { usePRDetection } from '@/hooks/use-pr-detection';
 import { PRCelebrationBadge } from '@/components/form-tracking/PRCelebrationBadge';
 import { ProgressionSuggestionBadge } from '@/components/form-tracking/ProgressionSuggestionBadge';
 import { useProgressionSuggestion } from '@/hooks/use-progression-suggestion';
 import { emitFormMilestone, useSessionRunner } from '@/lib/stores/session-runner';
 import type { FormTargets } from '@/lib/services/form-target-resolver';
+import { getDefaultsForExerciseWithFlag } from '@/lib/services/form-target-resolver';
 import {
   DEFAULT_DETECTION_MODE,
   getWorkoutByMode,
@@ -430,9 +431,40 @@ export default function ScanARKitScreen() {
     () => getFormTargetsFor(detectionMode),
     [getFormTargetsFor, detectionMode],
   );
+  // Provenance flag — true when `detectionMode` isn't a first-class exercise
+  // and the resolver fell back to DEFAULT_FORM_TARGETS. Kept as a boolean so
+  // a later PR can light up a subtle "generic thresholds" badge without any
+  // UI churn now. #575 item #8.
+  const usingGenericTargets = useMemo(
+    () => getDefaultsForExerciseWithFlag(detectionMode).usingGenericTargets,
+    [detectionMode],
+  );
+  const usingGenericTargetsRef = React.useRef<boolean>(usingGenericTargets);
+  useEffect(() => {
+    usingGenericTargetsRef.current = usingGenericTargets;
+  }, [usingGenericTargets]);
   const activeFormTargetsRef = React.useRef<FormTargets>(activeFormTargets);
   useEffect(() => {
+    const prev = activeFormTargetsRef.current;
     activeFormTargetsRef.current = activeFormTargets;
+    // When form targets shift (e.g. user just picked a template override for
+    // the active exercise) the cue-hysteresis boundary that was computed
+    // against the old thresholds becomes stale — already-spoken cues can
+    // re-fire under the new boundary because the TTS hook's 5s repeat-guard
+    // sees them as "different" cues. Reset both boundaries in tandem. Skip
+    // on first-render init (prev === current) since nothing's rotated yet.
+    // (#575 item #1, targets-only leg.)
+    const targetsChanged =
+      prev !== activeFormTargets &&
+      (prev.fqiMin !== activeFormTargets.fqiMin ||
+        prev.romMin !== activeFormTargets.romMin ||
+        prev.romMax !== activeFormTargets.romMax);
+    if (targetsChanged) {
+      cueHysteresisControllerRef.current.resetAll();
+      cueHysteresisLastTickRef.current = null;
+      stablePrimaryCueRef.current = null;
+      lastSpokenCueRef.current = null;
+    }
     if (deepLinkTemplateId) {
       logWithTs('[ScanARKit] Active form targets', {
         exerciseId: detectionMode,
@@ -848,6 +880,12 @@ export default function ScanARKitScreen() {
   }, []);
 
   const repIndexTrackerRef = React.useRef(new RepIndexTracker());
+  // Stable mirror of `repCount` for callback closures (telemetry, cue logger).
+  // Telemetry events fire asynchronously after phase transitions, so reading
+  // React state inside the closure can attribute the cue to the wrong rep
+  // (closure captured the *previous* value). We snapshot into this ref on
+  // every rep-complete callback and read from it in logCueEvent().
+  const repCountRef = React.useRef(0);
 
   const lastPoseTimestampRef = React.useRef<number | null>(null);
   const recordingActiveRef = React.useRef(false);
@@ -894,7 +932,10 @@ export default function ScanARKitScreen() {
         cue: evt.cue,
         mode: detectionMode,
         phase,
-        repCount,
+        // Read from the ref rather than the closure-captured React state so
+        // cues that emit just after a rep-complete phase transition attribute
+        // to the latest rep (see #575 item #3).
+        repCount: repCountRef.current,
         reason: evt.reason,
         throttled: evt.throttled,
         dropped: evt.action !== 'spoken',
@@ -1041,6 +1082,11 @@ export default function ScanARKitScreen() {
     },
     onRepComplete: (repNumber: number, fqi: number) => {
       setRepCount(repNumber);
+      // Snapshot into a ref so async telemetry closures (logCueEvent) read
+      // the current count instead of the value captured when the closure was
+      // created — avoids attributing cues to the prior rep when phase
+      // transitions fire asynchronously.
+      repCountRef.current = repNumber;
       repIndexTrackerRef.current.endRep();
       if (Number.isFinite(fqi)) {
         sessionFqiScoresRef.current.push(fqi);
@@ -1072,7 +1118,18 @@ export default function ScanARKitScreen() {
         meta?.source === 'frame' ? 'frame-live' : 'onPullupScoring-rep-complete'
       );
     },
-  }), [activeWorkoutDef, repCount, transitionPhase, updatePartialTrackingBadgeVisibility]);
+    // Surface pending-rep warnings to the user (#575 item #10). The
+    // controller fires this both during the session (single-rep retry
+    // failures) and at stop-time (via flushPendingRepsOnStop) with a
+    // distinct sentinel we can discriminate on.
+    onRepLogFailure: (error: unknown, queueDepth: number) => {
+      if (isPendingRepsAtStopSignal(error)) {
+        showToast(`${queueDepth} rep${queueDepth === 1 ? '' : 's'} pending sync — we'll retry when you're back online.`, {
+          type: 'info',
+        });
+      }
+    },
+  }), [activeWorkoutDef, repCount, showToast, transitionPhase, updatePartialTrackingBadgeVisibility]);
 
   const workoutController = useWorkoutController(detectionMode, {
     sessionId: sessionIdRef.current,
@@ -1085,6 +1142,7 @@ export default function ScanARKitScreen() {
     reset: resetWorkoutController,
     setWorkout: setWorkoutController,
     addRepCue: addWorkoutRepCue,
+    flushPendingRepsOnStop,
   } = workoutController;
 
   useEffect(() => {
@@ -1093,6 +1151,7 @@ export default function ScanARKitScreen() {
     restPhaseRef.current = nextInitialPhase;
     setActivePhase(nextInitialPhase);
     setRepCount(0);
+    repCountRef.current = 0;
     setActiveMetrics(null);
     setLivePullupPartialStatus(null);
     lastLivePartialBadgeRef.current = null;
@@ -1103,9 +1162,26 @@ export default function ScanARKitScreen() {
     mediaPipePoseRef.current = null;
     realtimeFormEngineRef.current = createRealtimeEngineState();
     lastShadowMeanAbsDeltaRef.current = null;
+    // Clear session-wide FQI accumulator BEFORE swapping the workout
+    // controller so the first rep of the new exercise can't briefly land in
+    // the previous exercise's score array (#575 item #4). Without this the
+    // stopTracking() avg-fqi milestone and session-summary both mix scores
+    // across exercises when the user swaps mid-session.
+    sessionFqiScoresRef.current = [];
+    // Cue-hysteresis + TTS-throttle have independent state (hysteresis
+    // stable-cue ref + TTS last-phrase ref). When the user swaps exercises
+    // mid-session the same cue text can remain "stable" under the new
+    // thresholds, and the TTS hook's 5s repeat-guard treats it as a
+    // duplicate — so already-muted cues re-fire as the targets flip.
+    // Resetting both boundaries in tandem keeps them coherent (#575 item
+    // #1). stopSpeech() also drains the pending speech queue so the user
+    // doesn't hear a cue from the prior exercise after the swap.
+    resetCueHysteresis();
+    lastSpokenCueRef.current = null;
+    stopSpeech();
     resetBaselineDebugMetrics();
     setWorkoutController(detectionMode);
-  }, [createRealtimeEngineState, detectionMode, resetBaselineDebugMetrics, setWorkoutController]);
+  }, [createRealtimeEngineState, detectionMode, resetBaselineDebugMetrics, resetCueHysteresis, setWorkoutController, stopSpeech]);
 
   useEffect(() => {
     if (DEV) {
@@ -1184,6 +1260,7 @@ export default function ScanARKitScreen() {
     repIndexTrackerRef.current.reset();
     resetWorkoutController();
     setRepCount(0);
+    repCountRef.current = 0;
     setActiveMetrics(null);
     setFps(30);
     setFixturePlaybackFramesProcessed(0);
@@ -1748,6 +1825,7 @@ export default function ScanARKitScreen() {
       repIndexTrackerRef.current.reset();
       resetWorkoutController();
       setRepCount(0);
+      repCountRef.current = 0;
       setActiveMetrics(null);
       resetBaselineDebugMetrics();
       resetCueHysteresis();
@@ -1833,6 +1911,21 @@ export default function ScanARKitScreen() {
     const exerciseKeyAtStop = detectionMode;
     const sessionIdAtStop = sessionIdRef.current;
 
+    // Drop any pending sustained-occlusion hint timer so the badge doesn't
+    // bleed into the next session with a stale "Some joints hidden" toast
+    // (#575 item #6). The hint state is also cleared to match.
+    if (sustainedOcclusionTimerRef.current) {
+      clearTimeout(sustainedOcclusionTimerRef.current);
+      sustainedOcclusionTimerRef.current = null;
+    }
+    setSustainedOcclusionHint(null);
+
+    // Surface any reps that failed to persist before the controller resets
+    // its pending-writes queue (#575 item #10). The callback below emits a
+    // user-facing "N reps pending sync" toast so the user knows their work
+    // wasn't lost even though we can't block stopTracking on a drain.
+    flushPendingRepsOnStop();
+
     try {
       if (isRecording) {
         try {
@@ -1856,6 +1949,7 @@ export default function ScanARKitScreen() {
       repIndexTrackerRef.current.reset();
       resetWorkoutController();
       setRepCount(0);
+      repCountRef.current = 0;
       setFps(0);
       realtimeFormEngineRef.current = createRealtimeEngineState();
       lastShadowMeanAbsDeltaRef.current = null;
@@ -1956,6 +2050,7 @@ export default function ScanARKitScreen() {
     resetWorkoutController,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
+    flushPendingRepsOnStop,
   ]);
 
   // Cleanup on unmount
@@ -2164,11 +2259,19 @@ export default function ScanARKitScreen() {
     metrics.lastCue = primaryCue;
   }, [primaryCue]);
 
+    // The watch-mirror timer polls BodyTracker.getCurrentFrameSnapshot()
+    // ~1Hz while tracking. Previously it only checked `isTracking`, so when
+    // useAppStatePause flipped `isPaused=true` on background/inactive (phone
+    // lock, Control Center, incoming call) the poll kept firing, burning
+    // battery AND keeping the ARKit session half-alive. Gate the whole
+    // mirror surface on BOTH `isTracking` AND `!appStatePause.isPaused` so
+    // the timer teardown fires the moment the app backgrounds. #575 item #9.
     const canMirrorFromArkit =
       Platform.OS === 'ios' &&
       watchMirrorEnabled &&
       isScreenFocused &&
       isTracking &&
+      !appStatePause.isPaused &&
       cameraPosition === 'back';
     const watchMirrorActive =
       canMirrorFromArkit &&
