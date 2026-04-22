@@ -613,25 +613,42 @@ export default function ProfileScreen() {
   };
 
   const handleClearDatabase = async () => {
+    // Wave-31 Pack A / A4 (#562): two-stage confirmation. The first prompt
+    // is informational and dismissible; the second spells out that the
+    // action is irreversible so a rapid double-tap on the row can't wipe
+    // local data accidentally.
     Alert.alert(
       '⚠️ Clear All Data',
       'This will delete ALL local data. Data on server will be preserved. Continue?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Clear All',
+          text: 'Continue',
           style: 'destructive',
-          onPress: async () => {
-            setIsClearing(true);
-            try {
-              await localDB.clearAllData();
-              await refreshDebugInfo();
-              Alert.alert('✅ Cleared', 'All local data has been cleared');
-            } catch {
-              Alert.alert('Error', 'Failed to clear data');
-            } finally {
-              setIsClearing(false);
-            }
+          onPress: () => {
+            Alert.alert(
+              'Are you sure?',
+              'This cannot be undone. Workouts, meals, and cached health data on this device will be erased. Server copies remain safe.',
+              [
+                { text: 'Keep My Data', style: 'cancel' },
+                {
+                  text: 'Yes, Erase Everything',
+                  style: 'destructive',
+                  onPress: async () => {
+                    setIsClearing(true);
+                    try {
+                      await localDB.clearAllData();
+                      await refreshDebugInfo();
+                      Alert.alert('✅ Cleared', 'All local data has been cleared');
+                    } catch {
+                      Alert.alert('Error', 'Failed to clear data');
+                    } finally {
+                      setIsClearing(false);
+                    }
+                  },
+                },
+              ]
+            );
           },
         },
       ]
