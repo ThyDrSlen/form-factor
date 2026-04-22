@@ -150,6 +150,13 @@ interface PreviewStepProps {
   onCancel: () => void;
 }
 
+/**
+ * Low-confidence frame window after which we surface a remediation tip.
+ * Matches the auditor recommendation (≈15 frames ~1.5s @ 100ms cadence);
+ * keeps the tip suppressed during the normal short settling window.
+ */
+const LOW_CONFIDENCE_HINT_THRESHOLD = 15;
+
 function PreviewStep({
   confidencePercent,
   framesPercent,
@@ -159,6 +166,13 @@ function PreviewStep({
   onCancel,
 }: PreviewStepProps) {
   const isReady = statusLabel === 'success' || confidencePercent >= 75;
+  // After ~15 frames of sub-50% confidence, the settling window is over and
+  // low confidence is usually an environment problem. Surface an actionable
+  // hint rather than leaving the user staring at a spinning baseline.
+  const showLowConfidenceHint =
+    !isReady &&
+    framesObserved >= LOW_CONFIDENCE_HINT_THRESHOLD &&
+    confidencePercent < 50;
   return (
     <>
       <View style={styles.iconWrap}>
@@ -169,7 +183,10 @@ function PreviewStep({
         )}
       </View>
       <Text style={styles.title}>Calibrating tracker</Text>
-      <Text style={styles.subtitle}>Hold still — building a confidence baseline.</Text>
+      <Text style={styles.subtitle}>
+        Hold still — building a confidence baseline. Low confidence usually
+        means low light, occlusion, or a partial-body frame.
+      </Text>
       <View style={styles.metricRow}>
         <Metric label="Confidence" value={`${confidencePercent}%`} />
         <Metric label="Frames" value={`${framesObserved}`} />
@@ -177,6 +194,15 @@ function PreviewStep({
       <View style={styles.progressTrack} accessibilityLabel={`Calibration ${framesPercent}% complete`}>
         <View style={[styles.progressFill, { width: `${Math.max(2, framesPercent)}%` }]} />
       </View>
+      {showLowConfidenceHint ? (
+        <View style={styles.hintCallout} accessibilityLiveRegion="polite">
+          <Ionicons name="bulb-outline" size={16} color="#FFC244" />
+          <Text style={styles.hintText}>
+            Try more light, stepping back, or clearing the background — your
+            full body should fit the frame.
+          </Text>
+        </View>
+      ) : null}
       <View style={styles.actions}>
         <TouchableOpacity style={styles.secondaryButton} onPress={onCancel} testID="pre-calibration-cancel">
           <Text style={styles.secondaryButtonText}>Cancel</Text>
@@ -342,5 +368,24 @@ const styles = StyleSheet.create({
   progressFill: {
     height: '100%',
     backgroundColor: '#4C8CFF',
+  },
+  hintCallout: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255, 194, 68, 0.12)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 194, 68, 0.25)',
+    width: '100%',
+  },
+  hintText: {
+    flex: 1,
+    color: '#F5E7C3',
+    fontSize: 12,
+    lineHeight: 16,
   },
 });
