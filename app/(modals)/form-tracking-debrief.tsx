@@ -12,7 +12,7 @@
  * tracker to navigate here is a follow-up.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -93,24 +93,50 @@ function pickBestAndWorst(reps: RepSummary[]): {
 export default function FormTrackingDebriefScreen() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
+  // Shared mounted-ref so every async completion in this screen (userId
+  // load, auth-state-change callbacks, comparison-card reload handlers)
+  // can defensively short-circuit state updates after unmount. The
+  // per-effect `cancelled` flag already covers the happy path, but the
+  // ref catches edge cases like a subscription callback fired synchronously
+  // during teardown, which would otherwise warn about setting state on an
+  // unmounted component.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   useEffect(() => {
     // Resolve the current user lazily via supabase.auth.getSession() rather
     // than via AuthContext so this screen stays test-friendly (AuthContext
     // pulls expo-linking at import time, which the existing debrief test
     // suite's module graph doesn't set up). supabase itself is already
     // globally mocked in tests so this is a no-op there.
+    //
+    // We additionally subscribe to onAuthStateChange so the comparison query
+    // re-fires when the auth session resolves or changes after mount.
+    // Without this, a debrief opened before getSession() settles would latch
+    // onto the initial `null` userId and never re-query once auth is ready.
     let cancelled = false;
+    const applyUserId = (next: string | null) => {
+      if (cancelled || !mountedRef.current) return;
+      setUserId((prev) => (prev === next ? prev : next));
+    };
+
     void supabase.auth
       .getSession()
-      .then(({ data }) => {
-        if (cancelled) return;
-        setUserId(data.session?.user.id ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) setUserId(null);
-      });
+      .then(({ data }) => applyUserId(data.session?.user.id ?? null))
+      .catch(() => applyUserId(null));
+
+    // Guard the call in case a stripped-down test mock omits the listener.
+    const subscription = supabase.auth.onAuthStateChange?.((_event, session) => {
+      applyUserId(session?.user?.id ?? null);
+    });
+
     return () => {
       cancelled = true;
+      subscription?.data?.subscription?.unsubscribe?.();
     };
   }, []);
   const params = useLocalSearchParams<{
@@ -159,7 +185,11 @@ export default function FormTrackingDebriefScreen() {
       priorSessionId: comparison.priorSessionId,
     }).toString();
     router.push(`/(modals)/form-comparison?${qs}` as `/${string}`);
-  }, [router, comparison?.priorSessionId, comparisonExerciseId, routeSessionId]);
+    // Depend on the whole `comparison` object, not a projected field, so the
+    // callback always closes over the freshest shape (new priorSessionId,
+    // swapped exercise, etc.) and can't be stranded on a stale snapshot
+    // when the comparison reloads mid-screen.
+  }, [router, comparison, comparisonExerciseId, routeSessionId]);
 
   // Pipeline v2: synthesize a stable sessionId from the recap payload so the
   // auto-debrief hook can dedupe via AsyncStorage. We derive from exercise
