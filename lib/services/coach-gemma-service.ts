@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import { createError } from './ErrorHandler';
 import type { CoachContext, CoachMessage } from './coach-service';
 import type { CoachProvider } from './coach-provider-types';
+import { recordCoachReplyUsage } from './coach-cost-tracker';
 
 interface RawCoachGemmaResponse {
   message?: string;
@@ -29,7 +30,7 @@ function functionName(): string {
 export async function sendCoachGemmaPrompt(
   messages: CoachMessage[],
   context?: CoachContext,
-  opts?: { model?: string },
+  opts?: { model?: string; taskKind?: string },
 ): Promise<CoachMessage> {
   try {
     const body: Record<string, unknown> = { messages, context };
@@ -130,6 +131,15 @@ export async function sendCoachGemmaPrompt(
         writable: true,
       });
     }
+    // Cost-tracker wiring (#537): fire-and-forget usage record. Recording
+    // lives at the leaf so every Gemma call site (direct dispatcher, coach-
+    // service routing, auto-debrief direct dispatch) gets tracked uniformly.
+    recordCoachReplyUsage({
+      provider: 'gemma-cloud',
+      taskKind: opts?.taskKind,
+      inputMessages: messages,
+      replyText: responseText,
+    }).catch(() => undefined);
     return reply;
   } catch (err) {
     if (err && typeof err === 'object' && 'domain' in err) {

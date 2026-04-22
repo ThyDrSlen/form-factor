@@ -1,9 +1,23 @@
 import { sendCoachPrompt } from '@/lib/services/coach-service';
 import type { CoachMessage } from '@/lib/services/coach-service';
+import type { CoachProvider } from '@/lib/services/coach-provider-types';
 import { isCoachPipelineV2Enabled } from '@/lib/services/coach-pipeline-v2-flag';
 import { isDispatchEnabled } from '@/lib/services/coach-model-dispatch-flag';
 
 export type DrillExplainerProvider = 'cloud' | 'gemma' | 'openai';
+
+/**
+ * Narrow the coach service's CoachProvider tag into the drill-explainer's
+ * three-way enum so callers see the actual producer (not the env-resolved
+ * default). Unknown / cache / local-fallback collapse to 'cloud' so existing
+ * UI branches that only handle the three primary values keep working.
+ */
+function mapToDrillProvider(cp: CoachProvider | undefined): DrillExplainerProvider | null {
+  if (!cp) return null;
+  if (cp === 'openai') return 'openai';
+  if (cp === 'gemma-cloud' || cp === 'gemma-on-device') return 'gemma';
+  return 'cloud';
+}
 
 /**
  * Pipeline-v2 provider resolution. Reads `EXPO_PUBLIC_COACH_CLOUD_PROVIDER`
@@ -95,11 +109,23 @@ export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDri
 
   const context = { focus: 'drill-explainer', sessionId: undefined };
 
+  // Pipeline-v2: pass taskKind so the dispatcher recognises this as a
+  // tactical `fault_explainer` (→ Gemma tier) rather than falling back to
+  // general_chat, and so cost-tracker telemetry (#537) labels correctly.
+  // When V2 is off we omit opts entirely to preserve the two-arg call
+  // shape that existing tests assert against.
+  const taskKindOpts = pipelineV2
+    ? ({ taskKind: 'fault_explainer' as const })
+    : null;
+
   // Gemma-first attempt (both flags on). On any error we fall through to the
   // env-resolved provider below.
   if (gemmaFirst) {
     try {
-      const reply = await sendCoachPrompt(messages, context, { provider: 'gemma' });
+      const reply = await sendCoachPrompt(messages, context, {
+        ...(taskKindOpts ?? {}),
+        provider: 'gemma',
+      });
       const text = (reply.content ?? '').trim();
       if (text) {
         return { explanation: text, provider: 'gemma' };
@@ -114,16 +140,17 @@ export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDri
   }
 
   try {
-    const reply = await sendCoachPrompt(
-      messages,
-      context,
-      resolvedProvider ? { provider: resolvedProvider } : undefined,
-    );
+    const cloudOpts =
+      resolvedProvider
+        ? { ...(taskKindOpts ?? {}), provider: resolvedProvider }
+        : taskKindOpts ?? undefined;
+    const reply = await sendCoachPrompt(messages, context, cloudOpts);
     const text = (reply.content ?? '').trim();
+    const actualProvider = mapToDrillProvider(reply.provider) ?? returnedProvider;
     if (!text) {
-      return { explanation: '', provider: returnedProvider, error: 'Empty response from coach.' };
+      return { explanation: '', provider: actualProvider, error: 'Empty response from coach.' };
     }
-    return { explanation: text, provider: returnedProvider };
+    return { explanation: text, provider: actualProvider };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown coach error';
     return {
