@@ -202,6 +202,20 @@ export default function FormTrackingDebriefScreen() {
     sessionId: pipelineV2 ? sessionId : null,
   });
 
+  // Local dismiss latch for the auto-debrief error card. The hook does not
+  // expose a `clearError` method; when the user dismisses we simply hide the
+  // error locally until the next retry (which clears dismissed via effect).
+  const [autoDebriefErrorDismissed, setAutoDebriefErrorDismissed] = useState(false);
+  useEffect(() => {
+    if (autoDebrief.loading || autoDebrief.data) {
+      setAutoDebriefErrorDismissed(false);
+    }
+  }, [autoDebrief.loading, autoDebrief.data]);
+  const handleDismissAutoDebriefError = useCallback(() => {
+    setAutoDebriefErrorDismissed(true);
+  }, []);
+  const visibleAutoDebriefError = autoDebriefErrorDismissed ? null : autoDebrief.error;
+
   const handleClose = useCallback(() => {
     router.back();
   }, [router]);
@@ -312,9 +326,10 @@ export default function FormTrackingDebriefScreen() {
             <Text style={styles.sectionTitle}>Coach debrief</Text>
             <AutoDebriefCard
               loading={autoDebrief.loading}
-              error={autoDebrief.error}
+              error={visibleAutoDebriefError}
               data={autoDebrief.data}
               onRetry={autoDebrief.retry}
+              onDismissError={handleDismissAutoDebriefError}
               // Reps in the URL params indicate the user just finished a
               // session (recap route), so we want the friendly "preparing
               // your feedback…" copy in the empty grace window — NOT the
