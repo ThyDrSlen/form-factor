@@ -52,6 +52,12 @@ export interface RawProviderResponse {
 export interface ProviderError {
   message?: string;
   status?: number;
+  /**
+   * Optional `Retry-After` value surfaced by the upstream. When present as a
+   * number we treat it as seconds; when a string we pass it through so the
+   * user-friendly message can render it verbatim (HTTP-date or delta-seconds).
+   */
+  retryAfter?: number | string;
 }
 
 const FUNCTION_FOR: Record<CoachProvider, string> = {
@@ -77,6 +83,12 @@ export async function sendCoachPromptWithFailover(
   if (primaryResult.ok) return primaryResult.message;
 
   if (!shouldFailover(primaryResult.status)) {
+    // Non-retriable primary error: if it's a 429, map to the friendly
+    // rate-limited code so `ErrorHandler.mapToUserMessage` can render the
+    // dedicated copy instead of the generic coach domain default.
+    if (primaryResult.status === 429) {
+      throw toRateLimitedError(primary, primaryResult);
+    }
     throw primaryResult.error;
   }
 
@@ -86,8 +98,61 @@ export async function sendCoachPromptWithFailover(
   const secondaryResult = await callProvider(secondary, messages, context, invoke);
   if (secondaryResult.ok) return secondaryResult.message;
 
-  // Both failed - surface the secondary's error since it's most recent.
+  // Both failed - if the most-recent (secondary) failure was a 429, surface
+  // the friendly rate-limit message so the user learns they hit a quota
+  // rather than a generic "coach unavailable".
+  if (secondaryResult.status === 429) {
+    throw toRateLimitedError(secondary, secondaryResult);
+  }
+  // Otherwise surface the secondary's error since it's most recent.
   throw secondaryResult.error;
+}
+
+/**
+ * Build a user-friendly AppError for an HTTP 429 from a coach provider. The
+ * `ErrorHandler.mapToUserMessage` rendering picks this up via the
+ * `COACH_RATE_LIMITED` code and returns the short "rate-limited" copy.
+ */
+function toRateLimitedError(
+  provider: CoachProvider,
+  failure: ProviderFailure,
+): ReturnType<typeof createError> {
+  const detail = failure.error.details as
+    | { error?: ProviderError; provider?: CoachProvider; status?: number }
+    | undefined;
+  const retryAfter = detail?.error?.retryAfter;
+  const retryHint = formatRetryAfter(retryAfter);
+  const message = retryHint
+    ? `Coach is rate-limited — try again ${retryHint}.`
+    : 'Coach is rate-limited — try again in a few minutes.';
+  return createError('coach', 'COACH_RATE_LIMITED', message, {
+    details: {
+      provider,
+      status: 429,
+      retryAfter: retryAfter ?? null,
+      underlying: detail?.error ?? null,
+    },
+    retryable: true,
+  });
+}
+
+function formatRetryAfter(value: number | string | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    if (value < 60) return `in ${Math.ceil(value)}s`;
+    const minutes = Math.ceil(value / 60);
+    return `in ${minutes} minute${minutes === 1 ? '' : 's'}`;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    // Numeric string (delta-seconds) → same treatment.
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber) && asNumber > 0) {
+      return formatRetryAfter(asNumber);
+    }
+    // Otherwise it's an HTTP-date; surface it verbatim for the user.
+    return `after ${value.trim()}`;
+  }
+  return null;
 }
 
 interface ProviderSuccess {
@@ -184,12 +249,34 @@ async function defaultInvoke(
   const result = await supabase.functions.invoke<RawProviderResponse>(fn, {
     body: body as Record<string, unknown>,
   });
+  if (!result.error) {
+    return { data: result.data ?? null, error: null };
+  }
+  const err = result.error as {
+    message?: string;
+    status?: number;
+    context?: { headers?: Record<string, string> };
+  };
+  const retryAfter = readRetryAfter(err?.context?.headers);
   return {
     data: result.data ?? null,
-    error: result.error
-      ? { message: result.error.message, status: (result.error as { status?: number }).status }
-      : null,
+    error: {
+      message: err.message,
+      status: err.status,
+      ...(retryAfter !== undefined ? { retryAfter } : {}),
+    },
   };
+}
+
+function readRetryAfter(
+  headers: Record<string, string> | undefined,
+): number | string | undefined {
+  if (!headers) return undefined;
+  const raw = headers['retry-after'] ?? headers['Retry-After'];
+  if (!raw) return undefined;
+  const asNumber = Number(raw);
+  if (Number.isFinite(asNumber)) return asNumber;
+  return raw;
 }
 
 /**
