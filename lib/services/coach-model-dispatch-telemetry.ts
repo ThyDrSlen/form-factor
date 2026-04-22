@@ -18,9 +18,10 @@
  */
 
 import { recordCounter } from './coach-telemetry';
-import type { DispatchDecision } from './coach-model-dispatch';
+import type { CoachModelId, DispatchDecision } from './coach-model-dispatch';
 
 const DISPATCH_EVENT_NAME = 'coach_dispatch_decision';
+const DISPATCH_MISMATCH_EVENT_NAME = 'coach_dispatch_mismatch';
 
 export function recordDispatchDecision(decision: DispatchDecision): void {
   // Additive, never-throws counter — safe to call from a hot path.
@@ -34,6 +35,39 @@ export function recordDispatchDecision(decision: DispatchDecision): void {
       model: decision.model,
       reason: decision.reason,
       fellBackToCloud: decision.fellBackToCloud,
+    });
+  }
+}
+
+/**
+ * Record a `coach_dispatch_mismatch` counter when the tier-expected baseline
+ * model diverges from the model actually dispatched because of a feature
+ * flag, forceCloud override, visionFallback, or dispatchDisabled bypass.
+ *
+ * Emits three counters so product can aggregate any of:
+ *   - overall mismatch count       → `coach_dispatch_mismatch`
+ *   - per-model-pair count         → `coach_dispatch_mismatch:<expected>:<actual>`
+ *   - per-reason count             → `coach_dispatch_mismatch:reason:<reason>`
+ *
+ * No-op when expected === actual; callers can unconditionally invoke it
+ * without gating on equality themselves.
+ */
+export function recordDispatchMismatch(
+  expected: CoachModelId,
+  actual: CoachModelId,
+  reason: string,
+): void {
+  if (expected === actual) return;
+  recordCounter(DISPATCH_MISMATCH_EVENT_NAME);
+  recordCounter(`${DISPATCH_MISMATCH_EVENT_NAME}:${expected}:${actual}`);
+  recordCounter(`${DISPATCH_MISMATCH_EVENT_NAME}:reason:${reason}`);
+
+  if (__DEV__) {
+    // eslint-disable-next-line no-console
+    console.log('[coach-dispatch]', DISPATCH_MISMATCH_EVENT_NAME, {
+      expected,
+      actual,
+      reason,
     });
   }
 }

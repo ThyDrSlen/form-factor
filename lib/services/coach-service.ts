@@ -14,12 +14,16 @@ import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
 import { evaluateSafety } from './coach-safety';
 import {
   decideCoachModel,
+  expectedTierModel,
   type CoachTaskKind,
   type CoachUserTier,
   type CoachSignals,
 } from './coach-model-dispatch';
 import { isDispatchEnabled } from './coach-model-dispatch-flag';
-import { recordDispatchDecision } from './coach-model-dispatch-telemetry';
+import {
+  recordDispatchDecision,
+  recordDispatchMismatch,
+} from './coach-model-dispatch-telemetry';
 
 export type { CoachProvider } from './coach-provider-types';
 import type { LiveSessionSnapshot } from './coach-live-snapshot';
@@ -232,13 +236,18 @@ export async function sendCoachPrompt(
     opts?.taskKind &&
     opts.provider === undefined
   ) {
-    const decision = decideCoachModel(
-      opts.taskKind,
-      opts.dispatchSignals ?? {},
-      opts.userTier ?? 'free',
-    );
+    const signals = opts.dispatchSignals ?? {};
+    const tier = opts.userTier ?? 'free';
+    const decision = decideCoachModel(opts.taskKind, signals, tier);
     try {
       recordDispatchDecision(decision);
+      // Tier ↔ model mismatch telemetry. When the tier-expected baseline
+      // diverges from the model we actually dispatched (because of a flag,
+      // forceCloud override, visionFallback, or high-fault upgrade) emit a
+      // `coach_dispatch_mismatch:<expected>:<actual>` counter so product can
+      // monitor how often dispatch overrides fire in production.
+      const expected = expectedTierModel(opts.taskKind, signals, tier);
+      recordDispatchMismatch(expected, decision.model, decision.reason);
     } catch {
       // Telemetry is never load-bearing; swallow any recorder fault so the
       // coach turn still proceeds.

@@ -107,6 +107,22 @@ function complexCloudForTier(tier: CoachUserTier): CoachModelId {
   return tier === 'premium' ? 'gpt-5.4' : 'gpt-5.4-mini';
 }
 
+/**
+ * Pure helper exposing the tier-expected baseline model — what the router
+ * would pick for `(taskKind, signals, userTier)` with NO options overrides
+ * (no forceCloud, no dispatchDisabled, no vision fallback). Callers use this
+ * to detect mismatches: when `decideCoachModel(...).model` diverges from
+ * `expectedTierModel(...)`, some feature flag or dispatch option drove the
+ * decision away from the baseline and telemetry can record it.
+ */
+export function expectedTierModel(
+  taskKind: CoachTaskKind,
+  signals: CoachSignals,
+  userTier: CoachUserTier,
+): CoachModelId {
+  return decideCoachModel(taskKind, signals, userTier).model;
+}
+
 export function decideCoachModel(
   taskKind: CoachTaskKind,
   signals: CoachSignals,
