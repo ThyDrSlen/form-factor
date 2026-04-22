@@ -12,6 +12,15 @@ export interface DeleteActionProps {
   size?: 'small' | 'medium';
   variant?: 'icon' | 'button';
   style?: object;
+  /**
+   * Optional override for the VoiceOver label. When omitted, `label` is
+   * used as-is (e.g. "Delete"). Use this to include the parent
+   * exercise / meal name so screen-reader users can distinguish between
+   * multiple delete buttons on the same tab.
+   */
+  accessibilityLabel?: string;
+  /** Optional VoiceOver hint — what happens when the button is activated. */
+  accessibilityHint?: string;
 }
 
 export function DeleteAction({
@@ -23,6 +32,8 @@ export function DeleteAction({
   size = 'medium',
   variant = 'button',
   style,
+  accessibilityLabel,
+  accessibilityHint,
 }: DeleteActionProps) {
   function handleConfirm() {
     if (Platform.OS !== 'web') {
@@ -64,7 +75,8 @@ export function DeleteAction({
   return (
     <TouchableOpacity
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint}
       onPress={handleConfirm}
       style={[variant === 'button' ? styles.button : styles.iconOnly, style]}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}

@@ -7,22 +7,49 @@ import { Platform } from 'react-native';
 import { requireNativeModule } from 'expo-modules-core';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 
-// Load native module safely (don't throw during import)
+// Load native module safely (don't throw during import).
+//
+// Wave-31 Pack A / A2 (#562): we already try/catch this call so the JS
+// bundle doesn't tombstone when the native module is missing, but the
+// consumers (scan-arkit, pre-calibration, etc.) have no ergonomic way
+// to check availability without triggering the retry loop inside
+// `useBodyTracking`. Expose an explicit `moduleAvailable` boolean so
+// the UI can branch straight into a "device not supported" state and
+// skip the 8x300ms retry stall on truly-unsupported builds.
 let ARKitBodyTracker: any = null;
+let moduleAvailable = false;
+let moduleLoadError: unknown = null;
 try {
   if (__DEV__) {
     logWithTs('[ARKitBodyTracker] Attempting to load native module...');
   }
   ARKitBodyTracker = requireNativeModule('ARKitBodyTracker');
+  moduleAvailable = !!ARKitBodyTracker;
   if (__DEV__) {
-    logWithTs('[ARKitBodyTracker] Native module loaded:', !!ARKitBodyTracker);
+    logWithTs('[ARKitBodyTracker] Native module loaded:', moduleAvailable);
   }
 } catch (e) {
   // Log in ALL builds so we can diagnose Release issues
+  moduleLoadError = e;
   errorWithTs('[ARKitBodyTracker] FAILED to load native module:', e);
   errorWithTs('[ARKitBodyTracker] This will cause "Device not supported" error!');
   errorWithTs('[ARKitBodyTracker] Fix: Run `npx expo prebuild --clean --platform ios`');
 }
+
+/**
+ * `true` when the ARKitBodyTracker native module resolved at import time.
+ *
+ * Consumers can gate UI paths on this flag (show a friendly "ARKit not
+ * available on this build" screen) without invoking any BodyTracker
+ * methods first. Reads are safe on any device / thread.
+ */
+export const isARKitBodyTrackerAvailable = (): boolean => moduleAvailable;
+
+/**
+ * The error thrown when the native module failed to load, if any. Useful
+ * for surfacing in debug screens. `null` when the module loaded cleanly.
+ */
+export const getARKitBodyTrackerLoadError = (): unknown => moduleLoadError;
 
 /**
  * Represents a 3D joint position in world space (meters)
