@@ -311,9 +311,9 @@ export default function VideoCommentsModal() {
           <Text style={styles.topTitle}>Comments {commentCount}</Text>
         </View>
 
-        {loading ? (
-          <View style={styles.emptyState}>
-            <ActivityIndicator color="#4C8CFF" />
+        {loading && comments.length === 0 ? (
+          <View style={[styles.emptyState, { flex: 1, justifyContent: 'center' }]}>
+            <ActivityIndicator size="large" color="#4C8CFF" />
             <Text style={styles.emptyText}>Loading comments…</Text>
           </View>
         ) : loadError && comments.length === 0 && !video ? (
