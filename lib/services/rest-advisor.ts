@@ -10,9 +10,19 @@
  * default session timers; rest-advisor is an opt-in AI refinement.
  */
 import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
+import { recordCoachUsage } from './coach-cost-tracker';
 import { parseGemmaJsonResponse, schema, type JsonSchema } from './gemma-json-parser';
 import { isGemmaSessionGenEnabled } from './gemma-session-gen-flag';
 import { getFewShots } from './template-generation-few-shots';
+
+/**
+ * Rough token estimator for telemetry bookkeeping. Matches the heuristic
+ * used elsewhere in the Gemma surface (4 chars ≈ 1 token).
+ */
+function estimateTokens(text: string): number {
+  if (!text) return 0;
+  return Math.max(1, Math.ceil(text.length / 4));
+}
 
 export interface RestAdvisorInput {
   /** Duration of the final rep in the just-completed set, in milliseconds. */
@@ -137,7 +147,15 @@ export async function suggestRestSeconds(
     return heuristicRestSeconds(input);
   }
 
-  const dispatch = runtime.dispatch ?? sendCoachPrompt;
+  // When the caller hasn't provided a custom dispatch (tests do), route via
+  // sendCoachPrompt with an explicit taskKind so the cost-aware dispatcher
+  // can pick the tactical Gemma model for this in-loop call.
+  const defaultDispatch = (
+    msgs: CoachMessage[],
+    ctx?: CoachContext,
+  ): Promise<CoachMessage> =>
+    sendCoachPrompt(msgs, ctx, { taskKind: 'rest_period_coaching' });
+  const dispatch = runtime.dispatch ?? defaultDispatch;
   const timeoutMs = runtime.timeoutMs ?? 2000;
 
   const messages = buildMessages(input);
@@ -160,6 +178,18 @@ export async function suggestRestSeconds(
   if (raceResult.kind !== 'ok') {
     return heuristicRestSeconds(input);
   }
+
+  // Telemetry: record the Gemma turn for weekly cost aggregates. We estimate
+  // tokens from char length since sendCoachPrompt does not surface upstream
+  // token counts today. Fire-and-forget so a telemetry hiccup never blocks
+  // the rest-advice path.
+  const promptText = messages.map((m) => m.content).join('\n');
+  void recordCoachUsage({
+    provider: 'gemma_cloud',
+    taskKind: 'rest_period_coaching',
+    tokensIn: estimateTokens(promptText),
+    tokensOut: estimateTokens(raceResult.content),
+  });
 
   try {
     const retryInvoker = async (ctx: { lastRawText: string; issues?: unknown }): Promise<string> => {
