@@ -112,6 +112,8 @@ export default function WelcomeScreen() {
             onPress={handleGetStarted}
             activeOpacity={0.7}
             accessibilityRole="button"
+            accessibilityLabel="Sign in to existing account"
+            accessibilityHint="Opens login screen"
           >
             <Text style={styles.secondaryButtonText}>I already have an account</Text>
           </TouchableOpacity>
