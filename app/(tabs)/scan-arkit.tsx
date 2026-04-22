@@ -2240,11 +2240,19 @@ export default function ScanARKitScreen() {
     metrics.lastCue = primaryCue;
   }, [primaryCue]);
 
+    // The watch-mirror timer polls BodyTracker.getCurrentFrameSnapshot()
+    // ~1Hz while tracking. Previously it only checked `isTracking`, so when
+    // useAppStatePause flipped `isPaused=true` on background/inactive (phone
+    // lock, Control Center, incoming call) the poll kept firing, burning
+    // battery AND keeping the ARKit session half-alive. Gate the whole
+    // mirror surface on BOTH `isTracking` AND `!appStatePause.isPaused` so
+    // the timer teardown fires the moment the app backgrounds. #575 item #9.
     const canMirrorFromArkit =
       Platform.OS === 'ios' &&
       watchMirrorEnabled &&
       isScreenFocused &&
       isTracking &&
+      !appStatePause.isPaused &&
       cameraPosition === 'back';
     const watchMirrorActive =
       canMirrorFromArkit &&
