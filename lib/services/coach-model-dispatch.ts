@@ -43,6 +43,7 @@ export type CoachTaskKind =
   | 'rest_calc'
   | 'encouragement'
   | 'fault_explainer'
+  | 'voice_intent'
   | 'form_vision_check'
   | 'program_design'
   | 'nutrition_balance'
@@ -88,6 +89,9 @@ const TACTICAL_TASKS: ReadonlySet<CoachTaskKind> = new Set<CoachTaskKind>([
   'rest_calc',
   'encouragement',
   'fault_explainer',
+  // voice_intent: short classification tasks for hands-free voice control.
+  // Routes to the cheapest Gemma tier — same cost bucket as form_cue_lookup.
+  'voice_intent',
 ]);
 
 const COMPLEX_TASKS: ReadonlySet<CoachTaskKind> = new Set<CoachTaskKind>([
