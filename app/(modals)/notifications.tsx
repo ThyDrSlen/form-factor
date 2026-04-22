@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Switch, ActivityIndicator, Linking } from 'react-native';
+import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Switch, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -13,6 +13,7 @@ import {
   updateNotificationPreferences,
   getNotificationPermissions, // Added
 } from '@/lib/services/notifications';
+import { openExternalUrl, openSystemSettings as openSystemSettingsHelper } from '@/lib/utils/open-external';
 
 type PermissionState = 'granted' | 'undetermined' | 'denied';
 type ToggleKey = 'comments' | 'likes' | 'reminders';
@@ -118,10 +119,15 @@ export default function NotificationSettingsModal() {
   };
 
   const openSystemSettings = () => {
+    const onFallback = () => {
+      toast.show("Couldn't open Settings — enable notifications from the Settings app.", {
+        type: 'error',
+      });
+    };
     if (isIOS()) {
-      Linking.openURL('app-settings:');
+      void openExternalUrl('app-settings:', { onFallback });
     } else {
-      Linking.openSettings();
+      void openSystemSettingsHelper({ onFallback });
     }
   };
 
