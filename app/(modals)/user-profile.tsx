@@ -225,10 +225,13 @@ export default function UserProfileModal() {
             text: 'Unfollow',
             style: 'destructive',
             onPress: () => {
+              // Fire destructive haptic synchronously on tap so the user gets
+              // iOS-native feedback at the moment of destructive confirmation,
+              // not after the async unfollow network round-trip completes.
+              void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
               void (async () => {
                 try {
                   setLoadingFollowAction(true);
-                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
                   await social.unfollowUser(targetUserId);
 
                   const [nextStatus, nextCounts] = await Promise.all([
