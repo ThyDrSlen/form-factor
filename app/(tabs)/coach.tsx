@@ -348,6 +348,7 @@ export default function CoachScreen() {
               onPress={() => handleCoachSend(prompt)}
               accessibilityRole="button"
               accessibilityLabel={`Quick prompt: ${prompt}`}
+              accessibilityHint="Sends this suggested message to the coach"
             >
               <Text style={styles.quickPromptText}>{prompt}</Text>
             </TouchableOpacity>
