@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createCueRotator } from '@/lib/services/cue-rotator';
 import { CUE_ROTATION_VARIANTS } from '@/lib/services/cue-rotator-variants';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Alert,
   Modal,
@@ -865,6 +866,11 @@ export default function ScanARKitScreen() {
   // do not re-announce on mode swaps / transient phase re-entries. Reset
   // to false inside startTracking + stopTracking.
   const repCountdownFiredRef = React.useRef(false);
+  // Throttles VoiceOver/TalkBack rep-completion announcements so burst
+  // sets (e.g. 10 reps in 5s) don't flood the screen-reader queue. At
+  // most one announcement every 400ms; the SVG rep counter itself is
+  // not announceable so this is the primary a11y affordance for reps.
+  const lastRepAnnounceAtMsRef = React.useRef(0);
 
   const { speak: speakCue, stop: stopSpeech } = usePremiumCueAudio({
     enabled: audioFeedbackEnabled && isScreenFocused,
@@ -1059,6 +1065,22 @@ export default function ScanARKitScreen() {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {
           /* native bridge unavailable — silent */
         });
+      }
+      // VoiceOver/TalkBack announcement. The rep-counter overlay is an
+      // SVG <Text>, which RN does not expose to screen readers, so we
+      // rely on announceForAccessibility. Throttled to 400ms to avoid
+      // queue pile-up during fast sets (RN queues announcements rather
+      // than coalescing them). No-op on web.
+      if (Platform.OS !== 'web') {
+        const nowMs = Date.now();
+        if (nowMs - lastRepAnnounceAtMsRef.current >= 400) {
+          lastRepAnnounceAtMsRef.current = nowMs;
+          try {
+            AccessibilityInfo.announceForAccessibility(`Rep ${repNumber}`);
+          } catch {
+            /* a11y bridge unavailable — silent */
+          }
+        }
       }
     },
     onPullupScoring: (
