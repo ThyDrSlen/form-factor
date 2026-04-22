@@ -17,6 +17,7 @@
 import type { FrameSnapshot, JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 import { sendCoachPrompt, type CoachMessage } from './coach-service';
 import { sendCoachGemmaPrompt } from './coach-gemma-service';
+import { hardenAgainstInjection } from './coach-injection-hardener';
 
 export type PreSetPreviewProvider = 'gemma' | 'openai';
 
@@ -86,7 +87,10 @@ async function callGemma(prompt: string): Promise<string> {
   // Direct call to the canonical Gemma service — routes through the
   // coach-gemma edge function rather than the generic `coach` function so
   // model-specific parameters and provider annotations flow through cleanly.
-  const messages: CoachMessage[] = [{ role: 'user', content: prompt }];
+  // Harden the prompt before dispatch so adversarial exercise names cannot
+  // smuggle prompt-break tokens into the Gemma system message.
+  const hardened = hardenAgainstInjection(prompt, { maxLength: 1000 });
+  const messages: CoachMessage[] = [{ role: 'user', content: hardened }];
   const reply = await sendCoachGemmaPrompt(messages, {
     focus: 'pre-set-stance-preview-gemma',
   });
@@ -94,7 +98,10 @@ async function callGemma(prompt: string): Promise<string> {
 }
 
 async function callOpenAI(prompt: string): Promise<string> {
-  const messages: CoachMessage[] = [{ role: 'user', content: prompt }];
+  // Same hardening as the Gemma path — defense in depth against injected
+  // exercise names / angle text before the prompt reaches the cloud model.
+  const hardened = hardenAgainstInjection(prompt, { maxLength: 1000 });
+  const messages: CoachMessage[] = [{ role: 'user', content: hardened }];
   const reply = await sendCoachPrompt(messages, {
     focus: 'pre-set-stance-preview',
   });
