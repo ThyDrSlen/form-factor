@@ -14,9 +14,12 @@
  *   PR stands on its own.
  */
 
+import { warnWithTs } from '@/lib/logger';
 import type { FrameSnapshot, JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 import { sendCoachPrompt, type CoachMessage } from './coach-service';
 import { sendCoachGemmaPrompt } from './coach-gemma-service';
+import { isDispatchEnabled } from './coach-model-dispatch-flag';
+import { assertUnderWeeklyCap } from './coach-cost-guard';
 
 export type PreSetPreviewProvider = 'gemma' | 'openai';
 
@@ -79,17 +82,25 @@ function interpretVerdict(raw: string): { verdict: string; isFormGood: boolean }
 
 function isGemmaEnabled(): boolean {
   // Evaluated at call-time so tests can mutate process.env between cases.
-  return process.env[GEMMA_PROVIDER_ENV] === 'gemma';
+  // Dispatch-flag gate (#536): both the env-level provider choice and the
+  // global dispatch flag must be on before we try Gemma. This keeps the
+  // Gemma path cleanly pausable via `EXPO_PUBLIC_COACH_DISPATCH=off` even
+  // when env already points at Gemma.
+  return process.env[GEMMA_PROVIDER_ENV] === 'gemma' && isDispatchEnabled();
 }
 
 async function callGemma(prompt: string): Promise<string> {
   // Direct call to the canonical Gemma service — routes through the
   // coach-gemma edge function rather than the generic `coach` function so
   // model-specific parameters and provider annotations flow through cleanly.
+  // `taskKind` is forwarded to the cost-tracker wiring so the preview
+  // counts against the right task-kind bucket (chat, since it's ephemeral).
   const messages: CoachMessage[] = [{ role: 'user', content: prompt }];
-  const reply = await sendCoachGemmaPrompt(messages, {
-    focus: 'pre-set-stance-preview-gemma',
-  });
+  const reply = await sendCoachGemmaPrompt(
+    messages,
+    { focus: 'pre-set-stance-preview-gemma' },
+    { taskKind: 'chat' },
+  );
   return reply.content;
 }
 
@@ -121,12 +132,25 @@ export async function checkPreSetStance(
   const prompt = buildPreSetPrompt(exerciseName, serialized);
 
   if (isGemmaEnabled()) {
+    // Cost-guard (#537): skip Gemma when the weekly token cap has been
+    // exceeded. Silent fall-through to OpenAI — the preview is best-effort
+    // and shouldn't surface a billing error to the user.
+    let capExceeded = false;
     try {
-      const reply = await callGemma(prompt);
-      const interpreted = interpretVerdict(reply);
-      return { ...interpreted, provider: 'gemma' };
-    } catch {
-      // Fall through to OpenAI — Gemma path is best-effort.
+      await assertUnderWeeklyCap('gemma_cloud');
+    } catch (err) {
+      capExceeded = true;
+      warnWithTs('[pre-set-preview] weekly Gemma cap hit, using OpenAI', err);
+    }
+
+    if (!capExceeded) {
+      try {
+        const reply = await callGemma(prompt);
+        const interpreted = interpretVerdict(reply);
+        return { ...interpreted, provider: 'gemma' };
+      } catch {
+        // Fall through to OpenAI — Gemma path is best-effort.
+      }
     }
   }
 

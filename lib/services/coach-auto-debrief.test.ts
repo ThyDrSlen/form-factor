@@ -28,6 +28,12 @@ jest.mock('@/lib/services/coach-memory-context', () => ({
   synthesizeMemoryClause: (...args: unknown[]) => mockSynth(...args),
 }));
 
+// ---- cost-guard mock (#537) ------------------------------------------------
+const mockAssertUnderWeeklyCap = jest.fn().mockResolvedValue(undefined);
+jest.mock('./coach-cost-guard', () => ({
+  assertUnderWeeklyCap: (...args: unknown[]) => mockAssertUnderWeeklyCap(...args),
+}));
+
 import {
   AUTO_DEBRIEF_KEY_PREFIX,
   cacheAutoDebrief,
@@ -55,14 +61,27 @@ function analytics(overrides: Partial<DebriefAnalytics> = {}): DebriefAnalytics 
 }
 
 describe('coach-auto-debrief', () => {
+  const ORIGINAL_DISPATCH = process.env.EXPO_PUBLIC_COACH_DISPATCH;
+
   beforeEach(async () => {
     await AsyncStorage.clear();
     mockSendCoachPrompt.mockReset();
     mockSendCoachGemmaPrompt.mockReset();
     mockSynth.mockReset();
+    mockAssertUnderWeeklyCap.mockReset();
+    mockAssertUnderWeeklyCap.mockResolvedValue(undefined);
     mockSynth.mockResolvedValue({ text: null, lastBrief: null, weekSummary: null });
     delete process.env.EXPO_PUBLIC_COACH_AUTO_DEBRIEF_ENABLED;
     delete process.env.EXPO_PUBLIC_COACH_CLOUD_PROVIDER;
+    delete process.env.EXPO_PUBLIC_COACH_DISPATCH;
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_DISPATCH === undefined) {
+      delete process.env.EXPO_PUBLIC_COACH_DISPATCH;
+    } else {
+      process.env.EXPO_PUBLIC_COACH_DISPATCH = ORIGINAL_DISPATCH;
+    }
   });
 
   // -------------------------------------------------------------------
@@ -244,6 +263,9 @@ describe('coach-auto-debrief', () => {
     it('gemma provider falls back to sendCoachPrompt on sendCoachGemmaPrompt failure', async () => {
       // Gemma path now calls sendCoachGemmaPrompt directly; on failure we
       // fall back to sendCoachPrompt (the OpenAI-backed generic path).
+      // Dispatch-flag gate (#536): the direct Gemma call is only attempted
+      // when the global dispatch flag is on — flip it on explicitly here.
+      process.env.EXPO_PUBLIC_COACH_DISPATCH = 'on';
       mockSendCoachGemmaPrompt.mockRejectedValueOnce(new Error('gemma unavailable'));
       mockSendCoachPrompt.mockResolvedValueOnce({
         role: 'assistant',
@@ -261,6 +283,58 @@ describe('coach-auto-debrief', () => {
       expect(mockSendCoachPrompt).toHaveBeenCalledTimes(1);
       expect(result.brief).toBe('Fallback brief.');
       expect(result.provider).toBe('gemma');
+    });
+
+    it('skips direct Gemma call and falls through to OpenAI when dispatch flag is off (#536)', async () => {
+      // When EXPO_PUBLIC_COACH_DISPATCH is unset or !== 'on', the gemma
+      // branch in `dispatch()` is bypassed entirely — sendCoachGemmaPrompt
+      // is never called, and sendCoachPrompt (OpenAI by default) owns the turn.
+      delete process.env.EXPO_PUBLIC_COACH_DISPATCH;
+      mockSendCoachPrompt.mockResolvedValueOnce({
+        role: 'assistant',
+        content: 'OpenAI brief.',
+      });
+
+      const result = await generateAutoDebrief({
+        sessionId: 'sess-no-dispatch',
+        analytics: analytics(),
+        provider: 'gemma',
+      });
+
+      expect(mockSendCoachGemmaPrompt).not.toHaveBeenCalled();
+      expect(mockSendCoachPrompt).toHaveBeenCalledTimes(1);
+      expect(result.brief).toBe('OpenAI brief.');
+      // provider annotation on result is the *resolved* provider preference,
+      // not the path actually taken — keep the existing shape.
+      expect(result.provider).toBe('gemma');
+    });
+
+    it('falls back to OpenAI when weekly Gemma cap is exceeded (#537)', async () => {
+      // Dispatch flag is on, but assertUnderWeeklyCap throws — dispatch()
+      // catches and switches to the generic OpenAI path without invoking
+      // sendCoachGemmaPrompt at all.
+      process.env.EXPO_PUBLIC_COACH_DISPATCH = 'on';
+      mockAssertUnderWeeklyCap.mockRejectedValueOnce({
+        domain: 'validation',
+        code: 'COACH_COST_CAP_EXCEEDED',
+        message: 'cap blown',
+      });
+      mockSendCoachPrompt.mockResolvedValueOnce({
+        role: 'assistant',
+        content: 'OpenAI fallback.',
+      });
+      jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const result = await generateAutoDebrief({
+        sessionId: 'sess-cap',
+        analytics: analytics(),
+        provider: 'gemma',
+      });
+
+      expect(mockAssertUnderWeeklyCap).toHaveBeenCalledTimes(1);
+      expect(mockSendCoachGemmaPrompt).not.toHaveBeenCalled();
+      expect(mockSendCoachPrompt).toHaveBeenCalledTimes(1);
+      expect(result.brief).toBe('OpenAI fallback.');
     });
   });
 });
