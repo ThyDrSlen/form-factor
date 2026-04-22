@@ -33,7 +33,18 @@ import type {
   CoachMessage,
   CoachSendOptions,
 } from './coach-service';
+import { recordCoachUsage } from './coach-cost-tracker';
 import { warnWithTs } from '@/lib/logger';
+
+/**
+ * Rough token estimator used for telemetry when the Gemma reply doesn't
+ * surface a token count. 4 chars ≈ 1 token is the standard llama/gpt-family
+ * approximation and is good enough for weekly aggregation.
+ */
+function estimateTokens(text: string): number {
+  if (!text) return 0;
+  return Math.max(1, Math.ceil(text.length / 4));
+}
 
 /** Intents eligible for the phrase-only fallback. Numeric intents are excluded. */
 export const FALLBACK_CANDIDATES: Exclude<
@@ -112,9 +123,21 @@ export async function classifyViaGemma(
   if (!normalized) {
     return { intent: 'none', params: {}, confidence: 0, normalized: '' };
   }
+  const messages = buildGemmaNluPrompt(normalized);
   try {
-    const reply = await sendPrompt(buildGemmaNluPrompt(normalized), undefined, {
+    const reply = await sendPrompt(messages, undefined, {
       provider: 'gemma',
+      taskKind: 'voice_nlu',
+    });
+    // Telemetry: record the Gemma turn so weekly dashboards capture
+    // voice-NLU traffic. Uses the char-based estimator since the coach
+    // edge function does not surface token counts for Gemma today.
+    const promptText = messages.map((m) => m.content).join('\n');
+    void recordCoachUsage({
+      provider: 'gemma_cloud',
+      taskKind: 'voice_nlu',
+      tokensIn: estimateTokens(promptText),
+      tokensOut: estimateTokens(reply.content ?? ''),
     });
     const intent = parseGemmaNluResponse(reply.content ?? '');
     if (intent === 'none') {
