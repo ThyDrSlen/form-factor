@@ -32,6 +32,8 @@ import { useAutoDebrief } from '@/hooks/use-auto-debrief';
 import { useSessionComparisonQuery } from '@/hooks/use-session-comparison';
 import { supabase } from '@/lib/supabase';
 import { isCoachPipelineV2Enabled } from '@/lib/services/coach-pipeline-v2-flag';
+import { createError, logError } from '@/lib/services/ErrorHandler';
+import { useToast } from '@/contexts/ToastContext';
 
 function safeParseReps(raw: string | undefined): RepSummary[] {
   if (!raw) return [];
@@ -92,6 +94,7 @@ function pickBestAndWorst(reps: RepSummary[]): {
 
 export default function FormTrackingDebriefScreen() {
   const router = useRouter();
+  const { show: showToast } = useToast();
   const [userId, setUserId] = useState<string | null>(null);
   useEffect(() => {
     // Resolve the current user lazily via supabase.auth.getSession() rather
@@ -158,8 +161,25 @@ export default function FormTrackingDebriefScreen() {
       exerciseId: comparisonExerciseId,
       priorSessionId: comparison.priorSessionId,
     }).toString();
-    router.push(`/(modals)/form-comparison?${qs}` as `/${string}`);
-  }, [router, comparison?.priorSessionId, comparisonExerciseId, routeSessionId]);
+    try {
+      router.push(`/(modals)/form-comparison?${qs}` as `/${string}`);
+    } catch (err) {
+      // Router.push is synchronous today but future expo-router versions may
+      // surface native-side nav errors (deep-link conflict, unregistered
+      // route, etc.). Log + show a toast so the user gets feedback; the
+      // compare card itself stays tappable so retry is one-more-tap away.
+      logError(
+        createError(
+          'form-tracking',
+          'DEBRIEF_COMPARE_NAV_FAILED',
+          'Could not open session comparison',
+          { details: err, retryable: true },
+        ),
+        { feature: 'form-tracking', location: 'form-tracking-debrief' },
+      );
+      showToast("Couldn't open comparison — tap to retry", { type: 'error' });
+    }
+  }, [router, showToast, comparison?.priorSessionId, comparisonExerciseId, routeSessionId]);
 
   // Pipeline v2: synthesize a stable sessionId from the recap payload so the
   // auto-debrief hook can dedupe via AsyncStorage. We derive from exercise
