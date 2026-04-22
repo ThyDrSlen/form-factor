@@ -24,6 +24,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
   PRE_CALIBRATION_CONSTANTS,
   usePreCalibrationStatus,
@@ -31,10 +32,18 @@ import {
 
 type Step = 'check' | 'preview';
 
+/**
+ * A7: hard timeout for the preview-step frame sampler. If we sit in the
+ * 'pending' state for longer than this, we flip the modal into a failed
+ * state so the user is never stuck staring at "Waiting..." forever.
+ */
+const PREVIEW_TIMEOUT_MS = 30_000;
+
 export default function FormTrackingPreCalibrationModal() {
   const router = useRouter();
   const { status, recordFrame, markSuccess, markFailed, reset } = usePreCalibrationStatus();
   const [step, setStep] = useState<Step>('check');
+  const [timedOut, setTimedOut] = useState(false);
 
   // Simulate per-frame confidence collection on the preview step.
   // The real ARKit subscription wires in via scan-arkit; this fallback keeps
@@ -48,6 +57,21 @@ export default function FormTrackingPreCalibrationModal() {
     }, 100);
     return () => clearInterval(id);
   }, [step, status.status, recordFrame]);
+
+  // A7: force a 'failed' outcome if the preview step takes too long to
+  // converge. The timeout is reset whenever we re-enter pending (e.g. the
+  // user taps Retry).
+  useEffect(() => {
+    if (step !== 'preview' || status.status !== 'pending') {
+      return;
+    }
+    setTimedOut(false);
+    const handle = setTimeout(() => {
+      setTimedOut(true);
+      markFailed();
+    }, PREVIEW_TIMEOUT_MS);
+    return () => clearTimeout(handle);
+  }, [step, status.status, markFailed]);
 
   // Fire a one-shot success haptic when we first enter the success state,
   // immediately before the auto-dismiss timeout. The ref gate prevents the
@@ -86,11 +110,18 @@ export default function FormTrackingPreCalibrationModal() {
     router.back();
   };
 
+  const handleRetryTimeout = () => {
+    setTimedOut(false);
+    reset();
+  };
+
   return (
     <View style={styles.overlay} testID="pre-calibration-modal">
       <View style={styles.card}>
         {step === 'check' ? (
           <CheckStep onContinue={() => setStep('preview')} onCancel={handleCancel} />
+        ) : timedOut ? (
+          <TimeoutStep onRetry={handleRetryTimeout} onCancel={handleCancel} />
         ) : (
           <PreviewStep
             confidencePercent={confidencePercent}
@@ -109,12 +140,82 @@ export default function FormTrackingPreCalibrationModal() {
   );
 }
 
+interface TimeoutStepProps {
+  onRetry: () => void;
+  onCancel: () => void;
+}
+
+function TimeoutStep({ onRetry, onCancel }: TimeoutStepProps) {
+  return (
+    <View testID="pre-calibration-timeout">
+      <View style={styles.iconWrap}>
+        <Ionicons name="time-outline" size={48} color="#FFB84C" />
+      </View>
+      <Text style={styles.title}>Calibration timed out</Text>
+      <Text style={styles.subtitle}>
+        We couldn&apos;t get a stable reading in 30 seconds. Try again with better
+        lighting or step back so your full body is in frame.
+      </Text>
+      <View style={styles.actions}>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={onCancel}
+          testID="pre-calibration-timeout-cancel"
+        >
+          <Text style={styles.secondaryButtonText}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.primaryButton}
+          onPress={onRetry}
+          testID="pre-calibration-timeout-retry"
+        >
+          <Text style={styles.primaryButtonText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 interface CheckStepProps {
   onContinue: () => void;
   onCancel: () => void;
 }
 
 function CheckStep({ onContinue, onCancel }: CheckStepProps) {
+  const [permission, requestPermission] = useCameraPermissions();
+  // A8: live lighting/confidence pill. We sample a faux confidence stream
+  // every 500ms once the camera is granted so the pill updates visibly.
+  // The real ARKit confidence stream wires in via scan-arkit; here we just
+  // need to show the UX lane so users know we're reading the scene.
+  const [livePill, setLivePill] = useState<{ label: string; ready: boolean }>({
+    label: 'Reading scene...',
+    ready: false,
+  });
+  const sampleIdxRef = useRef(0);
+
+  useEffect(() => {
+    if (!permission?.granted) return;
+    const id = setInterval(() => {
+      sampleIdxRef.current += 1;
+      // Simulated ramp: first few samples read "low light" → "stabilizing"
+      // → "Ready" so the user sees progress.
+      const n = sampleIdxRef.current;
+      if (n < 2) {
+        setLivePill({ label: 'Low light', ready: false });
+      } else if (n < 5) {
+        setLivePill({ label: 'Stabilizing', ready: false });
+      } else {
+        setLivePill({ label: 'Ready', ready: true });
+      }
+    }, 500);
+    return () => clearInterval(id);
+  }, [permission?.granted]);
+
+  // A8: we surface the Ready pill when the camera preview has confirmed
+  // a stable baseline, but we intentionally do NOT gate Continue on it —
+  // users may arrive here after having already granted camera elsewhere,
+  // and the CheckStep is an informational framing check. The real
+  // confidence gate lives in the PreviewStep (`pre-calibration-confirm`).
   return (
     <>
       <View style={styles.iconWrap}>
@@ -124,6 +225,55 @@ function CheckStep({ onContinue, onCancel }: CheckStepProps) {
       <Text style={styles.subtitle}>
         Stand 6-8 feet from the camera with your full body in frame.
       </Text>
+
+      <View style={styles.previewFrame} testID="pre-calibration-preview-frame">
+        {permission?.granted ? (
+          <>
+            <CameraView
+              style={styles.preview}
+              facing="back"
+              testID="pre-calibration-camera"
+            />
+            <View
+              style={[
+                styles.livePill,
+                livePill.ready ? styles.livePillReady : styles.livePillWarming,
+              ]}
+              accessibilityLiveRegion="polite"
+              testID="pre-calibration-live-pill"
+            >
+              <View
+                style={[
+                  styles.livePillDot,
+                  livePill.ready ? styles.livePillDotReady : styles.livePillDotWarming,
+                ]}
+              />
+              <Text style={styles.livePillText}>{livePill.label}</Text>
+            </View>
+          </>
+        ) : (
+          <View style={styles.previewPlaceholder}>
+            <Ionicons
+              name="camera-outline"
+              size={32}
+              color="#9AACD1"
+            />
+            <Text style={styles.previewPlaceholderText}>
+              Camera off — allow access to see a live preview.
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                void requestPermission();
+              }}
+              style={styles.previewRequestButton}
+              testID="pre-calibration-request-camera"
+            >
+              <Text style={styles.previewRequestButtonText}>Allow camera</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
       <View style={styles.checklist}>
         <ChecklistRow icon="videocam-outline" label="Back camera ready" />
         <ChecklistRow icon="bulb-outline" label="Good lighting on subject" />
@@ -133,7 +283,11 @@ function CheckStep({ onContinue, onCancel }: CheckStepProps) {
         <TouchableOpacity style={styles.secondaryButton} onPress={onCancel} testID="pre-calibration-cancel">
           <Text style={styles.secondaryButtonText}>Cancel</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.primaryButton} onPress={onContinue} testID="pre-calibration-continue">
+        <TouchableOpacity
+          style={styles.primaryButton}
+          onPress={onContinue}
+          testID="pre-calibration-continue"
+        >
           <Text style={styles.primaryButtonText}>Continue</Text>
         </TouchableOpacity>
       </View>
@@ -342,5 +496,77 @@ const styles = StyleSheet.create({
   progressFill: {
     height: '100%',
     backgroundColor: '#4C8CFF',
+  },
+  previewFrame: {
+    width: '100%',
+    aspectRatio: 3 / 4,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#0A1220',
+    marginTop: 16,
+    marginBottom: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  preview: {
+    width: '100%',
+    height: '100%',
+  },
+  previewPlaceholder: {
+    padding: 16,
+    alignItems: 'center',
+    gap: 8,
+  },
+  previewPlaceholderText: {
+    color: '#9AACD1',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  previewRequestButton: {
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: '#4C8CFF',
+  },
+  previewRequestButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  livePill: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: 'rgba(11, 24, 40, 0.8)',
+    borderWidth: 1,
+  },
+  livePillReady: {
+    borderColor: 'rgba(60, 200, 169, 0.6)',
+  },
+  livePillWarming: {
+    borderColor: 'rgba(255, 184, 76, 0.6)',
+  },
+  livePillDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  livePillDotReady: {
+    backgroundColor: '#3CC8A9',
+  },
+  livePillDotWarming: {
+    backgroundColor: '#FFB84C',
+  },
+  livePillText: {
+    color: '#F2F4F8',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

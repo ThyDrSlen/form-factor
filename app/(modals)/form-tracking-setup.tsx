@@ -14,6 +14,7 @@
 
 import React, { useCallback, useMemo, useState } from 'react';
 import {
+  Keyboard,
   Linking,
   Pressable,
   ScrollView,
@@ -93,6 +94,10 @@ export default function FormTrackingSetupScreen() {
   }, []);
 
   const handleStart = useCallback(async () => {
+    // A9: dismiss any lingering soft keyboard before we navigate — otherwise
+    // on Android the keyboard can overlap the landing scan screen until the
+    // user taps elsewhere.
+    Keyboard.dismiss();
     await markSeen();
     router.push('/(tabs)/scan-arkit');
   }, [markSeen, router]);

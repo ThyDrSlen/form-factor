@@ -12,11 +12,13 @@
  * tracker to navigate here is a follow-up.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { NavigationContext } from '@react-navigation/native';
+import type { EventArg, NavigationAction } from '@react-navigation/native';
 
 import {
   RepBreakdownList,
@@ -27,6 +29,7 @@ import { AskCoachCTA } from '@/components/form-tracking/AskCoachCTA';
 import AutoDebriefCard from '@/components/form-tracking/AutoDebriefCard';
 import { FqiExplainerModal } from '@/components/form-tracking/FqiExplainerModal';
 import { SessionCompareToLastCard } from '@/components/form-tracking/SessionCompareToLastCard';
+import { SessionNotesSheet } from '@/components/debrief/SessionNotesSheet';
 import { resolveExerciseKey } from '@/lib/services/form-session-history-lookup';
 import { useAutoDebrief } from '@/hooks/use-auto-debrief';
 import { useSessionComparisonQuery } from '@/hooks/use-session-comparison';
@@ -182,6 +185,52 @@ export default function FormTrackingDebriefScreen() {
     sessionId: pipelineV2 ? sessionId : null,
   });
 
+  // A12: confirm before discarding an in-flight (or fresh) debrief. Mirrors
+  // the add-food pattern — if the auto-debrief is still loading OR has a
+  // result in hand, a back-gesture / header-close first asks "Discard
+  // feedback?". The user can cancel and stay on the card.
+  //
+  // We read the navigation object directly from NavigationContext so we
+  // can gracefully handle being mounted outside a NavigationContainer
+  // (older unit tests do exactly that). useNavigation() would throw; a
+  // direct context read returns undefined.
+  const navigation = React.useContext(NavigationContext);
+  const shouldSkipDiscardWarningRef = useRef(false);
+  const hasFeedbackToDiscard = autoDebrief.loading || autoDebrief.data != null;
+
+  useEffect(() => {
+    if (!navigation || !hasFeedbackToDiscard) {
+      shouldSkipDiscardWarningRef.current = false;
+      return;
+    }
+
+    type BeforeRemoveEvent = EventArg<'beforeRemove', true, { action: NavigationAction }>;
+    const unsubscribe = navigation.addListener('beforeRemove', (e: BeforeRemoveEvent) => {
+      if (shouldSkipDiscardWarningRef.current) {
+        return;
+      }
+
+      e.preventDefault();
+      Alert.alert(
+        'Discard feedback?',
+        'Your coach debrief is still coming in. Leaving now will drop the feedback.',
+        [
+          { text: 'Stay', style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              shouldSkipDiscardWarningRef.current = true;
+              navigation?.dispatch(e.data.action);
+            },
+          },
+        ],
+      );
+    });
+
+    return unsubscribe;
+  }, [hasFeedbackToDiscard, navigation]);
+
   const handleClose = useCallback(() => {
     router.back();
   }, [router]);
@@ -300,6 +349,23 @@ export default function FormTrackingDebriefScreen() {
               // your feedback…" copy in the empty grace window — NOT the
               // cold "No debrief yet" history placeholder.
               awaitingResult={hasReps}
+            />
+          </View>
+        ) : null}
+
+        {/* A18: session notes sheet — free-text notes, star the top faults,
+            opt-in to save cues for next time. Only renders when we have a
+            stable sessionId to persist against. */}
+        {routeSessionId && hasReps ? (
+          <View style={styles.sectionGap} testID="form-tracking-debrief-notes-section">
+            <Text style={styles.sectionTitle}>Your notes</Text>
+            <SessionNotesSheet
+              sessionId={routeSessionId}
+              topFaults={(worst?.faults ?? []).slice(0, 2).map((faultId) => ({
+                id: faultId,
+                label: faultId.replace(/_/g, ' '),
+              }))}
+              testID="form-tracking-debrief-notes-sheet"
             />
           </View>
         ) : null}
