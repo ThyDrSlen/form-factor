@@ -1,8 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  __clearDailyBudgetOverridesForTests,
   __invalidateHydrationForTests,
   __internal,
+  __setDailyBudgetForTests,
+  assertDailyBudget,
+  getAvailableBudget,
   getWeeklyAggregate,
+  isBudgetExceededError,
   recordCoachUsage,
   resetCoachCostTracker,
 } from '@/lib/services/coach-cost-tracker';
@@ -219,5 +224,90 @@ describe('coach-cost-tracker — recordCoachUsage + getWeeklyAggregate', () => {
     __invalidateHydrationForTests();
     const rehydrated = await getWeeklyAggregate('2026-03-08T12:00:00.000Z');
     expect(rehydrated.totalCalls).toBe(0);
+  });
+});
+
+describe('coach-cost-tracker — per-surface daily budgets (#592)', () => {
+  const NOW = '2026-04-17T12:00:00.000Z';
+
+  beforeEach(() => {
+    __clearDailyBudgetOverridesForTests();
+  });
+
+  it('reports full remaining headroom when no usage has been recorded', async () => {
+    const remaining = await getAvailableBudget('session_generator', NOW);
+    expect(remaining).toBe(50_000);
+  });
+
+  it('subtracts tokensIn + tokensOut from the configured daily cap', async () => {
+    await recordCoachUsage({
+      at: NOW,
+      provider: 'gemma_cloud',
+      taskKind: 'session_generator',
+      tokensIn: 1_000,
+      tokensOut: 400,
+    });
+    const remaining = await getAvailableBudget('session_generator', NOW);
+    expect(remaining).toBe(48_600);
+  });
+
+  it('returns Infinity for surfaces without a configured budget', async () => {
+    const remaining = await getAvailableBudget('chat', NOW);
+    expect(remaining).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('clamps remaining at 0 once usage meets or exceeds the budget', async () => {
+    __setDailyBudgetForTests('warmup_generator', 100);
+    await recordCoachUsage({
+      at: NOW,
+      provider: 'gemma_cloud',
+      taskKind: 'warmup_generator',
+      tokensIn: 150,
+      tokensOut: 0,
+    });
+    const remaining = await getAvailableBudget('warmup_generator', NOW);
+    expect(remaining).toBe(0);
+  });
+
+  it('assertDailyBudget is a no-op while under budget', async () => {
+    await expect(assertDailyBudget('session_generator', NOW)).resolves.toBeUndefined();
+  });
+
+  it('assertDailyBudget throws a typed BudgetExceededError once exhausted', async () => {
+    __setDailyBudgetForTests('warmup_generator', 500);
+    await recordCoachUsage({
+      at: NOW,
+      provider: 'gemma_cloud',
+      taskKind: 'warmup_generator',
+      tokensIn: 400,
+      tokensOut: 200,
+    });
+    try {
+      await assertDailyBudget('warmup_generator', NOW);
+      throw new Error('expected assertDailyBudget to throw');
+    } catch (err) {
+      expect(isBudgetExceededError(err)).toBe(true);
+      if (isBudgetExceededError(err)) {
+        expect(err.domain).toBe('coach');
+        expect(err.code).toBe('COACH_BUDGET_EXCEEDED');
+        expect(err.taskKind).toBe('warmup_generator');
+        expect(err.dailyBudget).toBe(500);
+        expect(err.usedTokens).toBeGreaterThanOrEqual(500);
+        expect(err.retryable).toBe(false);
+      }
+    }
+  });
+
+  it('only considers today-date buckets when computing remaining budget', async () => {
+    await recordCoachUsage({
+      at: '2026-04-16T10:00:00.000Z',
+      provider: 'gemma_cloud',
+      taskKind: 'session_generator',
+      tokensIn: 40_000,
+      tokensOut: 9_999,
+    });
+    // Yesterday's usage must NOT count against today's quota.
+    const remaining = await getAvailableBudget('session_generator', NOW);
+    expect(remaining).toBe(50_000);
   });
 });

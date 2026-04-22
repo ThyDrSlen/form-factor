@@ -13,6 +13,7 @@
  *      Crypto.randomUUID() ids.
  */
 import * as Crypto from 'expo-crypto';
+import { assertDailyBudget } from './coach-cost-tracker';
 import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
 import { parseGemmaJsonResponse, schema, type JsonSchema } from './gemma-json-parser';
 import { assertGemmaSessionGenEnabled } from './gemma-session-gen-flag';
@@ -126,10 +127,29 @@ export async function generateSession(
     assertGemmaSessionGenEnabled('session-generator');
   }
 
+  // Enforce per-surface daily budget before spending tokens. Only gates the
+  // real dispatcher — callers that inject their own `dispatch` (tests, eval
+  // harnesses) are allowed through. Throws a typed BudgetExceededError that
+  // the UI can catch to show a quota-exceeded state.
+  if (!runtime.dispatch) {
+    await assertDailyBudget('session_generator');
+  }
+
   const messages = buildSessionGeneratorMessages(input);
   const dispatch = runtime.dispatch ?? sendCoachPrompt;
 
-  const assistantMessage = await dispatch(messages, runtime.coachContext);
+  // Attach `focus: 'session_generator'` so the cost tracker and telemetry
+  // pipelines can attribute usage/tokens back to this surface. Mirrors the
+  // pattern in coach-auto-debrief / drill-explainer where a short snake_case
+  // label is fed through CoachContext.focus (see coach-cost-tracker
+  // CoachTaskKind). Preserves any caller-supplied context fields; a
+  // caller-provided focus wins so explicit attribution overrides the default.
+  const dispatchContext: CoachContext = {
+    ...(runtime.coachContext ?? {}),
+    focus: runtime.coachContext?.focus ?? 'session_generator',
+  };
+
+  const assistantMessage = await dispatch(messages, dispatchContext);
 
   const retryInvoker = async (ctx: { lastRawText: string; issues?: unknown }): Promise<string> => {
     const retryMessages: CoachMessage[] = [
@@ -140,7 +160,7 @@ export async function generateSession(
         content: `The previous response was not valid JSON or did not match the schema. Issues: ${JSON.stringify(ctx.issues ?? 'syntax error')}. Respond ONLY with corrected JSON.`,
       },
     ];
-    const retryResponse = await dispatch(retryMessages, runtime.coachContext);
+    const retryResponse = await dispatch(retryMessages, dispatchContext);
     return retryResponse.content;
   };
 
