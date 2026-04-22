@@ -24,7 +24,7 @@ jest.mock('expo-crypto', () => ({
 jest.mock('@/lib/supabase', () => ({
   supabase: {
     from: jest.fn(() => ({
-      insert: (...args) => {
+      insert: (...args: any[]) => {
         mockInsert(...args);
         return new Promise((resolve) => {
           mockInsertResolver = resolve;
@@ -45,7 +45,7 @@ jest.mock('@/lib/logger', () => ({
 }));
 
 jest.mock('@/lib/haptics/haptic-bus', () => ({
-  hapticBus: { emit: (...args) => mockHapticEmit(...args) },
+  hapticBus: { emit: (...args: any[]) => mockHapticEmit(...args) },
   EVENT_TO_SEVERITY: {},
 }));
 
