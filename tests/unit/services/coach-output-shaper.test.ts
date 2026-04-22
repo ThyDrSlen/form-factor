@@ -14,6 +14,64 @@ describe('shapeFinalResponse (synchronous path)', () => {
   it('passes through normal text unchanged', () => {
     expect(shapeFinalResponse('Bench 4x5 at 80%.')).toBe('Bench 4x5 at 80%.');
   });
+
+  // ---------------------------------------------------------------------------
+  // Wave-29 T3: edge inputs — whitespace-only, emoji-only, unicode.
+  //
+  // The shaper today is a `trim()` passthrough (see shapeFinalResponse at
+  // lib/services/coach-output-shaper.ts:37-41). We capture those contracts
+  // explicitly so when PR #448's canonical heuristic lands, the regression
+  // surface is obvious.
+  // ---------------------------------------------------------------------------
+  describe('edge inputs (wave-29 T3)', () => {
+    it('collapses whitespace-only input (spaces + newlines) to empty string', () => {
+      // Pure whitespace must NOT accidentally be returned as the original
+      // string — downstream consumers treat non-empty as "coach said
+      // something" and would render a blank bubble.
+      expect(shapeFinalResponse('   \n\n   ')).toBe('');
+      expect(shapeFinalResponse('\t\n \r\n')).toBe('');
+    });
+
+    it('returns an empty string unchanged', () => {
+      expect(shapeFinalResponse('')).toBe('');
+    });
+
+    it('preserves emoji-only input verbatim', () => {
+      // Coaches occasionally respond with a single emoji ("Nailed it! 🎯").
+      // The trim path must preserve the emoji bytes without mangling the
+      // UTF-16 surrogate pairs.
+      const emojis = '\u{1F3AF}\u{1F3AF}\u{1F3AF}';
+      expect(shapeFinalResponse(emojis)).toBe(emojis);
+    });
+
+    it('preserves emoji surrounded by whitespace after trimming', () => {
+      const emojis = '\u{1F4AA}\u{1F4AA}';
+      expect(shapeFinalResponse(`   ${emojis}   `)).toBe(emojis);
+    });
+
+    it('preserves zero-width joiners and grapheme clusters intact', () => {
+      // Family emoji: man + zwj + woman + zwj + girl. The .trim() call
+      // operates on code units but cannot split inside the cluster because
+      // none of the components are whitespace. Regression guard against
+      // any future canonical heuristic that naively strips non-ASCII.
+      const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}';
+      expect(shapeFinalResponse(family)).toBe(family);
+    });
+
+    it('preserves mixed RTL + LTR unicode text verbatim (minus outer trim)', () => {
+      // Mixed-script coach replies (e.g. bilingual users) must not lose
+      // directionality markers or combining characters.
+      const mixed = '  שלום\u200F world café  ';
+      expect(shapeFinalResponse(mixed)).toBe('שלום\u200F world café');
+    });
+
+    it('preserves internal newlines after trimming outer whitespace', () => {
+      // The LLM often returns multi-line replies; trim must only strip the
+      // outer padding and leave the body intact.
+      const input = '\n\nLine one.\nLine two.\n\n';
+      expect(shapeFinalResponse(input)).toBe('Line one.\nLine two.');
+    });
+  });
 });
 
 describe('shapeStreamChunk (sentence-boundary buffering)', () => {
