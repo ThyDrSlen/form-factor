@@ -256,13 +256,12 @@ describe('coach-gemma-service', () => {
     });
 
     const promise = sendCoachGemmaPrompt(baseMessages);
-    // The current invoke-error path classifies everything-non-404/-config as
-    // INVOKE_FAILED with retryable=true; assert exactly that shape so future
-    // refinements (e.g. a dedicated COACH_GEMMA_RATE_LIMITED code) can tighten
-    // this test without regressing.
+    // 429 now maps to a dedicated COACH_GEMMA_RATE_LIMITED code so the UI
+    // can render a tailored rate-limit banner (wave-36). retryable stays
+    // true — callers should still back off and retry.
     await expect(promise).rejects.toMatchObject({
       domain: 'network',
-      code: 'COACH_GEMMA_INVOKE_FAILED',
+      code: 'COACH_GEMMA_RATE_LIMITED',
       retryable: true,
     });
   });

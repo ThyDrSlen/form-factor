@@ -45,11 +45,24 @@ export interface CoachMessage {
 }
 
 export interface CoachContext {
+  /**
+   * Identifier and display name only. NEVER include email, phone, or other
+   * PII — prompts flow to third-party LLMs (OpenAI, Google Gemma cloud) and
+   * may be logged at the edge. Keep this field minimal. Downstream edge
+   * functions still accept an optional `email` in their input schema for
+   * backward compatibility, but the client MUST NOT populate it.
+   */
   profile?: {
     id?: string;
     name?: string | null;
-    email?: string | null;
   };
+  /**
+   * User-context label for prompt composition ONLY (e.g. 'fitness_coach',
+   * 'pre-set-stance-preview'). Does NOT influence cost-aware routing — use
+   * `CoachSendOptions.taskKind` to control which provider/model serves the
+   * request. Callers that rely on `focus` for routing will silently hit the
+   * default dispatch path.
+   */
   focus?: string;
   sessionId?: string;
   /**
@@ -105,6 +118,10 @@ export interface CoachSendOptions {
    * `EXPO_PUBLIC_COACH_DISPATCH=on`, the task kind is fed to
    * `decideCoachModel()` to pick a provider (tactical → Gemma, complex → GPT)
    * before the legacy provider hint runs. Omitted means "general_chat".
+   *
+   * NOTE: `taskKind` is the ONLY routing signal. `CoachContext.focus` is a
+   * cosmetic prompt label and does not affect model selection — always set
+   * `taskKind` for new surfaces that should be cost-aware routed.
    */
   taskKind?: CoachTaskKind;
   /** Pipeline-v2 user tier for cost-aware model routing. Defaults to 'free'. */
@@ -128,6 +145,55 @@ interface RawCoachResponse {
 
 const DEFAULT_MODEL_ID = 'gpt-5.4-mini';
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
+
+/**
+ * Parse a `Retry-After` header value per RFC 7231. The header carries either
+ * an integer number of seconds OR an HTTP-date. Returns the delay in
+ * milliseconds, or undefined if the value can't be parsed.
+ *
+ * Exported for reuse by `coach-gemma-service.ts` — the two services share the
+ * same 429 handling contract.
+ */
+export function parseRetryAfterMs(raw: string | null | undefined): number | undefined {
+  if (!raw) return undefined;
+  const asInt = Number.parseInt(raw, 10);
+  if (Number.isFinite(asInt) && asInt >= 0 && /^\d+$/.test(raw.trim())) {
+    return asInt * 1000;
+  }
+  const asDate = Date.parse(raw);
+  if (Number.isFinite(asDate)) {
+    return Math.max(0, asDate - Date.now());
+  }
+  return undefined;
+}
+
+/**
+ * Extract a `Retry-After` delay (ms) from a Supabase Edge Functions failure
+ * tuple. Handles both shapes the SDK returns on 429:
+ *   - `response.headers.get('Retry-After')` — the raw Response from a
+ *     FunctionsHttpError.
+ *   - `error.context.headers.get('Retry-After')` — the same Response, but
+ *     surfaced via the error wrapper.
+ * Returns undefined when neither path yields a header.
+ */
+function extractRetryAfterMs(
+  response: Response | undefined,
+  error: unknown,
+): number | undefined {
+  const fromResponse = response?.headers?.get?.('Retry-After');
+  if (fromResponse) {
+    const parsed = parseRetryAfterMs(fromResponse);
+    if (parsed !== undefined) return parsed;
+  }
+  const ctx = (error as { context?: unknown } | null | undefined)?.context;
+  if (ctx && typeof ctx === 'object' && 'headers' in ctx) {
+    const headers = (ctx as { headers?: { get?: (k: string) => string | null } }).headers;
+    const raw = headers?.get?.('Retry-After') ?? null;
+    const parsed = parseRetryAfterMs(raw);
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
+}
 
 /**
  * Feature-flag gate for prepending cross-session memory to coach prompts.
@@ -315,7 +381,7 @@ async function sendCoachPromptInner(
         ? { ...(context ?? {}), memoryClause }
         : context;
 
-    const { data, error } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
+    const { data, error, response } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
       body: { messages: outgoingMessages, context: outgoingContext },
     });
 
@@ -353,11 +419,15 @@ async function sendCoachPromptInner(
       }
 
       if (isRateLimited) {
+        const retryAfterMs = extractRetryAfterMs(response, error);
         throw createError(
           'network',
           'COACH_RATE_LIMITED',
           'Coach is rate-limited — try again in a moment.',
-          { details: error, retryable: true }
+          {
+            details: retryAfterMs !== undefined ? { error, retryAfterMs } : error,
+            retryable: true,
+          }
         );
       }
 
@@ -382,11 +452,18 @@ async function sendCoachPromptInner(
         /too many requests/i.test(data.error);
 
       if (isRateLimitedPayload) {
+        const retryAfterMs = extractRetryAfterMs(response, error);
         throw createError(
           'network',
           'COACH_RATE_LIMITED',
           'Coach is rate-limited — try again in a moment.',
-          { details: data.error, retryable: true }
+          {
+            details:
+              retryAfterMs !== undefined
+                ? { error: data.error, retryAfterMs }
+                : data.error,
+            retryable: true,
+          }
         );
       }
 

@@ -43,6 +43,7 @@ export type CoachTaskKind =
   | 'rest_calc'
   | 'encouragement'
   | 'fault_explainer'
+  | 'voice_intent'
   | 'form_vision_check'
   | 'program_design'
   | 'nutrition_balance'
@@ -88,6 +89,9 @@ const TACTICAL_TASKS: ReadonlySet<CoachTaskKind> = new Set<CoachTaskKind>([
   'rest_calc',
   'encouragement',
   'fault_explainer',
+  // voice_intent: short classification tasks for hands-free voice control.
+  // Routes to the cheapest Gemma tier — same cost bucket as form_cue_lookup.
+  'voice_intent',
 ]);
 
 const COMPLEX_TASKS: ReadonlySet<CoachTaskKind> = new Set<CoachTaskKind>([
@@ -107,6 +111,9 @@ function complexCloudForTier(tier: CoachUserTier): CoachModelId {
   return tier === 'premium' ? 'gpt-5.4' : 'gpt-5.4-mini';
 }
 
+// Routing is driven by taskKind. If you're tempted to branch on
+// `CoachContext.focus`, add a new taskKind instead — focus is a cosmetic
+// prompt label and does not reach the dispatcher.
 export function decideCoachModel(
   taskKind: CoachTaskKind,
   signals: CoachSignals,
