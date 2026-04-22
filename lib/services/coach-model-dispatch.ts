@@ -48,6 +48,9 @@ export type CoachTaskKind =
   | 'nutrition_balance'
   | 'multi_turn_debrief'
   | 'session_generator'
+  | 'progression_planner'
+  | 'form_check'
+  | 'voice_debrief'
   | 'general_chat';
 
 export type CoachModelId =

@@ -25,6 +25,8 @@ export type CoachTaskKind =
   | 'drill_explainer'
   | 'session_generator'
   | 'progression_planner'
+  | 'form_check'
+  | 'voice_debrief'
   | 'other';
 
 export interface CoachUsageEvent {
@@ -391,6 +393,8 @@ function emptyTaskKindMap(): WeeklyAggregate['byTaskKind'] {
     drill_explainer: { tokensIn: 0, tokensOut: 0, calls: 0 },
     session_generator: { tokensIn: 0, tokensOut: 0, calls: 0 },
     progression_planner: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    form_check: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    voice_debrief: { tokensIn: 0, tokensOut: 0, calls: 0 },
     other: { tokensIn: 0, tokensOut: 0, calls: 0 },
   };
 }

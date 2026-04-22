@@ -45,6 +45,13 @@ export const FALLBACK_CANDIDATES: Exclude<
 export const GEMMA_FALLBACK_CONFIDENCE = 0.8;
 
 /**
+ * Task-kind hint forwarded to `sendCoachPrompt` so the cost-tracker attributes
+ * voice-NLU spend to the new `voice_debrief` bucket. Exported so tests can
+ * assert on the literal string.
+ */
+export const VOICE_NLU_TASK_KIND = 'voice_debrief' as const;
+
+/**
  * Builds the zero-shot Gemma prompt. Kept in its own function for unit
  * testing + future prompt iteration without touching call sites.
  */
@@ -115,6 +122,7 @@ export async function classifyViaGemma(
   try {
     const reply = await sendPrompt(buildGemmaNluPrompt(normalized), undefined, {
       provider: 'gemma',
+      taskKind: VOICE_NLU_TASK_KIND,
     });
     const intent = parseGemmaNluResponse(reply.content ?? '');
     if (intent === 'none') {
