@@ -41,17 +41,29 @@ function buildComparison(overrides: Partial<SessionComparison> = {}): SessionCom
 }
 
 describe('SessionCompareToLastCard', () => {
-  it('renders null when there is no prior session', () => {
-    const { queryByTestId } = render(
+  it('renders the first-session placeholder when there is no prior session', () => {
+    const { queryByTestId, getByTestId } = render(
       <SessionCompareToLastCard
         comparison={buildComparison({
           priorSessionId: null,
           priorSummary: null,
           overallTrend: 'baseline',
         })}
+        exerciseName="Squat"
       />,
     );
+    // The full compare card should not render — only the low-emphasis
+    // placeholder card keyed by `-first-session`.
     expect(queryByTestId('session-compare-to-last-card')).toBeNull();
+    expect(
+      getByTestId('session-compare-to-last-card-first-session'),
+    ).toBeTruthy();
+  });
+
+  it('renders null when comparison payload is entirely missing', () => {
+    const { queryByTestId } = render(<SessionCompareToLastCard />);
+    expect(queryByTestId('session-compare-to-last-card')).toBeNull();
+    expect(queryByTestId('session-compare-to-last-card-first-session')).toBeNull();
   });
 
   it('renders all three delta cells with signed values', () => {
@@ -206,8 +218,8 @@ describe('SessionCompareToLastCard', () => {
     });
   });
 
-  it('settles to null when not loading, no error, no prior session', () => {
-    const { queryByTestId } = render(
+  it('settles to the first-session placeholder when not loading, no error, no prior session', () => {
+    const { queryByTestId, getByTestId } = render(
       <SessionCompareToLastCard
         comparison={buildComparison({
           priorSessionId: null,
@@ -216,8 +228,11 @@ describe('SessionCompareToLastCard', () => {
         })}
       />,
     );
+    // Neither the full card nor the loading/error variants render; only the
+    // low-emphasis first-session placeholder is visible.
     expect(queryByTestId('session-compare-to-last-card')).toBeNull();
     expect(queryByTestId('session-compare-to-last-card-loading')).toBeNull();
     expect(queryByTestId('session-compare-to-last-card-error')).toBeNull();
+    expect(getByTestId('session-compare-to-last-card-first-session')).toBeTruthy();
   });
 });

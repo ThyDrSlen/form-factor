@@ -38,6 +38,22 @@ import { warnWithTs } from '@/lib/logger';
 import { isCoachPipelineV2Enabled } from '@/lib/services/coach-pipeline-v2-flag';
 import { deriveDebriefAnalytics, type RepAnalytics } from '@/lib/services/coach-debrief-prompt';
 import type { GenerateAutoDebriefInput } from '@/lib/services/coach-auto-debrief';
+import { createError, logError } from '@/lib/services/ErrorHandler';
+import { useToast } from '@/contexts/ToastContext';
+
+/**
+ * Thin wrapper around `useToast` that degrades gracefully to a no-op when
+ * the component is rendered outside a ToastProvider (e.g. older unit tests
+ * that didn't wrap the tree). Ensures navigation-error toasts don't crash
+ * existing test renderings that don't mount the app's provider stack.
+ */
+function useOptionalToast(): { show: (msg: string, opts?: { type?: 'info' | 'success' | 'error' }) => void } {
+  try {
+    return useToast();
+  } catch {
+    return { show: () => undefined };
+  }
+}
 
 function safeParseReps(raw: string | undefined): RepSummary[] {
   if (!raw) return [];
@@ -98,6 +114,7 @@ function pickBestAndWorst(reps: RepSummary[]): {
 
 export default function FormTrackingDebriefScreen() {
   const router = useRouter();
+  const { show: showToast } = useOptionalToast();
   const [userId, setUserId] = useState<string | null>(null);
   // Shared mounted-ref so every async completion in this screen (userId
   // load, auth-state-change callbacks, comparison-card reload handlers)
@@ -190,19 +207,25 @@ export default function FormTrackingDebriefScreen() {
       exerciseId: comparisonExerciseId,
       priorSessionId: comparison.priorSessionId,
     }).toString();
-    // Defensive try/catch: router.push throws synchronously on bad routes
-    // (registry mismatch after a refactor) and the user would otherwise see
-    // a red-screen crash instead of an inert chip.
     try {
       router.push(`/(modals)/form-comparison?${qs}` as `/${string}`);
     } catch (err) {
-      warnWithTs('[form-tracking-debrief] router.push to form-comparison failed', err);
+      // Router.push is synchronous today but future expo-router versions may
+      // surface native-side nav errors (deep-link conflict, unregistered
+      // route, etc.). Log + show a toast so the user gets feedback; the
+      // compare card itself stays tappable so retry is one-more-tap away.
+      logError(
+        createError(
+          'form-tracking',
+          'DEBRIEF_COMPARE_NAV_FAILED',
+          'Could not open session comparison',
+          { details: err, retryable: true },
+        ),
+        { feature: 'form-tracking', location: 'form-tracking-debrief' },
+      );
+      showToast("Couldn't open comparison — tap to retry", { type: 'error' });
     }
-    // Depend on the whole `comparison` object, not a projected field, so the
-    // callback always closes over the freshest shape (new priorSessionId,
-    // swapped exercise, etc.) and can't be stranded on a stale snapshot
-    // when the comparison reloads mid-screen.
-  }, [router, comparison, comparisonExerciseId, routeSessionId]);
+  }, [router, showToast, comparison, comparisonExerciseId, routeSessionId]);
 
   // Pipeline v2: synthesize a stable sessionId from the recap payload so the
   // auto-debrief hook can dedupe via AsyncStorage. We derive from exercise
@@ -254,11 +277,6 @@ export default function FormTrackingDebriefScreen() {
   // the add-food pattern — if the auto-debrief is still loading OR has a
   // result in hand, a back-gesture / header-close first asks "Discard
   // feedback?". The user can cancel and stay on the card.
-  //
-  // We read the navigation object directly from NavigationContext so we
-  // can gracefully handle being mounted outside a NavigationContainer
-  // (older unit tests do exactly that). useNavigation() would throw; a
-  // direct context read returns undefined.
   const navigation = React.useContext(NavigationContext);
   const shouldSkipDiscardWarningRef = useRef(false);
   const hasFeedbackToDiscard = autoDebrief.loading || autoDebrief.data != null;
@@ -295,6 +313,20 @@ export default function FormTrackingDebriefScreen() {
 
     return unsubscribe;
   }, [hasFeedbackToDiscard, navigation]);
+
+  // Local dismiss latch for the auto-debrief error card. The hook does not
+  // expose a `clearError` method; when the user dismisses we simply hide the
+  // error locally until the next retry (which clears dismissed via effect).
+  const [autoDebriefErrorDismissed, setAutoDebriefErrorDismissed] = useState(false);
+  useEffect(() => {
+    if (autoDebrief.loading || autoDebrief.data) {
+      setAutoDebriefErrorDismissed(false);
+    }
+  }, [autoDebrief.loading, autoDebrief.data]);
+  const handleDismissAutoDebriefError = useCallback(() => {
+    setAutoDebriefErrorDismissed(true);
+  }, []);
+  const visibleAutoDebriefError = autoDebriefErrorDismissed ? null : autoDebrief.error;
 
   const handleClose = useCallback(() => {
     router.back();
@@ -379,15 +411,15 @@ export default function FormTrackingDebriefScreen() {
           ) : (
             <View style={styles.emptyState} testID="form-tracking-debrief-empty">
               <Ionicons name="information-circle-outline" size={28} color="#9AACD1" />
-              <Text style={styles.emptyTitle}>No reps recorded yet</Text>
+              <Text style={styles.emptyTitle}>This session had no counted reps</Text>
               <Text style={styles.emptyBody}>
-                Start a live tracking set to see your breakdown.
+                Check framing or lighting and try again.
               </Text>
             </View>
           )}
         </View>
 
-        {comparisonLoading || comparisonError || comparison?.priorSessionId ? (
+        {comparisonLoading || comparisonError || comparison ? (
           <View style={styles.sectionGap} testID="form-tracking-debrief-compare-section">
             <Text style={styles.sectionTitle}>Progress</Text>
             <SessionCompareToLastCard
@@ -396,6 +428,7 @@ export default function FormTrackingDebriefScreen() {
               error={comparisonError}
               onRetry={reloadComparison}
               onPress={comparison?.priorSessionId ? handleOpenComparison : undefined}
+              exerciseName={exerciseName}
               testID="form-tracking-debrief-compare-card"
             />
           </View>
@@ -406,9 +439,10 @@ export default function FormTrackingDebriefScreen() {
             <Text style={styles.sectionTitle}>Coach debrief</Text>
             <AutoDebriefCard
               loading={autoDebrief.loading}
-              error={autoDebrief.error}
+              error={visibleAutoDebriefError}
               data={autoDebrief.data}
               onRetry={autoDebrief.retry}
+              onDismissError={handleDismissAutoDebriefError}
               // Reps in the URL params indicate the user just finished a
               // session (recap route), so we want the friendly "preparing
               // your feedback…" copy in the empty grace window — NOT the
