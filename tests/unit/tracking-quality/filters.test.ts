@@ -209,4 +209,95 @@ describe('tracking-quality filters', () => {
       expect(held).toBe(42);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // NaN / Infinity guards (wave-32 T7)
+  // ---------------------------------------------------------------------------
+
+  describe('NaN / Infinity guards', () => {
+    test('clampVelocity falls back to prev when incoming.x is +Infinity', () => {
+      const previous = makeMap([['j', { x: 10, y: 20, isTracked: true, confidence: 0.9 }]]);
+      const incoming = makeMap([['j', { x: Number.POSITIVE_INFINITY, y: 25, isTracked: true, confidence: 0.6 }]]);
+
+      const out = clampVelocity({ previous, incoming, maxDelta: 36, jointKeys: ['j'] });
+      const joint = out.get('j');
+      expect(joint).toBeTruthy();
+      // Incoming is not finite → treated as untracked; previous position held.
+      expect(joint?.x).toBe(10);
+      expect(joint?.y).toBe(20);
+      expect(joint?.isTracked).toBe(false);
+    });
+
+    test('clampVelocity falls back to prev when incoming.y is -Infinity', () => {
+      const previous = makeMap([['j', { x: 10, y: 20, isTracked: true }]]);
+      const incoming = makeMap([['j', { x: 15, y: Number.NEGATIVE_INFINITY, isTracked: true }]]);
+
+      const out = clampVelocity({ previous, incoming, maxDelta: 36, jointKeys: ['j'] });
+      const joint = out.get('j');
+      expect(joint?.x).toBe(10);
+      expect(joint?.y).toBe(20);
+      expect(joint?.isTracked).toBe(false);
+    });
+
+    test('smoothAngleEMA treats NaN alpha as zero (returns incoming unchanged)', () => {
+      // sanitizeAlpha(NaN) → 0 → alpha===0 branch returns next directly.
+      const value = smoothAngleEMA({ previous: 100, incoming: 110, alpha: Number.NaN });
+      expect(value).toBe(110);
+    });
+
+    test('smoothAngleEMA treats Infinity alpha as zero', () => {
+      const value = smoothAngleEMA({ previous: 100, incoming: 110, alpha: Number.POSITIVE_INFINITY });
+      expect(value).toBe(110);
+    });
+
+    test('smoothAngleEMA clamps alpha >1 to exactly 1 (returns incoming)', () => {
+      // sanitizeAlpha clamps to [0,1]; alpha=1 means EMA = prev + (next-prev)*1 = next.
+      const value = smoothAngleEMA({ previous: 100, incoming: 110, alpha: 5 });
+      expect(value).toBe(110);
+    });
+
+    test('smoothAngleEMA clamps alpha <0 to exactly 0 (returns incoming unchanged)', () => {
+      const value = smoothAngleEMA({ previous: 100, incoming: 110, alpha: -2 });
+      expect(value).toBe(110);
+    });
+
+    test('smoothCoordinateEMA carries incoming.confidence when prev.confidence is undefined', () => {
+      const previous = makeMap([['j', { x: 0, y: 0, isTracked: true }]]); // no confidence
+      const incoming = makeMap([['j', { x: 10, y: 0, isTracked: true, confidence: 0.7 }]]);
+
+      const out = smoothCoordinateEMA({ previous, incoming, alpha: 0.5, jointKeys: ['j'] });
+      expect(out.get('j')?.confidence).toBe(0.7);
+    });
+
+    test('smoothCoordinateEMA falls back to prev.confidence when incoming.confidence is absent', () => {
+      const previous = makeMap([['j', { x: 0, y: 0, isTracked: true, confidence: 0.4 }]]);
+      const incoming = makeMap([['j', { x: 10, y: 0, isTracked: true }]]); // no confidence
+      const out = smoothCoordinateEMA({ previous, incoming, alpha: 0.5, jointKeys: ['j'] });
+      expect(out.get('j')?.confidence).toBe(0.4);
+    });
+
+    test('smoothCoordinateEMA leaves confidence undefined when neither side has it', () => {
+      const previous = makeMap([['j', { x: 0, y: 0, isTracked: true }]]);
+      const incoming = makeMap([['j', { x: 10, y: 0, isTracked: true }]]);
+      const out = smoothCoordinateEMA({ previous, incoming, alpha: 0.5, jointKeys: ['j'] });
+      expect(out.get('j')?.confidence).toBeUndefined();
+    });
+
+    test('clampVelocity treats negative maxDelta as zero (no teleport allowed)', () => {
+      const previous = makeMap([['j', { x: 10, y: 20, isTracked: true }]]);
+      const incoming = makeMap([['j', { x: 30, y: 20, isTracked: true }]]);
+      const out = clampVelocity({ previous, incoming, maxDelta: -50, jointKeys: ['j'] });
+      const joint = out.get('j');
+      // dist > 0, maxDelta clamped to 0 → scale = 0 → x = prev.x + 0 = prev.x
+      expect(joint?.x).toBe(10);
+      expect(joint?.y).toBe(20);
+    });
+
+    test('clampVelocity treats NaN maxDelta as zero', () => {
+      const previous = makeMap([['j', { x: 10, y: 20, isTracked: true }]]);
+      const incoming = makeMap([['j', { x: 30, y: 20, isTracked: true }]]);
+      const out = clampVelocity({ previous, incoming, maxDelta: Number.NaN, jointKeys: ['j'] });
+      expect(out.get('j')?.x).toBe(10);
+    });
+  });
 });

@@ -171,3 +171,73 @@ describe('createStreamShaper (stateful wrapper)', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Edge-case inputs (wave-32 T4): whitespace-only, emoji, unicode combining
+// marks, zero-width characters. Locks the placeholder identity behavior so
+// #448's canonical shaper can't regress these inputs silently.
+// ---------------------------------------------------------------------------
+
+describe('shapeFinalResponse edge-case inputs', () => {
+  it('whitespace-only input collapses to empty string (trim placeholder)', () => {
+    expect(shapeFinalResponse('   \n\n   \t  ')).toBe('');
+  });
+
+  it('empty string stays empty', () => {
+    expect(shapeFinalResponse('')).toBe('');
+  });
+
+  it('preserves emoji-heavy body verbatim (minus outer whitespace)', () => {
+    expect(shapeFinalResponse('  🎯🎯🎯 go go go 💪  ')).toBe('🎯🎯🎯 go go go 💪');
+  });
+
+  it('preserves NFC-composed unicode without mangling combining marks', () => {
+    const composed = '\u00e9'; // "é" as single codepoint
+    expect(shapeFinalResponse(`Pace: ${composed}clat!`)).toBe(`Pace: ${composed}clat!`);
+  });
+
+  it('preserves NFD-decomposed unicode combining marks', () => {
+    const decomposed = 'e\u0301'; // "é" as e + combining acute
+    expect(shapeFinalResponse(`Pace: ${decomposed}clat!`)).toBe(`Pace: ${decomposed}clat!`);
+  });
+
+  it('preserves zero-width chars (placeholder shaper intentionally does not strip)', () => {
+    // The canonical shaper (#448) may choose to strip these; this test
+    // pins today's placeholder behavior so a regression is caught during
+    // the #448 migration rather than silently shipped.
+    const zwj = 'hello\u200Bworld';
+    expect(shapeFinalResponse(zwj)).toBe(zwj);
+  });
+});
+
+describe('shapeStreamChunk edge-case inputs', () => {
+  it('empty chunk with empty buffer emits nothing', () => {
+    const result = shapeStreamChunk('', false, '');
+    expect(result.emit).toBe('');
+    expect(result.buffered).toBe('');
+  });
+
+  it('all-whitespace chunk buffers until a sentence boundary appears', () => {
+    const result = shapeStreamChunk('   ', false, '');
+    expect(result.emit).toBe('');
+    expect(result.buffered).toBe('   ');
+  });
+
+  it('emoji inside a sentence is emitted as part of that sentence', () => {
+    const result = shapeStreamChunk('Nail it 💪. Next', false);
+    expect(result.emit).toBe('Nail it 💪. ');
+    expect(result.buffered).toBe('Next');
+  });
+
+  it('unicode combining-mark does not falsely split a sentence (no stray .?!)', () => {
+    const result = shapeStreamChunk('Pace: e\u0301clat nice Next', false);
+    expect(result.emit).toBe('');
+    expect(result.buffered).toBe('Pace: e\u0301clat nice Next');
+  });
+
+  it('flushes a single-emoji buffer intact on isLast', () => {
+    const result = shapeStreamChunk('', true, '🎯');
+    expect(result.emit).toBe('🎯');
+    expect(result.buffered).toBe('');
+  });
+});
