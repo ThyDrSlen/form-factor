@@ -17,11 +17,8 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import {
-  useNavigation,
-  type EventArg,
-  type NavigationAction,
-} from '@react-navigation/native';
+import { NavigationContext } from '@react-navigation/native';
+import type { EventArg, NavigationAction } from '@react-navigation/native';
 
 import {
   RepBreakdownList,
@@ -192,12 +189,17 @@ export default function FormTrackingDebriefScreen() {
   // the add-food pattern — if the auto-debrief is still loading OR has a
   // result in hand, a back-gesture / header-close first asks "Discard
   // feedback?". The user can cancel and stay on the card.
-  const navigation = useNavigation();
+  //
+  // We read the navigation object directly from NavigationContext so we
+  // can gracefully handle being mounted outside a NavigationContainer
+  // (older unit tests do exactly that). useNavigation() would throw; a
+  // direct context read returns undefined.
+  const navigation = React.useContext(NavigationContext);
   const shouldSkipDiscardWarningRef = useRef(false);
   const hasFeedbackToDiscard = autoDebrief.loading || autoDebrief.data != null;
 
   useEffect(() => {
-    if (!hasFeedbackToDiscard) {
+    if (!navigation || !hasFeedbackToDiscard) {
       shouldSkipDiscardWarningRef.current = false;
       return;
     }
@@ -219,7 +221,7 @@ export default function FormTrackingDebriefScreen() {
             style: 'destructive',
             onPress: () => {
               shouldSkipDiscardWarningRef.current = true;
-              navigation.dispatch(e.data.action);
+              navigation?.dispatch(e.data.action);
             },
           },
         ],
