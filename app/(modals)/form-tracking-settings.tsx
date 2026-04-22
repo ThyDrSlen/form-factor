@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 import { useSafeBack } from '@/hooks/use-safe-back';
 import {
@@ -156,12 +157,20 @@ const ToggleRow = ({ testID, icon, title, subtitle, value, onChange, disabled }:
 
 export default function FormTrackingSettingsModal() {
   const safeBack = useSafeBack(['/(tabs)/profile', '/profile'], { alwaysReplace: true });
+  const router = useRouter();
   const {
     settings,
     loading,
     update,
     reset,
   }: UseFormTrackingSettingsResult = useFormTrackingSettings();
+
+  const openOverridesOnScan = React.useCallback(() => {
+    router.push({
+      pathname: '/(tabs)/scan-arkit',
+      params: { openOverrides: '1' },
+    } as never);
+  }, [router]);
 
   React.useEffect(() => {
     const handler = () => {
@@ -291,6 +300,15 @@ export default function FormTrackingSettingsModal() {
               <Text style={styles.settingSubtitle}>
                 Customize per-exercise from the scan screen long-press menu.
               </Text>
+              <TouchableOpacity
+                testID="ft-settings-open-overrides"
+                style={styles.overrideNavButton}
+                onPress={openOverridesOnScan}
+                accessibilityRole="button"
+                accessibilityLabel="Open scan to edit overrides"
+              >
+                <Text style={styles.overrideNavLabel}>Open scan to edit overrides</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -429,4 +447,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 68, 68, 0.08)',
   },
   resetLabel: { color: '#FF6B6B', fontSize: 14, fontWeight: '600' },
+  // Secondary button for navigating into the scan screen with overrides
+  // pre-opened. Mirrors the resetButton geometry but in the accent/link
+  // colour family so it reads as affordance rather than destructive.
+  overrideNavButton: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 140, 255, 0.35)',
+    backgroundColor: 'rgba(76, 140, 255, 0.08)',
+  },
+  overrideNavLabel: { color: '#4C8CFF', fontSize: 13, fontWeight: '600' },
 });
