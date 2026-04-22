@@ -429,6 +429,10 @@ export default function CoachScreen() {
             value={coachInput}
             onChangeText={setCoachInput}
             multiline
+            accessibilityLabel="Coach message input"
+            returnKeyType="send"
+            onSubmitEditing={() => handleCoachSend()}
+            editable={!coachSending}
           />
 
           {voiceEnabled && !coachSending && (
@@ -451,6 +455,10 @@ export default function CoachScreen() {
             style={[styles.coachSend, (!coachInput.trim() || coachSending) && styles.coachSendDisabled]}
             onPress={() => handleCoachSend()}
             disabled={!coachInput.trim() || coachSending}
+            accessibilityRole="button"
+            accessibilityLabel={coachSending ? 'Sending message' : 'Send message'}
+            accessibilityHint="Double-tap to send your prompt to the coach"
+            accessibilityState={{ busy: coachSending, disabled: coachSending || !coachInput.trim() }}
           >
             {coachSending ? (
               <ActivityIndicator color="#ffffff" />
