@@ -111,6 +111,9 @@ function complexCloudForTier(tier: CoachUserTier): CoachModelId {
   return tier === 'premium' ? 'gpt-5.4' : 'gpt-5.4-mini';
 }
 
+// Routing is driven by taskKind. If you're tempted to branch on
+// `CoachContext.focus`, add a new taskKind instead — focus is a cosmetic
+// prompt label and does not reach the dispatcher.
 export function decideCoachModel(
   taskKind: CoachTaskKind,
   signals: CoachSignals,
