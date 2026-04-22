@@ -12,6 +12,8 @@ type FormData = {
 
 export default function SignInScreen() {
   const router = useRouter();
+  // TODO(wave-36): honor `mode=existing` query to default to the existing-account tab
+  // (forwarded from app/(onboarding)/welcome.tsx's "I already have an account" CTA).
   const [isSignUp, setIsSignUp] = useState(false);
   const [isMagicLink, setIsMagicLink] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
