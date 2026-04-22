@@ -466,6 +466,22 @@ export default function ScanARKitScreen() {
   const [gestureRecordingEnabled, setGestureRecordingEnabled] = useState(true);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  // Retry-able upload failure surface. When a manual video upload
+  // rejects (network blip, auth refresh, 5xx), we stash the last
+  // attempted payload so the banner's "Retry" action can re-invoke
+  // uploadRecordedVideo without requiring the user to re-encode or
+  // navigate back to the preview. Cleared on success / dismiss.
+  const [uploadRetryPayload, setUploadRetryPayload] = useState<{
+    uri: string;
+    exercise: string;
+    metrics: ClipUploadMetrics;
+    message: string;
+  } | null>(null);
+  const lastUploadPayloadRef = React.useRef<{
+    uri: string;
+    exercise: string;
+    metrics: ClipUploadMetrics;
+  } | null>(null);
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [isExitMidSessionSheetVisible, setIsExitMidSessionSheetVisible] = useState(false);
   const [showDebugStats, setShowDebugStats] = useState(false);
@@ -523,16 +539,18 @@ export default function ScanARKitScreen() {
   const adaptiveFps = useAdaptiveFps({ enabled: arOverlaysV2 });
   const [sustainedOcclusionHint, setSustainedOcclusionHint] =
     useState<SustainedOcclusionEvent | null>(null);
-  const sustainedOcclusionTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Persistent banner (#551): the sustained-occlusion cue used to auto-
+  // dismiss after 3.2s, which meant a user whose hand was covering a
+  // joint long enough for the native manager to fire the event lost the
+  // guidance almost immediately — especially bad when the joint stayed
+  // hidden. The banner now sticks until the user taps "Got it" (via
+  // dismissSustainedOcclusion below); re-entry of a sustained occlusion
+  // with a different joint set overwrites the existing banner.
   const handleSustainedOcclusion = useCallback((event: SustainedOcclusionEvent) => {
     setSustainedOcclusionHint(event);
-    if (sustainedOcclusionTimerRef.current) {
-      clearTimeout(sustainedOcclusionTimerRef.current);
-    }
-    sustainedOcclusionTimerRef.current = setTimeout(() => {
-      setSustainedOcclusionHint(null);
-      sustainedOcclusionTimerRef.current = null;
-    }, 3200);
+  }, []);
+  const dismissSustainedOcclusion = useCallback(() => {
+    setSustainedOcclusionHint(null);
   }, []);
   const occlusionManagerRef = React.useRef<OcclusionHoldManager | null>(null);
   if (occlusionManagerRef.current === null) {
@@ -541,14 +559,6 @@ export default function ScanARKitScreen() {
       onSustainedOcclusion: handleSustainedOcclusion,
     });
   }
-  useEffect(() => {
-    return () => {
-      if (sustainedOcclusionTimerRef.current) {
-        clearTimeout(sustainedOcclusionTimerRef.current);
-        sustainedOcclusionTimerRef.current = null;
-      }
-    };
-  }, []);
   // ---------------------------------------------------------------
 
   const [watchMirrorEnabled, setWatchMirrorEnabled] = useState(Platform.OS === 'ios');
@@ -575,6 +585,17 @@ export default function ScanARKitScreen() {
   const mediaPipeModelVersionRef = React.useRef<string>(MEDIAPIPE_POSE_LANDMARKER_VERSION);
   const lastShadowMeanAbsDeltaRef = React.useRef<number | null>(null);
   const [mediaPipeModelPath, setMediaPipeModelPath] = useState<string | null>(null);
+  // Tracks the initial pose-model download / init phase so the UI can
+  // surface a "Downloading pose model…" modal. The flag starts as true
+  // on iOS where the bundled MediaPipe Lite asset must be resolved
+  // (and occasionally re-downloaded on first run). The effect below
+  // that loads MEDIAPIPE_LITE_MODEL_ASSET flips it to false on success
+  // OR failure, and supportStatus resolving to 'supported' /
+  // 'unsupported' also clears it so the modal cannot persist past the
+  // skeleton gate.
+  const [isPoseModelLoading, setIsPoseModelLoading] = useState<boolean>(
+    Platform.OS === 'ios',
+  );
   const mediaPipePollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const mediaPipePollInFlightRef = React.useRef(false);
   const partialTrackingHideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -680,6 +701,7 @@ export default function ScanARKitScreen() {
 
     if (Platform.OS !== 'ios') {
       setMediaPipeModelPath(null);
+      setIsPoseModelLoading(false);
       return () => {
         cancelled = true;
       };
@@ -707,6 +729,10 @@ export default function ScanARKitScreen() {
         if (!cancelled) {
           setMediaPipeModelPath(null);
         }
+      } finally {
+        if (!cancelled) {
+          setIsPoseModelLoading(false);
+        }
       }
     };
 
@@ -716,6 +742,17 @@ export default function ScanARKitScreen() {
       cancelled = true;
     };
   }, [DEV]);
+
+  // Safety: once BodyTracker finishes its capability probe, stop
+  // showing the loading modal regardless of the asset path resolution
+  // state above. This covers the unsupported case where the effect
+  // above never runs (non-iOS) plus any race where supportStatus
+  // resolves before the asset download finishes.
+  useEffect(() => {
+    if (supportStatus === 'supported' || supportStatus === 'unsupported') {
+      setIsPoseModelLoading(false);
+    }
+  }, [supportStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -783,14 +820,23 @@ export default function ScanARKitScreen() {
       shadowModeEnabled &&
       shadowProviderRuntime === 'mediapipe';
 
-    if (!shouldPollMediaPipe) {
+    // Shared teardown helper — called unconditionally from the effect
+    // cleanup so the interval + in-flight flag reset always fire on
+    // unmount regardless of which branch of the effect ran. Previously the
+    // cleanup duplicated this logic and could drift from the guard-block
+    // version if only one site was updated during a refactor.
+    const teardownPoll = () => {
       if (mediaPipePollTimerRef.current) {
         clearInterval(mediaPipePollTimerRef.current);
         mediaPipePollTimerRef.current = null;
       }
       mediaPipePollInFlightRef.current = false;
+    };
+
+    if (!shouldPollMediaPipe) {
+      teardownPoll();
       mediaPipePoseRef.current = null;
-      return;
+      return teardownPoll;
     }
 
     let active = true;
@@ -832,11 +878,10 @@ export default function ScanARKitScreen() {
 
     return () => {
       active = false;
-      if (mediaPipePollTimerRef.current) {
-        clearInterval(mediaPipePollTimerRef.current);
-        mediaPipePollTimerRef.current = null;
-      }
-      mediaPipePollInFlightRef.current = false;
+      // Always run teardown, unconditionally, outside any guard — a
+      // leaked interval keeps waking the native bridge after the user
+      // leaves the scan tab and tanks battery/thermal.
+      teardownPoll();
     };
   }, [DEV, isTracking, shadowModeEnabled, shadowProviderRuntime]);
 
@@ -848,6 +893,13 @@ export default function ScanARKitScreen() {
   }, []);
 
   const repIndexTrackerRef = React.useRef(new RepIndexTracker());
+
+  // Epoch-ms timestamp of the most recent rep-start phase transition. Used
+  // by the live pullup partial-scoring path so the scoring call reflects
+  // *actual* elapsed time for the in-flight rep instead of a hardcoded
+  // placeholder. Reset to 0 on rep complete, phase reset, and tracking
+  // stop so subsequent scoring calls fall back to the safe default.
+  const repStartTsRef = React.useRef<number>(0);
 
   const lastPoseTimestampRef = React.useRef<number | null>(null);
   const recordingActiveRef = React.useRef(false);
@@ -1034,6 +1086,11 @@ export default function ScanARKitScreen() {
       }
       if (nextPhase === activeWorkoutDef.repBoundary.startPhase) {
         repIndexTrackerRef.current.startRep(repCount);
+        // Capture the rep-start epoch timestamp so the live partial-scoring
+        // block below can pass a real elapsed duration into
+        // scorePullupWithComponentAvailability instead of the hardcoded
+        // 1000ms placeholder that was previously used.
+        repStartTsRef.current = Date.now();
         // Start of a new rep: clear the per-rep shadow-drift accumulator so
         // the next rep's delta metrics are not polluted by the previous rep.
         shadowStatsPerRepRef.current = createShadowStatsAccumulator();
@@ -1042,6 +1099,10 @@ export default function ScanARKitScreen() {
     onRepComplete: (repNumber: number, fqi: number) => {
       setRepCount(repNumber);
       repIndexTrackerRef.current.endRep();
+      // Clear the in-flight rep timestamp; live partial scoring between
+      // reps will fall back to the 1000ms safe default until the next
+      // rep-start phase transition captures a fresh epoch.
+      repStartTsRef.current = 0;
       if (Number.isFinite(fqi)) {
         sessionFqiScoresRef.current.push(fqi);
       }
@@ -1548,7 +1609,13 @@ export default function ScanARKitScreen() {
                 rightShoulder: next.rightShoulder,
               },
             },
-            durationMs: 1000,
+            // Use real elapsed time for the in-flight rep when available so
+            // the live partial scoring (visibility badge + component
+            // availability) reflects actual tempo instead of a 1s constant.
+            // Fall back to 1000ms before the first rep-start transition.
+            durationMs: repStartTsRef.current > 0
+              ? Math.max(1, Date.now() - repStartTsRef.current)
+              : 1000,
             joints: canonicalFrame.joints,
           });
 
@@ -1666,11 +1733,22 @@ export default function ScanARKitScreen() {
       }
       const key = joint.name.toLowerCase();
       seenKeys.add(key);
-      const prev = cache.get(key);
+      let prev = cache.get(key);
+      // Drop any cached entry that was ever poisoned with a non-finite
+      // component (NaN / +-Infinity). Without this guard a single bad
+      // incoming frame would contaminate every subsequent eased value
+      // because `prev.x + (target - prev.x) * alpha` === NaN, and the
+      // result gets written back into the cache forever.
+      if (prev && (!Number.isFinite(prev.x) || !Number.isFinite(prev.y))) {
+        cache.delete(key);
+        prev = undefined;
+      }
       const targetX = joint.x;
       const targetY = joint.y;
-      const easedX = prev ? prev.x + (targetX - prev.x) * alpha : targetX;
-      const easedY = prev ? prev.y + (targetY - prev.y) * alpha : targetY;
+      const safeTargetX = Number.isFinite(targetX) ? targetX : prev?.x ?? 0;
+      const safeTargetY = Number.isFinite(targetY) ? targetY : prev?.y ?? 0;
+      const easedX = prev ? prev.x + (safeTargetX - prev.x) * alpha : safeTargetX;
+      const easedY = prev ? prev.y + (safeTargetY - prev.y) * alpha : safeTargetY;
       // Reinsert to move this key to the tail (most-recently-used) slot; Map
       // preserves insertion order so the head is always the oldest entry.
       if (prev) cache.delete(key);
@@ -1753,6 +1831,7 @@ export default function ScanARKitScreen() {
       resetCueHysteresis();
       repCountdownFiredRef.current = false;
       sessionFqiScoresRef.current = [];
+      repStartTsRef.current = 0;
 
       const startTime = Date.now();
       shadowStatsRef.current = createShadowStatsAccumulator();
@@ -1867,6 +1946,7 @@ export default function ScanARKitScreen() {
       resetCueHysteresis();
       repCountdownFiredRef.current = false;
       sessionFqiScoresRef.current = [];
+      repStartTsRef.current = 0;
 
       if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
@@ -2194,6 +2274,14 @@ export default function ScanARKitScreen() {
 
       watchMirrorInFlightRef.current = true;
 
+      // INVARIANT: every exit path below (success, early return, any
+      // synchronous throw from BodyTracker.getCurrentFrameSnapshot or
+      // sendMessage, and any rejection from the awaited native promise)
+      // MUST fall through to the outer finally so the in-flight flag is
+      // reset — otherwise a single failed snapshot wedges the watch-mirror
+      // timer forever. If this function is ever refactored to split the
+      // snapshot call into a helper, wrap that helper in its own
+      // try-finally as well.
       try {
         let base64: string | null = null;
         let width: number | undefined;
@@ -2333,21 +2421,44 @@ export default function ScanARKitScreen() {
     }, [watchMirrorActive, captureAndSendWatchMirror]);
 
     // Watch Connectivity: Listen for commands
+    //
+    // The watch channel is asynchronous: a user can tap "start" on the
+    // watch, foreground-background the phone, and the message still
+    // arrives ~1s later. Without a focus + latest-ref guard the handler
+    // would call startTracking()/stopTracking() closures captured at the
+    // time the effect ran, which may reference stale props (for example
+    // isTracking=false even though tracking already started via a
+    // concurrent tap on the phone). Reading from refs at call time keeps
+    // the decision based on current state, and the isScreenFocused check
+    // prevents late messages arriving after the user navigated away from
+    // the scan tab from kicking the camera back on.
+    const isTrackingRef = useRef(isTracking);
+    const supportStatusRef = useRef(supportStatus);
+    const isScreenFocusedRef = useRef(isScreenFocused);
+    useEffect(() => { isTrackingRef.current = isTracking; }, [isTracking]);
+    useEffect(() => { supportStatusRef.current = supportStatus; }, [supportStatus]);
+    useEffect(() => { isScreenFocusedRef.current = isScreenFocused; }, [isScreenFocused]);
+
     useEffect(() => {
       const unsubscribe = watchEvents.addListener('message', (message: { command?: string }) => {
+        // Ignore late messages arriving after the screen unfocused /
+        // unmounted; see the comment block above for rationale.
+        if (!isScreenFocusedRef.current) {
+          return;
+        }
         if (message.command === 'start') {
-          if (!isTracking && supportStatus === 'supported') {
+          if (!isTrackingRef.current && supportStatusRef.current === 'supported') {
             startTracking();
           }
         } else if (message.command === 'stop') {
-          if (isTracking) {
+          if (isTrackingRef.current) {
             stopTracking();
           }
         }
       });
 
       return () => unsubscribe();
-    }, [isTracking, supportStatus, startTracking, stopTracking]);
+    }, [startTracking, stopTracking]);
 
     // Watch Connectivity: Sync state
     useEffect(() => {
@@ -2410,6 +2521,9 @@ export default function ScanARKitScreen() {
 
     const uploadRecordedVideo = useCallback(async (payload: { uri: string; exercise: string; metrics: ClipUploadMetrics }) => {
       if (uploading) return false;
+      // Stash the payload up-front so a post-failure Retry can re-invoke
+      // without requiring the preview sheet to stay mounted.
+      lastUploadPayloadRef.current = payload;
       try {
         setPreviewError(null);
         const info = await FileSystem.getInfoAsync(payload.uri);
@@ -2431,17 +2545,48 @@ export default function ScanARKitScreen() {
           exercise: payload.exercise,
           metrics: payload.metrics,
         });
+        // Clear any retry affordance on success.
+        setUploadRetryPayload(null);
         return true;
       } catch (error) {
         errorWithTs('[ScanARKit] Upload recorded video failed', error);
         const message = error instanceof Error ? error.message : 'Could not upload recording.';
         setPreviewError(message);
+        // Keep the Alert for the active preview flow, but also surface a
+        // persistent banner with a Retry button that stays visible after
+        // the user dismisses the Alert and closes the preview.
+        setUploadRetryPayload({
+          uri: payload.uri,
+          exercise: payload.exercise,
+          metrics: payload.metrics,
+          message,
+        });
         Alert.alert('Upload failed', message);
         return false;
       } finally {
         setUploading(false);
       }
     }, [uploading]);
+
+    const retryUploadRecordedVideo = useCallback(() => {
+      const pending = uploadRetryPayload ?? lastUploadPayloadRef.current;
+      if (!pending) {
+        setUploadRetryPayload(null);
+        return;
+      }
+      // Clear the banner optimistically; uploadRecordedVideo will
+      // re-arm it on a subsequent failure and will clear on success.
+      setUploadRetryPayload(null);
+      void uploadRecordedVideo({
+        uri: pending.uri,
+        exercise: pending.exercise,
+        metrics: pending.metrics,
+      });
+    }, [uploadRetryPayload, uploadRecordedVideo]);
+
+    const dismissUploadRetry = useCallback(() => {
+      setUploadRetryPayload(null);
+    }, []);
 
     const autoUploadAnalysisVideo = useCallback(async (payload: { uri: string; exercise: string; metrics: ClipUploadMetrics }) => {
       try {
@@ -2764,18 +2909,70 @@ export default function ScanARKitScreen() {
   if (supportStatus === 'unknown') {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loaderContainer}>
-          <View style={styles.loaderCard}>
+        <View
+          style={styles.loaderContainer}
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel="Loading body tracking"
+          accessibilityState={{ busy: true }}
+          testID="scan-arkit-loader"
+        >
+          <View style={styles.loaderCard} accessibilityElementsHidden>
             <View style={styles.loaderLineShort} />
             <View style={styles.loaderLine} />
             <View style={styles.loaderLine} />
           </View>
-          <View style={styles.loaderCard}>
+          <View style={styles.loaderCard} accessibilityElementsHidden>
             <View style={styles.loaderLineShort} />
             <View style={styles.loaderLine} />
             <View style={styles.loaderLine} />
           </View>
+          <Text style={styles.loaderCaption} accessibilityElementsHidden>
+            Initializing form tracking…
+          </Text>
         </View>
+        {/*
+         * Pose-model loading modal (#551).
+         *
+         * On iOS the MediaPipe pose-landmarker lite model has to be
+         * resolved from the bundled asset (and occasionally re-downloaded
+         * on first run). We surface the progress via an indeterminate
+         * modal so users know the screen hasn't hung. Dismisses
+         * automatically once supportStatus resolves or the asset download
+         * effect completes (see setIsPoseModelLoading(false) calls above).
+         */}
+        <Modal
+          visible={isPoseModelLoading}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => {
+            // User-initiated close: clear the flag so the modal goes away.
+            // If tracking still needs the model, subsequent frames will
+            // degrade gracefully to the proxy provider + surface the
+            // existing "Pose tracking degraded" toast.
+            setIsPoseModelLoading(false);
+          }}
+        >
+          <View style={styles.poseModelModalBackdrop}>
+            <View
+              style={styles.poseModelModalCard}
+              accessible
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              accessibilityLabel="Downloading pose model"
+              testID="scan-arkit-pose-model-loading-modal"
+            >
+              <ActivityIndicator size="large" color="#4C8CFF" />
+              <Text style={styles.poseModelModalTitle}>
+                Downloading pose model…
+              </Text>
+              <Text style={styles.poseModelModalSubtitle}>
+                One-time setup on this device.
+              </Text>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     );
   }
@@ -3228,17 +3425,84 @@ export default function ScanARKitScreen() {
             </View>
           ) : null}
 
-          {/* Occlusion micro-toast */}
+          {/*
+           * Video-upload retry banner (#551).
+           *
+           * When uploadRecordedVideo rejects, the try-catch already fires
+           * an Alert and sets previewError, but the user loses the
+           * affordance once they dismiss the Alert and close the preview.
+           * This banner persists with a Retry pill that re-invokes the
+           * upload using the stored URI — no re-encoding, no re-navigate.
+           */}
+          {uploadRetryPayload ? (
+            <View
+              style={[scanArV2Styles.banner, scanArV2Styles.bannerError]}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              testID="scan-arkit-upload-retry-banner"
+            >
+              <Ionicons name="cloud-offline-outline" size={18} color="#FCA5A5" />
+              <Text style={scanArV2Styles.bannerText}>
+                Upload failed — {uploadRetryPayload.message}
+              </Text>
+              <TouchableOpacity
+                onPress={retryUploadRecordedVideo}
+                style={scanArV2Styles.bannerAction}
+                accessibilityRole="button"
+                accessibilityLabel="Retry video upload"
+                disabled={uploading}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                testID="scan-arkit-upload-retry-button"
+              >
+                <Text style={scanArV2Styles.bannerActionText}>
+                  {uploading ? 'Retrying…' : 'Retry'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={dismissUploadRetry}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss upload retry banner"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={scanArV2Styles.bannerDismiss}
+                testID="scan-arkit-upload-retry-dismiss"
+              >
+                <Ionicons name="close" size={14} color="#F5F7FF" />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {/*
+           * Persistent sustained-occlusion banner (#551).
+           *
+           * Replaces the 3.2s micro-toast. The banner sticks until the
+           * user taps "Got it" or the OcclusionHoldManager clears the
+           * sustained state by calling handleSustainedOcclusion(null).
+           * A dismiss button is essential — on long-limb occlusion (e.g.
+           * squat with arms crossed over camera) the old toast faded
+           * before the user could read what joint was hidden.
+           */}
           {arOverlaysV2 && sustainedOcclusionHint ? (
             <View
-              style={[scanArV2Styles.microToast]}
+              style={[scanArV2Styles.banner, scanArV2Styles.bannerError]}
               accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              testID="scan-arkit-sustained-occlusion-banner"
             >
-              <Ionicons name="eye-off-outline" size={14} color="#F5F7FF" />
-              <Text style={scanArV2Styles.microToastText}>
+              <Ionicons name="eye-off-outline" size={18} color="#FCA5A5" />
+              <Text style={scanArV2Styles.bannerText}>
                 Adjust clothing — {sustainedOcclusionHint.jointNames.length} joint
                 {sustainedOcclusionHint.jointNames.length === 1 ? '' : 's'} hidden
               </Text>
+              <TouchableOpacity
+                onPress={dismissSustainedOcclusion}
+                style={scanArV2Styles.bannerAction}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss occlusion warning"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                testID="scan-arkit-sustained-occlusion-dismiss"
+              >
+                <Text style={scanArV2Styles.bannerActionText}>Got it</Text>
+              </TouchableOpacity>
             </View>
           ) : null}
 
@@ -3810,6 +4074,15 @@ const scanArV2Styles = StyleSheet.create({
     color: '#F5F7FF',
     fontSize: 12,
     fontWeight: '700',
+  },
+  bannerDismiss: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    marginLeft: 6,
   },
   microToast: {
     position: 'absolute',
