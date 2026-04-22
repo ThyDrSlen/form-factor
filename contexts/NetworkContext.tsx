@@ -1,7 +1,7 @@
 import * as Network from 'expo-network';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useToast } from '@/contexts/ToastContext';
+import { useOptionalToast } from '@/contexts/ToastContext';
 import { errorWithTs, logWithTs } from '@/lib/logger';
 
 interface NetworkContextValue {
@@ -21,7 +21,7 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
   const [isConnected, setIsConnected] = useState(true);
   const [networkType, setNetworkType] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const { show: showToast } = useToast();
+  const { show: showToast } = useOptionalToast();
   // Track the last seen `isOnline` so we can detect a false -> true
   // transition and surface a "back online" toast. Initialized to null so
   // the first reading is treated as a baseline (no toast on mount).
