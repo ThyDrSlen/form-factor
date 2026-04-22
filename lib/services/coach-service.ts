@@ -20,6 +20,7 @@ import {
 } from './coach-model-dispatch';
 import { isDispatchEnabled } from './coach-model-dispatch-flag';
 import { recordDispatchDecision } from './coach-model-dispatch-telemetry';
+import { recordCoachReplyUsage } from './coach-cost-tracker';
 
 export type { CoachProvider } from './coach-provider-types';
 import type { LiveSessionSnapshot } from './coach-live-snapshot';
@@ -214,7 +215,7 @@ export async function sendCoachPrompt(
       messages,
       context,
       opts.cacheMs,
-      () => sendCoachPromptInner(messages, context),
+      () => sendCoachPromptInner(messages, context, opts),
       { shaper: opts.shaper }
     );
   }
@@ -249,9 +250,9 @@ export async function sendCoachPrompt(
   // No advanced opts: pick cloud provider (explicit hint, dispatcher, user pref, env, or openai default).
   const provider = opts?.provider ?? routedProvider ?? (await resolveCloudProvider());
   if (provider === 'gemma') {
-    return sendCoachGemmaPrompt(messages, context);
+    return sendCoachGemmaPrompt(messages, context, { taskKind: opts?.taskKind });
   }
-  return sendCoachPromptInner(messages, context);
+  return sendCoachPromptInner(messages, context, opts);
 }
 
 async function sendCoachPromptStreaming(
@@ -266,6 +267,14 @@ async function sendCoachPromptStreaming(
   const result = await streamCoachPrompt(messages, context, onChunk, {
     provider: opts.provider,
   });
+  // Fire-and-forget: persistence errors are swallowed inside the tracker,
+  // and we never want a usage-record hiccup to block the reply.
+  recordCoachReplyUsage({
+    provider: result.provider ?? opts.provider,
+    taskKind: opts.taskKind,
+    inputMessages: messages,
+    replyText: result.text,
+  }).catch(() => undefined);
 
   // Pipeline v2: apply the post-generation safety filter to the resolved
   // full-buffer text. Mirrors the non-stream path in sendCoachPromptInner.
@@ -335,7 +344,8 @@ function attachStreamingProvenance(
 
 async function sendCoachPromptInner(
   messages: CoachMessage[],
-  context?: CoachContext
+  context?: CoachContext,
+  opts?: CoachSendOptions,
 ): Promise<CoachMessage> {
   try {
     const memoryClause = await resolveMemoryClause(context);
@@ -542,6 +552,15 @@ async function sendCoachPromptInner(
       configurable: true,
       writable: true,
     });
+    // Cost-tracker wiring (#537): record usage for this turn. Fire-and-forget
+    // so persistence never blocks the reply; mapping failures silently skip.
+    recordCoachReplyUsage({
+      provider,
+      taskKind: opts?.taskKind,
+      inputMessages: messages,
+      replyText: responseText,
+      cacheHit: data?.source === 'cache',
+    }).catch(() => undefined);
     return reply;
   } catch (err) {
     if (err && typeof err === 'object' && 'domain' in err) {
