@@ -40,6 +40,7 @@ import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type MediaPipePose2D } from '@/lib/arkit/ARKitBodyTracker';
 import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
+import { useFormTrackingSettings } from '@/hooks/use-form-tracking-settings';
 import { audioSessionManager } from '@/lib/services/audio-session-manager';
 import { useToast } from '@/contexts/ToastContext';
 import { CrashBoundary } from '@/components/CrashBoundary';
@@ -350,6 +351,19 @@ export default function ScanARKitScreen() {
   const DEV = __DEV__;
   const router = useRouter();
   const { show: showToast } = useToast();
+  // Form-tracking global preferences. We only read the two feedback-modality
+  // toggles here — `countAudioEnabled` gates the 3-2-1 rep countdown and
+  // `hapticsEnabled` gates the rep-complete / start / stop haptic pulses.
+  // Voice gating is handled elsewhere (usePremiumCueAudio). Mirror both into
+  // refs so callback-stable callsites don't need to re-render when the user
+  // toggles either in settings.
+  const { settings: formTrackingSettings } = useFormTrackingSettings();
+  const countAudioEnabledRef = React.useRef<boolean>(formTrackingSettings.countAudioEnabled);
+  const hapticsEnabledRef = React.useRef<boolean>(formTrackingSettings.hapticsEnabled);
+  useEffect(() => {
+    countAudioEnabledRef.current = formTrackingSettings.countAudioEnabled;
+    hapticsEnabledRef.current = formTrackingSettings.hapticsEnabled;
+  }, [formTrackingSettings.countAudioEnabled, formTrackingSettings.hapticsEnabled]);
   const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string; trackingDebug?: string; templateId?: string }>();
   const fixturePlaybackRequested = params.fixturePlayback === '1';
   // Issue #447 — deep-link / scheduled-workout template binding.
@@ -560,6 +574,10 @@ export default function ScanARKitScreen() {
   const watchTrackingPublishAtRef = React.useRef(0);
   const watchTrackingSignatureRef = React.useRef<string | null>(null);
   const lastTrackingQualityRef = React.useRef<number | null>(null);
+  // Tracks the previous confidence tier so mid-set degradation warnings fire
+  // once on the high → low transition edge rather than on every frame. See
+  // emitMidSetDegradationIfTransition below for the thresholds.
+  const lastConfidenceTierRef = React.useRef<'high' | 'low' | null>(null);
   const [shadowModeEnabled, setShadowModeEnabled] = useState(true);
   const shadowModeEnabledRef = React.useRef(true);
   const shadowStatsRef = React.useRef(createShadowStatsAccumulator());
@@ -1051,11 +1069,12 @@ export default function ScanARKitScreen() {
       // Additive rep-complete haptic: the workout controller already fires
       // a Light impact through the shared haptic bus, but testers reported
       // that in noisy gym environments the light tap is easy to miss. When
-      // the user has audio/cue feedback enabled we also fire a Heavy impact
-      // here so successful reps register unambiguously. Gated by
-      // audioFeedbackEnabledRef.current (mirrors the cue-audio toggle) so
-      // users who explicitly silenced cues don't get a phantom extra buzz.
-      if (audioFeedbackEnabledRef.current) {
+      // the user has audio/cue feedback enabled AND hasn't muted haptics we
+      // also fire a Heavy impact here so successful reps register
+      // unambiguously. Gated by audioFeedbackEnabledRef.current (mirrors
+      // the cue-audio toggle) + hapticsEnabledRef.current (form-tracking
+      // settings) so users who silenced either don't get a phantom buzz.
+      if (audioFeedbackEnabledRef.current && hapticsEnabledRef.current) {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {
           /* native bridge unavailable — silent */
         });
@@ -1572,9 +1591,39 @@ export default function ScanARKitScreen() {
         });
         if (typeof smoothingResult?.trackingQuality === 'number') {
           lastTrackingQualityRef.current = smoothingResult.trackingQuality;
+          // Mid-set confidence degradation: warn once when the tier flips from
+          // high → low during an active rep. The tier is only classified when
+          // we are mid-set (between repBoundary.startPhase and the next rep-
+          // complete), so between-set frames stay quiet. A Schmitt-trigger-
+          // style pair of thresholds avoids chatter around the boundary.
+          const HIGH_ENTER = 0.7;
+          const LOW_ENTER = 0.5;
+          const quality = smoothingResult.trackingQuality;
+          const inActiveRep = repIndexTrackerRef.current.current() !== null;
+          if (inActiveRep) {
+            let nextTier: 'high' | 'low' | null = lastConfidenceTierRef.current;
+            if (quality >= HIGH_ENTER) nextTier = 'high';
+            else if (quality <= LOW_ENTER) nextTier = 'low';
+            const prevTier = lastConfidenceTierRef.current;
+            if (prevTier === 'high' && nextTier === 'low') {
+              showToast('Tracking degraded — check lighting / framing', {
+                type: 'error',
+              });
+              void Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Warning,
+              ).catch(() => {
+                /* haptics unavailable — silent */
+              });
+            }
+            lastConfidenceTierRef.current = nextTier;
+          } else {
+            // Outside a rep: reset so the next rep's baseline starts neutral.
+            lastConfidenceTierRef.current = null;
+          }
         }
       } else {
         lastTrackingQualityRef.current = null;
+        lastConfidenceTierRef.current = null;
         repIndexTrackerRef.current.reset();
         resetWorkoutController({ preserveRepCount: true });
         setActiveMetrics(null);
@@ -1753,6 +1802,7 @@ export default function ScanARKitScreen() {
       resetCueHysteresis();
       repCountdownFiredRef.current = false;
       sessionFqiScoresRef.current = [];
+      lastConfidenceTierRef.current = null;
 
       const startTime = Date.now();
       shadowStatsRef.current = createShadowStatsAccumulator();
@@ -1765,15 +1815,16 @@ export default function ScanARKitScreen() {
 
       if (DEV) logWithTs('[ScanARKit] Tracking started successfully in', elapsed, 'ms');
 
-      if (Platform.OS === 'ios') {
+      if (Platform.OS === 'ios' && hapticsEnabledRef.current) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
 
       // Fire the 3-2-1 pre-announce once per tracking start. Gated on the
-      // user preference + the EXPO_PUBLIC_REP_COUNTDOWN env flag inside
-      // playRepCountdown itself. Errors are swallowed — countdown is a
-      // nice-to-have, not a blocker for the tracking loop.
-      if (!repCountdownFiredRef.current) {
+      // user preference (form-tracking `countAudioEnabled` toggle) + the
+      // EXPO_PUBLIC_REP_COUNTDOWN env flag inside playRepCountdown itself.
+      // Errors are swallowed — countdown is a nice-to-have, not a blocker
+      // for the tracking loop.
+      if (!repCountdownFiredRef.current && countAudioEnabledRef.current) {
         repCountdownFiredRef.current = true;
         playRepCountdown().catch((error) => {
           if (DEV) warnWithTs('[ScanARKit] rep countdown failed', error);
@@ -1867,10 +1918,11 @@ export default function ScanARKitScreen() {
       resetCueHysteresis();
       repCountdownFiredRef.current = false;
       sessionFqiScoresRef.current = [];
+      lastConfidenceTierRef.current = null;
 
       if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
-      if (Platform.OS === 'ios') {
+      if (Platform.OS === 'ios' && hapticsEnabledRef.current) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
 
@@ -3235,10 +3287,22 @@ export default function ScanARKitScreen() {
               accessibilityRole="alert"
             >
               <Ionicons name="eye-off-outline" size={14} color="#F5F7FF" />
-              <Text style={scanArV2Styles.microToastText}>
-                Adjust clothing — {sustainedOcclusionHint.jointNames.length} joint
-                {sustainedOcclusionHint.jointNames.length === 1 ? '' : 's'} hidden
+              <Text
+                style={scanArV2Styles.microToastText}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                Adjust clothing —{' '}
+                {sustainedOcclusionHint.jointNames.slice(0, 3).join(', ')} hidden
               </Text>
+              {sustainedOcclusionHint.jointNames.length > 3 ? (
+                <Text
+                  style={scanArV2Styles.microToastText}
+                  numberOfLines={1}
+                >
+                  +{sustainedOcclusionHint.jointNames.length - 3} more
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
