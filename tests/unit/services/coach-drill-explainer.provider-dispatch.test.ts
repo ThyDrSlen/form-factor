@@ -54,7 +54,10 @@ describe('coach-drill-explainer provider dispatch (pipeline-v2)', () => {
 
     expect(mockSendCoachPrompt).toHaveBeenCalledTimes(1);
     const [, , opts] = mockSendCoachPrompt.mock.calls[0];
-    expect(opts).toEqual({ provider: 'gemma' });
+    // Wave-34: drill-explainer now annotates every call with
+    // taskKind='fault_explainer' so the cost-aware dispatcher + cost
+    // tracker can bucket the traffic.
+    expect(opts).toEqual({ provider: 'gemma', taskKind: 'fault_explainer' });
     expect(result.provider).toBe('gemma');
   });
 
@@ -64,7 +67,7 @@ describe('coach-drill-explainer provider dispatch (pipeline-v2)', () => {
     const result = await explainDrill(baseInput);
 
     const [, , opts] = mockSendCoachPrompt.mock.calls[0];
-    expect(opts).toEqual({ provider: 'openai' });
+    expect(opts).toEqual({ provider: 'openai', taskKind: 'fault_explainer' });
     expect(result.provider).toBe('openai');
   });
 
@@ -74,7 +77,10 @@ describe('coach-drill-explainer provider dispatch (pipeline-v2)', () => {
     const result = await explainDrill(baseInput);
 
     const [, , opts] = mockSendCoachPrompt.mock.calls[0];
-    expect(opts).toBeUndefined();
+    // Wave-34: even in legacy flag-off mode we annotate the taskKind for
+    // cost-tracker bucketing. No provider hint is attached (the legacy
+    // cloud provider resolves inside coach-service).
+    expect(opts).toEqual({ taskKind: 'fault_explainer' });
     expect(result.provider).toBe('cloud');
   });
 });
