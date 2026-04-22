@@ -5,12 +5,8 @@
  * from session-generator but returns a lighter `WarmupPlan` tree (no template
  * row materialization — callers consume directly as a checklist).
  */
-import {
-  sendCoachPrompt,
-  type CoachContext,
-  type CoachMessage,
-  type CoachSendOptions,
-} from './coach-service';
+import { assertDailyBudget } from './coach-cost-tracker';
+import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
 import { parseGemmaJsonResponse, schema, type JsonSchema } from './gemma-json-parser';
 import { assertGemmaSessionGenEnabled } from './gemma-session-gen-flag';
 import {
@@ -64,16 +60,7 @@ export const WARMUP_PLAN_SCHEMA: JsonSchema<WarmupPlan> = schema.object({
 
 export interface WarmupGeneratorRuntime {
   coachContext?: CoachContext;
-  /**
-   * Dispatcher override for tests. When production uses the default
-   * (`sendCoachPrompt`), taskKind is threaded through via the third arg so the
-   * cost-tracker can attribute spend to `progression_planner`.
-   */
-  dispatch?: (
-    messages: CoachMessage[],
-    ctx?: CoachContext,
-    opts?: CoachSendOptions,
-  ) => Promise<CoachMessage>;
+  dispatch?: (messages: CoachMessage[], ctx?: CoachContext) => Promise<CoachMessage>;
   maxRetries?: number;
   /**
    * Bypass the EXPO_PUBLIC_GEMMA_SESSION_GEN gate. Intended for integration
@@ -81,12 +68,6 @@ export interface WarmupGeneratorRuntime {
    */
   skipFlagCheck?: boolean;
 }
-
-/**
- * Task-kind hint passed to `sendCoachPrompt` so the cost-tracker attributes
- * warmup-generator spend and the dispatch router can pick Gemma when enabled.
- */
-export const WARMUP_GENERATOR_TASK_KIND = 'progression_planner' as const;
 
 export async function generateWarmup(
   input: WarmupGeneratorInput,
@@ -96,11 +77,26 @@ export async function generateWarmup(
     assertGemmaSessionGenEnabled('warmup-generator');
   }
 
+  // Enforce per-surface daily budget before spending tokens. Only gates the
+  // real dispatcher; tests / eval harnesses that inject `dispatch` are
+  // allowed through. Throws a typed BudgetExceededError.
+  if (!runtime.dispatch) {
+    await assertDailyBudget('warmup_generator');
+  }
+
   const messages = buildWarmupGeneratorMessages(input);
   const dispatch = runtime.dispatch ?? sendCoachPrompt;
-  const dispatchOpts: CoachSendOptions = { taskKind: WARMUP_GENERATOR_TASK_KIND };
 
-  const response = await dispatch(messages, runtime.coachContext, dispatchOpts);
+  // Attach `focus: 'warmup_generator'` so the cost tracker / telemetry
+  // pipelines can attribute tokens to this surface (mirrors the pattern in
+  // coach-auto-debrief / drill-explainer). Caller-supplied focus wins when
+  // present so explicit attribution overrides the default.
+  const dispatchContext: CoachContext = {
+    ...(runtime.coachContext ?? {}),
+    focus: runtime.coachContext?.focus ?? 'warmup_generator',
+  };
+
+  const response = await dispatch(messages, dispatchContext);
 
   const retryInvoker = async (ctx: { lastRawText: string; issues?: unknown }): Promise<string> => {
     const retryMessages: CoachMessage[] = [
@@ -111,7 +107,7 @@ export async function generateWarmup(
         content: `The previous response did not match the warmup schema. Issues: ${JSON.stringify(ctx.issues ?? 'syntax error')}. Respond ONLY with corrected JSON.`,
       },
     ];
-    const retry = await dispatch(retryMessages, runtime.coachContext, dispatchOpts);
+    const retry = await dispatch(retryMessages, dispatchContext);
     return retry.content;
   };
 

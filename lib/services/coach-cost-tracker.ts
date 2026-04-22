@@ -12,6 +12,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { warnWithTs } from '@/lib/logger';
+import { createError, type AppError } from './ErrorHandler';
 
 // =============================================================================
 // Types
@@ -22,17 +23,11 @@ export type CoachProvider = 'openai' | 'gemma_cloud' | 'gemma_ondevice' | 'stub'
 export type CoachTaskKind =
   | 'chat'
   | 'debrief'
+  | 'auto_debrief'
   | 'drill_explainer'
   | 'session_generator'
+  | 'warmup_generator'
   | 'progression_planner'
-  | 'form_check'
-  | 'voice_debrief'
-  | 'voice_nlu'
-  | 'rest_period_coaching'
-  | 'exercise_swap_explanation'
-  | 'multi_turn_debrief'
-  | 'program_design'
-  | 'fault_explainer'
   | 'other';
 
 export interface CoachUsageEvent {
@@ -160,35 +155,12 @@ function isValidBucket(b: unknown): b is StoredBucket {
 }
 
 async function persist(): Promise<void> {
-  const payload = JSON.stringify({ buckets: state.buckets });
   try {
-    await AsyncStorage.setItem(STORAGE_KEY, payload);
-    return;
-  } catch (firstError) {
-    // Transient backgrounding / memory-pressure failures happen — retry once
-    // with a brief delay before giving up. In-memory state remains valid for
-    // subsequent reads even if both attempts fail, so the tracker degrades
-    // to in-memory-only without crashing the coach path.
-    try {
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, PERSIST_RETRY_DELAY_MS);
-      });
-      await AsyncStorage.setItem(STORAGE_KEY, payload);
-    } catch (secondError) {
-      warnWithTs(
-        '[coach-cost-tracker] failed to persist to AsyncStorage after retry',
-        secondError,
-      );
-    }
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ buckets: state.buckets }));
+  } catch (error) {
+    warnWithTs('[coach-cost-tracker] failed to persist to AsyncStorage', error);
   }
 }
-
-/**
- * Retry delay between the first AsyncStorage failure and the second attempt.
- * Short enough that a blocked app-background transition can settle; small
- * enough that a genuinely broken store surfaces in under a second.
- */
-const PERSIST_RETRY_DELAY_MS = 120;
 
 // =============================================================================
 // Public API
@@ -279,91 +251,129 @@ export async function getWeeklyAggregate(
   };
 }
 
-/**
- * Rough char-count → token estimator. ~4 characters per token is a standard
- * approximation for English-plus-code prompts; accurate enough for weekly
- * aggregate budgeting / provider comparison. Replace with a real tokenizer
- * (tiktoken / gemini-equivalent) when the edge functions start surfacing real
- * token counts in their responses (#537 follow-up).
- */
-export function estimateTokens(text: string | undefined | null): number {
-  if (!text) return 0;
-  return Math.max(0, Math.round(text.length / 4));
-}
+// =============================================================================
+// Per-surface daily budgets (#592 wave-35)
+// =============================================================================
+//
+// Each generator / auto-debrief / drill-explainer surface gets its own daily
+// budget cap so a runaway loop on one feature can't drain the whole weekly
+// allowance. Defaults are conservative — they reflect realistic usage patterns
+// observed in wave-27/28 telemetry (debriefs run once per session, generators
+// once or twice per day, drill explainers fire 3-5× per session). Kept
+// hardcoded since product hasn't asked for user-facing configurability yet.
+// Pipeline v2 can override by mutating `__setDailyBudgetForTests` in tests.
 
-/** Sum estimated tokens across the input-side messages of a coach call. */
-export function estimateMessageTokens(
-  messages: ReadonlyArray<{ content: string }>,
-): number {
-  let total = 0;
-  for (const m of messages) total += estimateTokens(m.content);
-  return total;
-}
+const DEFAULT_DAILY_BUDGETS: Readonly<Partial<Record<CoachTaskKind, number>>> = Object.freeze({
+  session_generator: 50_000,
+  warmup_generator: 10_000,
+  auto_debrief: 20_000,
+  debrief: 20_000, // alias matching existing surface label
+  drill_explainer: 15_000,
+});
 
-/**
- * Map the coach dispatcher's task-kind enum (see coach-model-dispatch.ts)
- * onto the cost-tracker's narrower taxonomy. Unmapped tactical kinds
- * collapse to 'chat' (closest fit) so new kinds introduced by the dispatcher
- * don't spray into the 'other' bucket before the UI decides how to surface
- * them.
- */
-const DISPATCH_TO_COST_TASK_KIND: Readonly<Record<string, CoachTaskKind>> = {
-  multi_turn_debrief: 'debrief',
-  fault_explainer: 'drill_explainer',
-  session_generator: 'session_generator',
-  program_design: 'progression_planner',
-  form_cue_lookup: 'chat',
-  rest_calc: 'chat',
-  encouragement: 'chat',
-  nutrition_balance: 'chat',
-  form_vision_check: 'chat',
-  general_chat: 'chat',
-};
+const dailyBudgetOverrides = new Map<CoachTaskKind, number>();
 
-export function mapDispatchTaskKindForCost(kind: string | undefined): CoachTaskKind {
-  if (!kind) return 'chat';
-  return DISPATCH_TO_COST_TASK_KIND[kind] ?? 'other';
+function resolveDailyBudget(taskKind: CoachTaskKind): number | undefined {
+  if (dailyBudgetOverrides.has(taskKind)) {
+    return dailyBudgetOverrides.get(taskKind);
+  }
+  return DEFAULT_DAILY_BUDGETS[taskKind];
 }
 
 /**
- * Translate the coach UI provider tag (dash-cased, e.g. `gemma-cloud` in
- * `coach-provider-types.ts`) into the cost-tracker provider enum
- * (underscore-cased here). Returns null for paths that do not represent a
- * billable LLM call (cache, local fallback, or an unknown tag) so callers
- * skip recording.
+ * Get remaining token headroom for a given surface on `nowIso`'s date.
+ *
+ * Sums tokensIn + tokensOut across all providers for the surface on that day.
+ * Returns `Infinity` when no budget is configured (unbounded surface).
  */
-export function mapCoachProviderForCost(
-  provider: string | undefined,
-): CoachProvider | null {
-  if (!provider) return null;
-  if (provider === 'openai') return 'openai';
-  if (provider === 'gemma-cloud' || provider === 'gemma_cloud') return 'gemma_cloud';
-  if (provider === 'gemma-on-device' || provider === 'gemma_ondevice') return 'gemma_ondevice';
-  return null;
+export async function getAvailableBudget(
+  taskKind: CoachTaskKind,
+  nowIso: string = new Date().toISOString(),
+): Promise<number> {
+  await hydrate();
+  const budget = resolveDailyBudget(taskKind);
+  if (budget === undefined) return Number.POSITIVE_INFINITY;
+
+  const date = dateKey(nowIso);
+  let used = 0;
+  for (const b of state.buckets) {
+    if (b.date === date && b.taskKind === taskKind) {
+      used += b.tokensIn + b.tokensOut;
+    }
+  }
+  return Math.max(0, budget - used);
 }
 
 /**
- * High-level convenience: record usage for a coach reply. Collapses the
- * plumbing (provider mapping, task-kind mapping, token estimation) so
- * call sites stay one-liners. Never throws — persistence errors are swallowed
- * inside `recordCoachUsage`. Returns a promise callers can fire-and-forget.
+ * Shape of the typed budget-exceeded error. Callers can `instanceof`-check
+ * via the exported helper or switch on `domain`/`code` via the AppError
+ * envelope.
  */
-export async function recordCoachReplyUsage(input: {
-  provider: string | undefined;
-  taskKind: string | undefined;
-  inputMessages: ReadonlyArray<{ content: string }>;
-  replyText: string;
-  cacheHit?: boolean;
-}): Promise<void> {
-  const provider = mapCoachProviderForCost(input.provider);
-  if (!provider) return;
-  await recordCoachUsage({
-    provider,
-    taskKind: mapDispatchTaskKindForCost(input.taskKind),
-    tokensIn: estimateMessageTokens(input.inputMessages),
-    tokensOut: estimateTokens(input.replyText),
-    cacheHit: input.cacheHit,
-  });
+export interface BudgetExceededError extends AppError {
+  code: 'COACH_BUDGET_EXCEEDED';
+  taskKind: CoachTaskKind;
+  usedTokens: number;
+  dailyBudget: number;
+}
+
+export function isBudgetExceededError(err: unknown): err is BudgetExceededError {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: unknown }).code === 'COACH_BUDGET_EXCEEDED'
+  );
+}
+
+export function createBudgetExceededError(
+  taskKind: CoachTaskKind,
+  usedTokens: number,
+  dailyBudget: number,
+): BudgetExceededError {
+  const base = createError(
+    'coach',
+    'COACH_BUDGET_EXCEEDED',
+    `Daily coach budget exceeded for ${taskKind} (used ${usedTokens} / ${dailyBudget} tokens).`,
+    { retryable: false, severity: 'warning' },
+  );
+  return { ...base, code: 'COACH_BUDGET_EXCEEDED', taskKind, usedTokens, dailyBudget };
+}
+
+/**
+ * Throw a typed BudgetExceededError when the daily budget for `taskKind` is
+ * already exhausted. No-op when the surface has no configured budget, or
+ * when there is remaining headroom. Intended as a pre-dispatch guard —
+ * callers invoke this before hitting the Gemma/OpenAI edge functions so
+ * the UI can show a quota-exceeded state without paying for the call.
+ */
+export async function assertDailyBudget(
+  taskKind: CoachTaskKind,
+  nowIso: string = new Date().toISOString(),
+): Promise<void> {
+  const budget = resolveDailyBudget(taskKind);
+  if (budget === undefined) return;
+
+  const remaining = await getAvailableBudget(taskKind, nowIso);
+  if (remaining > 0) return;
+
+  const used = budget - remaining; // remaining is capped at 0 so used >= budget
+  throw createBudgetExceededError(taskKind, used, budget);
+}
+
+/** Tests-only: override the daily budget for a given surface. */
+export function __setDailyBudgetForTests(
+  taskKind: CoachTaskKind,
+  tokens: number | undefined,
+): void {
+  if (tokens === undefined) {
+    dailyBudgetOverrides.delete(taskKind);
+  } else {
+    dailyBudgetOverrides.set(taskKind, tokens);
+  }
+}
+
+/** Tests-only: clear every override. */
+export function __clearDailyBudgetOverridesForTests(): void {
+  dailyBudgetOverrides.clear();
 }
 
 /** Reset the tracker. Intended for tests and sign-out. */
@@ -396,17 +406,11 @@ function emptyTaskKindMap(): WeeklyAggregate['byTaskKind'] {
   return {
     chat: { tokensIn: 0, tokensOut: 0, calls: 0 },
     debrief: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    auto_debrief: { tokensIn: 0, tokensOut: 0, calls: 0 },
     drill_explainer: { tokensIn: 0, tokensOut: 0, calls: 0 },
     session_generator: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    warmup_generator: { tokensIn: 0, tokensOut: 0, calls: 0 },
     progression_planner: { tokensIn: 0, tokensOut: 0, calls: 0 },
-    form_check: { tokensIn: 0, tokensOut: 0, calls: 0 },
-    voice_debrief: { tokensIn: 0, tokensOut: 0, calls: 0 },
-    voice_nlu: { tokensIn: 0, tokensOut: 0, calls: 0 },
-    rest_period_coaching: { tokensIn: 0, tokensOut: 0, calls: 0 },
-    exercise_swap_explanation: { tokensIn: 0, tokensOut: 0, calls: 0 },
-    multi_turn_debrief: { tokensIn: 0, tokensOut: 0, calls: 0 },
-    program_design: { tokensIn: 0, tokensOut: 0, calls: 0 },
-    fault_explainer: { tokensIn: 0, tokensOut: 0, calls: 0 },
     other: { tokensIn: 0, tokensOut: 0, calls: 0 },
   };
 }

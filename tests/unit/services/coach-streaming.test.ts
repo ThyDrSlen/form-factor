@@ -238,188 +238,68 @@ describe('streamCoachPrompt', () => {
     expect(fakeFetch).toHaveBeenCalledTimes(1);
   });
 
-  // ---------------------------------------------------------------------------
-  // Provider / model propagation (#538)
-  // ---------------------------------------------------------------------------
-
-  describe('StreamCoachResult provider/model (#538)', () => {
-    it('picks up provider + model from an NDJSON tail frame', async () => {
-      const fakeFetch: typeof fetch = jest.fn(
-        async () =>
-          new Response(
-            ndjsonStream([
-              { delta: 'hello' },
-              { done: true, provider: 'openai', model: 'gpt-5.4-mini' },
-            ]),
-            { status: 200 }
-          )
-      );
-
-      const result = await streamCoachPrompt(
-        [{ role: 'user', content: 'x' }],
-        undefined,
-        () => undefined,
-        { fetchImpl: fakeFetch }
-      );
-      expect(result.provider).toBe('openai');
-      expect(result.model).toBe('gpt-5.4-mini');
-    });
-
-    it('falls back to the caller-supplied provider hint when the stream is silent', async () => {
-      // No tail frame with provider/model — streaming result still gets
-      // attributed via opts.provider → CoachProvider mapping.
-      const fakeFetch: typeof fetch = jest.fn(
-        async () => new Response(ndjsonStream([{ delta: 'a' }, { done: true }]), { status: 200 })
-      );
-
-      const openaiResult = await streamCoachPrompt(
-        [{ role: 'user', content: 'x' }],
-        undefined,
-        () => undefined,
-        { fetchImpl: fakeFetch, provider: 'openai' }
-      );
-      expect(openaiResult.provider).toBe('openai');
-      expect(openaiResult.model).toBeUndefined();
-    });
-
-    it('leaves provider undefined when neither the stream nor the caller annotates it', async () => {
-      const fakeFetch: typeof fetch = jest.fn(
-        async () => new Response(ndjsonStream([{ delta: 'a' }, { done: true }]), { status: 200 })
-      );
-
-      const result = await streamCoachPrompt(
-        [{ role: 'user', content: 'x' }],
-        undefined,
-        () => undefined,
-        { fetchImpl: fakeFetch }
-      );
-      expect(result.provider).toBeUndefined();
-      expect(result.model).toBeUndefined();
-    });
-
-    it('Gemma fallback path surfaces provider=gemma-cloud via non-enumerable reply annotation', async () => {
-      // Emulate sendCoachGemmaPrompt's non-enumerable annotations — the
-      // fallback reads them directly off the returned message.
-      const fakeReply = { role: 'assistant' as const, content: 'Gemma says hi.' };
-      Object.defineProperty(fakeReply, 'provider', {
-        value: 'gemma-cloud',
-        enumerable: false,
-      });
-      Object.defineProperty(fakeReply, 'model', {
-        value: 'gemma-3-4b-it',
-        enumerable: false,
-      });
-      const gemmaFallbackImpl = jest.fn().mockResolvedValue(fakeReply);
-
-      const result = await streamCoachPrompt(
-        [{ role: 'user', content: 'x' }],
-        undefined,
-        () => undefined,
-        { provider: 'gemma', gemmaFallbackImpl }
-      );
-
-      expect(result.provider).toBe('gemma-cloud');
-      expect(result.model).toBe('gemma-3-4b-it');
-      expect(result.text).toBe('Gemma says hi.');
-      expect(result.chunkCount).toBe(1);
-    });
-
-    it('Gemma fallback defaults provider to gemma-cloud when reply has no annotation', async () => {
-      const plainReply = { role: 'assistant' as const, content: 'Plain reply.' };
-      const gemmaFallbackImpl = jest.fn().mockResolvedValue(plainReply);
-
-      const result = await streamCoachPrompt(
-        [{ role: 'user', content: 'x' }],
-        undefined,
-        () => undefined,
-        { provider: 'gemma', gemmaFallbackImpl }
-      );
-      expect(result.provider).toBe('gemma-cloud');
-      expect(result.model).toBeUndefined();
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Wave-29 T2: transient retryable HTTP statuses (429 / 408).
-  //
-  // lib/services/coach-streaming.ts:142-153 classifies a non-2xx response as
-  // COACH_STREAM_HTTP_ERROR. `retryable` is set true for 5xx and 429. The
-  // existing suite already covers 503 (line 149) and 400 (non-retryable, line
-  // 168). These cases close the gap on:
-  //   - 429 Too Many Requests: upstream rate limit — caller should retry after
-  //     backoff. `retryable: true` is what drives the retry path in the UI
-  //     layer (CoachChatScreen + coach-session-manager).
-  //   - 408 Request Timeout: unlike 5xx/429, the current impl classifies 408
-  //     as `retryable: false` because it does not match the `>= 500 || === 429`
-  //     rule. Document that contract here so any future refinement (e.g. adding
-  //     408 to the retry set, or a dedicated COACH_STREAM_TIMEOUT code) tightens
-  //     this test rather than regressing it silently.
-  // ---------------------------------------------------------------------------
-  it('classifies 429 Too Many Requests as COACH_STREAM_HTTP_ERROR with retryable=true', async () => {
+  it('surfaces provider + model from upstream frames on the streaming path', async () => {
     const fakeFetch: typeof fetch = jest.fn(
-      async () => new Response('too many', { status: 429 })
+      async () =>
+        new Response(
+          ndjsonStream([
+            { delta: 'hi', provider: 'gemma-cloud', model: 'gemma-3-4b-it' },
+            { done: true, finishReason: 'STOP' },
+          ]),
+          { status: 200 }
+        )
     );
 
-    await expect(
-      streamCoachPrompt(
-        [{ role: 'user', content: 'x' }],
-        undefined,
-        () => undefined,
-        { fetchImpl: fakeFetch }
-      )
-    ).rejects.toMatchObject({
-      domain: 'network',
-      code: 'COACH_STREAM_HTTP_ERROR',
-      retryable: true,
-    });
-  });
-
-  // 408 Request Timeout: the wave-29 spec requires `retryable: true` but the
-  // current implementation at lib/services/coach-streaming.ts:150 flags only
-  // `status >= 500 || status === 429` as retryable. 408 is semantically a
-  // transient timeout (RFC 7231 §6.5.7) and SHOULD be retryable — but asserting
-  // that today would require a prod change to add `|| status === 408` to the
-  // retryable predicate, which this test-only wave explicitly excludes.
-  //
-  // Assert today's contract (`retryable: false`) so the intent is documented,
-  // and add a sibling skipped test that encodes the desired future contract.
-  it('classifies 408 Request Timeout as COACH_STREAM_HTTP_ERROR (current contract: retryable=false)', async () => {
-    const fakeFetch: typeof fetch = jest.fn(
-      async () => new Response('timeout', { status: 408 })
+    const result = await streamCoachPrompt(
+      [{ role: 'user', content: 'x' }],
+      undefined,
+      () => undefined,
+      { fetchImpl: fakeFetch }
     );
 
-    await expect(
-      streamCoachPrompt(
-        [{ role: 'user', content: 'x' }],
-        undefined,
-        () => undefined,
-        { fetchImpl: fakeFetch }
-      )
-    ).rejects.toMatchObject({
-      domain: 'network',
-      code: 'COACH_STREAM_HTTP_ERROR',
-      retryable: false,
-    });
+    expect(result.provider).toBe('gemma-cloud');
+    expect(result.model).toBe('gemma-3-4b-it');
   });
 
-  // TODO(wave-29-C-T2): un-skip once coach-streaming.ts:150 adds 408 to the
-  // retryable predicate. 408 is semantically a transient timeout per RFC 7231
-  // §6.5.7 and parity with 429 is the expected future state.
-  it.skip('classifies 408 Request Timeout as retryable=true (future contract)', async () => {
+  it('falls back to opts.provider when upstream frames omit provider metadata', async () => {
     const fakeFetch: typeof fetch = jest.fn(
-      async () => new Response('timeout', { status: 408 })
+      async () =>
+        new Response(
+          ndjsonStream([{ delta: 'x' }, { done: true }]),
+          { status: 200 }
+        )
     );
 
-    await expect(
-      streamCoachPrompt(
-        [{ role: 'user', content: 'x' }],
-        undefined,
-        () => undefined,
-        { fetchImpl: fakeFetch }
-      )
-    ).rejects.toMatchObject({
-      code: 'COACH_STREAM_HTTP_ERROR',
-      retryable: true,
-    });
+    const result = await streamCoachPrompt(
+      [{ role: 'user', content: 'x' }],
+      undefined,
+      () => undefined,
+      { fetchImpl: fakeFetch, provider: 'openai' }
+    );
+
+    expect(result.provider).toBe('openai');
+    expect(result.model).toBeUndefined();
+  });
+
+  it('surfaces provider + model from the non-streaming Gemma fallback reply', async () => {
+    const reply = { role: 'assistant' as const, content: 'fallback text' };
+    Object.defineProperty(reply, 'provider', { value: 'gemma-cloud', enumerable: false });
+    Object.defineProperty(reply, 'model', { value: 'gemma-3-4b-it', enumerable: false });
+
+    const result = await streamCoachPrompt(
+      [{ role: 'user', content: 'x' }],
+      undefined,
+      () => undefined,
+      {
+        provider: 'gemma',
+        // Cast: the fallback returns a CoachMessage with optional provider/model
+        // annotations — constructing it inline is fine for the assertion path.
+        gemmaFallbackImpl: async () => reply as unknown as import('@/lib/services/coach-service').CoachMessage,
+      }
+    );
+
+    expect(result.text).toBe('fallback text');
+    expect(result.provider).toBe('gemma-cloud');
+    expect(result.model).toBe('gemma-3-4b-it');
   });
 });

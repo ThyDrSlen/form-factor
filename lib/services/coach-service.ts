@@ -14,19 +14,16 @@ import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
 import { evaluateSafety } from './coach-safety';
 import {
   decideCoachModel,
+  expectedTierModel,
   type CoachTaskKind,
   type CoachUserTier,
   type CoachSignals,
 } from './coach-model-dispatch';
 import { isDispatchEnabled } from './coach-model-dispatch-flag';
-import { recordDispatchDecision } from './coach-model-dispatch-telemetry';
 import {
-  recordCoachUsage,
-  recordCoachReplyUsage,
-  type CoachTaskKind as TrackerTaskKind,
-  type CoachProvider as TrackerProvider,
-} from './coach-cost-tracker';
-import { assertUnderWeeklyCap } from './coach-cost-guard';
+  recordDispatchDecision,
+  recordDispatchMismatch,
+} from './coach-model-dispatch-telemetry';
 
 export type { CoachProvider } from './coach-provider-types';
 import type { LiveSessionSnapshot } from './coach-live-snapshot';
@@ -137,85 +134,6 @@ const DEFAULT_MODEL_ID = 'gpt-5.4-mini';
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
 
 /**
- * Cost-tracker wiring helpers (#537).
- *
- * The edge function does not currently return OpenAI/Gemini usage counts,
- * so we estimate tokens as `ceil(chars/4)` — a conservative industry rule
- * of thumb. When the edge function starts emitting `usage` (promptTokens /
- * completionTokens), callers can pass those through and the stub estimate
- * is bypassed.
- */
-function estimateTokens(text: string): number {
-  // STUB: replace when the edge function returns real token usage.
-  if (!text) return 0;
-  return Math.ceil(text.length / 4);
-}
-
-function mapTaskKindToTracker(
-  kind: CoachTaskKind | undefined,
-): TrackerTaskKind {
-  switch (kind) {
-    case 'multi_turn_debrief':
-      return 'debrief';
-    case 'fault_explainer':
-      return 'drill_explainer';
-    case 'session_generator':
-      return 'session_generator';
-    case 'program_design':
-      return 'progression_planner';
-    case 'form_cue_lookup':
-    case 'rest_calc':
-    case 'encouragement':
-    case 'form_vision_check':
-    case 'nutrition_balance':
-    case 'general_chat':
-    case undefined:
-      return 'chat';
-    default:
-      return 'other';
-  }
-}
-
-function mapProviderToTracker(
-  provider: CoachProvider,
-): TrackerProvider {
-  switch (provider) {
-    case 'openai':
-      return 'openai';
-    case 'gemma-cloud':
-      return 'gemma_cloud';
-    case 'gemma-on-device':
-      return 'gemma_ondevice';
-    case 'cached':
-    case 'local-fallback':
-      return 'stub';
-    default:
-      return 'stub';
-  }
-}
-
-function fireAndForgetRecordUsage(
-  provider: CoachProvider,
-  taskKind: CoachTaskKind | undefined,
-  promptText: string,
-  completionText: string,
-  cacheHit = false,
-): void {
-  // Fire-and-forget: tracker persistence is background work; never block
-  // the user-visible coach response on it, and swallow any error so
-  // tracker fault never escalates to a coach failure.
-  void recordCoachUsage({
-    provider: mapProviderToTracker(provider),
-    taskKind: mapTaskKindToTracker(taskKind),
-    tokensIn: estimateTokens(promptText),
-    tokensOut: estimateTokens(completionText),
-    cacheHit,
-  }).catch((err) => {
-    warnWithTs('[coach-service] recordCoachUsage failed', err);
-  });
-}
-
-/**
  * Feature-flag gate for prepending cross-session memory to coach prompts.
  * Defaults to ON (value 'true' or unset). Any other value disables the
  * memory clause so the coach behaves as before.
@@ -300,7 +218,7 @@ export async function sendCoachPrompt(
       messages,
       context,
       opts.cacheMs,
-      () => sendCoachPromptInner(messages, context, opts?.taskKind),
+      () => sendCoachPromptInner(messages, context),
       { shaper: opts.shaper }
     );
   }
@@ -318,13 +236,18 @@ export async function sendCoachPrompt(
     opts?.taskKind &&
     opts.provider === undefined
   ) {
-    const decision = decideCoachModel(
-      opts.taskKind,
-      opts.dispatchSignals ?? {},
-      opts.userTier ?? 'free',
-    );
+    const signals = opts.dispatchSignals ?? {};
+    const tier = opts.userTier ?? 'free';
+    const decision = decideCoachModel(opts.taskKind, signals, tier);
     try {
       recordDispatchDecision(decision);
+      // Tier ↔ model mismatch telemetry. When the tier-expected baseline
+      // diverges from the model we actually dispatched (because of a flag,
+      // forceCloud override, visionFallback, or high-fault upgrade) emit a
+      // `coach_dispatch_mismatch:<expected>:<actual>` counter so product can
+      // monitor how often dispatch overrides fire in production.
+      const expected = expectedTierModel(opts.taskKind, signals, tier);
+      recordDispatchMismatch(expected, decision.model, decision.reason);
     } catch {
       // Telemetry is never load-bearing; swallow any recorder fault so the
       // coach turn still proceeds.
@@ -334,38 +257,10 @@ export async function sendCoachPrompt(
 
   // No advanced opts: pick cloud provider (explicit hint, dispatcher, user pref, env, or openai default).
   const provider = opts?.provider ?? routedProvider ?? (await resolveCloudProvider());
-  // Dispatch-flag gate (#536): route to the Gemma edge function only when the
-  // global dispatch flag is on. When off, even an explicit `provider: 'gemma'`
-  // hint falls through to the OpenAI path so we never silently hit the
-  // coach-gemma function during a rollout pause. The pipeline-v2 dispatcher
-  // branch above is already gated, so this check only matters for the explicit
-  // / env-resolved paths.
-  if (provider === 'gemma' && isDispatchEnabled()) {
-    // Cost-guard (#537): before attempting the Gemma edge function, check
-    // the weekly cap. When exceeded we silently fall through to the OpenAI
-    // path — the fallback provider stays usable and the user sees no
-    // billing-shaped error. The guard is a no-op when the env cap is unset.
-    try {
-      await assertUnderWeeklyCap('gemma_cloud');
-      return await sendCoachGemmaPrompt(messages, context, {
-        taskKind: opts?.taskKind as string | undefined,
-      });
-    } catch (err) {
-      const code =
-        err && typeof err === 'object' && 'code' in err
-          ? (err as { code?: string }).code
-          : undefined;
-      if (code === 'COACH_COST_CAP_EXCEEDED') {
-        warnWithTs(
-          '[coach-service] weekly Gemma cap hit, falling back to OpenAI',
-          err,
-        );
-        return sendCoachPromptInner(messages, context, opts?.taskKind);
-      }
-      throw err;
-    }
+  if (provider === 'gemma') {
+    return sendCoachGemmaPrompt(messages, context);
   }
-  return sendCoachPromptInner(messages, context, opts?.taskKind);
+  return sendCoachPromptInner(messages, context);
 }
 
 async function sendCoachPromptStreaming(
@@ -380,14 +275,6 @@ async function sendCoachPromptStreaming(
   const result = await streamCoachPrompt(messages, context, onChunk, {
     provider: opts.provider,
   });
-  // Fire-and-forget: persistence errors are swallowed inside the tracker,
-  // and we never want a usage-record hiccup to block the reply.
-  recordCoachReplyUsage({
-    provider: result.provider ?? opts.provider,
-    taskKind: opts.taskKind,
-    inputMessages: messages,
-    replyText: result.text,
-  }).catch(() => undefined);
 
   // Pipeline v2: apply the post-generation safety filter to the resolved
   // full-buffer text. Mirrors the non-stream path in sendCoachPromptInner.
@@ -420,45 +307,14 @@ async function sendCoachPromptStreaming(
         }
       );
     }
-    return attachStreamingProvenance({ role: 'assistant', content: shapeFinalResponse(safety.output) }, result);
+    return { role: 'assistant', content: shapeFinalResponse(safety.output) };
   }
-  return attachStreamingProvenance({ role: 'assistant', content: result.text }, result);
-}
-
-/**
- * Mirror `sendCoachPromptInner`'s non-enumerable provider/model annotation
- * so streamed replies carry the same provenance the sync path exposes.
- * The streaming result may or may not include these fields — only the Gemma
- * non-streaming fallback populates them today (see `coach-streaming.ts`);
- * server-side NDJSON frames do not yet emit provider metadata. Closes #538.
- */
-function attachStreamingProvenance(
-  reply: CoachMessage,
-  result: { provider?: CoachProvider | string; model?: string },
-): CoachMessage {
-  if (result.provider) {
-    Object.defineProperty(reply, 'provider', {
-      value: result.provider,
-      enumerable: false,
-      configurable: true,
-      writable: true,
-    });
-  }
-  if (result.model) {
-    Object.defineProperty(reply, 'model', {
-      value: result.model,
-      enumerable: false,
-      configurable: true,
-      writable: true,
-    });
-  }
-  return reply;
+  return { role: 'assistant', content: result.text };
 }
 
 async function sendCoachPromptInner(
   messages: CoachMessage[],
-  context?: CoachContext,
-  taskKind?: CoachTaskKind,
+  context?: CoachContext
 ): Promise<CoachMessage> {
   try {
     const memoryClause = await resolveMemoryClause(context);
@@ -653,19 +509,6 @@ async function sendCoachPromptInner(
         hasSessionId: Boolean(context?.sessionId),
       });
     }
-
-    // Cost-tracker wiring (#537). Fire-and-forget so persistence never
-    // blocks the coach response. Token counts are estimated from char
-    // length since the edge function doesn't yet emit `usage` — see
-    // `estimateTokens()` for the stub contract.
-    const promptText = messages.map((m) => m.content ?? '').join('\n');
-    fireAndForgetRecordUsage(
-      provider,
-      taskKind,
-      promptText,
-      responseText,
-      signal.source === 'cache',
-    );
 
     // WHY non-enumerable: `provider` is a supplementary annotation on the
     // assistant reply. Keeping it non-enumerable preserves backward-compatible
