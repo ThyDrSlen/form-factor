@@ -407,8 +407,19 @@ export default function VideoCommentsModal() {
                 onChangeText={setCommentInput}
                 multiline
               />
-              <TouchableOpacity style={styles.sendButton} onPress={handleSend} disabled={sending}>
-                <Text style={styles.sendButtonText}>{sending ? '...' : 'Send'}</Text>
+              <TouchableOpacity
+                style={styles.sendButton}
+                onPress={handleSend}
+                disabled={sending}
+                accessibilityRole="button"
+                accessibilityLabel={sending ? 'Sending comment' : 'Send comment'}
+                accessibilityState={{ disabled: sending, busy: sending }}
+              >
+                {sending ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.sendButtonText}>Send</Text>
+                )}
               </TouchableOpacity>
             </View>
 
