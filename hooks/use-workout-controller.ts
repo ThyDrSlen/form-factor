@@ -143,6 +143,26 @@ export interface ResetWorkoutOptions {
   preserveRepCount?: boolean;
 }
 
+/**
+ * Sentinel error the controller passes to `onRepLogFailure` when the caller
+ * stops tracking with unsent reps still queued. UI layers can duck-type on
+ * `.code === 'PENDING_REPS_AT_STOP'` to show a "N reps pending sync" toast.
+ */
+export interface PendingRepsAtStopSignal {
+  code: 'PENDING_REPS_AT_STOP';
+  count: number;
+}
+
+export function isPendingRepsAtStopSignal(
+  err: unknown,
+): err is PendingRepsAtStopSignal {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: unknown }).code === 'PENDING_REPS_AT_STOP'
+  );
+}
+
 export interface UseWorkoutControllerReturn<TPhase extends string = string> {
   /** Current workout state */
   state: WorkoutControllerState<TPhase>;
@@ -160,6 +180,21 @@ export interface UseWorkoutControllerReturn<TPhase extends string = string> {
   getWorkoutDefinition: () => WorkoutDefinition | undefined;
   /** Add a cue to the current rep's tracking data */
   addRepCue: (cueType: string) => void;
+  /**
+   * Number of rep-log writes currently queued for retry (writes that failed
+   * their initial `logRep()` and are waiting for the next successful write
+   * to drain the queue).
+   */
+  getPendingRepCount: () => number;
+  /**
+   * Called from the host's stopTracking() *before* the controller resets.
+   * When the pending-writes queue is non-empty this invokes
+   * `callbacks.onRepLogFailure` with a `PendingRepsAtStopSignal` sentinel
+   * error + the queue depth so the UI can surface a "N reps pending sync"
+   * toast before state is wiped. Returns the count that was reported (0
+   * when queue was empty and no callback fired).
+   */
+  flushPendingRepsOnStop: () => number;
 }
 
 // =============================================================================
@@ -658,6 +693,28 @@ export function useWorkoutController<TPhase extends string = string>(
     }
   }, []);
 
+  const getPendingRepCount = useCallback((): number => {
+    return pendingRepWritesRef.current.length;
+  }, []);
+
+  const flushPendingRepsOnStop = useCallback((): number => {
+    const count = pendingRepWritesRef.current.length;
+    if (count === 0) return 0;
+    // Reuse the existing onRepLogFailure channel so the UI has a single
+    // surface for rep-log failure toasts — at-stop and in-session alike.
+    // The signal carries an explicit code so callers can tailor the copy
+    // ("N reps pending sync" vs. per-rep retry banner).
+    const signal: PendingRepsAtStopSignal = { code: 'PENDING_REPS_AT_STOP', count };
+    try {
+      callbacks?.onRepLogFailure?.(signal, count);
+    } catch (cbError) {
+      if (__DEV__) {
+        warnWithTs('[WorkoutController] onRepLogFailure (stop-signal) threw', cbError);
+      }
+    }
+    return count;
+  }, [callbacks]);
+
   return {
     state,
     processFrame,
@@ -665,6 +722,8 @@ export function useWorkoutController<TPhase extends string = string>(
     setWorkout,
     getWorkoutDefinition,
     addRepCue,
+    getPendingRepCount,
+    flushPendingRepsOnStop,
   };
 }
 

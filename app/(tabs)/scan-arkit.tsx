@@ -97,7 +97,7 @@ import {
   type PullupScoringResult,
 } from '@/lib/tracking-quality';
 import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
-import { useWorkoutController } from '@/hooks/use-workout-controller';
+import { useWorkoutController, isPendingRepsAtStopSignal } from '@/hooks/use-workout-controller';
 import { usePRDetection } from '@/hooks/use-pr-detection';
 import { PRCelebrationBadge } from '@/components/form-tracking/PRCelebrationBadge';
 import { ProgressionSuggestionBadge } from '@/components/form-tracking/ProgressionSuggestionBadge';
@@ -1118,7 +1118,18 @@ export default function ScanARKitScreen() {
         meta?.source === 'frame' ? 'frame-live' : 'onPullupScoring-rep-complete'
       );
     },
-  }), [activeWorkoutDef, repCount, transitionPhase, updatePartialTrackingBadgeVisibility]);
+    // Surface pending-rep warnings to the user (#575 item #10). The
+    // controller fires this both during the session (single-rep retry
+    // failures) and at stop-time (via flushPendingRepsOnStop) with a
+    // distinct sentinel we can discriminate on.
+    onRepLogFailure: (error: unknown, queueDepth: number) => {
+      if (isPendingRepsAtStopSignal(error)) {
+        showToast(`${queueDepth} rep${queueDepth === 1 ? '' : 's'} pending sync — we'll retry when you're back online.`, {
+          type: 'info',
+        });
+      }
+    },
+  }), [activeWorkoutDef, repCount, showToast, transitionPhase, updatePartialTrackingBadgeVisibility]);
 
   const workoutController = useWorkoutController(detectionMode, {
     sessionId: sessionIdRef.current,
@@ -1131,6 +1142,7 @@ export default function ScanARKitScreen() {
     reset: resetWorkoutController,
     setWorkout: setWorkoutController,
     addRepCue: addWorkoutRepCue,
+    flushPendingRepsOnStop,
   } = workoutController;
 
   useEffect(() => {
@@ -1908,6 +1920,12 @@ export default function ScanARKitScreen() {
     }
     setSustainedOcclusionHint(null);
 
+    // Surface any reps that failed to persist before the controller resets
+    // its pending-writes queue (#575 item #10). The callback below emits a
+    // user-facing "N reps pending sync" toast so the user knows their work
+    // wasn't lost even though we can't block stopTracking on a drain.
+    flushPendingRepsOnStop();
+
     try {
       if (isRecording) {
         try {
@@ -2032,6 +2050,7 @@ export default function ScanARKitScreen() {
     resetWorkoutController,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
+    flushPendingRepsOnStop,
   ]);
 
   // Cleanup on unmount
