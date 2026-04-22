@@ -12,11 +12,16 @@
  * tracker to navigate here is a follow-up.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import {
+  useNavigation,
+  type EventArg,
+  type NavigationAction,
+} from '@react-navigation/native';
 
 import {
   RepBreakdownList,
@@ -181,6 +186,47 @@ export default function FormTrackingDebriefScreen() {
     buildInput,
     sessionId: pipelineV2 ? sessionId : null,
   });
+
+  // A12: confirm before discarding an in-flight (or fresh) debrief. Mirrors
+  // the add-food pattern — if the auto-debrief is still loading OR has a
+  // result in hand, a back-gesture / header-close first asks "Discard
+  // feedback?". The user can cancel and stay on the card.
+  const navigation = useNavigation();
+  const shouldSkipDiscardWarningRef = useRef(false);
+  const hasFeedbackToDiscard = autoDebrief.loading || autoDebrief.data != null;
+
+  useEffect(() => {
+    if (!hasFeedbackToDiscard) {
+      shouldSkipDiscardWarningRef.current = false;
+      return;
+    }
+
+    type BeforeRemoveEvent = EventArg<'beforeRemove', true, { action: NavigationAction }>;
+    const unsubscribe = navigation.addListener('beforeRemove', (e: BeforeRemoveEvent) => {
+      if (shouldSkipDiscardWarningRef.current) {
+        return;
+      }
+
+      e.preventDefault();
+      Alert.alert(
+        'Discard feedback?',
+        'Your coach debrief is still coming in. Leaving now will drop the feedback.',
+        [
+          { text: 'Stay', style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              shouldSkipDiscardWarningRef.current = true;
+              navigation.dispatch(e.data.action);
+            },
+          },
+        ],
+      );
+    });
+
+    return unsubscribe;
+  }, [hasFeedbackToDiscard, navigation]);
 
   const handleClose = useCallback(() => {
     router.back();
