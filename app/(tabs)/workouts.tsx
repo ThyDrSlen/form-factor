@@ -375,6 +375,9 @@ export default function WorkoutsScreen() {
             <View style={styles.cardFooter}>
               <TouchableOpacity
                 style={styles.actionButton}
+                accessibilityRole="button"
+                accessibilityLabel={`View ${item.exercise} details`}
+                accessibilityHint="Opens workout detail summary"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   const lines = [
@@ -389,16 +392,19 @@ export default function WorkoutsScreen() {
                 }}
                 activeOpacity={0.7}
               >
-                <Ionicons name="eye-outline" size={16} color="#007AFF" />
+                <Ionicons name="eye-outline" size={16} color="#007AFF" accessible={false} />
                 <Text style={styles.actionText}>View</Text>
               </TouchableOpacity>
               <View style={styles.divider} />
               <TouchableOpacity
                 style={[styles.actionButton, styles.shareActionButton]}
+                accessibilityRole="button"
+                accessibilityLabel={`Share ${item.exercise} stats`}
+                accessibilityHint="Opens the native share sheet with your workout summary"
                 onPress={() => handleShareWorkout(item)}
                 activeOpacity={0.85}
               >
-                <Ionicons name="share-outline" size={18} color="#4C8CFF" />
+                <Ionicons name="share-outline" size={18} color="#4C8CFF" accessible={false} />
                 <View style={styles.shareTextWrapper}>
                   <Text style={[styles.actionText, styles.shareActionTitle]}>Share</Text>
                   <Text style={styles.actionSubtext}>Send stats</Text>
@@ -412,6 +418,8 @@ export default function WorkoutsScreen() {
                 confirmTitle="Delete workout?"
                 confirmMessage={`This will permanently remove \"${item.exercise}\".`}
                 style={styles.deleteAction}
+                accessibilityLabel={`Delete ${item.exercise}`}
+                accessibilityHint="Permanently removes this workout from your history"
               />
             </View>
             {coachRecallEnabled ? (
