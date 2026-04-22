@@ -9,6 +9,7 @@
 import {
   FALLBACK_CANDIDATES,
   GEMMA_FALLBACK_CONFIDENCE,
+  VOICE_NLU_TASK_KIND,
   buildGemmaNluPrompt,
   classifyViaGemma,
   parseGemmaNluResponse,
@@ -100,6 +101,19 @@ describe('classifyViaGemma', () => {
       .mockResolvedValue({ role: 'assistant', content: 'next' });
     await classifyViaGemma('keep going mate', sendPrompt);
     const opts = sendPrompt.mock.calls[0]?.[2] as { provider?: string } | undefined;
+    expect(opts?.provider).toBe('gemma');
+  });
+
+  it("forwards taskKind: 'voice_debrief' so cost-tracker can attribute voice spend", async () => {
+    const sendPrompt = jest
+      .fn<Promise<CoachMessage>, unknown[]>()
+      .mockResolvedValue({ role: 'assistant', content: 'skip_rest' });
+    await classifyViaGemma('skip the rest please', sendPrompt);
+    const opts = sendPrompt.mock.calls[0]?.[2] as
+      | { taskKind?: string; provider?: string }
+      | undefined;
+    expect(opts?.taskKind).toBe(VOICE_NLU_TASK_KIND);
+    expect(opts?.taskKind).toBe('voice_debrief');
     expect(opts?.provider).toBe('gemma');
   });
 
