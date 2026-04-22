@@ -28,6 +28,15 @@ import {
 import { synthesizeMemoryClause } from './coach-memory-context';
 import { getExercisePreferences, type CuePreference } from './coach-cue-feedback';
 import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
+import { recordCoachUsage } from './coach-cost-tracker';
+import { recordExplicitProviderOverride } from './coach-model-dispatch-telemetry';
+
+const AUTO_DEBRIEF_TASK_KIND = 'multi_turn_debrief' as const;
+
+function estimateTokens(text: string): number {
+  if (!text) return 0;
+  return Math.max(1, Math.ceil(text.length / 4));
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -195,8 +204,33 @@ export async function generateAutoDebrief(
   };
   // Provider dispatch: gemma → sendCoachGemmaPrompt (direct call to
   // coach-gemma edge function); openai → sendCoachPrompt (generic path).
+  // Telemetry: auto-debrief pins an explicit provider, so the dispatch
+  // router in coach-service skips `recordDispatchDecision`. Fire the
+  // explicit-override counter here so the taskKind ('multi_turn_debrief')
+  // still lands in the decision dashboard. Wrapped so a telemetry fault
+  // never blocks the debrief.
+  try {
+    recordExplicitProviderOverride({
+      taskKind: AUTO_DEBRIEF_TASK_KIND,
+      decidedProvider: provider,
+      reason: 'auto-debrief-explicit-provider',
+    });
+  } catch {
+    // Telemetry is never load-bearing.
+  }
   const reply = await dispatch(provider, messages, context);
   const brief = shapeBriefOutput(reply.content);
+
+  // Weekly cost bucket: track auto-debrief as a multi-turn debrief task
+  // under the appropriate provider key. Token estimator is char-based
+  // since the coach edge response does not surface counts today.
+  const promptText = messages.map((m) => m.content).join('\n');
+  void recordCoachUsage({
+    provider: provider === 'gemma' ? 'gemma_cloud' : 'openai',
+    taskKind: AUTO_DEBRIEF_TASK_KIND,
+    tokensIn: estimateTokens(promptText),
+    tokensOut: estimateTokens(reply.content ?? ''),
+  });
 
   const result: AutoDebriefResult = {
     sessionId: input.sessionId,

@@ -67,7 +67,10 @@ describe('progression-planner provider dispatch (pipeline-v2)', () => {
 
     expect(mockSendCoachPrompt).toHaveBeenCalledTimes(1);
     const [, , opts] = mockSendCoachPrompt.mock.calls[0];
-    expect(opts).toEqual({ provider: 'gemma' });
+    // Wave-34: planner now annotates every call with
+    // taskKind='program_design' so the cost tracker can bucket the
+    // traffic and the explicit-override telemetry captures the decision.
+    expect(opts).toEqual({ provider: 'gemma', taskKind: 'program_design' });
   });
 
   it('forwards provider=openai when flag is on and env=openai', async () => {
@@ -81,10 +84,10 @@ describe('progression-planner provider dispatch (pipeline-v2)', () => {
     });
 
     const [, , opts] = mockSendCoachPrompt.mock.calls[0];
-    expect(opts).toEqual({ provider: 'openai' });
+    expect(opts).toEqual({ provider: 'openai', taskKind: 'program_design' });
   });
 
-  it('omits provider opts when flag is off (legacy behavior)', async () => {
+  it('annotates taskKind even when flag is off (legacy behavior otherwise preserved)', async () => {
     delete process.env[FLAG];
     process.env[PROVIDER] = 'gemma';
 
@@ -95,6 +98,8 @@ describe('progression-planner provider dispatch (pipeline-v2)', () => {
     });
 
     const [, , opts] = mockSendCoachPrompt.mock.calls[0];
-    expect(opts).toBeUndefined();
+    // Wave-34: even without pipeline-v2 we annotate the taskKind so the
+    // cost tracker can bucket the traffic. No provider hint is attached.
+    expect(opts).toEqual({ taskKind: 'program_design' });
   });
 });
