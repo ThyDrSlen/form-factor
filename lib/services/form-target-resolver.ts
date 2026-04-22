@@ -20,6 +20,7 @@ import type {
   WorkoutTemplate,
   WorkoutTemplateExercise,
 } from '@/lib/types/workout-session';
+import { createError, logError } from '@/lib/services/ErrorHandler';
 
 // =============================================================================
 // Types
@@ -35,6 +36,21 @@ export interface FormTargets {
   romMin: number;
   /** Maximum range-of-motion angle (degrees) — exercise dependent. */
   romMax: number;
+}
+
+/**
+ * Form targets paired with a provenance flag so callers can surface a
+ * subtle "generic thresholds in use" badge when a template typo (or a
+ * custom exerciseId) falls back to `DEFAULT_FORM_TARGETS`.
+ */
+export interface FormTargetsResolution {
+  targets: FormTargets;
+  /**
+   * True when the returned `targets` are the conservative
+   * `DEFAULT_FORM_TARGETS` fallback (unknown exerciseId / non-string).
+   * False when either a per-exercise default or a template override matched.
+   */
+  usingGenericTargets: boolean;
 }
 
 // =============================================================================
@@ -105,34 +121,78 @@ export function resolveFormTargets(
   exerciseId: string,
   template?: (WorkoutTemplate & { exercises?: WorkoutTemplateExercise[] }) | null,
 ): FormTargets {
-  const base = getDefaultsForExercise(exerciseId);
+  return resolveFormTargetsWithFlag(exerciseId, template).targets;
+}
+
+/**
+ * Like `resolveFormTargets()` but also returns the `usingGenericTargets`
+ * provenance flag propagated up from `getDefaultsForExerciseWithFlag()`.
+ * A template override that backs onto generic defaults still flips the
+ * flag when the exerciseId itself is unknown — template authors should
+ * know their per-exercise thresholds are being combined with the
+ * permissive baseline.
+ */
+export function resolveFormTargetsWithFlag(
+  exerciseId: string,
+  template?: (WorkoutTemplate & { exercises?: WorkoutTemplateExercise[] }) | null,
+): FormTargetsResolution {
+  const baseResolution = getDefaultsForExerciseWithFlag(exerciseId);
+  const base = baseResolution.targets;
 
   if (!template || !template.exercises || template.exercises.length === 0) {
-    return base;
+    return baseResolution;
   }
 
   const override = template.exercises.find(
     (e) => e && e.exercise_id === exerciseId,
   );
-  if (!override) return base;
+  if (!override) return baseResolution;
 
   return {
-    fqiMin: pickNumber(override.target_fqi_min, base.fqiMin),
-    romMin: pickNumber(override.target_rom_min, base.romMin),
-    romMax: pickNumber(override.target_rom_max, base.romMax),
+    targets: {
+      fqiMin: pickNumber(override.target_fqi_min, base.fqiMin),
+      romMin: pickNumber(override.target_rom_min, base.romMin),
+      romMax: pickNumber(override.target_rom_max, base.romMax),
+    },
+    usingGenericTargets: baseResolution.usingGenericTargets,
   };
 }
 
 /**
  * Get the baseline defaults for an exercise (no template override).
  * Exported for tests and for callers that don't yet have a template context.
+ *
+ * When `exerciseId` is unknown, the conservative `DEFAULT_FORM_TARGETS`
+ * fallback is returned AND a `logError()` observability signal is emitted
+ * once per unknown id (module-level dedupe) so template typos (e.g.
+ * `exercise_id: "pullups"` vs. `"pullup"`) don't silently degrade FQI
+ * thresholds in production. Callers that want the provenance flag
+ * structurally (for a "Generic thresholds in use" UI badge) should use
+ * `getDefaultsForExerciseWithFlag()` instead.
  */
 export function getDefaultsForExercise(exerciseId: string): FormTargets {
+  return getDefaultsForExerciseWithFlag(exerciseId).targets;
+}
+
+/**
+ * Like `getDefaultsForExercise()` but also returns a `usingGenericTargets`
+ * flag so the caller (e.g. scan-arkit overlay) can surface a subtle badge
+ * when the exerciseId didn't match any first-class exercise entry.
+ */
+export function getDefaultsForExerciseWithFlag(
+  exerciseId: string,
+): FormTargetsResolution {
   if (!exerciseId || typeof exerciseId !== 'string') {
-    return DEFAULT_FORM_TARGETS;
+    maybeLogUnknownExercise(exerciseId, 'invalid-id');
+    return { targets: DEFAULT_FORM_TARGETS, usingGenericTargets: true };
   }
   const key = exerciseId.trim().toLowerCase();
-  return EXERCISE_DEFAULTS[key] ?? DEFAULT_FORM_TARGETS;
+  const match = EXERCISE_DEFAULTS[key];
+  if (match) {
+    return { targets: match, usingGenericTargets: false };
+  }
+  maybeLogUnknownExercise(exerciseId, 'no-match');
+  return { targets: DEFAULT_FORM_TARGETS, usingGenericTargets: true };
 }
 
 /**
@@ -152,4 +212,39 @@ function pickNumber(candidate: number | null | undefined, fallback: number): num
   if (candidate === null || candidate === undefined) return fallback;
   if (typeof candidate !== 'number' || !Number.isFinite(candidate)) return fallback;
   return candidate;
+}
+
+/**
+ * Log-once-per-id observability for the generic-targets fallback so
+ * dashboards surface misconfigured templates without spamming a single
+ * unknown id on every render.
+ */
+const loggedUnknownExerciseIds = new Set<string>();
+/**
+ * Test-only escape hatch to reset the dedupe Set between cases.
+ */
+export function __resetUnknownExerciseLogForTests(): void {
+  loggedUnknownExerciseIds.clear();
+}
+
+function maybeLogUnknownExercise(
+  exerciseId: unknown,
+  reason: 'invalid-id' | 'no-match',
+): void {
+  const key = typeof exerciseId === 'string' ? exerciseId.trim().toLowerCase() : `__${reason}__`;
+  if (loggedUnknownExerciseIds.has(key)) return;
+  loggedUnknownExerciseIds.add(key);
+  logError(
+    createError(
+      'form-tracking',
+      'FORM_TARGET_FALLBACK_GENERIC',
+      'Unknown exerciseId fell back to generic DEFAULT_FORM_TARGETS — FQI thresholds may be too permissive.',
+      {
+        details: { exerciseId, reason },
+        severity: 'warning',
+        retryable: false,
+      },
+    ),
+    { feature: 'form-tracking', location: 'lib/services/form-target-resolver' },
+  );
 }
