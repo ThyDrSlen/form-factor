@@ -1095,7 +1095,20 @@ Generated: ${new Date().toISOString()}
           />
           <View style={styles.modalContent}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Edit Profile</Text>
+            <View style={styles.modalTitleRow}>
+              <Text style={styles.modalTitle}>Edit Profile</Text>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => (!isSavingName ? setIsEditProfileVisible(false) : null)}
+                disabled={isSavingName}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="Close profile edit"
+                accessibilityHint="Discard changes and close the edit profile sheet"
+              >
+                <Ionicons name="close" size={22} color="#9AACD1" />
+              </TouchableOpacity>
+            </View>
             <Text style={styles.modalLabel}>Full Name</Text>
             <TextInput
               value={fullName}
@@ -1127,6 +1140,8 @@ Generated: ${new Date().toISOString()}
                 style={[styles.modalButton, styles.modalButtonSecondary]}
                 onPress={() => setIsEditProfileVisible(false)}
                 disabled={isSavingName}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel profile edit"
               >
                 <Text style={[styles.modalButtonText, styles.modalButtonTextSecondary]}>Cancel</Text>
               </TouchableOpacity>
@@ -1134,6 +1149,8 @@ Generated: ${new Date().toISOString()}
                 style={[styles.modalButton, styles.modalButtonPrimary]}
                 onPress={handleSaveProfile}
                 disabled={isSavingName}
+                accessibilityRole="button"
+                accessibilityLabel="Save profile changes"
               >
                 {isSavingName ? (
                   <ActivityIndicator color="#0F2339" />
@@ -1155,7 +1172,20 @@ Generated: ${new Date().toISOString()}
           />
           <View style={styles.modalContent}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Edit Nutrition Goals</Text>
+            <View style={styles.modalTitleRow}>
+              <Text style={styles.modalTitle}>Edit Nutrition Goals</Text>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => (!isSavingGoals ? setIsEditGoalsVisible(false) : null)}
+                disabled={isSavingGoals}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="Close nutrition goals edit"
+                accessibilityHint="Discard changes and close the nutrition goals sheet"
+              >
+                <Ionicons name="close" size={22} color="#9AACD1" />
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.inputContainer}>
               <Text style={styles.modalLabel}>Daily Calories *</Text>
@@ -1220,6 +1250,8 @@ Generated: ${new Date().toISOString()}
                 style={[styles.modalButton, styles.modalButtonSecondary]}
                 onPress={() => setIsEditGoalsVisible(false)}
                 disabled={isSavingGoals}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel nutrition goals edit"
               >
                 <Text style={[styles.modalButtonText, styles.modalButtonTextSecondary]}>Cancel</Text>
               </TouchableOpacity>
@@ -1227,6 +1259,8 @@ Generated: ${new Date().toISOString()}
                 style={[styles.modalButton, styles.modalButtonPrimary]}
                 onPress={handleSaveGoals}
                 disabled={isSavingGoals}
+                accessibilityRole="button"
+                accessibilityLabel="Save nutrition goals"
               >
                 {isSavingGoals ? (
                   <ActivityIndicator color="#0F2339" />
