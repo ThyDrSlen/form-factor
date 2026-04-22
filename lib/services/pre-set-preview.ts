@@ -86,6 +86,9 @@ async function callGemma(prompt: string): Promise<string> {
   // Direct call to the canonical Gemma service — routes through the
   // coach-gemma edge function rather than the generic `coach` function so
   // model-specific parameters and provider annotations flow through cleanly.
+  // The dispatcher is intentionally NOT consulted here (this path is already
+  // Gemma-pinned); taskKind would be informational only and the service does
+  // not forward it. Equivalent dispatch behavior lives on `callOpenAI`.
   const messages: CoachMessage[] = [{ role: 'user', content: prompt }];
   const reply = await sendCoachGemmaPrompt(messages, {
     focus: 'pre-set-stance-preview-gemma',
@@ -95,9 +98,19 @@ async function callGemma(prompt: string): Promise<string> {
 
 async function callOpenAI(prompt: string): Promise<string> {
   const messages: CoachMessage[] = [{ role: 'user', content: prompt }];
-  const reply = await sendCoachPrompt(messages, {
-    focus: 'pre-set-stance-preview',
-  });
+  const reply = await sendCoachPrompt(
+    messages,
+    {
+      focus: 'pre-set-stance-preview',
+    },
+    {
+      // Declare the task kind so the dispatcher routes this through the
+      // form-vision bucket. Without taskKind the call falls through to the
+      // general_chat default, which may escalate a short stance check onto
+      // a larger cloud model unnecessarily.
+      taskKind: 'form_vision_check',
+    },
+  );
   return reply.content;
 }
 
