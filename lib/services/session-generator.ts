@@ -129,7 +129,18 @@ export async function generateSession(
   const messages = buildSessionGeneratorMessages(input);
   const dispatch = runtime.dispatch ?? sendCoachPrompt;
 
-  const assistantMessage = await dispatch(messages, runtime.coachContext);
+  // Attach `focus: 'session_generator'` so the cost tracker and telemetry
+  // pipelines can attribute usage/tokens back to this surface. Mirrors the
+  // pattern in coach-auto-debrief / drill-explainer where a short snake_case
+  // label is fed through CoachContext.focus (see coach-cost-tracker
+  // CoachTaskKind). Preserves any caller-supplied context fields; a
+  // caller-provided focus wins so explicit attribution overrides the default.
+  const dispatchContext: CoachContext = {
+    ...(runtime.coachContext ?? {}),
+    focus: runtime.coachContext?.focus ?? 'session_generator',
+  };
+
+  const assistantMessage = await dispatch(messages, dispatchContext);
 
   const retryInvoker = async (ctx: { lastRawText: string; issues?: unknown }): Promise<string> => {
     const retryMessages: CoachMessage[] = [
@@ -140,7 +151,7 @@ export async function generateSession(
         content: `The previous response was not valid JSON or did not match the schema. Issues: ${JSON.stringify(ctx.issues ?? 'syntax error')}. Respond ONLY with corrected JSON.`,
       },
     ];
-    const retryResponse = await dispatch(retryMessages, runtime.coachContext);
+    const retryResponse = await dispatch(retryMessages, dispatchContext);
     return retryResponse.content;
   };
 

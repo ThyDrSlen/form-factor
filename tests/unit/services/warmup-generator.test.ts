@@ -72,6 +72,25 @@ describe('generateWarmup', () => {
     expect(plan.movements.length).toBe(2);
   });
 
+  it("attaches focus='warmup_generator' to the dispatch context for cost attribution", async () => {
+    const dispatch = jest.fn<Promise<CoachMessage>, [CoachMessage[], unknown?]>()
+      .mockResolvedValue({ role: 'assistant', content: JSON.stringify(VALID_PLAN) });
+    await generateWarmup({ exerciseSlugs: ['squat'] }, { dispatch });
+    const ctx = dispatch.mock.calls[0][1] as { focus?: string } | undefined;
+    expect(ctx?.focus).toBe('warmup_generator');
+  });
+
+  it('preserves caller-supplied focus instead of overwriting it', async () => {
+    const dispatch = jest.fn<Promise<CoachMessage>, [CoachMessage[], unknown?]>()
+      .mockResolvedValue({ role: 'assistant', content: JSON.stringify(VALID_PLAN) });
+    await generateWarmup(
+      { exerciseSlugs: ['squat'] },
+      { dispatch, coachContext: { focus: 'eval_harness' } },
+    );
+    const ctx = dispatch.mock.calls[0][1] as { focus?: string } | undefined;
+    expect(ctx?.focus).toBe('eval_harness');
+  });
+
   it('retries on bad JSON and succeeds', async () => {
     const dispatch = jest
       .fn<Promise<CoachMessage>, [CoachMessage[]]>()
