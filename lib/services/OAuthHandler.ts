@@ -52,6 +52,16 @@ export class OAuthHandler {
           '[OAuthHandler] New OAuth flow started while one was already in progress — ' +
           'clearing previous pending state to avoid CSRF race'
         );
+        // A4: proactively dismiss any in-flight WebBrowser auth session so
+        // the previous browser sheet is torn down before we start a new
+        // flow. Safe to call when no session is active (expo-web-browser
+        // treats it as a no-op). Catching is defensive in case a future
+        // release throws for closed sessions.
+        try {
+          WebBrowser.dismissAuthSession();
+        } catch {
+          // non-fatal
+        }
         this.pendingOAuthState = null;
       }
 
