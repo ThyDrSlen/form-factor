@@ -120,6 +120,16 @@ export function useAutoDebrief(opts: UseAutoDebriefOptions): UseAutoDebriefState
   // waiting for another session_finished event.
   const lastInputRef = useRef<GenerateAutoDebriefInput | null>(null);
 
+  // Keep a stable reference to buildInput so the session-finished subscribe
+  // effect doesn't re-subscribe on every parent re-render when the caller
+  // passes a fresh closure (common: inline `() => ...`). Without this ref,
+  // the effect unsubscribes + resubscribes every render, which can drop a
+  // session-finished event fired mid-transition.
+  const buildInputRef = useRef(buildInput);
+  useEffect(() => {
+    buildInputRef.current = buildInput;
+  });
+
   const runWith = useCallback(async (input: GenerateAutoDebriefInput) => {
     lastInputRef.current = input;
     setLoading(true);
@@ -184,12 +194,14 @@ export function useAutoDebrief(opts: UseAutoDebriefOptions): UseAutoDebriefState
     };
   }, [sessionId]);
 
-  // Subscribe to session-finished events.
+  // Subscribe to session-finished events. Reads buildInput from a ref so
+  // the subscription is stable across parent re-renders that pass a fresh
+  // inline closure.
   useEffect(() => {
     if (!isAutoDebriefEnabled()) return;
     const unsubscribe = onSessionFinished(async (event) => {
       try {
-        const input = await buildInput(event);
+        const input = await buildInputRef.current(event);
         if (!input) return;
         await runWith(input);
       } catch (err) {
@@ -199,7 +211,7 @@ export function useAutoDebrief(opts: UseAutoDebriefOptions): UseAutoDebriefState
       }
     });
     return unsubscribe;
-  }, [buildInput, runWith]);
+  }, [runWith]);
 
   return { data, loading, error, retry };
 }
