@@ -33,18 +33,7 @@ import type {
   CoachMessage,
   CoachSendOptions,
 } from './coach-service';
-import { recordCoachUsage } from './coach-cost-tracker';
 import { warnWithTs } from '@/lib/logger';
-
-/**
- * Rough token estimator used for telemetry when the Gemma reply doesn't
- * surface a token count. 4 chars ≈ 1 token is the standard llama/gpt-family
- * approximation and is good enough for weekly aggregation.
- */
-function estimateTokens(text: string): number {
-  if (!text) return 0;
-  return Math.max(1, Math.ceil(text.length / 4));
-}
 
 /** Intents eligible for the phrase-only fallback. Numeric intents are excluded. */
 export const FALLBACK_CANDIDATES: Exclude<
@@ -54,13 +43,6 @@ export const FALLBACK_CANDIDATES: Exclude<
 
 /** Confidence assigned to a successful Gemma pick. */
 export const GEMMA_FALLBACK_CONFIDENCE = 0.8;
-
-/**
- * Task-kind hint forwarded to `sendCoachPrompt` so the cost-tracker attributes
- * voice-NLU spend to the new `voice_debrief` bucket. Exported so tests can
- * assert on the literal string.
- */
-export const VOICE_NLU_TASK_KIND = 'voice_debrief' as const;
 
 /**
  * Builds the zero-shot Gemma prompt. Kept in its own function for unit
@@ -130,21 +112,13 @@ export async function classifyViaGemma(
   if (!normalized) {
     return { intent: 'none', params: {}, confidence: 0, normalized: '' };
   }
-  const messages = buildGemmaNluPrompt(normalized);
   try {
-    const reply = await sendPrompt(messages, undefined, {
+    const reply = await sendPrompt(buildGemmaNluPrompt(normalized), undefined, {
       provider: 'gemma',
-      taskKind: VOICE_NLU_TASK_KIND,
-    });
-    // Telemetry: record the Gemma turn so weekly dashboards capture
-    // voice-NLU traffic. Uses the char-based estimator since the coach
-    // edge function does not surface token counts for Gemma today.
-    const promptText = messages.map((m) => m.content).join('\n');
-    void recordCoachUsage({
-      provider: 'gemma_cloud',
-      taskKind: 'voice_nlu',
-      tokensIn: estimateTokens(promptText),
-      tokensOut: estimateTokens(reply.content ?? ''),
+      // Route the classification to the cheapest Gemma tier via the coach
+      // dispatcher. Without `taskKind` the call falls through to the
+      // `general_chat` default, which may escalate to GPT unnecessarily.
+      taskKind: 'voice_intent',
     });
     const intent = parseGemmaNluResponse(reply.content ?? '');
     if (intent === 'none') {

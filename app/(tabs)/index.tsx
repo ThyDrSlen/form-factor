@@ -413,7 +413,6 @@ export default function HomeScreen() {
         profile: {
           id: user?.id,
           name: fullName,
-          email: user?.email ?? null,
         },
         focus: 'fitness_coach',
         sessionId: homeCoachSessionId,
