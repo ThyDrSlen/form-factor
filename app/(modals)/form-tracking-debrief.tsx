@@ -171,7 +171,11 @@ export default function FormTrackingDebriefScreen() {
       priorSessionId: comparison.priorSessionId,
     }).toString();
     router.push(`/(modals)/form-comparison?${qs}` as `/${string}`);
-  }, [router, comparison?.priorSessionId, comparisonExerciseId, routeSessionId]);
+    // Depend on the whole `comparison` object, not a projected field, so the
+    // callback always closes over the freshest shape (new priorSessionId,
+    // swapped exercise, etc.) and can't be stranded on a stale snapshot
+    // when the comparison reloads mid-screen.
+  }, [router, comparison, comparisonExerciseId, routeSessionId]);
 
   // Pipeline v2: synthesize a stable sessionId from the recap payload so the
   // auto-debrief hook can dedupe via AsyncStorage. We derive from exercise
