@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { CoachModelCard } from '@/components/settings/CoachModelCard';
 import { CoachRoutingPreference } from '@/components/settings/CoachRoutingPreference';
+import { CostDashboardCard } from '@/components/settings/CostDashboardCard';
 import {
   getStatus as getCoachModelStatus,
   subscribe as subscribeCoachModel,
@@ -91,6 +92,13 @@ export default function SettingsCoachingModal() {
             localDisabled={localDisabled}
           />
         )}
+
+        <View style={styles.divider} />
+
+        <Text variant="titleMedium" style={styles.sectionTitle}>
+          Weekly usage
+        </Text>
+        <CostDashboardCard />
       </ScrollView>
     </View>
   );
