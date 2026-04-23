@@ -17,7 +17,15 @@
  */
 
 import React, { useEffect, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, type ViewStyle, type StyleProp } from 'react-native';
+import {
+  AccessibilityInfo,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  type ViewStyle,
+  type StyleProp,
+} from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { MotiView } from 'moti';
 import { Ionicons } from '@expo/vector-icons';
@@ -57,6 +65,23 @@ const SIZE_MAP: Record<FqiGaugeSize, { diameter: number; strokeWidth: number; fo
   md: { diameter: 72, strokeWidth: 6, fontSize: 22, labelSize: 10 },
   lg: { diameter: 96, strokeWidth: 8, fontSize: 30, labelSize: 12 },
 };
+
+type FqiBucket = 'poor' | 'acceptable' | 'good';
+
+function toBucket(score: number | null): FqiBucket | null {
+  if (score == null || Number.isNaN(score)) return null;
+  if (score < 40) return 'poor';
+  if (score < 70) return 'acceptable';
+  return 'good';
+}
+
+function bucketLabel(bucket: FqiBucket): string {
+  return bucket === 'poor'
+    ? 'poor'
+    : bucket === 'acceptable'
+      ? 'acceptable'
+      : 'good';
+}
 
 /** Map an FQI score 0-100 into a semantic color bucket. */
 export function getFqiColor(score: number | null): { fill: string; track: string; text: string } {
@@ -113,6 +138,30 @@ export default function FqiGauge({
     hintPulsedRef.current = true;
     setHintPulseKey((k) => k + 1);
   }, [onPress, hasSeenHint]);
+
+  // Screen-reader announcement on FQI bucket changes (poor → ok → good).
+  // accessibilityValue updates alone aren't reliably re-announced by
+  // VoiceOver during live sessions; firing an explicit announcement when
+  // the semantic bucket crosses a threshold gives a vision-impaired user
+  // audible confirmation that form quality shifted. We debounce on bucket
+  // rather than raw score so announcements don't stack every frame.
+  const lastBucketRef = useRef<FqiBucket | null>(null);
+  useEffect(() => {
+    const bucket = toBucket(score);
+    if (bucket === null) {
+      lastBucketRef.current = null;
+      return;
+    }
+    if (lastBucketRef.current === bucket) return;
+    const prev = lastBucketRef.current;
+    lastBucketRef.current = bucket;
+    // Skip the first transition when there was no prior reading — the
+    // accessibilityValue on mount already communicates the initial state.
+    if (prev === null) return;
+    AccessibilityInfo.announceForAccessibility(
+      `Form quality ${bucketLabel(bucket)} — ${Math.round(clamped)} of 100`,
+    );
+  }, [score, clamped]);
 
   const displayScore = score == null ? '--' : Math.round(clamped).toString();
   const label =
