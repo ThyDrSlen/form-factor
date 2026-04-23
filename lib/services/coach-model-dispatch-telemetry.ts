@@ -18,7 +18,7 @@
  */
 
 import { recordCounter } from './coach-telemetry';
-import type { CoachModelId, DispatchDecision } from './coach-model-dispatch';
+import type { CoachModelId, CoachTaskKind, DispatchDecision } from './coach-model-dispatch';
 
 const DISPATCH_EVENT_NAME = 'coach_dispatch_decision';
 const DISPATCH_MISMATCH_EVENT_NAME = 'coach_dispatch_mismatch';
@@ -67,6 +67,36 @@ export function recordDispatchMismatch(
     console.log('[coach-dispatch]', DISPATCH_MISMATCH_EVENT_NAME, {
       expected,
       actual,
+      reason,
+    });
+  }
+}
+
+export interface ExplicitProviderOverride {
+  readonly taskKind: CoachTaskKind;
+  readonly decidedProvider: 'gemma' | 'openai';
+  readonly reason?: string;
+}
+
+/**
+ * Telemetry sibling for callers that pin a provider explicitly (auto-debrief,
+ * progression-planner). The dispatch router only fires `recordDispatchDecision`
+ * when `provider === undefined`; this plugs the complex-task cloud path.
+ */
+export function recordExplicitProviderOverride(
+  override: ExplicitProviderOverride,
+): void {
+  const reason = override.reason ?? 'explicit-override';
+  recordCounter(DISPATCH_EVENT_NAME);
+  recordCounter(`${DISPATCH_EVENT_NAME}:provider:${override.decidedProvider}`);
+  recordCounter(`${DISPATCH_EVENT_NAME}:taskKind:${override.taskKind}`);
+  recordCounter(`${DISPATCH_EVENT_NAME}:reason:${reason}`);
+
+  if (__DEV__) {
+    // eslint-disable-next-line no-console
+    console.log('[coach-dispatch]', DISPATCH_EVENT_NAME, {
+      taskKind: override.taskKind,
+      decidedProvider: override.decidedProvider,
       reason,
     });
   }

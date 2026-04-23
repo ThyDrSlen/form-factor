@@ -44,6 +44,9 @@ export const FALLBACK_CANDIDATES: Exclude<
 /** Confidence assigned to a successful Gemma pick. */
 export const GEMMA_FALLBACK_CONFIDENCE = 0.8;
 
+/** Task-kind hint exported for tests + callers that want to key telemetry. */
+export const VOICE_NLU_TASK_KIND = 'voice_debrief' as const;
+
 /**
  * Builds the zero-shot Gemma prompt. Kept in its own function for unit
  * testing + future prompt iteration without touching call sites.

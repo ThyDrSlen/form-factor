@@ -73,6 +73,9 @@ const EXERCISE_SHAPE: JsonSchema<GeneratedExerciseShape> = schema.object({
   notes: schema.optional(schema.string()),
 });
 
+/** Task-kind hint exported for tests + callers that want to key telemetry. */
+export const SESSION_GENERATOR_TASK_KIND = 'session_generator' as const;
+
 export const SESSION_GENERATOR_SCHEMA: JsonSchema<GeneratedTemplateShape> = schema.object({
   name: schema.string({ minLength: 1 }),
   description: schema.string(),

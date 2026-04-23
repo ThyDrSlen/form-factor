@@ -54,7 +54,7 @@ function readRetryAfterMs(
 export async function sendCoachGemmaPrompt(
   messages: CoachMessage[],
   context?: CoachContext,
-  opts?: { model?: string },
+  opts?: { model?: string; taskKind?: string },
 ): Promise<CoachMessage> {
   try {
     const body: Record<string, unknown> = { messages, context };

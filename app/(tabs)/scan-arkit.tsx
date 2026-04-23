@@ -586,6 +586,7 @@ export default function ScanARKitScreen() {
   const adaptiveFps = useAdaptiveFps({ enabled: arOverlaysV2 });
   const [sustainedOcclusionHint, setSustainedOcclusionHint] =
     useState<SustainedOcclusionEvent | null>(null);
+  const sustainedOcclusionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Persistent banner (#551): the sustained-occlusion cue used to auto-
   // dismiss after 3.2s, which meant a user whose hand was covering a
   // joint long enough for the native manager to fire the event lost the

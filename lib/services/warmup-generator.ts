@@ -48,6 +48,9 @@ const MOVEMENT_SHAPE: JsonSchema<WarmupMovement> = schema.object({
   notes: schema.optional(schema.string()),
 });
 
+/** Task-kind hint exported for tests + callers that want to key telemetry. */
+export const WARMUP_GENERATOR_TASK_KIND = 'warmup_generator' as const;
+
 export const WARMUP_PLAN_SCHEMA: JsonSchema<WarmupPlan> = schema.object({
   name: schema.string({ minLength: 1 }),
   duration_min: schema.number({ min: 1, max: 60 }),
