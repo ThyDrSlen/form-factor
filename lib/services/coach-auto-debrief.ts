@@ -229,7 +229,11 @@ async function dispatch(
   // transient Gemma outage doesn't break the auto-debrief.
   if (provider === 'gemma') {
     try {
-      return await sendCoachGemmaPrompt(messages, context);
+      return await sendCoachGemmaPrompt(
+        messages,
+        context,
+        v2Opts ? { taskKind: v2Opts.taskKind } : undefined,
+      );
     } catch (err) {
       warnWithTs('[coach-auto-debrief] gemma dispatch failed, falling back to openai', err);
       return sendCoachPrompt(messages, { ...context, focus: 'post_session_debrief' }, v2Opts);
