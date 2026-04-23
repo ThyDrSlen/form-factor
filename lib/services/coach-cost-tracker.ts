@@ -152,12 +152,35 @@ function isValidBucket(b: unknown): b is StoredBucket {
 }
 
 async function persist(): Promise<void> {
+  const payload = JSON.stringify({ buckets: state.buckets });
   try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ buckets: state.buckets }));
-  } catch (error) {
-    warnWithTs('[coach-cost-tracker] failed to persist to AsyncStorage', error);
+    await AsyncStorage.setItem(STORAGE_KEY, payload);
+    return;
+  } catch (firstError) {
+    // Transient backgrounding / memory-pressure failures happen — retry once
+    // with a brief delay before giving up. In-memory state remains valid for
+    // subsequent reads even if both attempts fail, so the tracker degrades
+    // to in-memory-only without crashing the coach path.
+    try {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, PERSIST_RETRY_DELAY_MS);
+      });
+      await AsyncStorage.setItem(STORAGE_KEY, payload);
+    } catch (secondError) {
+      warnWithTs(
+        '[coach-cost-tracker] failed to persist to AsyncStorage after retry',
+        secondError,
+      );
+    }
   }
 }
+
+/**
+ * Retry delay between the first AsyncStorage failure and the second attempt.
+ * Short enough that a blocked app-background transition can settle; small
+ * enough that a genuinely broken store surfaces in under a second.
+ */
+const PERSIST_RETRY_DELAY_MS = 120;
 
 // =============================================================================
 // Public API
@@ -246,6 +269,93 @@ export async function getWeeklyAggregate(
     byProvider,
     byTaskKind,
   };
+}
+
+/**
+ * Rough char-count → token estimator. ~4 characters per token is a standard
+ * approximation for English-plus-code prompts; accurate enough for weekly
+ * aggregate budgeting / provider comparison. Replace with a real tokenizer
+ * (tiktoken / gemini-equivalent) when the edge functions start surfacing real
+ * token counts in their responses (#537 follow-up).
+ */
+export function estimateTokens(text: string | undefined | null): number {
+  if (!text) return 0;
+  return Math.max(0, Math.round(text.length / 4));
+}
+
+/** Sum estimated tokens across the input-side messages of a coach call. */
+export function estimateMessageTokens(
+  messages: ReadonlyArray<{ content: string }>,
+): number {
+  let total = 0;
+  for (const m of messages) total += estimateTokens(m.content);
+  return total;
+}
+
+/**
+ * Map the coach dispatcher's task-kind enum (see coach-model-dispatch.ts)
+ * onto the cost-tracker's narrower taxonomy. Unmapped tactical kinds
+ * collapse to 'chat' (closest fit) so new kinds introduced by the dispatcher
+ * don't spray into the 'other' bucket before the UI decides how to surface
+ * them.
+ */
+const DISPATCH_TO_COST_TASK_KIND: Readonly<Record<string, CoachTaskKind>> = {
+  multi_turn_debrief: 'debrief',
+  fault_explainer: 'drill_explainer',
+  session_generator: 'session_generator',
+  program_design: 'progression_planner',
+  form_cue_lookup: 'chat',
+  rest_calc: 'chat',
+  encouragement: 'chat',
+  nutrition_balance: 'chat',
+  form_vision_check: 'chat',
+  general_chat: 'chat',
+};
+
+export function mapDispatchTaskKindForCost(kind: string | undefined): CoachTaskKind {
+  if (!kind) return 'chat';
+  return DISPATCH_TO_COST_TASK_KIND[kind] ?? 'other';
+}
+
+/**
+ * Translate the coach UI provider tag (dash-cased, e.g. `gemma-cloud` in
+ * `coach-provider-types.ts`) into the cost-tracker provider enum
+ * (underscore-cased here). Returns null for paths that do not represent a
+ * billable LLM call (cache, local fallback, or an unknown tag) so callers
+ * skip recording.
+ */
+export function mapCoachProviderForCost(
+  provider: string | undefined,
+): CoachProvider | null {
+  if (!provider) return null;
+  if (provider === 'openai') return 'openai';
+  if (provider === 'gemma-cloud' || provider === 'gemma_cloud') return 'gemma_cloud';
+  if (provider === 'gemma-on-device' || provider === 'gemma_ondevice') return 'gemma_ondevice';
+  return null;
+}
+
+/**
+ * High-level convenience: record usage for a coach reply. Collapses the
+ * plumbing (provider mapping, task-kind mapping, token estimation) so
+ * call sites stay one-liners. Never throws — persistence errors are swallowed
+ * inside `recordCoachUsage`. Returns a promise callers can fire-and-forget.
+ */
+export async function recordCoachReplyUsage(input: {
+  provider: string | undefined;
+  taskKind: string | undefined;
+  inputMessages: ReadonlyArray<{ content: string }>;
+  replyText: string;
+  cacheHit?: boolean;
+}): Promise<void> {
+  const provider = mapCoachProviderForCost(input.provider);
+  if (!provider) return;
+  await recordCoachUsage({
+    provider,
+    taskKind: mapDispatchTaskKindForCost(input.taskKind),
+    tokensIn: estimateMessageTokens(input.inputMessages),
+    tokensOut: estimateTokens(input.replyText),
+    cacheHit: input.cacheHit,
+  });
 }
 
 /** Reset the tracker. Intended for tests and sign-out. */
