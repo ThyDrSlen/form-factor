@@ -152,12 +152,35 @@ function isValidBucket(b: unknown): b is StoredBucket {
 }
 
 async function persist(): Promise<void> {
+  const payload = JSON.stringify({ buckets: state.buckets });
   try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ buckets: state.buckets }));
-  } catch (error) {
-    warnWithTs('[coach-cost-tracker] failed to persist to AsyncStorage', error);
+    await AsyncStorage.setItem(STORAGE_KEY, payload);
+    return;
+  } catch (firstError) {
+    // Transient backgrounding / memory-pressure failures happen — retry once
+    // with a brief delay before giving up. In-memory state remains valid for
+    // subsequent reads even if both attempts fail, so the tracker degrades
+    // to in-memory-only without crashing the coach path.
+    try {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, PERSIST_RETRY_DELAY_MS);
+      });
+      await AsyncStorage.setItem(STORAGE_KEY, payload);
+    } catch (secondError) {
+      warnWithTs(
+        '[coach-cost-tracker] failed to persist to AsyncStorage after retry',
+        secondError,
+      );
+    }
   }
 }
+
+/**
+ * Retry delay between the first AsyncStorage failure and the second attempt.
+ * Short enough that a blocked app-background transition can settle; small
+ * enough that a genuinely broken store surfaces in under a second.
+ */
+const PERSIST_RETRY_DELAY_MS = 120;
 
 // =============================================================================
 // Public API
