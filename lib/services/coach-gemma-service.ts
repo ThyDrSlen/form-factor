@@ -1,12 +1,22 @@
 import { supabase } from '@/lib/supabase';
 import { warnWithTs } from '@/lib/logger';
-import { createError } from './ErrorHandler';
+import { createError, logError } from './ErrorHandler';
 import { parseRetryAfterMs, type CoachContext, type CoachMessage } from './coach-service';
 import type { CoachProvider } from './coach-provider-types';
 import {
   recordCoachUsage,
   type CoachTaskKind as TrackerTaskKind,
 } from './coach-cost-tracker';
+
+/** Fallback model identifier emitted when the coach-gemma edge function
+ * does not return a `model` field. */
+export const UNKNOWN_GEMMA_MODEL = 'gemma-unknown';
+let hasWarnedAboutMissingGemmaModel = false;
+
+/** Test-only hook for resetting the once-per-process warn flag. */
+export function __resetMissingModelWarnForTests(): void {
+  hasWarnedAboutMissingGemmaModel = false;
+}
 
 function estimateGemmaTokens(text: string): number {
   if (!text) return 0;
@@ -192,13 +202,41 @@ export async function sendCoachGemmaPrompt(
       configurable: true,
       writable: true,
     });
-    if (typeof data?.model === 'string' && data.model.trim().length > 0) {
-      Object.defineProperty(reply, 'model', {
-        value: data.model.trim(),
-        enumerable: false,
-        configurable: true,
-        writable: true,
-      });
+    // Always emit a `model` annotation. If the edge function returned one,
+    // use it; otherwise tag with UNKNOWN_GEMMA_MODEL and emit a once-per-
+    // process warn so the server-side gap is visible without log spam.
+    const rawModel =
+      typeof data?.model === 'string' && data.model.trim().length > 0
+        ? data.model.trim()
+        : undefined;
+    Object.defineProperty(reply, 'model', {
+      value: rawModel ?? UNKNOWN_GEMMA_MODEL,
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    });
+    if (!rawModel && !hasWarnedAboutMissingGemmaModel) {
+      hasWarnedAboutMissingGemmaModel = true;
+      try {
+        logError(
+          createError(
+            'coach',
+            'COACH_GEMMA_MODEL_MISSING',
+            'coach-gemma edge function did not return a model field; tagged reply as gemma-unknown',
+            {
+              retryable: false,
+              severity: 'warning',
+              details: { responseKeys: data ? Object.keys(data) : [] },
+            },
+          ),
+          {
+            feature: 'coach',
+            location: 'coach-gemma-service.sendCoachGemmaPrompt',
+          },
+        );
+      } catch {
+        // swallow
+      }
     }
 
     // Cost-tracker wiring (#537). Fire-and-forget; never block the reply.
