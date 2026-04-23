@@ -18,10 +18,17 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
   const [isConnected, setIsConnected] = useState(true);
   const [networkType, setNetworkType] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Guards state setters against stale-closure invocations after unmount.
+  // `expo-network`'s `getNetworkStateAsync()` is not abortable, so an
+  // in-flight poll can still resolve after cleanup — we gate every
+  // `setState` on this flag rather than let React 18 emit the
+  // "can't perform a React state update on an unmounted component" warning.
+  const mountedRef = useRef(true);
 
   const checkNetworkStatus = useCallback(async () => {
     try {
       const networkState = await Network.getNetworkStateAsync();
+      if (!mountedRef.current) return;
       setIsOnline(networkState.isInternetReachable ?? true);
       setIsConnected(networkState.isConnected ?? true);
       setNetworkType(networkState.type || null);
@@ -32,6 +39,7 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
         type: networkState.type,
       });
     } catch (error) {
+      if (!mountedRef.current) return;
       console.error('[NetworkContext] Error checking network status:', error);
       // Default to online if we can't determine status
       setIsOnline(true);
@@ -40,6 +48,8 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
+
     // Check initial network status
     checkNetworkStatus();
 
@@ -52,6 +62,7 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
     intervalRef.current = setInterval(checkNetworkStatus, 30000);
 
     return () => {
+      mountedRef.current = false;
       if (intervalRef.current !== null) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
