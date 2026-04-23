@@ -6,17 +6,15 @@
  * upcoming exercise. Attempts Gemma (on-device) first when enabled,
  * falls back to OpenAI via the existing coach Edge Function when Gemma
  * is unavailable or errors out.
- *
- * Cross-PR dependency stubs:
- * - TODO(#439): replace the inline serializeJointAnglesForPrompt with
- *   coach-live-snapshot.buildLiveSessionSnapshot() once #443 lands on
- *   main. For now we inline a minimal joints-to-text serializer so this
- *   PR stands on its own.
  */
 
+import { warnWithTs } from '@/lib/logger';
 import type { FrameSnapshot, JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 import { sendCoachPrompt, type CoachMessage } from './coach-service';
 import { sendCoachGemmaPrompt } from './coach-gemma-service';
+import { assertUnderWeeklyCap } from './coach-cost-guard';
+import { recordCoachUsage } from './coach-cost-tracker';
+import { hardenAgainstInjection } from './coach-injection-hardener';
 
 export type PreSetPreviewProvider = 'gemma' | 'openai';
 
@@ -29,15 +27,19 @@ export interface PreSetPreviewResult {
 const GEMMA_PROVIDER_ENV = 'EXPO_PUBLIC_COACH_CLOUD_PROVIDER';
 const MAX_VERDICT_LENGTH = 160;
 
-/**
- * Inline replacement for coach-live-snapshot.buildLiveSessionSnapshot().
- * Turns the current joint angles into a compact human-readable line so
- * the coach prompt has concrete numbers to reason about without needing
- * the full snapshot protocol from #443.
- *
- * TODO(#439): delete once #443 lands on main and swap the caller to use
- * buildLiveSessionSnapshot(frame, angles).
- */
+export const PRE_SET_PREVIEW_TASK_KIND = 'form_check' as const;
+
+function recordPreSetUsage(provider: 'gemma_cloud' | 'openai'): void {
+  void recordCoachUsage({
+    provider,
+    taskKind: PRE_SET_PREVIEW_TASK_KIND,
+    tokensIn: 0,
+    tokensOut: 0,
+  }).catch((err) => {
+    warnWithTs('[pre-set-preview] recordCoachUsage failed', err);
+  });
+}
+
 function serializeJointAnglesForPrompt(angles: JointAngles): string {
   const fmt = (n: number) => (Number.isFinite(n) ? `${Math.round(n)}°` : '--');
   return [
@@ -67,9 +69,7 @@ export function buildPreSetPrompt(
 
 function interpretVerdict(raw: string): { verdict: string; isFormGood: boolean } {
   const trimmed = raw.trim().slice(0, MAX_VERDICT_LENGTH);
-  // Good: leading ✓ or the literal phrase "Good" / "looks good" (case-insens.).
   const looksGood = /^✓|\bgood\b/i.test(trimmed);
-  // Explicit warning marker beats a stray "good" inside a caveat string.
   const looksWarning = /^⚠|\bwarn|\bincorrect|\bunsafe/i.test(trimmed);
   return {
     verdict: trimmed,
@@ -83,10 +83,10 @@ function isGemmaEnabled(): boolean {
 }
 
 async function callGemma(prompt: string): Promise<string> {
-  // Direct call to the canonical Gemma service — routes through the
-  // coach-gemma edge function rather than the generic `coach` function so
-  // model-specific parameters and provider annotations flow through cleanly.
-  const messages: CoachMessage[] = [{ role: 'user', content: prompt }];
+  // Harden the prompt before dispatch so adversarial exercise names cannot
+  // smuggle prompt-break tokens into the Gemma system message.
+  const hardened = hardenAgainstInjection(prompt, { maxLength: 1000 });
+  const messages: CoachMessage[] = [{ role: 'user', content: hardened }];
   const reply = await sendCoachGemmaPrompt(messages, {
     focus: 'pre-set-stance-preview-gemma',
   });
@@ -94,23 +94,16 @@ async function callGemma(prompt: string): Promise<string> {
 }
 
 async function callOpenAI(prompt: string): Promise<string> {
-  const messages: CoachMessage[] = [{ role: 'user', content: prompt }];
+  // Same hardening as the Gemma path — defense in depth against injected
+  // exercise names / angle text before the prompt reaches the cloud model.
+  const hardened = hardenAgainstInjection(prompt, { maxLength: 1000 });
+  const messages: CoachMessage[] = [{ role: 'user', content: hardened }];
   const reply = await sendCoachPrompt(messages, {
     focus: 'pre-set-stance-preview',
   });
   return reply.content;
 }
 
-/**
- * Orchestrator entry point. Accepts the current frame snapshot + joint
- * angles + exercise name; returns the coach verdict plus which provider
- * actually produced it.
- *
- * The `snapshot` argument is currently only used as a signal that the
- * caller has a live frame (we do not forward the image base64 to the
- * coach yet — that piece is blocked on #443). Keeping the param in the
- * signature now means consumer code stays stable when #443 lands.
- */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function checkPreSetStance(
   snapshot: FrameSnapshot,
@@ -121,16 +114,28 @@ export async function checkPreSetStance(
   const prompt = buildPreSetPrompt(exerciseName, serialized);
 
   if (isGemmaEnabled()) {
+    let capExceeded = false;
     try {
-      const reply = await callGemma(prompt);
-      const interpreted = interpretVerdict(reply);
-      return { ...interpreted, provider: 'gemma' };
-    } catch {
-      // Fall through to OpenAI — Gemma path is best-effort.
+      await assertUnderWeeklyCap('gemma_cloud');
+    } catch (err) {
+      capExceeded = true;
+      warnWithTs('[pre-set-preview] weekly Gemma cap hit, using OpenAI', err);
+    }
+
+    if (!capExceeded) {
+      try {
+        const reply = await callGemma(prompt);
+        const interpreted = interpretVerdict(reply);
+        recordPreSetUsage('gemma_cloud');
+        return { ...interpreted, provider: 'gemma' };
+      } catch {
+        // Fall through to OpenAI — Gemma path is best-effort.
+      }
     }
   }
 
   const reply = await callOpenAI(prompt);
   const interpreted = interpretVerdict(reply);
+  recordPreSetUsage('openai');
   return { ...interpreted, provider: 'openai' };
 }

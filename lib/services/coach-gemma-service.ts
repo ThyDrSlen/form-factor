@@ -1,7 +1,45 @@
 import { supabase } from '@/lib/supabase';
-import { createError } from './ErrorHandler';
-import type { CoachContext, CoachMessage } from './coach-service';
+import { warnWithTs } from '@/lib/logger';
+import { createError, logError } from './ErrorHandler';
+import { parseRetryAfterMs, type CoachContext, type CoachMessage } from './coach-service';
 import type { CoachProvider } from './coach-provider-types';
+import {
+  recordCoachUsage,
+  type CoachTaskKind as TrackerTaskKind,
+} from './coach-cost-tracker';
+
+/** Fallback model identifier emitted when the coach-gemma edge function
+ * does not return a `model` field. */
+export const UNKNOWN_GEMMA_MODEL = 'gemma-unknown';
+let hasWarnedAboutMissingGemmaModel = false;
+
+/** Test-only hook for resetting the once-per-process warn flag. */
+export function __resetMissingModelWarnForTests(): void {
+  hasWarnedAboutMissingGemmaModel = false;
+}
+
+function estimateGemmaTokens(text: string): number {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
+function mapGemmaTaskKind(input?: string): TrackerTaskKind {
+  switch (input) {
+    case 'debrief':
+    case 'multi_turn_debrief':
+    case 'post_session_debrief':
+      return 'debrief';
+    case 'drill_explainer':
+    case 'fault_explainer':
+      return 'drill_explainer';
+    case 'session_generator':
+      return 'session_generator';
+    case 'program_design':
+      return 'progression_planner';
+    default:
+      return 'chat';
+  }
+}
 
 interface RawCoachGemmaResponse {
   message?: string;
@@ -18,6 +56,31 @@ function functionName(): string {
 }
 
 /**
+ * Extract a `Retry-After` delay (ms) from a Supabase Functions failure tuple.
+ * Checks the raw `Response` first (present when the SDK surfaces a
+ * `FunctionsHttpError`) and falls back to `error.context.headers` when the
+ * Response is only reachable through the error wrapper.
+ */
+function readRetryAfterMs(
+  response: Response | undefined,
+  error: unknown,
+): number | undefined {
+  const fromResponse = response?.headers?.get?.('Retry-After');
+  if (fromResponse) {
+    const parsed = parseRetryAfterMs(fromResponse);
+    if (parsed !== undefined) return parsed;
+  }
+  const ctx = (error as { context?: unknown } | null | undefined)?.context;
+  if (ctx && typeof ctx === 'object' && 'headers' in ctx) {
+    const headers = (ctx as { headers?: { get?: (k: string) => string | null } }).headers;
+    const raw = headers?.get?.('Retry-After') ?? null;
+    const parsed = parseRetryAfterMs(raw);
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
+}
+
+/**
  * Send a coach prompt to the Gemma cloud provider (Supabase edge function
  * coach-gemma) which proxies to Google's Gemini `generateContent` API for the
  * Gemma 3 family.
@@ -29,13 +92,13 @@ function functionName(): string {
 export async function sendCoachGemmaPrompt(
   messages: CoachMessage[],
   context?: CoachContext,
-  opts?: { model?: string },
+  opts?: { model?: string; taskKind?: string },
 ): Promise<CoachMessage> {
   try {
     const body: Record<string, unknown> = { messages, context };
     if (opts?.model) body.model = opts.model;
 
-    const { data, error } = await supabase.functions.invoke<RawCoachGemmaResponse>(
+    const { data, error, response } = await supabase.functions.invoke<RawCoachGemmaResponse>(
       functionName(),
       { body },
     );
@@ -48,9 +111,13 @@ export async function sendCoachGemmaPrompt(
         errorMessage.includes('missing');
       const hasStatus =
         typeof error === 'object' && error !== null && 'status' in error;
-      const isNotFound =
-        (hasStatus && (error as { status: unknown }).status === 404) ||
-        errorMessage.includes('404');
+      const status = hasStatus ? (error as { status: unknown }).status : undefined;
+      const isNotFound = status === 404 || errorMessage.includes('404');
+      const isRateLimited =
+        status === 429 ||
+        /\b429\b/.test(errorMessage) ||
+        /rate.?limit/i.test(errorMessage) ||
+        /too many requests/i.test(errorMessage);
 
       if (isNotFound) {
         throw createError(
@@ -67,6 +134,19 @@ export async function sendCoachGemmaPrompt(
           'COACH_GEMMA_NOT_CONFIGURED',
           'Gemma coach is not configured. Please contact support.',
           { details: error, retryable: false },
+        );
+      }
+
+      if (isRateLimited) {
+        const retryAfterMs = readRetryAfterMs(response, error);
+        throw createError(
+          'network',
+          'COACH_GEMMA_RATE_LIMITED',
+          'Gemma coach is rate-limited — try again in a moment.',
+          {
+            details: retryAfterMs !== undefined ? { error, retryAfterMs } : error,
+            retryable: true,
+          },
         );
       }
 
@@ -122,14 +202,54 @@ export async function sendCoachGemmaPrompt(
       configurable: true,
       writable: true,
     });
-    if (typeof data?.model === 'string' && data.model.trim().length > 0) {
-      Object.defineProperty(reply, 'model', {
-        value: data.model.trim(),
-        enumerable: false,
-        configurable: true,
-        writable: true,
-      });
+    // Always emit a `model` annotation. If the edge function returned one,
+    // use it; otherwise tag with UNKNOWN_GEMMA_MODEL and emit a once-per-
+    // process warn so the server-side gap is visible without log spam.
+    const rawModel =
+      typeof data?.model === 'string' && data.model.trim().length > 0
+        ? data.model.trim()
+        : undefined;
+    Object.defineProperty(reply, 'model', {
+      value: rawModel ?? UNKNOWN_GEMMA_MODEL,
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    });
+    if (!rawModel && !hasWarnedAboutMissingGemmaModel) {
+      hasWarnedAboutMissingGemmaModel = true;
+      try {
+        logError(
+          createError(
+            'coach',
+            'COACH_GEMMA_MODEL_MISSING',
+            'coach-gemma edge function did not return a model field; tagged reply as gemma-unknown',
+            {
+              retryable: false,
+              severity: 'warning',
+              details: { responseKeys: data ? Object.keys(data) : [] },
+            },
+          ),
+          {
+            feature: 'coach',
+            location: 'coach-gemma-service.sendCoachGemmaPrompt',
+          },
+        );
+      } catch {
+        // swallow
+      }
     }
+
+    // Cost-tracker wiring (#537). Fire-and-forget; never block the reply.
+    const promptText = messages.map((m) => m.content ?? '').join('\n');
+    void recordCoachUsage({
+      provider: 'gemma_cloud',
+      taskKind: mapGemmaTaskKind(opts?.taskKind),
+      tokensIn: estimateGemmaTokens(promptText),
+      tokensOut: estimateGemmaTokens(responseText),
+    }).catch((err) => {
+      warnWithTs('[coach-gemma-service] recordCoachUsage failed', err);
+    });
+
     return reply;
   } catch (err) {
     if (err && typeof err === 'object' && 'domain' in err) {

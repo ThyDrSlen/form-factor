@@ -385,7 +385,7 @@ export default function ProfileScreen() {
               onPress: () => {
                 Alert.alert(
                   'Delete video?',
-                  'This removes the clip and metrics permanently.',
+                  'Delete video and all metrics permanently? This cannot be undone.',
                   [
                     { text: 'Cancel', style: 'cancel' },
                     { text: 'Delete', style: 'destructive', onPress: () => handleDeleteVideo(video.id) },
@@ -613,25 +613,42 @@ export default function ProfileScreen() {
   };
 
   const handleClearDatabase = async () => {
+    // Wave-31 Pack A / A4 (#562): two-stage confirmation. The first prompt
+    // is informational and dismissible; the second spells out that the
+    // action is irreversible so a rapid double-tap on the row can't wipe
+    // local data accidentally.
     Alert.alert(
       '⚠️ Clear All Data',
       'This will delete ALL local data. Data on server will be preserved. Continue?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Clear All',
+          text: 'Continue',
           style: 'destructive',
-          onPress: async () => {
-            setIsClearing(true);
-            try {
-              await localDB.clearAllData();
-              await refreshDebugInfo();
-              Alert.alert('✅ Cleared', 'All local data has been cleared');
-            } catch {
-              Alert.alert('Error', 'Failed to clear data');
-            } finally {
-              setIsClearing(false);
-            }
+          onPress: () => {
+            Alert.alert(
+              'Are you sure?',
+              'This cannot be undone. Workouts, meals, and cached health data on this device will be erased. Server copies remain safe.',
+              [
+                { text: 'Keep My Data', style: 'cancel' },
+                {
+                  text: 'Yes, Erase Everything',
+                  style: 'destructive',
+                  onPress: async () => {
+                    setIsClearing(true);
+                    try {
+                      await localDB.clearAllData();
+                      await refreshDebugInfo();
+                      Alert.alert('✅ Cleared', 'All local data has been cleared');
+                    } catch {
+                      Alert.alert('Error', 'Failed to clear data');
+                    } finally {
+                      setIsClearing(false);
+                    }
+                  },
+                },
+              ]
+            );
           },
         },
       ]
@@ -1095,7 +1112,20 @@ Generated: ${new Date().toISOString()}
           />
           <View style={styles.modalContent}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Edit Profile</Text>
+            <View style={styles.modalTitleRow}>
+              <Text style={styles.modalTitle}>Edit Profile</Text>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => (!isSavingName ? setIsEditProfileVisible(false) : null)}
+                disabled={isSavingName}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="Close profile edit"
+                accessibilityHint="Discard changes and close the edit profile sheet"
+              >
+                <Ionicons name="close" size={22} color="#9AACD1" />
+              </TouchableOpacity>
+            </View>
             <Text style={styles.modalLabel}>Full Name</Text>
             <TextInput
               value={fullName}
@@ -1124,9 +1154,16 @@ Generated: ${new Date().toISOString()}
             </View>
             <View style={styles.modalActions}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonSecondary]}
+                style={[
+                  styles.modalButton,
+                  styles.modalButtonSecondary,
+                  isSavingName && { opacity: 0.5 },
+                ]}
                 onPress={() => setIsEditProfileVisible(false)}
                 disabled={isSavingName}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel profile edit"
+                accessibilityState={{ disabled: isSavingName }}
               >
                 <Text style={[styles.modalButtonText, styles.modalButtonTextSecondary]}>Cancel</Text>
               </TouchableOpacity>
@@ -1134,6 +1171,8 @@ Generated: ${new Date().toISOString()}
                 style={[styles.modalButton, styles.modalButtonPrimary]}
                 onPress={handleSaveProfile}
                 disabled={isSavingName}
+                accessibilityRole="button"
+                accessibilityLabel="Save profile changes"
               >
                 {isSavingName ? (
                   <ActivityIndicator color="#0F2339" />
@@ -1155,7 +1194,20 @@ Generated: ${new Date().toISOString()}
           />
           <View style={styles.modalContent}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Edit Nutrition Goals</Text>
+            <View style={styles.modalTitleRow}>
+              <Text style={styles.modalTitle}>Edit Nutrition Goals</Text>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => (!isSavingGoals ? setIsEditGoalsVisible(false) : null)}
+                disabled={isSavingGoals}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="Close nutrition goals edit"
+                accessibilityHint="Discard changes and close the nutrition goals sheet"
+              >
+                <Ionicons name="close" size={22} color="#9AACD1" />
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.inputContainer}>
               <Text style={styles.modalLabel}>Daily Calories *</Text>
@@ -1220,6 +1272,8 @@ Generated: ${new Date().toISOString()}
                 style={[styles.modalButton, styles.modalButtonSecondary]}
                 onPress={() => setIsEditGoalsVisible(false)}
                 disabled={isSavingGoals}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel nutrition goals edit"
               >
                 <Text style={[styles.modalButtonText, styles.modalButtonTextSecondary]}>Cancel</Text>
               </TouchableOpacity>
@@ -1227,6 +1281,8 @@ Generated: ${new Date().toISOString()}
                 style={[styles.modalButton, styles.modalButtonPrimary]}
                 onPress={handleSaveGoals}
                 disabled={isSavingGoals}
+                accessibilityRole="button"
+                accessibilityLabel="Save nutrition goals"
               >
                 {isSavingGoals ? (
                   <ActivityIndicator color="#0F2339" />

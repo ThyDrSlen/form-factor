@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   BackHandler,
+  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -9,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 import { useSafeBack } from '@/hooks/use-safe-back';
 import {
@@ -22,6 +24,7 @@ import {
   OVERLAY_OPACITY_MIN,
   type CueVerbosity,
 } from '@/lib/services/form-tracking-settings';
+import { FqiExplainerModal } from '@/components/form-tracking/FqiExplainerModal';
 
 const FQI_STEP = 0.05;
 const OPACITY_STEP = 0.05;
@@ -156,12 +159,21 @@ const ToggleRow = ({ testID, icon, title, subtitle, value, onChange, disabled }:
 
 export default function FormTrackingSettingsModal() {
   const safeBack = useSafeBack(['/(tabs)/profile', '/profile'], { alwaysReplace: true });
+  const router = useRouter();
   const {
     settings,
     loading,
     update,
     reset,
   }: UseFormTrackingSettingsResult = useFormTrackingSettings();
+  const [explainerVisible, setExplainerVisible] = useState(false);
+
+  const openOverridesOnScan = React.useCallback(() => {
+    router.push({
+      pathname: '/(tabs)/scan-arkit',
+      params: { openOverrides: '1' },
+    } as never);
+  }, [router]);
 
   React.useEffect(() => {
     const handler = () => {
@@ -210,6 +222,56 @@ export default function FormTrackingSettingsModal() {
           <Text style={styles.helperText}>
             Reps below this score are flagged. Lower = more forgiving, higher = stricter.
           </Text>
+
+          {/* A15: inline preview row — three example reps color-coded
+              against the current threshold so the user can see at a glance
+              which reps would be flagged at the chosen value. */}
+          <View style={fqiPreviewStyles.previewRow} testID="ft-settings-fqi-preview">
+            {[0.45, 0.7, 0.9].map((repFqi) => {
+              const passed = repFqi >= settings.fqiThreshold;
+              return (
+                <View
+                  key={repFqi}
+                  style={[
+                    fqiPreviewStyles.chip,
+                    passed
+                      ? fqiPreviewStyles.chipPassed
+                      : fqiPreviewStyles.chipFailed,
+                  ]}
+                  testID={`ft-settings-fqi-preview-${Math.round(repFqi * 100)}`}
+                >
+                  <Ionicons
+                    name={passed ? 'checkmark-circle' : 'close-circle'}
+                    size={14}
+                    color={passed ? '#3CC8A9' : '#FF5C5C'}
+                  />
+                  <Text
+                    style={[
+                      fqiPreviewStyles.chipText,
+                      { color: passed ? '#3CC8A9' : '#FF5C5C' },
+                    ]}
+                  >
+                    {Math.round(repFqi * 100)}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+
+          <Text style={fqiPreviewStyles.recommendedLabel}>
+            Recommended for: Strength 0.75 · Endurance 0.60
+          </Text>
+
+          <Pressable
+            style={fqiPreviewStyles.explainLink}
+            onPress={() => setExplainerVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="What is FQI?"
+            testID="ft-settings-fqi-explainer-link"
+          >
+            <Ionicons name="information-circle-outline" size={14} color="#4C8CFF" />
+            <Text style={fqiPreviewStyles.explainLinkText}>What is FQI?</Text>
+          </Pressable>
         </View>
 
         <Text style={styles.sectionTitle}>Feedback</Text>
@@ -291,6 +353,15 @@ export default function FormTrackingSettingsModal() {
               <Text style={styles.settingSubtitle}>
                 Customize per-exercise from the scan screen long-press menu.
               </Text>
+              <TouchableOpacity
+                testID="ft-settings-open-overrides"
+                style={styles.overrideNavButton}
+                onPress={openOverridesOnScan}
+                accessibilityRole="button"
+                accessibilityLabel="Open scan to edit overrides"
+              >
+                <Text style={styles.overrideNavLabel}>Open scan to edit overrides</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -306,9 +377,64 @@ export default function FormTrackingSettingsModal() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <FqiExplainerModal
+        visible={explainerVisible}
+        onDismiss={() => setExplainerVisible(false)}
+        testID="ft-settings-fqi-explainer"
+      />
     </View>
   );
 }
+
+const fqiPreviewStyles = StyleSheet.create({
+  previewRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  chipPassed: {
+    backgroundColor: 'rgba(60, 200, 169, 0.12)',
+    borderColor: 'rgba(60, 200, 169, 0.35)',
+  },
+  chipFailed: {
+    backgroundColor: 'rgba(255, 92, 92, 0.12)',
+    borderColor: 'rgba(255, 92, 92, 0.35)',
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  recommendedLabel: {
+    color: '#6781A6',
+    fontSize: 11,
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+    fontStyle: 'italic',
+  },
+  explainLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+  },
+  explainLinkText: {
+    color: '#4C8CFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#050E1F' },
@@ -429,4 +555,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 68, 68, 0.08)',
   },
   resetLabel: { color: '#FF6B6B', fontSize: 14, fontWeight: '600' },
+  // Secondary button for navigating into the scan screen with overrides
+  // pre-opened. Mirrors the resetButton geometry but in the accent/link
+  // colour family so it reads as affordance rather than destructive.
+  overrideNavButton: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 140, 255, 0.35)',
+    backgroundColor: 'rgba(76, 140, 255, 0.08)',
+  },
+  overrideNavLabel: { color: '#4C8CFF', fontSize: 13, fontWeight: '600' },
 });

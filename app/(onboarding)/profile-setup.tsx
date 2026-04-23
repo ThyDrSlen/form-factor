@@ -110,7 +110,11 @@ export default function ProfileSetupScreen() {
           {/* Fitness Goal */}
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Fitness Goal</Text>
-            <View style={styles.goalGrid}>
+            <View
+              style={styles.goalGrid}
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Fitness goal"
+            >
               {goalOptions.map((option) => (
                 <TouchableOpacity
                   key={option.value}
@@ -120,6 +124,9 @@ export default function ProfileSetupScreen() {
                   ]}
                   onPress={() => setFitnessGoal(option.value)}
                   activeOpacity={0.7}
+                  accessibilityRole="radio"
+                  accessibilityLabel={option.label}
+                  accessibilityState={{ checked: fitnessGoal === option.value }}
                 >
                   <Ionicons
                     name={option.icon}

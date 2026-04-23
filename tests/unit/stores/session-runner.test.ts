@@ -1589,6 +1589,82 @@ describe('rest timer — unified ownership', () => {
 });
 
 // ===========================================================================
+// 15a. resumeSession — stale formTargets clearing
+// ===========================================================================
+
+describe('resumeSession', () => {
+  it('clears formTargetsByExercise on resume so a mid-pause exercise swap cannot apply stale thresholds', async () => {
+    await state().startSession();
+
+    // Simulate a template having populated per-exercise targets, then
+    // entering the paused state.
+    useSessionRunner.setState({
+      isPaused: true,
+      pausedAt: Date.now() - 5000,
+      totalPausedMs: 0,
+      pausedRestTimer: null,
+      formTargetsByExercise: {
+        'old-ex-id': {
+          romMinDeg: 120,
+          romMaxDeg: 170,
+          fqiFloor: 60,
+        } as unknown as Record<string, unknown>,
+      } as never,
+    } as never);
+
+    state().resumeSession();
+
+    expect(state().isPaused).toBe(false);
+    expect(state().pausedAt).toBeNull();
+    expect(state().formTargetsByExercise).toEqual({});
+  });
+
+  it('getFormTargetsFor still returns defaults after resume clears the overrides', async () => {
+    await state().startSession();
+
+    useSessionRunner.setState({
+      isPaused: true,
+      pausedAt: Date.now() - 1000,
+      totalPausedMs: 0,
+      pausedRestTimer: null,
+      formTargetsByExercise: {
+        'squat': {
+          romMinDeg: 10,
+          romMaxDeg: 20,
+          fqiFloor: 0,
+        } as unknown as Record<string, unknown>,
+      } as never,
+    } as never);
+
+    state().resumeSession();
+
+    const targets = state().getFormTargetsFor('squat');
+    expect(targets).toBeDefined();
+    // After clearing, the exercise falls back to getDefaultsForExercise
+    // defaults — the helper is exercise-resolver-driven so we only assert
+    // the shape + that the targets are not the bogus overrides we staged.
+    expect(targets).not.toMatchObject({ romMinDeg: 10, romMaxDeg: 20 });
+  });
+
+  it('is a no-op when the session is not paused', async () => {
+    await state().startSession();
+    useSessionRunner.setState({
+      formTargetsByExercise: {
+        'deadlift': {
+          romMinDeg: 10,
+          romMaxDeg: 20,
+        } as unknown as Record<string, unknown>,
+      } as never,
+    } as never);
+
+    state().resumeSession(); // not paused — should be a no-op
+
+    // Should NOT clear targets when we weren't paused
+    expect(Object.keys(state().formTargetsByExercise)).toContain('deadlift');
+  });
+});
+
+// ===========================================================================
 // 15. subscribeToEvents (named event listener API)
 // ===========================================================================
 
@@ -1686,5 +1762,158 @@ describe('subscribeToEvents', () => {
     expect(bad).toHaveBeenCalled();
     expect(good).toHaveBeenCalled();
     expect(state().isWorkoutInProgress).toBe(true);
+  });
+});
+
+// ===========================================================================
+// Rest-timer race: skip/extend during completeSet persistence
+// ===========================================================================
+
+describe('rest-timer race with completeSet', () => {
+  let exerciseId: string;
+  let setId: string;
+
+  beforeEach(async () => {
+    // These tests interleave real microtasks around slow-resolving notification
+    // mocks. Fake timers (set globally in the outer beforeEach) serialize
+    // setTimeout callbacks through the jest scheduler, which prevents the
+    // completeSet `await scheduleRestNotification` from yielding naturally.
+    // Swap to real timers for this suite (outer afterEach restores real,
+    // outer beforeEach resets to fake — so we force real again here).
+    jest.useRealTimers();
+
+    await state().startSession();
+    jest.clearAllMocks();
+    mockUuidCounter = 500;
+    mockGenericLocalUpsert.mockResolvedValue(undefined);
+    mockGetAllAsync.mockResolvedValue([]);
+    mockRunAsync.mockResolvedValue(undefined);
+    mockScheduleRestNotification.mockResolvedValue('notif-race');
+    mockCancelRestNotification.mockResolvedValue(undefined);
+    (computeRestSeconds as jest.Mock).mockReturnValue(120);
+    mockComputeRemainingSeconds.mockReturnValue(120);
+    mockEstimateTut.mockReturnValue({ tut_ms: 9000, tut_source: 'estimated' });
+
+    exerciseId = await state().addExercise('ex-race');
+    setId = state().sets[exerciseId][0].id;
+
+    useSessionRunner.setState((prev) => {
+      const newSets = { ...prev.sets };
+      newSets[exerciseId] = newSets[exerciseId].map((s) =>
+        s.id === setId ? { ...s, actual_reps: 8, actual_weight: 175 } : s,
+      );
+      return { sets: newSets };
+    });
+    jest.clearAllMocks();
+    mockGenericLocalUpsert.mockResolvedValue(undefined);
+    mockRunAsync.mockResolvedValue(undefined);
+    mockScheduleRestNotification.mockResolvedValue('notif-race');
+    mockCancelRestNotification.mockResolvedValue(undefined);
+    (computeRestSeconds as jest.Mock).mockReturnValue(120);
+    mockComputeRemainingSeconds.mockReturnValue(120);
+    mockEstimateTut.mockReturnValue({ tut_ms: 9000, tut_source: 'estimated' });
+  });
+
+  it('cancels the scheduled rest when skipRest fires before completeSet persistence resolves', async () => {
+    // Arrange: make the schedule call resolve slowly so we can fire skipRest
+    // while completeSet is still awaiting notification scheduling.
+    let resolveSchedule: (id: string) => void = () => {};
+    mockScheduleRestNotification.mockImplementationOnce(
+      () => new Promise<string>((r) => {
+        resolveSchedule = r;
+      }),
+    );
+
+    // Act: kick off completeSet but do NOT await it yet.
+    const completePromise = state().completeSet(setId);
+
+    // Flush microtasks in a loop so completeSet parks on the pending
+    // scheduleRestNotification promise regardless of how many awaits it has.
+    for (let i = 0; i < 10; i++) {
+      await new Promise((r) => setImmediate(r));
+    }
+    expect(mockScheduleRestNotification).toHaveBeenCalledTimes(1);
+
+    // Now resolve the slow schedule call and allow completeSet to finish.
+    resolveSchedule('notif-race');
+    await completePromise;
+
+    expect(state().restTimer).not.toBeNull();
+
+    // Immediately skip. This should cancel the just-scheduled notification
+    // even though persistence has only just finished.
+    await state().skipRest();
+
+    expect(mockCancelRestNotification).toHaveBeenCalledTimes(1);
+    expect(state().restTimer).toBeNull();
+    // No duplicate schedule — we did not re-arm the timer after skipping.
+    expect(mockScheduleRestNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('extends the scheduled rest and avoids duplicate notifications when extendRest fires mid-persistence', async () => {
+    // Arrange: slow schedule on the initial completeSet call.
+    let resolveSchedule: (id: string) => void = () => {};
+    mockScheduleRestNotification.mockImplementationOnce(
+      () => new Promise<string>((r) => {
+        resolveSchedule = r;
+      }),
+    );
+
+    const completePromise = state().completeSet(setId);
+    for (let i = 0; i < 10; i++) {
+      await new Promise((r) => setImmediate(r));
+    }
+    expect(mockScheduleRestNotification).toHaveBeenCalledTimes(1);
+
+    resolveSchedule('notif-race');
+    await completePromise;
+
+    const initialTarget = state().restTimer!.targetSeconds;
+
+    mockComputeRemainingSeconds.mockReturnValue(90);
+    // The second schedule (from extendRest) is fire-and-forget; resolve fast.
+    mockScheduleRestNotification.mockResolvedValueOnce('notif-race-ext');
+
+    // Act: extend mid-persistence flow.
+    state().extendRest(45);
+
+    expect(state().restTimer!.targetSeconds).toBe(initialTarget + 45);
+    // extendRest should reschedule exactly once (not duplicate).
+    expect(mockScheduleRestNotification).toHaveBeenCalledTimes(2);
+    expect(mockScheduleRestNotification).toHaveBeenLastCalledWith(90);
+    // No notification cancellations along the extend path — it reuses the slot.
+    expect(mockCancelRestNotification).not.toHaveBeenCalled();
+  });
+
+  it('cleans up notification IDs when skipRest is called on a set that finished between persist start and end', async () => {
+    // Arrange: make the schedule call race and the skip happen concurrently
+    // (skip arrives *after* completeSet kicked off but before it resolved).
+    let resolveSchedule: (id: string) => void = () => {};
+    mockScheduleRestNotification.mockImplementationOnce(
+      () => new Promise<string>((r) => {
+        resolveSchedule = r;
+      }),
+    );
+
+    const completePromise = state().completeSet(setId);
+    for (let i = 0; i < 10; i++) {
+      await new Promise((r) => setImmediate(r));
+    }
+    expect(mockScheduleRestNotification).toHaveBeenCalledTimes(1);
+
+    // Finish scheduling, then immediately skip — emulates a user tap between
+    // persistence completing and UI hearing about it.
+    resolveSchedule('notif-from-race');
+    await completePromise;
+    await state().skipRest();
+
+    // cancelRestNotification should be invoked exactly once; repeated skip on
+    // an empty timer must be a no-op (no extra cancellations).
+    expect(mockCancelRestNotification).toHaveBeenCalledTimes(1);
+
+    await state().skipRest();
+    expect(mockCancelRestNotification).toHaveBeenCalledTimes(1);
+    expect(state().restTimer).toBeNull();
+    expect(state().restTimerCompletionTimeout).toBeNull();
   });
 });

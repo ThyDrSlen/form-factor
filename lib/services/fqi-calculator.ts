@@ -19,6 +19,11 @@ import type {
 } from '@/lib/types/workout-definitions';
 import { warnWithTs } from '@/lib/logger';
 import type { RepFeatures } from '@/lib/types/telemetry';
+import {
+  createError,
+  FormTrackingErrorCode,
+  logError,
+} from '@/lib/services/ErrorHandler';
 
 // =============================================================================
 // Types
@@ -35,6 +40,22 @@ export interface FQIResult {
   faultPenalty: number;
   /** List of detected fault IDs */
   detectedFaults: string[];
+  /**
+   * Optional metadata surfacing exceptional conditions so upstream UI can
+   * render a caveat (e.g. the score came from a degenerate ROM target and
+   * is therefore cosmetic). Absence of `meta` means the result is normal.
+   * A5 — introduced in wave-30.
+   */
+  meta?: {
+    /**
+     * True when every ROM/depth metric attempted to score against a
+     * degenerate AngleRange (non-positive tolerance or max <= min) so
+     * `calculateRomScore` and `calculateDepthScore` both fell back to
+     * their 100-default. The overall score is still 100 for stability,
+     * but downstream UI should tag this rep as "needs calibration".
+     */
+    degenerate: boolean;
+  };
 }
 
 export type RepAngles = RepAngleWindow;
@@ -47,19 +68,25 @@ export type RepAngles = RepAngleWindow;
  * Calculate ROM score based on how much of the target range was achieved
  * @param repAngles The angles captured during the rep
  * @param angleRanges Target angle ranges for the workout
- * @returns Score from 0-100
+ * @returns An object with the score (0-100) and a `degenerate` flag that
+ *   is true only when every scoring candidate returned null (degenerate
+ *   AngleRange or non-finite input). In that case the score is the 100
+ *   fallback — the caller should surface the degenerate state to the UI
+ *   rather than treating the rep as a perfect rep.
  */
 function calculateRomScore(
   repAngles: RepAngles,
   angleRanges: Record<string, AngleRange>,
   scoringMetrics?: ScoringMetricDefinition[]
-): number {
+): { score: number; degenerate: boolean } {
   const scores: number[] = [];
+  let attempted = 0;
 
   if (scoringMetrics && scoringMetrics.length > 0) {
     for (const metric of scoringMetrics) {
       const range = angleRanges[metric.id];
       if (!range) continue;
+      attempted += 1;
 
       const left = metric.extract(repAngles, 'left');
       const right = metric.extract(repAngles, 'right');
@@ -80,12 +107,18 @@ function calculateRomScore(
       if (score !== null) scores.push(score);
     }
 
-    if (scores.length === 0) return 100;
-    return scores.reduce((a, b) => a + b, 0) / scores.length;
+    if (scores.length === 0) {
+      return { score: 100, degenerate: attempted > 0 };
+    }
+    return {
+      score: scores.reduce((a, b) => a + b, 0) / scores.length,
+      degenerate: false,
+    };
   }
 
   // Check elbow ROM if defined
   if (angleRanges.elbow) {
+    attempted += 1;
     const range = angleRanges.elbow;
     const avgMinElbow = (repAngles.min.leftElbow + repAngles.min.rightElbow) / 2;
     const avgMaxElbow = (repAngles.max.leftElbow + repAngles.max.rightElbow) / 2;
@@ -96,6 +129,7 @@ function calculateRomScore(
 
   // Check shoulder ROM if defined
   if (angleRanges.shoulder) {
+    attempted += 1;
     const range = angleRanges.shoulder;
     const avgMinShoulder = (repAngles.min.leftShoulder + repAngles.min.rightShoulder) / 2;
     const avgMaxShoulder = (repAngles.max.leftShoulder + repAngles.max.rightShoulder) / 2;
@@ -106,6 +140,7 @@ function calculateRomScore(
 
   // Check knee ROM if defined
   if (angleRanges.knee) {
+    attempted += 1;
     const range = angleRanges.knee;
     const avgMinKnee = (repAngles.min.leftKnee + repAngles.min.rightKnee) / 2;
     const avgMaxKnee = (repAngles.max.leftKnee + repAngles.max.rightKnee) / 2;
@@ -115,8 +150,13 @@ function calculateRomScore(
   }
 
   // Return average of all ROM scores, or 100 if no ranges defined
-  if (scores.length === 0) return 100;
-  return scores.reduce((a, b) => a + b, 0) / scores.length;
+  if (scores.length === 0) {
+    return { score: 100, degenerate: attempted > 0 };
+  }
+  return {
+    score: scores.reduce((a, b) => a + b, 0) / scores.length,
+    degenerate: false,
+  };
 }
 
 /**
@@ -140,19 +180,23 @@ function scoreRomAgainstRange(actualRom: number, range: AngleRange): number | nu
  * Calculate depth score based on how close to optimal position at the key point
  * @param repAngles The angles captured during the rep
  * @param angleRanges Target angle ranges for the workout
- * @returns Score from 0-100
+ * @returns An object with the score (0-100) and a `degenerate` flag that
+ *   is true only when every scoring candidate returned null (degenerate
+ *   AngleRange or non-finite input).
  */
 function calculateDepthScore(
   repAngles: RepAngles,
   angleRanges: Record<string, AngleRange>,
   scoringMetrics?: ScoringMetricDefinition[]
-): number {
+): { score: number; degenerate: boolean } {
   const scores: number[] = [];
+  let attempted = 0;
 
   if (scoringMetrics && scoringMetrics.length > 0) {
     for (const metric of scoringMetrics) {
       const range = angleRanges[metric.id];
       if (!range) continue;
+      attempted += 1;
 
       const left = metric.extract(repAngles, 'left');
       const right = metric.extract(repAngles, 'right');
@@ -166,12 +210,18 @@ function calculateDepthScore(
       if (score !== null) scores.push(score);
     }
 
-    if (scores.length === 0) return 100;
-    return scores.reduce((a, b) => a + b, 0) / scores.length;
+    if (scores.length === 0) {
+      return { score: 100, degenerate: attempted > 0 };
+    }
+    return {
+      score: scores.reduce((a, b) => a + b, 0) / scores.length,
+      degenerate: false,
+    };
   }
 
   // For movements like pull-ups and push-ups, depth is measured by minimum elbow angle
   if (angleRanges.elbow) {
+    attempted += 1;
     const range = angleRanges.elbow;
     const avgMinElbow = (repAngles.min.leftElbow + repAngles.min.rightElbow) / 2;
     const score = scoreDepthAgainstRange(avgMinElbow, range);
@@ -180,6 +230,7 @@ function calculateDepthScore(
 
   // For squats/lunges, check hip and knee depth
   if (angleRanges.hip) {
+    attempted += 1;
     const range = angleRanges.hip;
     const avgMinHip = (repAngles.min.leftHip + repAngles.min.rightHip) / 2;
     const score = scoreDepthAgainstRange(avgMinHip, range);
@@ -187,8 +238,13 @@ function calculateDepthScore(
   }
 
   // Return average of all depth scores, or 100 if no ranges defined
-  if (scores.length === 0) return 100;
-  return scores.reduce((a, b) => a + b, 0) / scores.length;
+  if (scores.length === 0) {
+    return { score: 100, degenerate: attempted > 0 };
+  }
+  return {
+    score: scores.reduce((a, b) => a + b, 0) / scores.length,
+    degenerate: false,
+  };
 }
 
 /**
@@ -273,14 +329,50 @@ export function calculateFqi(
   };
 
   // Calculate component scores
-  const romScore = calculateRomScore(repAngles, workoutDef.angleRanges, workoutDef.scoringMetrics);
-  const depthScore = calculateDepthScore(repAngles, workoutDef.angleRanges, workoutDef.scoringMetrics);
+  const rom = calculateRomScore(repAngles, workoutDef.angleRanges, workoutDef.scoringMetrics);
+  const depth = calculateDepthScore(repAngles, workoutDef.angleRanges, workoutDef.scoringMetrics);
   const { faultIds, totalPenalty } = detectFaults(repContext, workoutDef.faults);
+
+  // A5: when every ROM and depth metric attempted to score against a
+  // degenerate AngleRange and fell back to the 100 default, surface a
+  // degenerate-meta flag and emit a FormTrackingError. We intentionally do
+  // NOT change the default score — keeping 100 preserves current behavior
+  // for this release; the meta flag is the new contract the UI can gate
+  // on to render a "needs calibration" caveat.
+  const allDegenerate = rom.degenerate && depth.degenerate;
+  if (allDegenerate) {
+    try {
+      logError(
+        createError(
+          'form-tracking',
+          FormTrackingErrorCode.FQI_DEGENERATE_RANGE,
+          'All FQI ROM/depth metrics fell back to the 100 default due to degenerate angle ranges',
+          {
+            retryable: false,
+            severity: 'warning',
+            details: {
+              workoutId: workoutDef.id,
+              repNumber,
+              scoringMetricCount: workoutDef.scoringMetrics?.length ?? 0,
+            },
+          }
+        ),
+        { feature: 'form-tracking', location: 'fqi-calculator.calculateFqi' }
+      );
+    } catch {
+      // logError must never break scoring. Swallow any logger failures.
+    }
+    if (__DEV__) {
+      warnWithTs(
+        `[fqi-calculator] Degenerate range for workout ${workoutDef.id} rep ${repNumber}`
+      );
+    }
+  }
 
   // Calculate weighted FQI
   // ROM and depth contribute positively, faults subtract
-  const romContribution = romScore * weights.rom;
-  const depthContribution = depthScore * weights.depth;
+  const romContribution = rom.score * weights.rom;
+  const depthContribution = depth.score * weights.depth;
   const faultContribution = (100 - totalPenalty) * weights.faults;
 
   const rawScore = romContribution + depthContribution + faultContribution;
@@ -289,10 +381,11 @@ export function calculateFqi(
   if (!Number.isFinite(rawScore)) {
     return {
       score: 0,
-      romScore: Number.isFinite(romScore) ? Math.round(romScore) : 0,
-      depthScore: Number.isFinite(depthScore) ? Math.round(depthScore) : 0,
+      romScore: Number.isFinite(rom.score) ? Math.round(rom.score) : 0,
+      depthScore: Number.isFinite(depth.score) ? Math.round(depth.score) : 0,
       faultPenalty: totalPenalty,
       detectedFaults: faultIds,
+      ...(allDegenerate ? { meta: { degenerate: true } } : {}),
     };
   }
 
@@ -301,10 +394,11 @@ export function calculateFqi(
 
   return {
     score,
-    romScore: Math.round(romScore),
-    depthScore: Math.round(depthScore),
+    romScore: Math.round(rom.score),
+    depthScore: Math.round(depth.score),
     faultPenalty: totalPenalty,
     detectedFaults: faultIds,
+    ...(allDegenerate ? { meta: { degenerate: true } } : {}),
   };
 }
 

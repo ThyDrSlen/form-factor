@@ -17,10 +17,12 @@
  * message into a typed `CueEntry` with priority + fault type.
  */
 
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
+import React, { useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, type ViewStyle, type StyleProp } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MotiView } from 'moti';
+
+import { createError, logError } from '@/lib/services/ErrorHandler';
 
 export type CuePriority = 'critical' | 'warning' | 'advisory';
 
@@ -45,6 +47,14 @@ export interface CueCardProps {
   style?: StyleProp<ViewStyle>;
   /** Optional testID for component tests. */
   testID?: string;
+  /**
+   * When provided, renders a small close button in the top-right corner
+   * and invokes this callback when tapped. Useful for advisory cues that
+   * the user has acknowledged and wants to silence until the fault
+   * re-triggers. Critical cues may still show the button — deciding whether
+   * to allow dismissal of a critical cue is the caller's responsibility.
+   */
+  onDismiss?: () => void;
 }
 
 type Palette = { bg: string; border: string; text: string; accent: string };
@@ -114,14 +124,36 @@ export function classifyCue(message: string): CueEntry {
   return { message, priority, faultType };
 }
 
-export default function CueCard({ cue, style, testID }: CueCardProps) {
+export default function CueCard({ cue, style, testID, onDismiss }: CueCardProps) {
   const palette = cue ? PRIORITY_PALETTE[cue.priority] : null;
   const icon = cue ? FAULT_ICON[cue.faultType] : null;
 
   // Re-mount on message change so the fade-in replays.
   const motiKey = useMemo(() => cue?.message ?? 'empty', [cue?.message]);
 
-  if (!cue || !palette || !icon) {
+  // Defensive guard: the cue-engine contract requires `message` to be
+  // non-empty (rules define `message: string` as required, with variant
+  // fallback on empty). A silent/empty cue is worse UX than no cue, so we
+  // bail out and log it so regressions surface in telemetry.
+  const isEmptyMessage = !!cue && cue.message.trim() === '';
+  useEffect(() => {
+    if (isEmptyMessage && cue) {
+      logError(
+        createError(
+          'form-tracking',
+          'CUE_EMPTY_MESSAGE',
+          'CueCard received a cue with an empty message string',
+          {
+            details: { priority: cue.priority, faultType: cue.faultType },
+            severity: 'warning',
+          },
+        ),
+        { feature: 'form-tracking', location: 'CueCard' },
+      );
+    }
+  }, [isEmptyMessage, cue]);
+
+  if (!cue || !palette || !icon || isEmptyMessage) {
     return null;
   }
 
@@ -155,6 +187,18 @@ export default function CueCard({ cue, style, testID }: CueCardProps) {
           </Text>
           <Text style={[styles.message, { color: palette.text }]}>{cue.message}</Text>
         </View>
+        {onDismiss ? (
+          <TouchableOpacity
+            onPress={onDismiss}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss form cue"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={[styles.dismissButton, { backgroundColor: palette.border }]}
+            testID={`${testID ?? 'cue-card'}-dismiss`}
+          >
+            <Ionicons name="close" size={14} color={palette.text} />
+          </TouchableOpacity>
+        ) : null}
       </View>
     </MotiView>
   );
@@ -197,5 +241,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 19,
     fontWeight: '600',
+  },
+  dismissButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+    opacity: 0.85,
   },
 });

@@ -3,6 +3,7 @@ const mockInsert = jest.fn();
 const mockFrom = jest.fn(() => ({
   insert: mockInsert,
 }));
+const mockRecordCoachUsage = jest.fn().mockResolvedValue(undefined);
 const mockCreateError = jest.fn(
   (
     domain: string,
@@ -30,10 +31,17 @@ jest.mock('@/lib/supabase', () => ({
 
 jest.mock('@/lib/services/ErrorHandler', () => ({
   createError: mockCreateError,
+  logError: jest.fn(),
 }));
 
 jest.mock('../../../lib/services/ErrorHandler', () => ({
   createError: mockCreateError,
+  logError: jest.fn(),
+}));
+
+// Cost-tracker wiring (#537): verify recordCoachUsage fires on happy path.
+jest.mock('@/lib/services/coach-cost-tracker', () => ({
+  recordCoachUsage: (...args: unknown[]) => mockRecordCoachUsage(...args),
 }));
 
 let sendCoachPrompt: typeof import('@/lib/services/coach-service')['sendCoachPrompt'];
@@ -353,5 +361,68 @@ describe('coach-service', () => {
     expect(mockInsert).toHaveBeenCalledWith(
       expect.objectContaining({ turn_index: 0 })
     );
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cost-tracker wiring (#537)
+  // ---------------------------------------------------------------------------
+
+  describe('cost-tracker wiring (#537)', () => {
+    beforeEach(() => {
+      mockRecordCoachUsage.mockClear();
+    });
+
+    it('records a usage event on the happy path', async () => {
+      const messages = [{ role: 'user' as const, content: 'How to squat?' }];
+      mockInvoke.mockResolvedValue({
+        data: { message: 'Brace your core.', model: 'gpt-5.4-mini' },
+        error: null,
+      });
+
+      await sendCoachPrompt(messages);
+      // Fire-and-forget: wait a tick to let the promise resolve.
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(mockRecordCoachUsage).toHaveBeenCalledTimes(1);
+      const evt = mockRecordCoachUsage.mock.calls[0][0];
+      expect(evt.provider).toBe('openai');
+      expect(evt.taskKind).toBe('chat');
+      expect(evt.tokensIn).toBeGreaterThan(0);
+      expect(evt.tokensOut).toBeGreaterThan(0);
+    });
+
+    it('tags cache-sourced replies with cacheHit=true', async () => {
+      mockInvoke.mockResolvedValue({
+        data: { message: 'cached', source: 'cache', model: 'gpt-5.4-mini' },
+        error: null,
+      });
+      await sendCoachPrompt(baseMessages);
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(mockRecordCoachUsage.mock.calls[0][0]).toMatchObject({
+        cacheHit: true,
+      });
+    });
+
+    it('does not record usage when the call errors', async () => {
+      mockInvoke.mockResolvedValue({
+        data: null,
+        error: { message: '404 Not Found', status: 404 },
+      });
+      await expect(sendCoachPrompt(baseMessages)).rejects.toMatchObject({
+        code: 'COACH_NOT_DEPLOYED',
+      });
+      expect(mockRecordCoachUsage).not.toHaveBeenCalled();
+    });
+
+    it('does not block when recordCoachUsage rejects', async () => {
+      mockRecordCoachUsage.mockRejectedValueOnce(new Error('tracker-down'));
+      mockInvoke.mockResolvedValue({
+        data: { message: 'Reply.' },
+        error: null,
+      });
+      const result = await sendCoachPrompt(baseMessages);
+      expect(result.content).toBe('Reply.');
+    });
   });
 });

@@ -291,8 +291,8 @@ export function SocialProvider({ children }: { children: React.ReactNode }) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(followsChannel).catch(err => console.warn('[SocialContext] Failed to remove follows channel:', err));
-      supabase.removeChannel(sharesChannel).catch(err => console.warn('[SocialContext] Failed to remove shares channel:', err));
+      supabase.removeChannel(followsChannel).catch((err) => warnWithTs('[SocialContext] Failed to remove follows channel:', err));
+      supabase.removeChannel(sharesChannel).catch((err) => warnWithTs('[SocialContext] Failed to remove shares channel:', err));
     };
     // All callbacks are stable (no deps or only stable deps), so only user?.id triggers re-subscription
     // eslint-disable-next-line react-hooks/exhaustive-deps
