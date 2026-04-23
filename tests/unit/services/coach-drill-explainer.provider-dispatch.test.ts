@@ -47,24 +47,26 @@ describe('coach-drill-explainer provider dispatch (pipeline-v2)', () => {
     }
   });
 
-  it('passes provider=gemma through sendCoachPrompt when flag is on and env=gemma', async () => {
+  it('passes provider=gemma and taskKind=fault_explainer when flag is on and env=gemma', async () => {
     process.env[FLAG] = 'on';
     process.env[PROVIDER] = 'gemma';
     const result = await explainDrill(baseInput);
 
     expect(mockSendCoachPrompt).toHaveBeenCalledTimes(1);
     const [, , opts] = mockSendCoachPrompt.mock.calls[0];
-    expect(opts).toEqual({ provider: 'gemma' });
+    // V2 adds the fault_explainer taskKind so the dispatcher can pick the
+    // tactical tier and cost-tracker (#537) records the right bucket.
+    expect(opts).toEqual({ taskKind: 'fault_explainer', provider: 'gemma' });
     expect(result.provider).toBe('gemma');
   });
 
-  it('passes provider=openai through sendCoachPrompt when flag is on and env=openai', async () => {
+  it('passes provider=openai and taskKind=fault_explainer when flag is on and env=openai', async () => {
     process.env[FLAG] = 'on';
     process.env[PROVIDER] = 'openai';
     const result = await explainDrill(baseInput);
 
     const [, , opts] = mockSendCoachPrompt.mock.calls[0];
-    expect(opts).toEqual({ provider: 'openai' });
+    expect(opts).toEqual({ taskKind: 'fault_explainer', provider: 'openai' });
     expect(result.provider).toBe('openai');
   });
 
