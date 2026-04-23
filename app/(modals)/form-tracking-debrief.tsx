@@ -31,6 +31,7 @@ import { resolveExerciseKey } from '@/lib/services/form-session-history-lookup';
 import { useAutoDebrief } from '@/hooks/use-auto-debrief';
 import { useSessionComparisonQuery } from '@/hooks/use-session-comparison';
 import { supabase } from '@/lib/supabase';
+import { warnWithTs } from '@/lib/logger';
 import { isCoachPipelineV2Enabled } from '@/lib/services/coach-pipeline-v2-flag';
 
 function safeParseReps(raw: string | undefined): RepSummary[] {
@@ -158,7 +159,14 @@ export default function FormTrackingDebriefScreen() {
       exerciseId: comparisonExerciseId,
       priorSessionId: comparison.priorSessionId,
     }).toString();
-    router.push(`/(modals)/form-comparison?${qs}` as `/${string}`);
+    // Defensive try/catch: router.push throws synchronously on bad routes
+    // (registry mismatch after a refactor) and the user would otherwise see
+    // a red-screen crash instead of an inert chip.
+    try {
+      router.push(`/(modals)/form-comparison?${qs}` as `/${string}`);
+    } catch (err) {
+      warnWithTs('[form-tracking-debrief] router.push to form-comparison failed', err);
+    }
   }, [router, comparison?.priorSessionId, comparisonExerciseId, routeSessionId]);
 
   // Pipeline v2: synthesize a stable sessionId from the recap payload so the
