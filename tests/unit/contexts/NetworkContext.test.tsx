@@ -150,8 +150,9 @@ describe('NetworkContext — polling + unmount (stale-closure regression)', () =
     });
 
     // Neither the NetworkContext error log nor a setState-on-unmounted warning.
+    // `errorWithTs` prepends an ISO timestamp, so match across all args.
     const contextErrorLog = errorSpy.mock.calls.find((call) =>
-      String(call[0] ?? '').includes('[NetworkContext] Error checking network status'),
+      call.some((arg) => String(arg ?? '').includes('[NetworkContext] Error checking network status')),
     );
     expect(contextErrorLog).toBeUndefined();
 
@@ -179,8 +180,9 @@ describe('NetworkContext — polling + unmount (stale-closure regression)', () =
     expect(result.current.isConnected).toBe(true);
 
     // The context DID log the error pre-unmount.
+    // `errorWithTs` prepends an ISO timestamp, so match across all args.
     const contextErrorLog = errorSpy.mock.calls.find((call) =>
-      String(call[0] ?? '').includes('[NetworkContext] Error checking network status'),
+      call.some((arg) => String(arg ?? '').includes('[NetworkContext] Error checking network status')),
     );
     expect(contextErrorLog).toBeDefined();
 

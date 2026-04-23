@@ -155,9 +155,10 @@ describe('FoodContext — sync queue transitions', () => {
     expect(mockLocalDB.insertFood).toHaveBeenCalled();
     // Warning was logged + attempt actually happened.
     expect(mockSyncService.syncToSupabase).toHaveBeenCalledTimes(1);
+    // `warnWithTs` prepends an ISO timestamp, so match across all args.
     expect(
       warnSpy.mock.calls.some((call) =>
-        String(call[0] ?? '').includes('[FoodContext] Sync failed'),
+        call.some((arg) => String(arg ?? '').includes('[FoodContext] Sync failed')),
       ),
     ).toBe(true);
 
@@ -304,9 +305,10 @@ describe('FoodContext — sync queue transitions', () => {
     // Local state reflects the delete despite the sync failure.
     expect(result.current.foods).toHaveLength(0);
     // Warning log fired from the fire-and-forget catch.
+    // `warnWithTs` prepends an ISO timestamp, so match across all args.
     expect(
       warnSpy.mock.calls.some((call) =>
-        String(call[0] ?? '').includes('[FoodContext] Sync failed'),
+        call.some((arg) => String(arg ?? '').includes('[FoodContext] Sync failed')),
       ),
     ).toBe(true);
 

@@ -118,10 +118,10 @@ export async function classifyViaGemma(
   try {
     const reply = await sendPrompt(buildGemmaNluPrompt(normalized), undefined, {
       provider: 'gemma',
-      // Route the classification to the cheapest Gemma tier via the coach
-      // dispatcher. Without `taskKind` the call falls through to the
-      // `general_chat` default, which may escalate to GPT unnecessarily.
-      taskKind: 'voice_intent',
+      // Forward `voice_debrief` so the cost-tracker bucket for voice NLU
+      // gets credit + the dispatch router routes to the cheapest Gemma tier
+      // instead of falling through to a GPT-escalating `general_chat` default.
+      taskKind: VOICE_NLU_TASK_KIND,
     });
     const intent = parseGemmaNluResponse(reply.content ?? '');
     if (intent === 'none') {
