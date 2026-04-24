@@ -4,6 +4,7 @@ import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   StyleSheet,
   Text,
   TextInput,
@@ -378,9 +379,12 @@ export default function AddFoodScreen() {
             ]}
             onPress={onSave}
             disabled={!name.trim() || !calories.trim() || saving}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !name.trim() || !calories.trim() || saving, busy: saving }}
+            accessibilityLabel={saving ? 'Saving meal' : 'Save meal'}
           >
             {saving ? (
-              <Ionicons name="hourglass" size={20} color="#fff" />
+              <ActivityIndicator size="small" color="#fff" />
             ) : (
               <Ionicons name="checkmark-circle" size={20} color="#fff" />
             )}

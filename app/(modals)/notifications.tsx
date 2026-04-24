@@ -183,18 +183,24 @@ export default function NotificationSettingsModal() {
               value={prefs.comments}
               onValueChange={() => handleToggle('comments')}
               disabled={savingKey === 'comments'}
+              accessibilityLabel="Comment notifications"
+              accessibilityHint="Toggle push notifications when someone comments on your video"
             />
             <SettingRow
               label="Likes on my videos"
               value={prefs.likes}
               onValueChange={() => handleToggle('likes')}
               disabled={savingKey === 'likes'}
+              accessibilityLabel="Like notifications"
+              accessibilityHint="Toggle push notifications when someone likes your video"
             />
             <SettingRow
               label="Daily workout reminder"
               value={prefs.reminders}
               onValueChange={() => handleToggle('reminders')}
               disabled={savingKey === 'reminders'}
+              accessibilityLabel="Workout reminder notifications"
+              accessibilityHint="Toggle daily reminders to complete your workout"
             />
           </>
         ) : (
@@ -210,11 +216,15 @@ function SettingRow({
   value,
   onValueChange,
   disabled,
+  accessibilityLabel,
+  accessibilityHint,
 }: {
   label: string;
   value: boolean;
   onValueChange: () => void;
   disabled?: boolean;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }) {
   return (
     <View style={styles.settingRow}>
@@ -225,6 +235,9 @@ function SettingRow({
         disabled={disabled}
         thumbColor={value ? '#fff' : '#CBD7F5'}
         trackColor={{ false: '#223859', true: '#4C8CFF' }}
+        accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityHint={accessibilityHint}
+        accessibilityRole="switch"
       />
     </View>
   );
