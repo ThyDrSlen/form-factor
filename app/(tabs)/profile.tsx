@@ -385,7 +385,7 @@ export default function ProfileScreen() {
               onPress: () => {
                 Alert.alert(
                   'Delete video?',
-                  'This removes the clip and metrics permanently.',
+                  'Delete video and all metrics permanently? This cannot be undone.',
                   [
                     { text: 'Cancel', style: 'cancel' },
                     { text: 'Delete', style: 'destructive', onPress: () => handleDeleteVideo(video.id) },
