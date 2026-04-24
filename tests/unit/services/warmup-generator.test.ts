@@ -1,5 +1,6 @@
 import {
   generateWarmup,
+  WARMUP_GENERATOR_TASK_KIND,
   WARMUP_PLAN_SCHEMA,
   type WarmupPlan,
 } from '@/lib/services/warmup-generator';
@@ -7,7 +8,7 @@ import {
   buildWarmupGeneratorMessages,
   WARMUP_GENERATOR_SYSTEM_PROMPT,
 } from '@/lib/services/warmup-generator-prompt';
-import type { CoachMessage } from '@/lib/services/coach-service';
+import type { CoachMessage, CoachSendOptions } from '@/lib/services/coach-service';
 
 const VALID_PLAN: WarmupPlan = {
   name: 'Test Warmup',
@@ -92,6 +93,22 @@ describe('generateWarmup', () => {
     await expect(
       generateWarmup({ exerciseSlugs: ['x'] }, { dispatch, maxRetries: 1 }),
     ).rejects.toMatchObject({ code: 'GEMMA_JSON_RETRY_EXHAUSTED' });
+  });
+
+  it("forwards taskKind: 'progression_planner' to the dispatcher", async () => {
+    const dispatch = jest
+      .fn<
+        Promise<CoachMessage>,
+        [CoachMessage[], unknown?, CoachSendOptions?]
+      >()
+      .mockResolvedValue({ role: 'assistant', content: JSON.stringify(VALID_PLAN) });
+
+    await generateWarmup({ exerciseSlugs: ['squat'] }, { dispatch });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    const [, , opts] = dispatch.mock.calls[0];
+    expect(opts?.taskKind).toBe(WARMUP_GENERATOR_TASK_KIND);
+    expect(opts?.taskKind).toBe('progression_planner');
   });
 
   describe('EXPO_PUBLIC_GEMMA_SESSION_GEN gate', () => {
