@@ -1118,6 +1118,12 @@ export default function ScanARKitScreen() {
     mediaPipePoseRef.current = null;
     realtimeFormEngineRef.current = createRealtimeEngineState();
     lastShadowMeanAbsDeltaRef.current = null;
+    // Clear session-wide FQI accumulator BEFORE swapping the workout
+    // controller so the first rep of the new exercise can't briefly land in
+    // the previous exercise's score array (#575 item #4). Without this the
+    // stopTracking() avg-fqi milestone and session-summary both mix scores
+    // across exercises when the user swaps mid-session.
+    sessionFqiScoresRef.current = [];
     resetBaselineDebugMetrics();
     setWorkoutController(detectionMode);
   }, [createRealtimeEngineState, detectionMode, resetBaselineDebugMetrics, setWorkoutController]);
