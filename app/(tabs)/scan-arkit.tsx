@@ -104,6 +104,7 @@ import { ProgressionSuggestionBadge } from '@/components/form-tracking/Progressi
 import { useProgressionSuggestion } from '@/hooks/use-progression-suggestion';
 import { emitFormMilestone, useSessionRunner } from '@/lib/stores/session-runner';
 import type { FormTargets } from '@/lib/services/form-target-resolver';
+import { getDefaultsForExerciseWithFlag } from '@/lib/services/form-target-resolver';
 import {
   DEFAULT_DETECTION_MODE,
   getWorkoutByMode,
@@ -430,6 +431,18 @@ export default function ScanARKitScreen() {
     () => getFormTargetsFor(detectionMode),
     [getFormTargetsFor, detectionMode],
   );
+  // Provenance flag — true when `detectionMode` isn't a first-class exercise
+  // and the resolver fell back to DEFAULT_FORM_TARGETS. Kept as a boolean so
+  // a later PR can light up a subtle "generic thresholds" badge without any
+  // UI churn now. #575 item #8.
+  const usingGenericTargets = useMemo(
+    () => getDefaultsForExerciseWithFlag(detectionMode).usingGenericTargets,
+    [detectionMode],
+  );
+  const usingGenericTargetsRef = React.useRef<boolean>(usingGenericTargets);
+  useEffect(() => {
+    usingGenericTargetsRef.current = usingGenericTargets;
+  }, [usingGenericTargets]);
   const activeFormTargetsRef = React.useRef<FormTargets>(activeFormTargets);
   useEffect(() => {
     const prev = activeFormTargetsRef.current;
