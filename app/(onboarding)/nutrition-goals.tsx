@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -33,6 +33,10 @@ export default function NutritionGoalsScreen() {
   const [carbs, setCarbs] = useState(goals?.carbs?.toString() || '');
   const [fat, setFat] = useState(goals?.fat?.toString() || '');
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const proteinRef = useRef<TextInput>(null);
+  const carbsRef = useRef<TextInput>(null);
+  const fatRef = useRef<TextInput>(null);
 
   function normalizeDecimal(value: string): string {
     const cleaned = value.replace(/[^0-9.]/g, '');
@@ -226,6 +230,9 @@ export default function NutritionGoalsScreen() {
               placeholder="e.g., 2000"
               placeholderTextColor="#8CA5C6"
               editable={!isSyncing}
+              accessibilityLabel="Daily calorie target in kilocalories"
+              returnKeyType="next"
+              onSubmitEditing={() => proteinRef.current?.focus()}
             />
             {errors.calories ? <Text style={styles.errorText}>{errors.calories}</Text> : null}
           </View>
@@ -234,6 +241,7 @@ export default function NutritionGoalsScreen() {
             <View style={[styles.inputContainer, styles.thirdWidth]}>
               <Text style={styles.label}>Protein (g)</Text>
               <TextInput
+                ref={proteinRef}
                 style={[styles.input, errors.protein && styles.inputError]}
                 value={protein}
                 onChangeText={(t: string) => handleFieldChange('protein', t)}
@@ -243,6 +251,9 @@ export default function NutritionGoalsScreen() {
                 placeholder="Optional"
                 placeholderTextColor="#8CA5C6"
                 editable={!isSyncing}
+                accessibilityLabel="Daily protein target in grams"
+                returnKeyType="next"
+                onSubmitEditing={() => carbsRef.current?.focus()}
               />
               {errors.protein ? <Text style={styles.errorText}>{errors.protein}</Text> : null}
             </View>
@@ -250,6 +261,7 @@ export default function NutritionGoalsScreen() {
             <View style={[styles.inputContainer, styles.thirdWidth]}>
               <Text style={styles.label}>Carbs (g)</Text>
               <TextInput
+                ref={carbsRef}
                 style={[styles.input, errors.carbs && styles.inputError]}
                 value={carbs}
                 onChangeText={(t: string) => handleFieldChange('carbs', t)}
@@ -259,6 +271,9 @@ export default function NutritionGoalsScreen() {
                 placeholder="Optional"
                 placeholderTextColor="#8CA5C6"
                 editable={!isSyncing}
+                accessibilityLabel="Daily carbohydrate target in grams"
+                returnKeyType="next"
+                onSubmitEditing={() => fatRef.current?.focus()}
               />
               {errors.carbs ? <Text style={styles.errorText}>{errors.carbs}</Text> : null}
             </View>
@@ -266,6 +281,7 @@ export default function NutritionGoalsScreen() {
             <View style={[styles.inputContainer, styles.thirdWidth]}>
               <Text style={styles.label}>Fat (g)</Text>
               <TextInput
+                ref={fatRef}
                 style={[styles.input, errors.fat && styles.inputError]}
                 value={fat}
                 onChangeText={(t: string) => handleFieldChange('fat', t)}
@@ -275,6 +291,8 @@ export default function NutritionGoalsScreen() {
                 placeholder="Optional"
                 placeholderTextColor="#8CA5C6"
                 editable={!isSyncing}
+                accessibilityLabel="Daily fat target in grams"
+                returnKeyType="done"
               />
               {errors.fat ? <Text style={styles.errorText}>{errors.fat}</Text> : null}
             </View>
