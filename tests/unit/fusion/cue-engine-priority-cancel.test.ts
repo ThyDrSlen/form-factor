@@ -248,4 +248,284 @@ describe('cue engine — priority cancellation', () => {
       });
     }).not.toThrow();
   });
+
+  // ==========================================================================
+  // Wave-29 T5: stacked same-priority rules on a single frame.
+  //
+  // Covers the tiebreak path at lib/fusion/cue-engine.ts:178-179:
+  //   emissions.sort((a, b) => a.priority - b.priority || b.delta - a.delta);
+  //   const selected = emissions[0];
+  //
+  // Scenario: two rules with the SAME priority (=2) watching DIFFERENT
+  // metrics both fire on the same frame. The engine must:
+  //   1. Emit exactly one cue (no double-speaking).
+  //   2. Pick the one with the larger delta (more severe out-of-range value).
+  //
+  // Extension: when a LOWER-priority cue (=3) is already mid-playback, a
+  // higher-priority stacked pair (both =2) should preempt it via
+  // maybeCancelLowerPriority at L200-209 → onCancellation fires BEFORE the
+  // tiebreak winner emits. Equal-priority does NOT cancel (guarded by the
+  // existing 'equal-priority cues do NOT cancel' test above), so the cancel
+  // here is purely on the low-priority predecessor, not between the tied pair.
+  // ==========================================================================
+  test('stacked same-priority rules: exactly one emission, higher-delta wins', () => {
+    const audio = makeAudioMock();
+    const onCancellation = jest.fn();
+
+    // Both rules priority=2, different metrics. Delta is max(min-value,
+    // value-max, 0) per cue-engine.ts:173:
+    //   wide_left:   min=97, max=103, value=80 → max(17, -23, 0) = 17
+    //   tight_right: min=99, max=101, value=90 → max(9, -11, 0) = 9
+    // wide_left wins the tiebreak because its delta is larger.
+    const wideLeft = baseRule({
+      id: 'wide_left',
+      priority: 2,
+      metric: 'leftKnee',
+      min: 97,
+      max: 103,
+      cooldownMs: 0,
+      persistMs: 0,
+      message: 'left track',
+    });
+    const tightRight = baseRule({
+      id: 'tight_right',
+      priority: 2,
+      metric: 'rightKnee',
+      min: 99,
+      max: 101,
+      cooldownMs: 0,
+      persistMs: 0,
+      message: 'right track',
+    });
+
+    const engine = createCueEngine([wideLeft, tightRight], {
+      minConfidence: 0.7,
+      audio,
+      onCancellation,
+    });
+
+    const emissions = engine.evaluate({
+      timestampMs: 1_000,
+      phase: 'bottom',
+      confidence: 0.95,
+      metrics: { leftKnee: 80, rightKnee: 90 },
+    });
+
+    // Exactly one emission — the higher-delta winner.
+    expect(emissions).toHaveLength(1);
+    expect(emissions[0]?.ruleId).toBe('wide_left');
+    // Cancel is not invoked because nothing was playing yet.
+    expect(audio.cancel).not.toHaveBeenCalled();
+    expect(onCancellation).not.toHaveBeenCalled();
+  });
+
+  test('stacked same-priority pair preempts a playing LOWER-priority cue (onCancellation fires before emit)', () => {
+    const audio = makeAudioMock();
+    const onCancellation = jest.fn();
+
+    // Playing first: low-priority rule (=3) on leftKnee. Then two
+    // same-priority (=2) rules both fire on a later frame; the engine's
+    // tiebreak chooses one, and because that winner has strictly higher
+    // priority than the currently-playing low, onCancellation MUST fire for
+    // the low before the new emission is registered.
+    const lowPlaying = baseRule({
+      id: 'low_playing',
+      priority: 3,
+      metric: 'leftKnee',
+      min: 95,
+      max: 105,
+      cooldownMs: 0,
+      persistMs: 0,
+      message: 'low',
+    });
+    const tiedA = baseRule({
+      id: 'tied_a',
+      priority: 2,
+      metric: 'leftHip',
+      min: 99,
+      max: 101,
+      cooldownMs: 0,
+      persistMs: 0,
+      message: 'tied a',
+    });
+    const tiedB = baseRule({
+      id: 'tied_b',
+      priority: 2,
+      metric: 'rightHip',
+      min: 97,
+      max: 103,
+      cooldownMs: 0,
+      persistMs: 0,
+      message: 'tied b',
+    });
+
+    const engine = createCueEngine([lowPlaying, tiedA, tiedB], {
+      minConfidence: 0.7,
+      audio,
+      onCancellation,
+      estimatedPlaybackMs: 1_500,
+    });
+
+    // t=1000: only low_playing violates (leftKnee=80, hips inside range).
+    const firstEmissions = engine.evaluate({
+      timestampMs: 1_000,
+      phase: 'bottom',
+      confidence: 0.95,
+      metrics: { leftKnee: 80, leftHip: 100, rightHip: 100 },
+    });
+    expect(firstEmissions).toHaveLength(1);
+    expect(firstEmissions[0]?.ruleId).toBe('low_playing');
+    expect(onCancellation).not.toHaveBeenCalled();
+
+    // t=1200 (inside 1500ms playback window): leftKnee is back in range
+    // (so low_playing does not re-fire), but BOTH tied rules fire. Delta is
+    // computed per cue-engine.ts:173 as max(min - value, value - max, 0):
+    //   tied_a: min=99, max=101, value=92 → max(7, -9, 0) = 7
+    //   tied_b: min=97, max=103, value=80 → max(17, -23, 0) = 17
+    // tied_b wins the higher-delta tiebreak.
+    const secondEmissions = engine.evaluate({
+      timestampMs: 1_200,
+      phase: 'bottom',
+      confidence: 0.95,
+      metrics: { leftKnee: 100, leftHip: 92, rightHip: 80 },
+    });
+
+    // Exactly one emission — the tiebreak winner.
+    expect(secondEmissions).toHaveLength(1);
+    expect(secondEmissions[0]?.ruleId).toBe('tied_b');
+
+    // The currently-playing low_playing cue must have been cancelled
+    // because the new emission is strictly higher priority (2 < 3).
+    expect(audio.cancel).toHaveBeenCalledTimes(1);
+    expect(onCancellation).toHaveBeenCalledTimes(1);
+    const event = onCancellation.mock.calls[0]?.[0];
+    expect(event.cancelledRuleId).toBe('low_playing');
+    expect(event.cancelledPriority).toBe(3);
+    expect(event.replacedByRuleId).toBe('tied_b');
+    expect(event.replacedByPriority).toBe(2);
+  });
+
+  // ==========================================================================
+  // Wave-29 T6: cancellation boundary at exactly estimatedPlaybackMs.
+  //
+  // lib/fusion/cue-engine.ts:200-209 — maybeCancelLowerPriority bails when
+  // `elapsed >= playbackMs` (L208). The existing suite (L201-228 above)
+  // covers the far-past case (2000ms > 500ms window). These two tests pin
+  // the EXACT boundary:
+  //   - elapsed == estimatedPlaybackMs  → must NOT cancel (>= check)
+  //   - elapsed == estimatedPlaybackMs-1 → MUST cancel
+  // This locks in the inclusive-upper boundary of the playback window so any
+  // future refactor to `elapsed > playbackMs` (exclusive) trips the test.
+  // ==========================================================================
+  test('no cancellation at exact estimatedPlaybackMs boundary (elapsed == window)', () => {
+    const audio = makeAudioMock();
+    const onCancellation = jest.fn();
+
+    const low = baseRule({
+      id: 'low',
+      priority: 3,
+      metric: 'leftKnee',
+      min: 95,
+      max: 105,
+      cooldownMs: 0,
+      persistMs: 0,
+    });
+    const high = baseRule({
+      id: 'high',
+      priority: 1,
+      metric: 'rightKnee',
+      min: 95,
+      max: 105,
+      cooldownMs: 0,
+      persistMs: 0,
+    });
+
+    const engine = createCueEngine([low, high], {
+      minConfidence: 0.7,
+      audio,
+      onCancellation,
+      estimatedPlaybackMs: 1_500,
+    });
+
+    // t=1000 low fires (only leftKnee violates).
+    engine.evaluate({
+      timestampMs: 1_000,
+      phase: 'bottom',
+      confidence: 0.95,
+      metrics: { leftKnee: 80, rightKnee: 100 },
+    });
+
+    // t=2500 → elapsed=1500 = estimatedPlaybackMs → L208 returns EARLY,
+    // clearing currentlyPlaying, so no cancel fires. The high cue still
+    // emits (it's a fresh emission with nothing "playing" after the clear).
+    const emissions = engine.evaluate({
+      timestampMs: 2_500,
+      phase: 'bottom',
+      confidence: 0.95,
+      metrics: { leftKnee: 100, rightKnee: 80 },
+    });
+
+    expect(emissions).toHaveLength(1);
+    expect(emissions[0]?.ruleId).toBe('high');
+    expect(audio.cancel).not.toHaveBeenCalled();
+    expect(onCancellation).not.toHaveBeenCalled();
+  });
+
+  test('cancellation at estimatedPlaybackMs - 1 (elapsed just under the window)', () => {
+    const audio = makeAudioMock();
+    const onCancellation = jest.fn();
+
+    const low = baseRule({
+      id: 'low',
+      priority: 3,
+      metric: 'leftKnee',
+      min: 95,
+      max: 105,
+      cooldownMs: 0,
+      persistMs: 0,
+    });
+    const high = baseRule({
+      id: 'high',
+      priority: 1,
+      metric: 'rightKnee',
+      min: 95,
+      max: 105,
+      cooldownMs: 0,
+      persistMs: 0,
+    });
+
+    const engine = createCueEngine([low, high], {
+      minConfidence: 0.7,
+      audio,
+      onCancellation,
+      estimatedPlaybackMs: 1_500,
+    });
+
+    // t=1000 low fires.
+    engine.evaluate({
+      timestampMs: 1_000,
+      phase: 'bottom',
+      confidence: 0.95,
+      metrics: { leftKnee: 80, rightKnee: 100 },
+    });
+
+    // t=2499 → elapsed=1499 < 1500 → proceeds to priority check →
+    // cancels low because high is strictly higher priority (1 < 3).
+    const emissions = engine.evaluate({
+      timestampMs: 2_499,
+      phase: 'bottom',
+      confidence: 0.95,
+      metrics: { leftKnee: 100, rightKnee: 80 },
+    });
+
+    expect(emissions).toHaveLength(1);
+    expect(emissions[0]?.ruleId).toBe('high');
+    expect(audio.cancel).toHaveBeenCalledTimes(1);
+    expect(onCancellation).toHaveBeenCalledTimes(1);
+    expect(onCancellation.mock.calls[0]?.[0]).toMatchObject({
+      cancelledRuleId: 'low',
+      replacedByRuleId: 'high',
+      timestampMs: 2_499,
+    });
+  });
 });
