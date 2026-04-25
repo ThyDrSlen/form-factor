@@ -848,6 +848,12 @@ export default function ScanARKitScreen() {
   }, []);
 
   const repIndexTrackerRef = React.useRef(new RepIndexTracker());
+  // Stable mirror of `repCount` for callback closures (telemetry, cue logger).
+  // Telemetry events fire asynchronously after phase transitions, so reading
+  // React state inside the closure can attribute the cue to the wrong rep
+  // (closure captured the *previous* value). We snapshot into this ref on
+  // every rep-complete callback and read from it in logCueEvent().
+  const repCountRef = React.useRef(0);
 
   const lastPoseTimestampRef = React.useRef<number | null>(null);
   const recordingActiveRef = React.useRef(false);
@@ -894,7 +900,10 @@ export default function ScanARKitScreen() {
         cue: evt.cue,
         mode: detectionMode,
         phase,
-        repCount,
+        // Read from the ref rather than the closure-captured React state so
+        // cues that emit just after a rep-complete phase transition attribute
+        // to the latest rep (see #575 item #3).
+        repCount: repCountRef.current,
         reason: evt.reason,
         throttled: evt.throttled,
         dropped: evt.action !== 'spoken',
@@ -1041,6 +1050,11 @@ export default function ScanARKitScreen() {
     },
     onRepComplete: (repNumber: number, fqi: number) => {
       setRepCount(repNumber);
+      // Snapshot into a ref so async telemetry closures (logCueEvent) read
+      // the current count instead of the value captured when the closure was
+      // created — avoids attributing cues to the prior rep when phase
+      // transitions fire asynchronously.
+      repCountRef.current = repNumber;
       repIndexTrackerRef.current.endRep();
       if (Number.isFinite(fqi)) {
         sessionFqiScoresRef.current.push(fqi);
@@ -1093,6 +1107,7 @@ export default function ScanARKitScreen() {
     restPhaseRef.current = nextInitialPhase;
     setActivePhase(nextInitialPhase);
     setRepCount(0);
+    repCountRef.current = 0;
     setActiveMetrics(null);
     setLivePullupPartialStatus(null);
     lastLivePartialBadgeRef.current = null;
@@ -1184,6 +1199,7 @@ export default function ScanARKitScreen() {
     repIndexTrackerRef.current.reset();
     resetWorkoutController();
     setRepCount(0);
+    repCountRef.current = 0;
     setActiveMetrics(null);
     setFps(30);
     setFixturePlaybackFramesProcessed(0);
@@ -1748,6 +1764,7 @@ export default function ScanARKitScreen() {
       repIndexTrackerRef.current.reset();
       resetWorkoutController();
       setRepCount(0);
+      repCountRef.current = 0;
       setActiveMetrics(null);
       resetBaselineDebugMetrics();
       resetCueHysteresis();
@@ -1856,6 +1873,7 @@ export default function ScanARKitScreen() {
       repIndexTrackerRef.current.reset();
       resetWorkoutController();
       setRepCount(0);
+      repCountRef.current = 0;
       setFps(0);
       realtimeFormEngineRef.current = createRealtimeEngineState();
       lastShadowMeanAbsDeltaRef.current = null;
