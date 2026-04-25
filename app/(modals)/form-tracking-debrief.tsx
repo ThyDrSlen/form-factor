@@ -32,6 +32,8 @@ import { useAutoDebrief } from '@/hooks/use-auto-debrief';
 import { useSessionComparisonQuery } from '@/hooks/use-session-comparison';
 import { supabase } from '@/lib/supabase';
 import { isCoachPipelineV2Enabled } from '@/lib/services/coach-pipeline-v2-flag';
+import { deriveDebriefAnalytics, type RepAnalytics } from '@/lib/services/coach-debrief-prompt';
+import type { GenerateAutoDebriefInput } from '@/lib/services/coach-auto-debrief';
 
 function safeParseReps(raw: string | undefined): RepSummary[] {
   if (!raw) return [];
@@ -166,20 +168,45 @@ export default function FormTrackingDebriefScreen() {
   // name + rep count + first-rep fqi (deterministic; no UUID dep).
   const pipelineV2 = isCoachPipelineV2Enabled();
   const sessionId = useMemo(() => {
+    // Prefer the explicit route param when present — matches the sessionId
+    // the live-tracking controller wrote to telemetry. Fall back to a
+    // deterministic synth when the route doesn't carry one (legacy recap
+    // deep-links) so the cache key stays stable across re-opens.
     if (!pipelineV2 || reps.length === 0) return null;
+    if (routeSessionId) return routeSessionId;
     return `debrief:${exerciseName}:${reps.length}:${Math.round((reps[0]?.fqi ?? 0) * 100)}`;
-  }, [pipelineV2, exerciseName, reps]);
+  }, [pipelineV2, exerciseName, reps, routeSessionId]);
+
+  // Build a valid GenerateAutoDebriefInput from route params so useAutoDebrief
+  // fires once on mount (#575 item #5). Previously buildInput() always
+  // returned null, so the "Coach debrief" section rendered a permanent
+  // empty state for users who'd just finished a session. reps carry fqi
+  // 0..100 per RepSummary; we convert to 0..1 for RepAnalytics.
+  const initialInput = useMemo<GenerateAutoDebriefInput | null>(() => {
+    if (!pipelineV2 || !sessionId || reps.length === 0) return null;
+    const repAnalytics: RepAnalytics[] = reps.map((r) => ({
+      fqi: r.fqi / 100,
+      topFault: r.faults[0] ?? null,
+    }));
+    return {
+      sessionId,
+      analytics: deriveDebriefAnalytics(sessionId, exerciseName, repAnalytics),
+    };
+  }, [pipelineV2, sessionId, reps, exerciseName]);
 
   const buildInput = useCallback(async () => {
-    // form-tracking-debrief never fires session_finished directly, but we
-    // still provide a valid builder for the hook contract. Returning null
-    // is a safe no-op when the modal is viewed without a session event.
+    // form-tracking-debrief is a recap surface; it doesn't observe a live
+    // session_finished event. The real debrief trigger runs via `initialInput`
+    // (on-mount leg) below. Keep this builder returning null so the shared
+    // session_finished subscription doesn't double-fire if the user happens
+    // to be viewing the modal when a background session ends.
     return null;
   }, []);
 
   const autoDebrief = useAutoDebrief({
     buildInput,
     sessionId: pipelineV2 ? sessionId : null,
+    initialInput,
   });
 
   const handleClose = useCallback(() => {
