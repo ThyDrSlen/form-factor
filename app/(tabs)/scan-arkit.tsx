@@ -1856,6 +1856,15 @@ export default function ScanARKitScreen() {
     const exerciseKeyAtStop = detectionMode;
     const sessionIdAtStop = sessionIdRef.current;
 
+    // Drop any pending sustained-occlusion hint timer so the badge doesn't
+    // bleed into the next session with a stale "Some joints hidden" toast
+    // (#575 item #6). The hint state is also cleared to match.
+    if (sustainedOcclusionTimerRef.current) {
+      clearTimeout(sustainedOcclusionTimerRef.current);
+      sustainedOcclusionTimerRef.current = null;
+    }
+    setSustainedOcclusionHint(null);
+
     try {
       if (isRecording) {
         try {
