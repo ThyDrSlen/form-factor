@@ -20,6 +20,7 @@ import { sendCoachPrompt, type CoachMessage } from './coach-service';
 import { sendCoachGemmaPrompt } from './coach-gemma-service';
 import { isDispatchEnabled } from './coach-model-dispatch-flag';
 import { assertUnderWeeklyCap } from './coach-cost-guard';
+import { recordCoachUsage } from './coach-cost-tracker';
 
 export type PreSetPreviewProvider = 'gemma' | 'openai';
 
@@ -31,6 +32,34 @@ export interface PreSetPreviewResult {
 
 const GEMMA_PROVIDER_ENV = 'EXPO_PUBLIC_COACH_CLOUD_PROVIDER';
 const MAX_VERDICT_LENGTH = 160;
+
+/**
+ * Task-kind hint for pre-set stance previews. Recorded against the coach
+ * cost-tracker so weekly aggregates surface form-check spend separately from
+ * general chat / debrief. Exported so tests + call sites can assert on the
+ * exact string literal.
+ */
+export const PRE_SET_PREVIEW_TASK_KIND = 'form_check' as const;
+
+/**
+ * Best-effort usage recorder. Fires after each call-site resolution so the
+ * cost-tracker can attribute pre-set spend to the `form_check` bucket. Token
+ * counts aren't available from the edge function response here (tracked at
+ * the edge level), so we log call-count-only with zero tokens. A follow-up
+ * can plumb actual token usage when the edge function starts returning it.
+ */
+function recordPreSetUsage(provider: 'gemma_cloud' | 'openai'): void {
+  void recordCoachUsage({
+    provider,
+    taskKind: PRE_SET_PREVIEW_TASK_KIND,
+    tokensIn: 0,
+    tokensOut: 0,
+  }).catch((err) => {
+    // recordCoachUsage already swallows AsyncStorage faults; this is a last
+    // line of defence so a telemetry bug never breaks the form-check path.
+    warnWithTs('[pre-set-preview] recordCoachUsage failed', err);
+  });
+}
 
 /**
  * Inline replacement for coach-live-snapshot.buildLiveSessionSnapshot().
@@ -147,6 +176,7 @@ export async function checkPreSetStance(
       try {
         const reply = await callGemma(prompt);
         const interpreted = interpretVerdict(reply);
+        recordPreSetUsage('gemma_cloud');
         return { ...interpreted, provider: 'gemma' };
       } catch {
         // Fall through to OpenAI — Gemma path is best-effort.
@@ -156,5 +186,6 @@ export async function checkPreSetStance(
 
   const reply = await callOpenAI(prompt);
   const interpreted = interpretVerdict(reply);
+  recordPreSetUsage('openai');
   return { ...interpreted, provider: 'openai' };
 }
