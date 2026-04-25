@@ -359,4 +359,28 @@ describe('coach-gemma-service', () => {
       code: 'COACH_GEMMA_EMPTY_RESPONSE',
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Wave-29 T1: null response body (network succeeded, body corrupt)
+  //
+  // Supabase's functions.invoke() resolves the network call successfully (no
+  // `error`), but the body can legitimately come back as `null` — e.g. if the
+  // edge function streamed bytes to a short-circuiting proxy that stripped
+  // them, or if the worker responded with HTTP 204. The client MUST surface
+  // a typed COACH_GEMMA_EMPTY_RESPONSE rather than crashing on
+  // `data?.message?.trim()` (which would throw TypeError on a non-object).
+  //
+  // lib/services/coach-gemma-service.ts:81-101 is the target window: the
+  // `data?.error` check passes (undefined), then the extraction (`data?.xxx`)
+  // yields `undefined` for every key, and the empty-response branch must
+  // fire with validation domain.
+  // ---------------------------------------------------------------------------
+  it('classifies { data: null, error: null } as COACH_GEMMA_EMPTY_RESPONSE', async () => {
+    mockInvoke.mockResolvedValue({ data: null, error: null });
+
+    await expect(sendCoachGemmaPrompt(baseMessages)).rejects.toMatchObject({
+      domain: 'validation',
+      code: 'COACH_GEMMA_EMPTY_RESPONSE',
+    });
+  });
 });

@@ -220,4 +220,87 @@ describe('coach-cost-tracker — recordCoachUsage + getWeeklyAggregate', () => {
     const rehydrated = await getWeeklyAggregate('2026-03-08T12:00:00.000Z');
     expect(rehydrated.totalCalls).toBe(0);
   });
+
+  // ---------------------------------------------------------------------------
+  // Wave-29 T8: AsyncStorage QuotaExceededError resilience.
+  //
+  // Targets lib/services/coach-cost-tracker.ts:154-160 (persist()). When the
+  // device is low on storage (common on older iPhones after several
+  // prolonged workout sessions), AsyncStorage.setItem rejects with a
+  // QuotaExceededError-shaped error. The tracker must:
+  //   1. NEVER throw out of recordCoachUsage (coach path must keep working).
+  //   2. Keep the in-memory bucket state correct for the current session so
+  //      getWeeklyAggregate() reflects both events.
+  //   3. Log a warning per failed persist (for observability).
+  //   4. On re-hydration (e.g. app restart), state is empty because the
+  //      failed persist never landed on disk — the data for the session is
+  //      lost, which is ACCEPTABLE because we surface a warning and the UI
+  //      can degrade gracefully to "cost unknown".
+  // ---------------------------------------------------------------------------
+  it('recordCoachUsage survives AsyncStorage QuotaExceededError without throwing', async () => {
+    // Silence the warnWithTs output so the test run is clean. The logger's
+    // console.warn binding is captured at module load time, so a post-load
+    // spyOn does NOT intercept warnWithTs's writes — we rely on the fact
+    // that logger was initialized with the original console.warn before
+    // this spy installs, so the spy only catches any direct console.warn
+    // calls that bypass the logger. We therefore do not ASSERT on the spy;
+    // instead we assert the observable contract (no-throw + in-memory state
+    // correctness + post-invalidate empty state).
+    const origWarn = console.warn;
+    console.warn = jest.fn();
+    const setSpy = jest
+      .spyOn(AsyncStorage, 'setItem')
+      .mockRejectedValue(new Error('QuotaExceededError'));
+
+    try {
+      // Two recordings back-to-back, each triggering a persist that rejects.
+      // Contract #1: recordCoachUsage must not throw on persist failure.
+      await expect(
+        recordCoachUsage({
+          at: '2026-04-20T10:00:00.000Z',
+          provider: 'gemma_cloud',
+          taskKind: 'chat',
+          tokensIn: 120,
+          tokensOut: 60,
+        }),
+      ).resolves.toBeUndefined();
+
+      await expect(
+        recordCoachUsage({
+          at: '2026-04-20T11:00:00.000Z',
+          provider: 'openai',
+          taskKind: 'debrief',
+          tokensIn: 80,
+          tokensOut: 40,
+        }),
+      ).resolves.toBeUndefined();
+
+      // Contract #2: in-memory aggregate reflects BOTH events — the
+      // session's view is correct even though persist failed.
+      const inMemory = await getWeeklyAggregate('2026-04-20T12:00:00.000Z');
+      expect(inMemory.totalCalls).toBe(2);
+      expect(inMemory.totalTokensIn).toBe(200);
+      expect(inMemory.totalTokensOut).toBe(100);
+      expect(inMemory.byProvider.gemma_cloud.calls).toBe(1);
+      expect(inMemory.byProvider.openai.calls).toBe(1);
+      expect(inMemory.byTaskKind.chat.tokensIn).toBe(120);
+      expect(inMemory.byTaskKind.debrief.tokensIn).toBe(80);
+
+      // Contract #3: setItem was actually attempted (proving the persist
+      // path was exercised and swallowed the rejection).
+      expect(setSpy).toHaveBeenCalled();
+
+      // Contract #4: re-hydrate yields empty — because persist failed,
+      // storage has no payload. Documents the acceptable data-loss
+      // behaviour on over-quota devices. We unmock setItem first so the
+      // test helpers (other tests' beforeEach clears) continue to work.
+      setSpy.mockRestore();
+      __invalidateHydrationForTests();
+      const rehydrated = await getWeeklyAggregate('2026-04-20T12:00:00.000Z');
+      expect(rehydrated.totalCalls).toBe(0);
+    } finally {
+      setSpy.mockRestore();
+      console.warn = origWarn;
+    }
+  });
 });
