@@ -432,7 +432,26 @@ export default function ScanARKitScreen() {
   );
   const activeFormTargetsRef = React.useRef<FormTargets>(activeFormTargets);
   useEffect(() => {
+    const prev = activeFormTargetsRef.current;
     activeFormTargetsRef.current = activeFormTargets;
+    // When form targets shift (e.g. user just picked a template override for
+    // the active exercise) the cue-hysteresis boundary that was computed
+    // against the old thresholds becomes stale — already-spoken cues can
+    // re-fire under the new boundary because the TTS hook's 5s repeat-guard
+    // sees them as "different" cues. Reset both boundaries in tandem. Skip
+    // on first-render init (prev === current) since nothing's rotated yet.
+    // (#575 item #1, targets-only leg.)
+    const targetsChanged =
+      prev !== activeFormTargets &&
+      (prev.fqiMin !== activeFormTargets.fqiMin ||
+        prev.romMin !== activeFormTargets.romMin ||
+        prev.romMax !== activeFormTargets.romMax);
+    if (targetsChanged) {
+      cueHysteresisControllerRef.current.resetAll();
+      cueHysteresisLastTickRef.current = null;
+      stablePrimaryCueRef.current = null;
+      lastSpokenCueRef.current = null;
+    }
     if (deepLinkTemplateId) {
       logWithTs('[ScanARKit] Active form targets', {
         exerciseId: detectionMode,
@@ -1124,9 +1143,20 @@ export default function ScanARKitScreen() {
     // stopTracking() avg-fqi milestone and session-summary both mix scores
     // across exercises when the user swaps mid-session.
     sessionFqiScoresRef.current = [];
+    // Cue-hysteresis + TTS-throttle have independent state (hysteresis
+    // stable-cue ref + TTS last-phrase ref). When the user swaps exercises
+    // mid-session the same cue text can remain "stable" under the new
+    // thresholds, and the TTS hook's 5s repeat-guard treats it as a
+    // duplicate — so already-muted cues re-fire as the targets flip.
+    // Resetting both boundaries in tandem keeps them coherent (#575 item
+    // #1). stopSpeech() also drains the pending speech queue so the user
+    // doesn't hear a cue from the prior exercise after the swap.
+    resetCueHysteresis();
+    lastSpokenCueRef.current = null;
+    stopSpeech();
     resetBaselineDebugMetrics();
     setWorkoutController(detectionMode);
-  }, [createRealtimeEngineState, detectionMode, resetBaselineDebugMetrics, setWorkoutController]);
+  }, [createRealtimeEngineState, detectionMode, resetBaselineDebugMetrics, resetCueHysteresis, setWorkoutController, stopSpeech]);
 
   useEffect(() => {
     if (DEV) {
