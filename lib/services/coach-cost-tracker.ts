@@ -25,6 +25,12 @@ export type CoachTaskKind =
   | 'drill_explainer'
   | 'session_generator'
   | 'progression_planner'
+  | 'voice_nlu'
+  | 'rest_period_coaching'
+  | 'exercise_swap_explanation'
+  | 'multi_turn_debrief'
+  | 'program_design'
+  | 'fault_explainer'
   | 'other';
 
 export interface CoachUsageEvent {
@@ -281,6 +287,12 @@ function emptyTaskKindMap(): WeeklyAggregate['byTaskKind'] {
     drill_explainer: { tokensIn: 0, tokensOut: 0, calls: 0 },
     session_generator: { tokensIn: 0, tokensOut: 0, calls: 0 },
     progression_planner: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    voice_nlu: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    rest_period_coaching: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    exercise_swap_explanation: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    multi_turn_debrief: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    program_design: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    fault_explainer: { tokensIn: 0, tokensOut: 0, calls: 0 },
     other: { tokensIn: 0, tokensOut: 0, calls: 0 },
   };
 }
