@@ -38,6 +38,20 @@
  * live in `coach-service.ts` and gate on `isCoachModelDispatchEnabled()`.
  */
 
+/**
+ * RESERVED TASK KINDS
+ *
+ * The following enum values are defined for future production wiring and are
+ * intentionally unreferenced by any dispatch site today. They remain in the
+ * union so `decideCoachModel()` can route them the moment a caller adopts the
+ * taskKind — do not treat them as dead code:
+ *
+ * - `form_cue_lookup`  — inline form-cue fetch (reserved for wave-35+)
+ * - `rest_calc`        — pure numeric rest calculator (reserved; distinct
+ *                        from `rest_period_coaching` which ships in wave-34
+ *                        via rest-advisor)
+ * - `encouragement`    — short-turn motivational nudges (reserved)
+ */
 export type CoachTaskKind =
   | 'form_cue_lookup'
   | 'rest_calc'
@@ -51,6 +65,9 @@ export type CoachTaskKind =
   | 'progression_planner'
   | 'form_check'
   | 'voice_debrief'
+  | 'voice_nlu'
+  | 'rest_period_coaching'
+  | 'exercise_swap_explanation'
   | 'general_chat';
 
 export type CoachModelId =
@@ -91,6 +108,9 @@ const TACTICAL_TASKS: ReadonlySet<CoachTaskKind> = new Set<CoachTaskKind>([
   'rest_calc',
   'encouragement',
   'fault_explainer',
+  'voice_nlu',
+  'rest_period_coaching',
+  'exercise_swap_explanation',
 ]);
 
 const COMPLEX_TASKS: ReadonlySet<CoachTaskKind> = new Set<CoachTaskKind>([
