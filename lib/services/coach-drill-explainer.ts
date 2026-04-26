@@ -99,7 +99,15 @@ export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDri
   // env-resolved provider below.
   if (gemmaFirst) {
     try {
-      const reply = await sendCoachPrompt(messages, context, { provider: 'gemma' });
+      // taskKind='fault_explainer' slots this call into the tactical
+      // Gemma bucket of the dispatch router (see coach-model-dispatch.ts).
+      // With an explicit provider hint the router is a no-op today, but the
+      // annotation makes the call eligible for the taskKind-only branch once
+      // #571 relaxes the "provider === undefined" gate.
+      const reply = await sendCoachPrompt(messages, context, {
+        provider: 'gemma',
+        taskKind: 'fault_explainer',
+      });
       const text = (reply.content ?? '').trim();
       if (text) {
         return { explanation: text, provider: 'gemma' };
@@ -117,7 +125,9 @@ export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDri
     const reply = await sendCoachPrompt(
       messages,
       context,
-      resolvedProvider ? { provider: resolvedProvider } : undefined,
+      resolvedProvider
+        ? { provider: resolvedProvider, taskKind: 'fault_explainer' }
+        : { taskKind: 'fault_explainer' },
     );
     const text = (reply.content ?? '').trim();
     if (!text) {
