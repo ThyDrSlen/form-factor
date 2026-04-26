@@ -12,7 +12,7 @@
  * tracker to navigate here is a follow-up.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -93,6 +93,20 @@ function pickBestAndWorst(reps: RepSummary[]): {
 export default function FormTrackingDebriefScreen() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
+  // Shared mounted-ref so every async completion in this screen (userId
+  // load, auth-state-change callbacks, comparison-card reload handlers)
+  // can defensively short-circuit state updates after unmount. The
+  // per-effect `cancelled` flag already covers the happy path, but the
+  // ref catches edge cases like a subscription callback fired synchronously
+  // during teardown, which would otherwise warn about setting state on an
+  // unmounted component.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   useEffect(() => {
     // Resolve the current user lazily via supabase.auth.getSession() rather
     // than via AuthContext so this screen stays test-friendly (AuthContext
@@ -106,7 +120,7 @@ export default function FormTrackingDebriefScreen() {
     // onto the initial `null` userId and never re-query once auth is ready.
     let cancelled = false;
     const applyUserId = (next: string | null) => {
-      if (cancelled) return;
+      if (cancelled || !mountedRef.current) return;
       setUserId((prev) => (prev === next ? prev : next));
     };
 
