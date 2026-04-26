@@ -172,4 +172,46 @@ describe('useFormQualityRecovery', () => {
     // warning, which would fail this test.
     await new Promise((r) => setTimeout(r, 10));
   });
+
+  it('drops stale response when sessionId changes mid-flight', async () => {
+    // Arrange: first fetch for s1 is slow; second fetch for s2 resolves
+    // via the default mock (immediately). The s1 response must not
+    // clobber the s2 state once it finally comes back.
+    let resolveS1Faults: (value: unknown) => void = () => {};
+    let resolveS1Aggregates: (value: unknown) => void = () => {};
+    mockGetSessionFaults.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveS1Faults = resolve;
+      })
+    );
+    mockGetSessionAggregates.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveS1Aggregates = resolve;
+      })
+    );
+
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string }) => useFormQualityRecovery(id),
+      { initialProps: { id: 's1' } }
+    );
+    expect(result.current.isLoading).toBe(true);
+
+    // Swap to s2 before s1 resolves. s2 uses the baseline resolved mocks
+    // so it completes on its own immediately.
+    rerender({ id: 's2' });
+    await waitFor(() => expect(result.current.summary?.sessionId).toBe('s2'));
+    expect(result.current.isLoading).toBe(false);
+
+    // Now belatedly resolve s1 — the hook should ignore this stale reply
+    // rather than overwrite the s2 summary or flip isLoading back on.
+    await act(async () => {
+      resolveS1Faults([
+        { id: 'stale', sessionId: 's1', exerciseId: 'squat', faultCode: 'shallow_depth', severity: 1, timestamp: 0 },
+      ]);
+      resolveS1Aggregates([]);
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.summary?.sessionId).toBe('s2');
+  });
 });
