@@ -99,18 +99,30 @@ export default function FormTrackingDebriefScreen() {
     // pulls expo-linking at import time, which the existing debrief test
     // suite's module graph doesn't set up). supabase itself is already
     // globally mocked in tests so this is a no-op there.
+    //
+    // We additionally subscribe to onAuthStateChange so the comparison query
+    // re-fires when the auth session resolves or changes after mount.
+    // Without this, a debrief opened before getSession() settles would latch
+    // onto the initial `null` userId and never re-query once auth is ready.
     let cancelled = false;
+    const applyUserId = (next: string | null) => {
+      if (cancelled) return;
+      setUserId((prev) => (prev === next ? prev : next));
+    };
+
     void supabase.auth
       .getSession()
-      .then(({ data }) => {
-        if (cancelled) return;
-        setUserId(data.session?.user.id ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) setUserId(null);
-      });
+      .then(({ data }) => applyUserId(data.session?.user.id ?? null))
+      .catch(() => applyUserId(null));
+
+    // Guard the call in case a stripped-down test mock omits the listener.
+    const subscription = supabase.auth.onAuthStateChange?.((_event, session) => {
+      applyUserId(session?.user?.id ?? null);
+    });
+
     return () => {
       cancelled = true;
+      subscription?.data?.subscription?.unsubscribe?.();
     };
   }, []);
   const params = useLocalSearchParams<{
