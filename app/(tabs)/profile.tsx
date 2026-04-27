@@ -1154,11 +1154,16 @@ Generated: ${new Date().toISOString()}
             </View>
             <View style={styles.modalActions}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonSecondary]}
+                style={[
+                  styles.modalButton,
+                  styles.modalButtonSecondary,
+                  isSavingName && { opacity: 0.5 },
+                ]}
                 onPress={() => setIsEditProfileVisible(false)}
                 disabled={isSavingName}
                 accessibilityRole="button"
                 accessibilityLabel="Cancel profile edit"
+                accessibilityState={{ disabled: isSavingName }}
               >
                 <Text style={[styles.modalButtonText, styles.modalButtonTextSecondary]}>Cancel</Text>
               </TouchableOpacity>

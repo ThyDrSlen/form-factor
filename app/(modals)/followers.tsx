@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { useToast } from '@/contexts/ToastContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -157,7 +158,15 @@ export default function FollowersModal() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={safeBack} style={styles.iconButton}>
+          <TouchableOpacity
+            onPress={() => {
+              void Haptics.selectionAsync();
+              safeBack();
+            }}
+            style={styles.iconButton}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
             <Ionicons name="chevron-back" size={20} color="#9AACD1" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Connections</Text>
