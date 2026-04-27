@@ -18,6 +18,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { warnWithTs } from '@/lib/logger';
+import { assertDailyBudget } from './coach-cost-tracker';
 import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
 import { sendCoachGemmaPrompt } from './coach-gemma-service';
 import {
@@ -152,6 +153,11 @@ export async function generateAutoDebrief(
   // Return cache when present so double-invocations (e.g. hook remount) are cheap.
   const cached = await getCachedAutoDebrief(input.sessionId);
   if (cached) return cached;
+
+  // Enforce per-surface daily budget. When exceeded, a typed
+  // BudgetExceededError propagates — callers (use-auto-debrief, UI) can catch
+  // and render a quota-exceeded state instead of paying for the dispatch.
+  await assertDailyBudget('auto_debrief');
 
   const provider: CoachProvider = input.provider ?? resolveCloudProvider();
 

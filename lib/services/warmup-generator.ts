@@ -5,6 +5,7 @@
  * from session-generator but returns a lighter `WarmupPlan` tree (no template
  * row materialization — callers consume directly as a checklist).
  */
+import { assertDailyBudget } from './coach-cost-tracker';
 import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
 import { parseGemmaJsonResponse, schema, type JsonSchema } from './gemma-json-parser';
 import { assertGemmaSessionGenEnabled } from './gemma-session-gen-flag';
@@ -74,6 +75,13 @@ export async function generateWarmup(
 ): Promise<WarmupPlan> {
   if (!runtime.dispatch && !runtime.skipFlagCheck) {
     assertGemmaSessionGenEnabled('warmup-generator');
+  }
+
+  // Enforce per-surface daily budget before spending tokens. Only gates the
+  // real dispatcher; tests / eval harnesses that inject `dispatch` are
+  // allowed through. Throws a typed BudgetExceededError.
+  if (!runtime.dispatch) {
+    await assertDailyBudget('warmup_generator');
   }
 
   const messages = buildWarmupGeneratorMessages(input);
