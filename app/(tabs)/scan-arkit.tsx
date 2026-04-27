@@ -560,6 +560,10 @@ export default function ScanARKitScreen() {
   const watchTrackingPublishAtRef = React.useRef(0);
   const watchTrackingSignatureRef = React.useRef<string | null>(null);
   const lastTrackingQualityRef = React.useRef<number | null>(null);
+  // Tracks the previous confidence tier so mid-set degradation warnings fire
+  // once on the high → low transition edge rather than on every frame. See
+  // emitMidSetDegradationIfTransition below for the thresholds.
+  const lastConfidenceTierRef = React.useRef<'high' | 'low' | null>(null);
   const [shadowModeEnabled, setShadowModeEnabled] = useState(true);
   const shadowModeEnabledRef = React.useRef(true);
   const shadowStatsRef = React.useRef(createShadowStatsAccumulator());
@@ -1572,9 +1576,39 @@ export default function ScanARKitScreen() {
         });
         if (typeof smoothingResult?.trackingQuality === 'number') {
           lastTrackingQualityRef.current = smoothingResult.trackingQuality;
+          // Mid-set confidence degradation: warn once when the tier flips from
+          // high → low during an active rep. The tier is only classified when
+          // we are mid-set (between repBoundary.startPhase and the next rep-
+          // complete), so between-set frames stay quiet. A Schmitt-trigger-
+          // style pair of thresholds avoids chatter around the boundary.
+          const HIGH_ENTER = 0.7;
+          const LOW_ENTER = 0.5;
+          const quality = smoothingResult.trackingQuality;
+          const inActiveRep = repIndexTrackerRef.current.current() !== null;
+          if (inActiveRep) {
+            let nextTier: 'high' | 'low' | null = lastConfidenceTierRef.current;
+            if (quality >= HIGH_ENTER) nextTier = 'high';
+            else if (quality <= LOW_ENTER) nextTier = 'low';
+            const prevTier = lastConfidenceTierRef.current;
+            if (prevTier === 'high' && nextTier === 'low') {
+              showToast('Tracking degraded — check lighting / framing', {
+                type: 'error',
+              });
+              void Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Warning,
+              ).catch(() => {
+                /* haptics unavailable — silent */
+              });
+            }
+            lastConfidenceTierRef.current = nextTier;
+          } else {
+            // Outside a rep: reset so the next rep's baseline starts neutral.
+            lastConfidenceTierRef.current = null;
+          }
         }
       } else {
         lastTrackingQualityRef.current = null;
+        lastConfidenceTierRef.current = null;
         repIndexTrackerRef.current.reset();
         resetWorkoutController({ preserveRepCount: true });
         setActiveMetrics(null);
@@ -1753,6 +1787,7 @@ export default function ScanARKitScreen() {
       resetCueHysteresis();
       repCountdownFiredRef.current = false;
       sessionFqiScoresRef.current = [];
+      lastConfidenceTierRef.current = null;
 
       const startTime = Date.now();
       shadowStatsRef.current = createShadowStatsAccumulator();
@@ -1867,6 +1902,7 @@ export default function ScanARKitScreen() {
       resetCueHysteresis();
       repCountdownFiredRef.current = false;
       sessionFqiScoresRef.current = [];
+      lastConfidenceTierRef.current = null;
 
       if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
