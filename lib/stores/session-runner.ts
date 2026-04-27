@@ -1064,6 +1064,11 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
 
       // Check if there's an active rest timer
       let restTimer: SessionRunnerState['restTimer'] = null;
+      // Track the most recently completed set so we can detect the orphan
+      // case: foregrounded after a rest was skipped but before the DB row
+      // was flushed, which previously risked re-presenting the rest sheet
+      // or double-advancing the runner through a stale completion haptic.
+      let lastCompletedSet: WorkoutSessionSet | null = null;
       for (const [, exSets] of Object.entries(sets)) {
         for (const s of exSets) {
           if (s.rest_started_at && !s.rest_completed_at && !s.rest_skipped && s.rest_target_seconds) {
@@ -1077,7 +1082,30 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
               scheduleRestTimerCompletionHaptic(s.rest_started_at, s.rest_target_seconds);
             }
           }
+          if (s.completed_at) {
+            if (
+              !lastCompletedSet ||
+              (s.completed_at ?? '') > (lastCompletedSet.completed_at ?? '')
+            ) {
+              lastCompletedSet = s;
+            }
+          }
         }
+      }
+
+      // Orphaned rest-skip guard: the last completed set was marked skipped,
+      // but no fresh rest timer was hydrated. Defensively clear any stale
+      // timeouts + completion haptics that might have been scheduled before
+      // the skip was flushed, so we don't re-open the sheet or fire phantom
+      // end-of-rest pulses after a resume.
+      if (restTimer === null && lastCompletedSet?.rest_skipped) {
+        clearRestTimerCompletionTimeout();
+        clearRestTimerHapticTimeout();
+        // Fire-and-forget: cancel any pending system notifications too.
+        void cancelRestNotification();
+        logWithTs(
+          `[SessionRunner] Resume: orphaned rest-skip on set ${lastCompletedSet.id} — cleared stale timers`,
+        );
       }
 
       set({
