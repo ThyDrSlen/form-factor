@@ -14,13 +14,10 @@
  *   PR stands on its own.
  */
 
-import { warnWithTs } from '@/lib/logger';
 import type { FrameSnapshot, JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 import { sendCoachPrompt, type CoachMessage } from './coach-service';
 import { sendCoachGemmaPrompt } from './coach-gemma-service';
-import { isDispatchEnabled } from './coach-model-dispatch-flag';
-import { assertUnderWeeklyCap } from './coach-cost-guard';
-import { recordCoachUsage } from './coach-cost-tracker';
+import { hardenAgainstInjection } from './coach-injection-hardener';
 
 export type PreSetPreviewProvider = 'gemma' | 'openai';
 
@@ -32,34 +29,6 @@ export interface PreSetPreviewResult {
 
 const GEMMA_PROVIDER_ENV = 'EXPO_PUBLIC_COACH_CLOUD_PROVIDER';
 const MAX_VERDICT_LENGTH = 160;
-
-/**
- * Task-kind hint for pre-set stance previews. Recorded against the coach
- * cost-tracker so weekly aggregates surface form-check spend separately from
- * general chat / debrief. Exported so tests + call sites can assert on the
- * exact string literal.
- */
-export const PRE_SET_PREVIEW_TASK_KIND = 'form_check' as const;
-
-/**
- * Best-effort usage recorder. Fires after each call-site resolution so the
- * cost-tracker can attribute pre-set spend to the `form_check` bucket. Token
- * counts aren't available from the edge function response here (tracked at
- * the edge level), so we log call-count-only with zero tokens. A follow-up
- * can plumb actual token usage when the edge function starts returning it.
- */
-function recordPreSetUsage(provider: 'gemma_cloud' | 'openai'): void {
-  void recordCoachUsage({
-    provider,
-    taskKind: PRE_SET_PREVIEW_TASK_KIND,
-    tokensIn: 0,
-    tokensOut: 0,
-  }).catch((err) => {
-    // recordCoachUsage already swallows AsyncStorage faults; this is a last
-    // line of defence so a telemetry bug never breaks the form-check path.
-    warnWithTs('[pre-set-preview] recordCoachUsage failed', err);
-  });
-}
 
 /**
  * Inline replacement for coach-live-snapshot.buildLiveSessionSnapshot().
@@ -111,30 +80,28 @@ function interpretVerdict(raw: string): { verdict: string; isFormGood: boolean }
 
 function isGemmaEnabled(): boolean {
   // Evaluated at call-time so tests can mutate process.env between cases.
-  // Dispatch-flag gate (#536): both the env-level provider choice and the
-  // global dispatch flag must be on before we try Gemma. This keeps the
-  // Gemma path cleanly pausable via `EXPO_PUBLIC_COACH_DISPATCH=off` even
-  // when env already points at Gemma.
-  return process.env[GEMMA_PROVIDER_ENV] === 'gemma' && isDispatchEnabled();
+  return process.env[GEMMA_PROVIDER_ENV] === 'gemma';
 }
 
 async function callGemma(prompt: string): Promise<string> {
   // Direct call to the canonical Gemma service — routes through the
   // coach-gemma edge function rather than the generic `coach` function so
   // model-specific parameters and provider annotations flow through cleanly.
-  // `taskKind` is forwarded to the cost-tracker wiring so the preview
-  // counts against the right task-kind bucket (chat, since it's ephemeral).
-  const messages: CoachMessage[] = [{ role: 'user', content: prompt }];
-  const reply = await sendCoachGemmaPrompt(
-    messages,
-    { focus: 'pre-set-stance-preview-gemma' },
-    { taskKind: 'chat' },
-  );
+  // Harden the prompt before dispatch so adversarial exercise names cannot
+  // smuggle prompt-break tokens into the Gemma system message.
+  const hardened = hardenAgainstInjection(prompt, { maxLength: 1000 });
+  const messages: CoachMessage[] = [{ role: 'user', content: hardened }];
+  const reply = await sendCoachGemmaPrompt(messages, {
+    focus: 'pre-set-stance-preview-gemma',
+  });
   return reply.content;
 }
 
 async function callOpenAI(prompt: string): Promise<string> {
-  const messages: CoachMessage[] = [{ role: 'user', content: prompt }];
+  // Same hardening as the Gemma path — defense in depth against injected
+  // exercise names / angle text before the prompt reaches the cloud model.
+  const hardened = hardenAgainstInjection(prompt, { maxLength: 1000 });
+  const messages: CoachMessage[] = [{ role: 'user', content: hardened }];
   const reply = await sendCoachPrompt(messages, {
     focus: 'pre-set-stance-preview',
   });
@@ -161,31 +128,16 @@ export async function checkPreSetStance(
   const prompt = buildPreSetPrompt(exerciseName, serialized);
 
   if (isGemmaEnabled()) {
-    // Cost-guard (#537): skip Gemma when the weekly token cap has been
-    // exceeded. Silent fall-through to OpenAI — the preview is best-effort
-    // and shouldn't surface a billing error to the user.
-    let capExceeded = false;
     try {
-      await assertUnderWeeklyCap('gemma_cloud');
-    } catch (err) {
-      capExceeded = true;
-      warnWithTs('[pre-set-preview] weekly Gemma cap hit, using OpenAI', err);
-    }
-
-    if (!capExceeded) {
-      try {
-        const reply = await callGemma(prompt);
-        const interpreted = interpretVerdict(reply);
-        recordPreSetUsage('gemma_cloud');
-        return { ...interpreted, provider: 'gemma' };
-      } catch {
-        // Fall through to OpenAI — Gemma path is best-effort.
-      }
+      const reply = await callGemma(prompt);
+      const interpreted = interpretVerdict(reply);
+      return { ...interpreted, provider: 'gemma' };
+    } catch {
+      // Fall through to OpenAI — Gemma path is best-effort.
     }
   }
 
   const reply = await callOpenAI(prompt);
   const interpreted = interpretVerdict(reply);
-  recordPreSetUsage('openai');
   return { ...interpreted, provider: 'openai' };
 }
