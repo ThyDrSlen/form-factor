@@ -33,7 +33,14 @@ type Step = 'check' | 'preview';
 
 export default function FormTrackingPreCalibrationModal() {
   const router = useRouter();
-  const { status, recordFrame, markSuccess, markFailed, reset } = usePreCalibrationStatus();
+  const {
+    status,
+    recordFrame,
+    markSuccess,
+    markFailed,
+    reset,
+    setForceRecalibration,
+  } = usePreCalibrationStatus();
   const [step, setStep] = useState<Step>('check');
 
   // Simulate per-frame confidence collection on the preview step.
@@ -90,7 +97,12 @@ export default function FormTrackingPreCalibrationModal() {
     <View style={styles.overlay} testID="pre-calibration-modal">
       <View style={styles.card}>
         {step === 'check' ? (
-          <CheckStep onContinue={() => setStep('preview')} onCancel={handleCancel} />
+          <CheckStep
+            onContinue={() => setStep('preview')}
+            onCancel={handleCancel}
+            forceRecalibration={status.forceRecalibration}
+            onToggleForce={() => setForceRecalibration(!status.forceRecalibration)}
+          />
         ) : (
           <PreviewStep
             confidencePercent={confidencePercent}
@@ -112,9 +124,16 @@ export default function FormTrackingPreCalibrationModal() {
 interface CheckStepProps {
   onContinue: () => void;
   onCancel: () => void;
+  forceRecalibration: boolean;
+  onToggleForce: () => void;
 }
 
-function CheckStep({ onContinue, onCancel }: CheckStepProps) {
+function CheckStep({
+  onContinue,
+  onCancel,
+  forceRecalibration,
+  onToggleForce,
+}: CheckStepProps) {
   return (
     <>
       <View style={styles.iconWrap}>
@@ -129,6 +148,23 @@ function CheckStep({ onContinue, onCancel }: CheckStepProps) {
         <ChecklistRow icon="bulb-outline" label="Good lighting on subject" />
         <ChecklistRow icon="body-outline" label="Full body in frame" />
       </View>
+      <TouchableOpacity
+        style={styles.recalRow}
+        onPress={onToggleForce}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: forceRecalibration }}
+        accessibilityLabel="Force recalibration on this session"
+        testID="pre-calibration-force-recal"
+      >
+        <Ionicons
+          name={forceRecalibration ? 'checkbox' : 'square-outline'}
+          size={18}
+          color={forceRecalibration ? '#4C8CFF' : '#9AACD1'}
+        />
+        <Text style={styles.recalLabel}>
+          Recalibrate (override skip)
+        </Text>
+      </TouchableOpacity>
       <View style={styles.actions}>
         <TouchableOpacity style={styles.secondaryButton} onPress={onCancel} testID="pre-calibration-cancel">
           <Text style={styles.secondaryButtonText}>Cancel</Text>
@@ -342,5 +378,19 @@ const styles = StyleSheet.create({
   progressFill: {
     height: '100%',
     backgroundColor: '#4C8CFF',
+  },
+  recalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 18,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    alignSelf: 'flex-start',
+  },
+  recalLabel: {
+    color: '#9AACD1',
+    fontSize: 13,
+    fontWeight: '500',
   },
 });
