@@ -40,6 +40,7 @@ import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type MediaPipePose2D } from '@/lib/arkit/ARKitBodyTracker';
 import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
+import { useFormTrackingSettings } from '@/hooks/use-form-tracking-settings';
 import { audioSessionManager } from '@/lib/services/audio-session-manager';
 import { useToast } from '@/contexts/ToastContext';
 import { CrashBoundary } from '@/components/CrashBoundary';
@@ -350,6 +351,19 @@ export default function ScanARKitScreen() {
   const DEV = __DEV__;
   const router = useRouter();
   const { show: showToast } = useToast();
+  // Form-tracking global preferences. We only read the two feedback-modality
+  // toggles here — `countAudioEnabled` gates the 3-2-1 rep countdown and
+  // `hapticsEnabled` gates the rep-complete / start / stop haptic pulses.
+  // Voice gating is handled elsewhere (usePremiumCueAudio). Mirror both into
+  // refs so callback-stable callsites don't need to re-render when the user
+  // toggles either in settings.
+  const { settings: formTrackingSettings } = useFormTrackingSettings();
+  const countAudioEnabledRef = React.useRef<boolean>(formTrackingSettings.countAudioEnabled);
+  const hapticsEnabledRef = React.useRef<boolean>(formTrackingSettings.hapticsEnabled);
+  useEffect(() => {
+    countAudioEnabledRef.current = formTrackingSettings.countAudioEnabled;
+    hapticsEnabledRef.current = formTrackingSettings.hapticsEnabled;
+  }, [formTrackingSettings.countAudioEnabled, formTrackingSettings.hapticsEnabled]);
   const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string; trackingDebug?: string; templateId?: string }>();
   const fixturePlaybackRequested = params.fixturePlayback === '1';
   // Issue #447 — deep-link / scheduled-workout template binding.
@@ -1055,11 +1069,12 @@ export default function ScanARKitScreen() {
       // Additive rep-complete haptic: the workout controller already fires
       // a Light impact through the shared haptic bus, but testers reported
       // that in noisy gym environments the light tap is easy to miss. When
-      // the user has audio/cue feedback enabled we also fire a Heavy impact
-      // here so successful reps register unambiguously. Gated by
-      // audioFeedbackEnabledRef.current (mirrors the cue-audio toggle) so
-      // users who explicitly silenced cues don't get a phantom extra buzz.
-      if (audioFeedbackEnabledRef.current) {
+      // the user has audio/cue feedback enabled AND hasn't muted haptics we
+      // also fire a Heavy impact here so successful reps register
+      // unambiguously. Gated by audioFeedbackEnabledRef.current (mirrors
+      // the cue-audio toggle) + hapticsEnabledRef.current (form-tracking
+      // settings) so users who silenced either don't get a phantom buzz.
+      if (audioFeedbackEnabledRef.current && hapticsEnabledRef.current) {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {
           /* native bridge unavailable — silent */
         });
@@ -1800,15 +1815,16 @@ export default function ScanARKitScreen() {
 
       if (DEV) logWithTs('[ScanARKit] Tracking started successfully in', elapsed, 'ms');
 
-      if (Platform.OS === 'ios') {
+      if (Platform.OS === 'ios' && hapticsEnabledRef.current) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
 
       // Fire the 3-2-1 pre-announce once per tracking start. Gated on the
-      // user preference + the EXPO_PUBLIC_REP_COUNTDOWN env flag inside
-      // playRepCountdown itself. Errors are swallowed — countdown is a
-      // nice-to-have, not a blocker for the tracking loop.
-      if (!repCountdownFiredRef.current) {
+      // user preference (form-tracking `countAudioEnabled` toggle) + the
+      // EXPO_PUBLIC_REP_COUNTDOWN env flag inside playRepCountdown itself.
+      // Errors are swallowed — countdown is a nice-to-have, not a blocker
+      // for the tracking loop.
+      if (!repCountdownFiredRef.current && countAudioEnabledRef.current) {
         repCountdownFiredRef.current = true;
         playRepCountdown().catch((error) => {
           if (DEV) warnWithTs('[ScanARKit] rep countdown failed', error);
@@ -1906,7 +1922,7 @@ export default function ScanARKitScreen() {
 
       if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
-      if (Platform.OS === 'ios') {
+      if (Platform.OS === 'ios' && hapticsEnabledRef.current) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
 
