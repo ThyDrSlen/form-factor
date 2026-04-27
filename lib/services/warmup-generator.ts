@@ -79,7 +79,16 @@ export async function generateWarmup(
   const messages = buildWarmupGeneratorMessages(input);
   const dispatch = runtime.dispatch ?? sendCoachPrompt;
 
-  const response = await dispatch(messages, runtime.coachContext);
+  // Attach `focus: 'warmup_generator'` so the cost tracker / telemetry
+  // pipelines can attribute tokens to this surface (mirrors the pattern in
+  // coach-auto-debrief / drill-explainer). Caller-supplied focus wins when
+  // present so explicit attribution overrides the default.
+  const dispatchContext: CoachContext = {
+    ...(runtime.coachContext ?? {}),
+    focus: runtime.coachContext?.focus ?? 'warmup_generator',
+  };
+
+  const response = await dispatch(messages, dispatchContext);
 
   const retryInvoker = async (ctx: { lastRawText: string; issues?: unknown }): Promise<string> => {
     const retryMessages: CoachMessage[] = [
@@ -90,7 +99,7 @@ export async function generateWarmup(
         content: `The previous response did not match the warmup schema. Issues: ${JSON.stringify(ctx.issues ?? 'syntax error')}. Respond ONLY with corrected JSON.`,
       },
     ];
-    const retry = await dispatch(retryMessages, runtime.coachContext);
+    const retry = await dispatch(retryMessages, dispatchContext);
     return retry.content;
   };
 

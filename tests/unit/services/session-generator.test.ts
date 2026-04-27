@@ -141,6 +141,28 @@ describe('generateSession', () => {
     expect(result.exercises[0].exercise_slug).toBe('pushup');
   });
 
+  it("attaches focus='session_generator' to the dispatch context for cost attribution", async () => {
+    const dispatch = jest.fn<Promise<CoachMessage>, [CoachMessage[], unknown?]>()
+      .mockResolvedValue({ role: 'assistant', content: JSON.stringify(validResponse) });
+    await generateSession(
+      { intent: 'x' },
+      { userId: 'u1', dispatch },
+    );
+    const ctx = dispatch.mock.calls[0][1] as { focus?: string } | undefined;
+    expect(ctx?.focus).toBe('session_generator');
+  });
+
+  it('preserves caller-supplied focus instead of overwriting it', async () => {
+    const dispatch = jest.fn<Promise<CoachMessage>, [CoachMessage[], unknown?]>()
+      .mockResolvedValue({ role: 'assistant', content: JSON.stringify(validResponse) });
+    await generateSession(
+      { intent: 'x' },
+      { userId: 'u1', dispatch, coachContext: { focus: 'eval_harness' } },
+    );
+    const ctx = dispatch.mock.calls[0][1] as { focus?: string } | undefined;
+    expect(ctx?.focus).toBe('eval_harness');
+  });
+
   it('retries when the first response is not valid JSON', async () => {
     const dispatch = jest
       .fn<Promise<CoachMessage>, [CoachMessage[]]>()
