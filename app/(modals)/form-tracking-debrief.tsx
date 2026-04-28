@@ -313,9 +313,9 @@ export default function FormTrackingDebriefScreen() {
           ) : (
             <View style={styles.emptyState} testID="form-tracking-debrief-empty">
               <Ionicons name="information-circle-outline" size={28} color="#9AACD1" />
-              <Text style={styles.emptyTitle}>No reps recorded yet</Text>
+              <Text style={styles.emptyTitle}>This session had no counted reps</Text>
               <Text style={styles.emptyBody}>
-                Start a live tracking set to see your breakdown.
+                Check framing or lighting and try again.
               </Text>
             </View>
           )}
