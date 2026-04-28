@@ -142,6 +142,14 @@ export default function CalibrationFailureRecoveryModal(): React.ReactElement {
     } as never);
   }, [router, suggestedExercise]);
 
+  // Fallback when the analyzer did not surface a specific suggestion: send
+  // the user to the workouts tab so they can pick any exercise manually.
+  // No dedicated exercise-picker route exists yet in the app; the workouts
+  // tab is the closest canonical entry point for browsing exercises.
+  const handleChooseDifferent = useCallback(() => {
+    router.replace('/(tabs)/workouts' as never);
+  }, [router]);
+
   const handleClose = useCallback(() => {
     router.back();
   }, [router]);
@@ -255,7 +263,7 @@ export default function CalibrationFailureRecoveryModal(): React.ReactElement {
           <Text style={styles.ctaSecondaryText}>Open camera guide</Text>
         </TouchableOpacity>
 
-        {suggestedExercise && (
+        {suggestedExercise ? (
           <TouchableOpacity
             style={[styles.ctaButton, styles.ctaTertiary]}
             onPress={handleTryOther}
@@ -266,6 +274,17 @@ export default function CalibrationFailureRecoveryModal(): React.ReactElement {
             <Text style={styles.ctaTertiaryText}>
               Try {formatExerciseLabel(suggestedExercise)} instead
             </Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[styles.ctaButton, styles.ctaTertiary]}
+            onPress={handleChooseDifferent}
+            accessibilityRole="button"
+            accessibilityLabel="Choose a different exercise"
+            testID="calibration-failure-choose-different"
+          >
+            <Ionicons name="swap-horizontal-outline" size={18} color="#8693A8" />
+            <Text style={styles.ctaTertiaryText}>Choose a different exercise</Text>
           </TouchableOpacity>
         )}
 
