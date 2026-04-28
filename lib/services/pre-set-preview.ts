@@ -17,7 +17,6 @@
 import type { FrameSnapshot, JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 import { sendCoachPrompt, type CoachMessage } from './coach-service';
 import { sendCoachGemmaPrompt } from './coach-gemma-service';
-import { hardenAgainstInjection } from './coach-injection-hardener';
 
 export type PreSetPreviewProvider = 'gemma' | 'openai';
 
@@ -87,10 +86,10 @@ async function callGemma(prompt: string): Promise<string> {
   // Direct call to the canonical Gemma service — routes through the
   // coach-gemma edge function rather than the generic `coach` function so
   // model-specific parameters and provider annotations flow through cleanly.
-  // Harden the prompt before dispatch so adversarial exercise names cannot
-  // smuggle prompt-break tokens into the Gemma system message.
-  const hardened = hardenAgainstInjection(prompt, { maxLength: 1000 });
-  const messages: CoachMessage[] = [{ role: 'user', content: hardened }];
+  // The dispatcher is intentionally NOT consulted here (this path is already
+  // Gemma-pinned); taskKind would be informational only and the service does
+  // not forward it. Equivalent dispatch behavior lives on `callOpenAI`.
+  const messages: CoachMessage[] = [{ role: 'user', content: prompt }];
   const reply = await sendCoachGemmaPrompt(messages, {
     focus: 'pre-set-stance-preview-gemma',
   });
@@ -98,13 +97,20 @@ async function callGemma(prompt: string): Promise<string> {
 }
 
 async function callOpenAI(prompt: string): Promise<string> {
-  // Same hardening as the Gemma path — defense in depth against injected
-  // exercise names / angle text before the prompt reaches the cloud model.
-  const hardened = hardenAgainstInjection(prompt, { maxLength: 1000 });
-  const messages: CoachMessage[] = [{ role: 'user', content: hardened }];
-  const reply = await sendCoachPrompt(messages, {
-    focus: 'pre-set-stance-preview',
-  });
+  const messages: CoachMessage[] = [{ role: 'user', content: prompt }];
+  const reply = await sendCoachPrompt(
+    messages,
+    {
+      focus: 'pre-set-stance-preview',
+    },
+    {
+      // Declare the task kind so the dispatcher routes this through the
+      // form-vision bucket. Without taskKind the call falls through to the
+      // general_chat default, which may escalate a short stance check onto
+      // a larger cloud model unnecessarily.
+      taskKind: 'form_vision_check',
+    },
+  );
   return reply.content;
 }
 

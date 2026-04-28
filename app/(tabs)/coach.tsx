@@ -11,7 +11,6 @@ import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { fetchTodaySession, fetchCoachSessionMessages } from '@/lib/services/coach-history-service';
 import { AppError, createError, logError, mapToUserMessage } from '@/lib/services/ErrorHandler';
 import { CoachProviderBadge } from '@/components/coach/CoachProviderBadge';
-import { CoachAvailabilityBanner } from '@/components/coach/CoachAvailabilityBanner';
 import { styles } from '../../styles/tabs/_index.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
 import { tabColors } from '@/styles/tabs/_tab-theme';
@@ -49,6 +48,7 @@ export default function CoachScreen() {
   const [coachError, setCoachError] = useState<string | null>(null);
   const [coachErrorDomain, setCoachErrorDomain] = useState<AppError['domain'] | null>(null);
   const [coachErrorCode, setCoachErrorCode] = useState<string | null>(null);
+  const [coachRetryAfterMs, setCoachRetryAfterMs] = useState<number | null>(null);
   const [coachSending, setCoachSending] = useState(false);
   const [showCoachWelcome, setShowCoachWelcome] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
@@ -76,12 +76,11 @@ export default function CoachScreen() {
         name:
           (userMetadata && typeof userMetadata.full_name === 'string' ? userMetadata.full_name : null) ??
           (userMetadata && typeof userMetadata.name === 'string' ? userMetadata.name : null),
-        email: user?.email ?? null,
       },
       focus: 'fitness_coach',
       sessionId: coachSessionId,
     }),
-    [coachSessionId, user?.email, user?.id, userMetadata]
+    [coachSessionId, user?.id, userMetadata]
   );
 
   const handleCoachSend = async (preset?: string) => {
@@ -101,6 +100,7 @@ export default function CoachScreen() {
     setCoachError(null);
     setCoachErrorDomain(null);
     setCoachErrorCode(null);
+    setCoachRetryAfterMs(null);
     setCoachSending(true);
 
     try {
@@ -120,6 +120,15 @@ export default function CoachScreen() {
       setCoachError(hasDomain ? mapToUserMessage(appErr as AppError) : fallback);
       setCoachErrorDomain(hasDomain ? (appErr as AppError).domain : null);
       setCoachErrorCode(hasDomain ? (appErr as AppError).code : null);
+      // Extract retry-after (parsed from the upstream Retry-After header) from
+      // the error details so we can show a concrete countdown rather than a
+      // generic "try again in a moment".
+      const details = hasDomain ? (appErr as AppError).details : undefined;
+      const retryAfterMs =
+        details && typeof details === 'object' && 'retryAfterMs' in details
+          ? Number((details as { retryAfterMs?: unknown }).retryAfterMs)
+          : NaN;
+      setCoachRetryAfterMs(Number.isFinite(retryAfterMs) ? retryAfterMs : null);
     } finally {
       setCoachSending(false);
     }
@@ -247,6 +256,7 @@ export default function CoachScreen() {
     setCoachError(null);
     setCoachErrorDomain(null);
     setCoachErrorCode(null);
+    setCoachRetryAfterMs(null);
   }, []);
 
   const handleVoiceStart = useCallback(async () => {
@@ -341,10 +351,6 @@ export default function CoachScreen() {
           </>
         ) : null}
 
-        {/* #557 B4: offline-coach awareness banner. Self-hides when the
-            network is online; dismissible with Got it on tap. */}
-        <CoachAvailabilityBanner testID="coach-availability-banner" />
-
         <View style={styles.quickPrompts}>
           {coachQuickPrompts.map(prompt => (
             <TouchableOpacity
@@ -353,7 +359,6 @@ export default function CoachScreen() {
               onPress={() => handleCoachSend(prompt)}
               accessibilityRole="button"
               accessibilityLabel={`Quick prompt: ${prompt}`}
-              accessibilityHint="Sends this suggested message to the coach"
             >
               <Text style={styles.quickPromptText}>{prompt}</Text>
             </TouchableOpacity>
@@ -361,34 +366,25 @@ export default function CoachScreen() {
         </View>
 
         {coachError && (
-          <TouchableOpacity
-            style={styles.coachError}
-            testID="coach-error-banner"
-            onPress={() => {
-              const lastUserMessage = [...coachMessages].reverse().find(msg => msg.role === 'user');
-              if (lastUserMessage?.content) {
-                void handleCoachSend(lastUserMessage.content);
-              }
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={
-              coachErrorCode === 'COACH_RATE_LIMITED'
-                ? 'Coach is busy. Tap to retry.'
-                : 'Coach unavailable. Tap to retry.'
-            }
-            accessibilityHint="Retries the last message you sent"
-          >
+          <View style={styles.coachError} testID="coach-error-banner">
             <Text style={styles.coachErrorTitle}>
-              {coachErrorCode === 'COACH_RATE_LIMITED'
-                ? 'Coach is busy — try again in a few minutes. Tap to retry.'
+              {coachErrorCode === 'COACH_RATE_LIMITED' ||
+              coachErrorCode === 'COACH_GEMMA_RATE_LIMITED'
+                ? 'Coach is rate-limited'
                 : coachErrorDomain === 'network'
-                  ? 'Connection error. Tap to retry.'
+                  ? 'Connection error'
                   : coachErrorDomain === 'unknown' || coachErrorDomain == null
-                    ? 'Coach is busy. Tap to retry.'
-                    : 'Service unavailable. Tap to retry.'}
+                    ? 'Coach is busy'
+                    : 'Service unavailable'}
             </Text>
-            <Text style={styles.coachErrorText}>{coachError}</Text>
-          </TouchableOpacity>
+            <Text style={styles.coachErrorText}>
+              {coachRetryAfterMs !== null &&
+              (coachErrorCode === 'COACH_RATE_LIMITED' ||
+                coachErrorCode === 'COACH_GEMMA_RATE_LIMITED')
+                ? `Try again in ${Math.max(1, Math.ceil(coachRetryAfterMs / 1000))}s.`
+                : coachError}
+            </Text>
+          </View>
         )}
 
         {sessionLoading ? (
@@ -451,10 +447,13 @@ export default function CoachScreen() {
             value={coachInput}
             onChangeText={setCoachInput}
             multiline
-            accessibilityLabel="Coach message input"
             returnKeyType="send"
-            onSubmitEditing={() => handleCoachSend()}
-            editable={!coachSending}
+            blurOnSubmit={false}
+            onSubmitEditing={() => {
+              if (!coachSending && coachInput.trim()) {
+                handleCoachSend();
+              }
+            }}
           />
 
           {voiceEnabled && !coachSending && (
@@ -477,10 +476,6 @@ export default function CoachScreen() {
             style={[styles.coachSend, (!coachInput.trim() || coachSending) && styles.coachSendDisabled]}
             onPress={() => handleCoachSend()}
             disabled={!coachInput.trim() || coachSending}
-            accessibilityRole="button"
-            accessibilityLabel={coachSending ? 'Sending message' : 'Send message'}
-            accessibilityHint="Double-tap to send your prompt to the coach"
-            accessibilityState={{ busy: coachSending, disabled: coachSending || !coachInput.trim() }}
           >
             {coachSending ? (
               <ActivityIndicator color="#ffffff" />

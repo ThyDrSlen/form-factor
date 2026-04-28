@@ -38,36 +38,17 @@
  * live in `coach-service.ts` and gate on `isCoachModelDispatchEnabled()`.
  */
 
-/**
- * RESERVED TASK KINDS
- *
- * The following enum values are defined for future production wiring and are
- * intentionally unreferenced by any dispatch site today. They remain in the
- * union so `decideCoachModel()` can route them the moment a caller adopts the
- * taskKind — do not treat them as dead code:
- *
- * - `form_cue_lookup`  — inline form-cue fetch (reserved for wave-35+)
- * - `rest_calc`        — pure numeric rest calculator (reserved; distinct
- *                        from `rest_period_coaching` which ships in wave-34
- *                        via rest-advisor)
- * - `encouragement`    — short-turn motivational nudges (reserved)
- */
 export type CoachTaskKind =
   | 'form_cue_lookup'
   | 'rest_calc'
   | 'encouragement'
   | 'fault_explainer'
+  | 'voice_intent'
   | 'form_vision_check'
   | 'program_design'
   | 'nutrition_balance'
   | 'multi_turn_debrief'
   | 'session_generator'
-  | 'progression_planner'
-  | 'form_check'
-  | 'voice_debrief'
-  | 'voice_nlu'
-  | 'rest_period_coaching'
-  | 'exercise_swap_explanation'
   | 'general_chat';
 
 export type CoachModelId =
@@ -108,9 +89,9 @@ const TACTICAL_TASKS: ReadonlySet<CoachTaskKind> = new Set<CoachTaskKind>([
   'rest_calc',
   'encouragement',
   'fault_explainer',
-  'voice_nlu',
-  'rest_period_coaching',
-  'exercise_swap_explanation',
+  // voice_intent: short classification tasks for hands-free voice control.
+  // Routes to the cheapest Gemma tier — same cost bucket as form_cue_lookup.
+  'voice_intent',
 ]);
 
 const COMPLEX_TASKS: ReadonlySet<CoachTaskKind> = new Set<CoachTaskKind>([
@@ -130,22 +111,9 @@ function complexCloudForTier(tier: CoachUserTier): CoachModelId {
   return tier === 'premium' ? 'gpt-5.4' : 'gpt-5.4-mini';
 }
 
-/**
- * Pure helper exposing the tier-expected baseline model — what the router
- * would pick for `(taskKind, signals, userTier)` with NO options overrides
- * (no forceCloud, no dispatchDisabled, no vision fallback). Callers use this
- * to detect mismatches: when `decideCoachModel(...).model` diverges from
- * `expectedTierModel(...)`, some feature flag or dispatch option drove the
- * decision away from the baseline and telemetry can record it.
- */
-export function expectedTierModel(
-  taskKind: CoachTaskKind,
-  signals: CoachSignals,
-  userTier: CoachUserTier,
-): CoachModelId {
-  return decideCoachModel(taskKind, signals, userTier).model;
-}
-
+// Routing is driven by taskKind. If you're tempted to branch on
+// `CoachContext.focus`, add a new taskKind instead — focus is a cosmetic
+// prompt label and does not reach the dispatcher.
 export function decideCoachModel(
   taskKind: CoachTaskKind,
   signals: CoachSignals,
