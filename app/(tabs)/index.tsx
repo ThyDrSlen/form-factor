@@ -601,7 +601,12 @@ export default function HomeScreen() {
             >
               <View style={styles.postAvatar}>
                 {item.avatar_url ? (
-                  <Image source={{ uri: item.avatar_url }} style={styles.postAvatarImage} />
+                  <Image
+                    source={{ uri: item.avatar_url }}
+                    style={styles.postAvatarImage}
+                    accessibilityRole="image"
+                    accessibilityLabel={displayName ? `${displayName}'s avatar` : 'User avatar'}
+                  />
                 ) : (
                   <Text style={styles.postAvatarText}>{displayInitial}</Text>
                 )}
