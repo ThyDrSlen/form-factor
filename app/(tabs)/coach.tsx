@@ -75,12 +75,11 @@ export default function CoachScreen() {
         name:
           (userMetadata && typeof userMetadata.full_name === 'string' ? userMetadata.full_name : null) ??
           (userMetadata && typeof userMetadata.name === 'string' ? userMetadata.name : null),
-        email: user?.email ?? null,
       },
       focus: 'fitness_coach',
       sessionId: coachSessionId,
     }),
-    [coachSessionId, user?.email, user?.id, userMetadata]
+    [coachSessionId, user?.id, userMetadata]
   );
 
   const handleCoachSend = async (preset?: string) => {

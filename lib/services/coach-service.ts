@@ -45,10 +45,16 @@ export interface CoachMessage {
 }
 
 export interface CoachContext {
+  /**
+   * Identifier and display name only. NEVER include email, phone, or other
+   * PII — prompts flow to third-party LLMs (OpenAI, Google Gemma cloud) and
+   * may be logged at the edge. Keep this field minimal. Downstream edge
+   * functions still accept an optional `email` in their input schema for
+   * backward compatibility, but the client MUST NOT populate it.
+   */
   profile?: {
     id?: string;
     name?: string | null;
-    email?: string | null;
   };
   focus?: string;
   sessionId?: string;
