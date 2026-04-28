@@ -17,10 +17,12 @@
  * message into a typed `CueEntry` with priority + fault type.
  */
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MotiView } from 'moti';
+
+import { createError, logError } from '@/lib/services/ErrorHandler';
 
 export type CuePriority = 'critical' | 'warning' | 'advisory';
 
@@ -121,7 +123,29 @@ export default function CueCard({ cue, style, testID }: CueCardProps) {
   // Re-mount on message change so the fade-in replays.
   const motiKey = useMemo(() => cue?.message ?? 'empty', [cue?.message]);
 
-  if (!cue || !palette || !icon) {
+  // Defensive guard: the cue-engine contract requires `message` to be
+  // non-empty (rules define `message: string` as required, with variant
+  // fallback on empty). A silent/empty cue is worse UX than no cue, so we
+  // bail out and log it so regressions surface in telemetry.
+  const isEmptyMessage = !!cue && cue.message.trim() === '';
+  useEffect(() => {
+    if (isEmptyMessage && cue) {
+      logError(
+        createError(
+          'form-tracking',
+          'CUE_EMPTY_MESSAGE',
+          'CueCard received a cue with an empty message string',
+          {
+            details: { priority: cue.priority, faultType: cue.faultType },
+            severity: 'warning',
+          },
+        ),
+        { feature: 'form-tracking', location: 'CueCard' },
+      );
+    }
+  }, [isEmptyMessage, cue]);
+
+  if (!cue || !palette || !icon || isEmptyMessage) {
     return null;
   }
 
