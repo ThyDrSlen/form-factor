@@ -56,6 +56,13 @@ export interface CoachContext {
     id?: string;
     name?: string | null;
   };
+  /**
+   * User-context label for prompt composition ONLY (e.g. 'fitness_coach',
+   * 'pre-set-stance-preview'). Does NOT influence cost-aware routing — use
+   * `CoachSendOptions.taskKind` to control which provider/model serves the
+   * request. Callers that rely on `focus` for routing will silently hit the
+   * default dispatch path.
+   */
   focus?: string;
   sessionId?: string;
   /**
@@ -111,6 +118,10 @@ export interface CoachSendOptions {
    * `EXPO_PUBLIC_COACH_DISPATCH=on`, the task kind is fed to
    * `decideCoachModel()` to pick a provider (tactical → Gemma, complex → GPT)
    * before the legacy provider hint runs. Omitted means "general_chat".
+   *
+   * NOTE: `taskKind` is the ONLY routing signal. `CoachContext.focus` is a
+   * cosmetic prompt label and does not affect model selection — always set
+   * `taskKind` for new surfaces that should be cost-aware routed.
    */
   taskKind?: CoachTaskKind;
   /** Pipeline-v2 user tier for cost-aware model routing. Defaults to 'free'. */
