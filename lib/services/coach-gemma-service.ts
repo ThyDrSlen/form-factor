@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { createError } from './ErrorHandler';
-import type { CoachContext, CoachMessage } from './coach-service';
+import { parseRetryAfterMs, type CoachContext, type CoachMessage } from './coach-service';
 import type { CoachProvider } from './coach-provider-types';
 
 interface RawCoachGemmaResponse {
@@ -15,6 +15,31 @@ const DEFAULT_FUNCTION_NAME = 'coach-gemma';
 
 function functionName(): string {
   return (process.env.EXPO_PUBLIC_COACH_GEMMA_FUNCTION || DEFAULT_FUNCTION_NAME).trim();
+}
+
+/**
+ * Extract a `Retry-After` delay (ms) from a Supabase Functions failure tuple.
+ * Checks the raw `Response` first (present when the SDK surfaces a
+ * `FunctionsHttpError`) and falls back to `error.context.headers` when the
+ * Response is only reachable through the error wrapper.
+ */
+function readRetryAfterMs(
+  response: Response | undefined,
+  error: unknown,
+): number | undefined {
+  const fromResponse = response?.headers?.get?.('Retry-After');
+  if (fromResponse) {
+    const parsed = parseRetryAfterMs(fromResponse);
+    if (parsed !== undefined) return parsed;
+  }
+  const ctx = (error as { context?: unknown } | null | undefined)?.context;
+  if (ctx && typeof ctx === 'object' && 'headers' in ctx) {
+    const headers = (ctx as { headers?: { get?: (k: string) => string | null } }).headers;
+    const raw = headers?.get?.('Retry-After') ?? null;
+    const parsed = parseRetryAfterMs(raw);
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
 }
 
 /**
@@ -35,7 +60,7 @@ export async function sendCoachGemmaPrompt(
     const body: Record<string, unknown> = { messages, context };
     if (opts?.model) body.model = opts.model;
 
-    const { data, error } = await supabase.functions.invoke<RawCoachGemmaResponse>(
+    const { data, error, response } = await supabase.functions.invoke<RawCoachGemmaResponse>(
       functionName(),
       { body },
     );
@@ -48,9 +73,13 @@ export async function sendCoachGemmaPrompt(
         errorMessage.includes('missing');
       const hasStatus =
         typeof error === 'object' && error !== null && 'status' in error;
-      const isNotFound =
-        (hasStatus && (error as { status: unknown }).status === 404) ||
-        errorMessage.includes('404');
+      const status = hasStatus ? (error as { status: unknown }).status : undefined;
+      const isNotFound = status === 404 || errorMessage.includes('404');
+      const isRateLimited =
+        status === 429 ||
+        /\b429\b/.test(errorMessage) ||
+        /rate.?limit/i.test(errorMessage) ||
+        /too many requests/i.test(errorMessage);
 
       if (isNotFound) {
         throw createError(
@@ -67,6 +96,19 @@ export async function sendCoachGemmaPrompt(
           'COACH_GEMMA_NOT_CONFIGURED',
           'Gemma coach is not configured. Please contact support.',
           { details: error, retryable: false },
+        );
+      }
+
+      if (isRateLimited) {
+        const retryAfterMs = readRetryAfterMs(response, error);
+        throw createError(
+          'network',
+          'COACH_GEMMA_RATE_LIMITED',
+          'Gemma coach is rate-limited — try again in a moment.',
+          {
+            details: retryAfterMs !== undefined ? { error, retryAfterMs } : error,
+            retryable: true,
+          },
         );
       }
 
