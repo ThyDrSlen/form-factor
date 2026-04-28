@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type ToastType = 'info' | 'success' | 'error';
 
@@ -24,6 +25,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toast, setToast] = useState<ToastData | null>(null);
   const opacity = useRef(new Animated.Value(0)).current;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const insets = useSafeAreaInsets();
 
   const show = useCallback((message: string, options?: ToastOptions) => {
     if (!message) return;
@@ -79,7 +81,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           style={[
             styles.container,
             Platform.select({ web: styles.containerWeb, default: undefined }),
-            { opacity },
+            // Respect the bottom safe-area inset on notched devices so the
+            // toast doesn't collide with the home indicator / gesture bar.
+            { opacity, bottom: insets.bottom + 32 },
           ]}
         >
           <View
@@ -108,7 +112,8 @@ export function useToast(): ToastContextValue {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 32,
+    // `bottom` is computed at render-time so it can include safe-area insets;
+    // see the inline style on the Animated.View in ToastProvider.
     left: 0,
     right: 0,
     alignItems: 'center',
