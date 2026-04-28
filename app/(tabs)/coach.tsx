@@ -447,6 +447,13 @@ export default function CoachScreen() {
             value={coachInput}
             onChangeText={setCoachInput}
             multiline
+            returnKeyType="send"
+            blurOnSubmit={false}
+            onSubmitEditing={() => {
+              if (!coachSending && coachInput.trim()) {
+                handleCoachSend();
+              }
+            }}
           />
 
           {voiceEnabled && !coachSending && (
