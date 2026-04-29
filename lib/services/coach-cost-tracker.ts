@@ -28,6 +28,14 @@ export type CoachTaskKind =
   | 'session_generator'
   | 'warmup_generator'
   | 'progression_planner'
+  | 'form_check'
+  | 'voice_debrief'
+  | 'voice_nlu'
+  | 'rest_period_coaching'
+  | 'exercise_swap_explanation'
+  | 'multi_turn_debrief'
+  | 'program_design'
+  | 'fault_explainer'
   | 'other';
 
 export interface CoachUsageEvent {
