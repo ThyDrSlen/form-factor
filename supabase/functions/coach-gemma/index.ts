@@ -108,17 +108,22 @@ const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
 // residue — that's an unbounded memory leak.
 //
 // Policy:
-//   - Run a prune pass every CLEANUP_EVERY_N requests.
+//   - Run a prune pass every CLEANUP_EVERY_N requests (quick path).
+//   - Additionally run a time-based pass every CLEANUP_INTERVAL_MS on a
+//     setInterval so idle workers don't grow residue during lulls
+//     (#557 finding B1).
 //   - Drop entries whose `windowStart` is older than 2 × the limiter window
 //     (guaranteed stale — `isRateLimited` would reset them on next hit).
 //   - Hard cap the map at MAX_RATE_LIMIT_ENTRIES; when reached, evict oldest
 //     entries by windowStart so the worker can't OOM.
 //
 // Does not change rate-limit semantics (still 10 req/min/user).
-const CLEANUP_EVERY_N = 500;
+const CLEANUP_EVERY_N = 100;
+const CLEANUP_INTERVAL_MS = 30_000;
 const STALE_AGE_MS = RATE_LIMIT_WINDOW_MS * 2;
 const MAX_RATE_LIMIT_ENTRIES = 10_000;
 let rateLimitCheckCount = 0;
+let cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
 
 function cleanupRateLimitMap(now: number): void {
   // Pass 1: drop stale entries.
@@ -139,6 +144,21 @@ function cleanupRateLimitMap(now: number): void {
     }
   }
 }
+
+/**
+ * Register the time-based cleanup interval exactly once at module scope.
+ * Guarded against double-registration so hot-reload / re-import paths
+ * (Deno's dynamic module loading or repeat test imports) don't stack
+ * multiple intervals that would double-evict.
+ */
+function ensureCleanupInterval(): void {
+  if (cleanupIntervalId !== null) return;
+  cleanupIntervalId = setInterval(() => {
+    cleanupRateLimitMap(Date.now());
+  }, CLEANUP_INTERVAL_MS);
+}
+
+ensureCleanupInterval();
 
 function isRateLimited(userId: string): boolean {
   const now = Date.now();
@@ -166,9 +186,20 @@ export const __rateLimitInternals = {
   rateLimitMap,
   cleanupRateLimitMap,
   isRateLimited,
+  ensureCleanupInterval,
   MAX_RATE_LIMIT_ENTRIES,
   CLEANUP_EVERY_N,
+  CLEANUP_INTERVAL_MS,
   STALE_AGE_MS,
+  getCleanupIntervalId(): ReturnType<typeof setInterval> | null {
+    return cleanupIntervalId;
+  },
+  resetCleanupIntervalForTests(): void {
+    if (cleanupIntervalId !== null) {
+      clearInterval(cleanupIntervalId);
+      cleanupIntervalId = null;
+    }
+  },
   resetForTests(): void {
     rateLimitMap.clear();
     rateLimitCheckCount = 0;

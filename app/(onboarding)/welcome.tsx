@@ -60,7 +60,16 @@ export default function WelcomeScreen() {
 
   const handleGetStarted = async () => {
     await AsyncStorage.setItem(WELCOME_SEEN_KEY, 'true');
-    router.replace('/sign-in');
+    // Primary CTA routes new users to sign-up.
+    router.replace('/sign-up');
+  };
+
+  const handleExistingAccount = async () => {
+    await AsyncStorage.setItem(WELCOME_SEEN_KEY, 'true');
+    // Secondary CTA routes returning users to the sign-in form.
+    // `mode=existing` is forwarded so sign-in can default to the
+    // existing-account tab when that is wired up (see TODO in sign-in).
+    router.replace('/sign-in?mode=existing');
   };
 
   return (
@@ -109,9 +118,11 @@ export default function WelcomeScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.secondaryButton}
-            onPress={handleGetStarted}
+            onPress={handleExistingAccount}
             activeOpacity={0.7}
             accessibilityRole="button"
+            accessibilityLabel="I already have an account"
+            accessibilityHint="Opens login screen"
           >
             <Text style={styles.secondaryButtonText}>I already have an account</Text>
           </TouchableOpacity>

@@ -103,6 +103,16 @@ export interface UseAutoDebriefOptions {
    * cached result and skips the session-finished listener until cleared.
    */
   sessionId?: string | null;
+  /**
+   * Optional input to generate once on mount (e.g. recap screens that
+   * already have the rep/fqi data on route params and want to fire a
+   * debrief without waiting for a separate session_finished event).
+   * When provided AND the auto-debrief feature flag is on, the hook
+   * invokes `generateAutoDebrief(initialInput)` a single time per mount.
+   * Subsequent value changes are ignored (the cache/preload path handles
+   * re-runs). Null/undefined disables the on-mount leg.
+   */
+  initialInput?: GenerateAutoDebriefInput | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +120,7 @@ export interface UseAutoDebriefOptions {
 // ---------------------------------------------------------------------------
 
 export function useAutoDebrief(opts: UseAutoDebriefOptions): UseAutoDebriefState {
-  const { buildInput, sessionId } = opts;
+  const { buildInput, sessionId, initialInput } = opts;
 
   const [data, setData] = useState<AutoDebriefResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -119,6 +129,20 @@ export function useAutoDebrief(opts: UseAutoDebriefOptions): UseAutoDebriefState
   // Stash the last input we generated from so retry() can replay it without
   // waiting for another session_finished event.
   const lastInputRef = useRef<GenerateAutoDebriefInput | null>(null);
+  // Guards the on-mount `initialInput` leg — fires exactly once per mount,
+  // regardless of subsequent prop identity changes, so we don't re-run on
+  // every render just because the caller didn't memoize their input shape.
+  const initialInputFiredRef = useRef(false);
+
+  // Keep a stable reference to buildInput so the session-finished subscribe
+  // effect doesn't re-subscribe on every parent re-render when the caller
+  // passes a fresh closure (common: inline `() => ...`). Without this ref,
+  // the effect unsubscribes + resubscribes every render, which can drop a
+  // session-finished event fired mid-transition.
+  const buildInputRef = useRef(buildInput);
+  useEffect(() => {
+    buildInputRef.current = buildInput;
+  });
 
   const runWith = useCallback(async (input: GenerateAutoDebriefInput) => {
     lastInputRef.current = input;
@@ -184,12 +208,30 @@ export function useAutoDebrief(opts: UseAutoDebriefOptions): UseAutoDebriefState
     };
   }, [sessionId]);
 
-  // Subscribe to session-finished events.
+  // On-mount leg: fire a debrief once when the caller provides an
+  // `initialInput` (e.g. the recap modal constructs a GenerateAutoDebriefInput
+  // from route params). Skipped when the feature flag is off, when the input
+  // is null/undefined, or when the same mount has already fired. The cache-
+  // preload effect above already handles re-opening the screen, so we avoid
+  // double-invocation by short-circuiting when cached data is already present.
+  useEffect(() => {
+    if (initialInputFiredRef.current) return;
+    if (!initialInput) return;
+    if (!isAutoDebriefEnabled()) return;
+    initialInputFiredRef.current = true;
+    // Non-awaited fire-and-forget — the hook state machine drives UI via
+    // loading/error/data, not the promise return.
+    void runWith(initialInput);
+  }, [initialInput, runWith]);
+
+  // Subscribe to session-finished events. Reads buildInput from a ref so
+  // the subscription is stable across parent re-renders that pass a fresh
+  // inline closure.
   useEffect(() => {
     if (!isAutoDebriefEnabled()) return;
     const unsubscribe = onSessionFinished(async (event) => {
       try {
-        const input = await buildInput(event);
+        const input = await buildInputRef.current(event);
         if (!input) return;
         await runWith(input);
       } catch (err) {
@@ -199,7 +241,7 @@ export function useAutoDebrief(opts: UseAutoDebriefOptions): UseAutoDebriefState
       }
     });
     return unsubscribe;
-  }, [buildInput, runWith]);
+  }, [runWith]);
 
   return { data, loading, error, retry };
 }

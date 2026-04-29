@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { useToast } from '@/contexts/ToastContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -109,19 +110,34 @@ export default function FollowersModal() {
     const profile = item.profile;
     const displayName = profile?.display_name || profile?.username || 'User';
     const displayInitial = displayName.charAt(0).toUpperCase();
+    // Wave-31 Pack A / A5 (#562): explicit per-row a11y so VoiceOver
+    // announces "{name}'s profile, double tap to open" rather than a
+    // generic "button". Decorative avatar / chevron are excluded from
+    // the a11y tree so the label isn't repeated.
+    const rowA11yLabel = `${displayName}'s profile`;
     return (
       <TouchableOpacity
         style={styles.row}
         onPress={() => profile?.user_id && router.push(`/(modals)/user-profile?userId=${profile.user_id}`)}
         activeOpacity={0.8}
         accessibilityRole="button"
-        accessibilityLabel={`Open ${displayName}'s profile`}
-        accessibilityHint="Navigates to this user profile"
+        accessibilityLabel={rowA11yLabel}
+        accessibilityHint="Double tap to open"
       >
         {profile?.avatar_url ? (
-          <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
+          <Image
+            source={{ uri: profile.avatar_url }}
+            style={styles.avatar}
+            accessible={false}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
         ) : (
-          <View style={[styles.avatar, styles.avatarFallback]}>
+          <View
+            style={[styles.avatar, styles.avatarFallback]}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
             <Text style={styles.avatarFallbackText}>{displayInitial}</Text>
           </View>
         )}
@@ -142,7 +158,15 @@ export default function FollowersModal() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={safeBack} style={styles.iconButton}>
+          <TouchableOpacity
+            onPress={() => {
+              void Haptics.selectionAsync();
+              safeBack();
+            }}
+            style={styles.iconButton}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
             <Ionicons name="chevron-back" size={20} color="#9AACD1" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Connections</Text>

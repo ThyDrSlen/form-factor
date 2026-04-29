@@ -1,4 +1,28 @@
+import { createError, logError } from '../ErrorHandler';
 import { getNativeHealthKit } from './native-healthkit';
+
+/**
+ * Centralised telemetry hook for native HealthKit query failures.
+ * Previously every getter swallowed its error via `catch (_e) { return [] }`,
+ * which made native crashes indistinguishable from "no data" at the call
+ * site and caused bulk-sync to silently report success=true, records=0.
+ *
+ * We still return the neutral empty value to preserve the long-standing
+ * caller contract (null/[], etc.) — callers downstream treat "no data"
+ * and "read failed" identically today — but we surface the failure to
+ * ErrorHandler so log dashboards / telemetry can see the real rate.
+ */
+function reportHealthKitQueryFailure(op: string, err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  logError(
+    createError('storage', 'healthkit_native_query_failed', message, {
+      details: { op, cause: err instanceof Error ? err.name : undefined },
+      retryable: true,
+      severity: 'warning',
+    }),
+    { feature: 'app', location: `healthkit:${op}` }
+  );
+}
 
 export interface HealthMetricPoint {
   date: number;
@@ -144,7 +168,8 @@ export async function getBiologicalSexAsync(): Promise<BiologicalSex | null> {
     }
     const sex = await healthKit.getBiologicalSex();
     return typeof sex === 'string' ? (sex as BiologicalSex) : null;
-  } catch (_e) {
+  } catch (e) {
+    reportHealthKitQueryFailure('getBiologicalSex', e);
     return null;
   }
 }
@@ -159,7 +184,8 @@ export async function getDateOfBirthAsync(): Promise<{ birthDate: string | null;
     const birthDate = typeof result?.birthDate === 'string' ? result.birthDate : null;
     const age = parseNumeric(result?.age);
     return { birthDate, age: age != null ? Math.floor(age) : null };
-  } catch (_e) {
+  } catch (e) {
+    reportHealthKitQueryFailure('getDateOfBirth', e);
     return { birthDate: null, age: null };
   }
 }
@@ -176,7 +202,8 @@ export async function getRespiratoryRateHistoryAsync(days = 14): Promise<HealthM
       return [];
     }
     return aggregateDaily(results, 'average');
-  } catch (_e) {
+  } catch (e) {
+    reportHealthKitQueryFailure('getRespiratoryRateHistory', e);
     return [];
   }
 }
@@ -193,7 +220,8 @@ export async function getWalkingHeartRateAverageHistoryAsync(days = 14): Promise
       return [];
     }
     return aggregateDaily(results, 'average');
-  } catch (_e) {
+  } catch (e) {
+    reportHealthKitQueryFailure('getWalkingHeartRateAverageHistory', e);
     return [];
   }
 }
@@ -210,7 +238,8 @@ export async function getActiveEnergyHistoryAsync(days = 14): Promise<HealthMetr
       return [];
     }
     return aggregateDaily(results, 'sum', 0).map((p) => ({ ...p, value: Math.max(0, Number(p.value.toFixed(1))) }));
-  } catch (_e) {
+  } catch (e) {
+    reportHealthKitQueryFailure('getActiveEnergyHistory', e);
     return [];
   }
 }
@@ -227,7 +256,8 @@ export async function getBasalEnergyHistoryAsync(days = 14): Promise<HealthMetri
       return [];
     }
     return aggregateDaily(results, 'sum', 0).map((p) => ({ ...p, value: Math.max(0, Number(p.value.toFixed(1))) }));
-  } catch (_e) {
+  } catch (e) {
+    reportHealthKitQueryFailure('getBasalEnergyHistory', e);
     return [];
   }
 }
@@ -244,7 +274,8 @@ export async function getDistanceWalkingRunningHistoryAsync(days = 14): Promise<
       return [];
     }
     return aggregateDaily(results, 'sum', 0).map((p) => ({ ...p, value: Math.max(0, Number(p.value.toFixed(1))) }));
-  } catch (_e) {
+  } catch (e) {
+    reportHealthKitQueryFailure('getDistanceWalkingRunningHistory', e);
     return [];
   }
 }
@@ -261,7 +292,8 @@ export async function getDistanceCyclingHistoryAsync(days = 14): Promise<HealthM
       return [];
     }
     return aggregateDaily(results, 'sum', 0).map((p) => ({ ...p, value: Math.max(0, Number(p.value.toFixed(1))) }));
-  } catch (_e) {
+  } catch (e) {
+    reportHealthKitQueryFailure('getDistanceCyclingHistory', e);
     return [];
   }
 }
@@ -278,7 +310,8 @@ export async function getDistanceSwimmingHistoryAsync(days = 14): Promise<Health
       return [];
     }
     return aggregateDaily(results, 'sum', 0).map((p) => ({ ...p, value: Math.max(0, Number(p.value.toFixed(1))) }));
-  } catch (_e) {
+  } catch (e) {
+    reportHealthKitQueryFailure('getDistanceSwimmingHistory', e);
     return [];
   }
 }
@@ -305,7 +338,8 @@ export async function getStepCountForTodayAsync(): Promise<number> {
       const value = extractSampleValue(row) ?? 0;
       return sum + value;
     }, 0);
-  } catch (_e) {
+  } catch (e) {
+    reportHealthKitQueryFailure('getStepCountForToday', e);
     return 0;
   }
 }
@@ -337,7 +371,8 @@ export async function getStepHistoryAsync(days = 7): Promise<HealthMetricPoint[]
       .filter((item): item is HealthMetricPoint => Boolean(item));
 
     return ensureContinuousHistory(mapped, range, 'zero');
-  } catch (_e) {
+  } catch (e) {
+    reportHealthKitQueryFailure('getStepHistory', e);
     return [];
   }
 }
@@ -365,7 +400,8 @@ export async function getLatestHeartRateAsync(): Promise<{ bpm: number | null; t
     const bpm = extractSampleValue(first);
     const ts = first.endDate ? new Date(first.endDate).getTime() : null;
     return { bpm: bpm ?? null, timestamp: ts };
-  } catch (_e) {
+  } catch (e) {
+    reportHealthKitQueryFailure('getLatestHeartRate', e);
     return { bpm: null, timestamp: null };
   }
 }
@@ -383,7 +419,8 @@ export async function getLatestBodyMassKgAsync(): Promise<{ kg: number | null; t
     const kg = extractSampleValue(result);
     const ts = result.endDate ? new Date(result.endDate).getTime() : null;
     return { kg: kg ?? null, timestamp: ts };
-  } catch (_e) {
+  } catch (e) {
+    reportHealthKitQueryFailure('getLatestBodyMassKg', e);
     return { kg: null, timestamp: null };
   }
 }
@@ -425,7 +462,8 @@ export async function getWeightHistoryAsync(days = 7): Promise<HealthMetricPoint
     }));
 
     return ensureContinuousHistory(mapped, range, 'carry-forward');
-  } catch (_e) {
+  } catch (e) {
+    reportHealthKitQueryFailure('getWeightHistory', e);
     return [];
   }
 }

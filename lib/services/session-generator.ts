@@ -13,7 +13,13 @@
  *      Crypto.randomUUID() ids.
  */
 import * as Crypto from 'expo-crypto';
-import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
+import { assertDailyBudget } from './coach-cost-tracker';
+import {
+  sendCoachPrompt,
+  type CoachContext,
+  type CoachMessage,
+  type CoachSendOptions,
+} from './coach-service';
 import { parseGemmaJsonResponse, schema, type JsonSchema } from './gemma-json-parser';
 import { assertGemmaSessionGenEnabled } from './gemma-session-gen-flag';
 import {
@@ -72,6 +78,9 @@ const EXERCISE_SHAPE: JsonSchema<GeneratedExerciseShape> = schema.object({
   notes: schema.optional(schema.string()),
 });
 
+/** Task-kind hint exported for tests + callers that want to key telemetry. */
+export const SESSION_GENERATOR_TASK_KIND = 'session_generator' as const;
+
 export const SESSION_GENERATOR_SCHEMA: JsonSchema<GeneratedTemplateShape> = schema.object({
   name: schema.string({ minLength: 1 }),
   description: schema.string(),
@@ -93,8 +102,17 @@ export interface HydratedTemplate {
 export interface SessionGeneratorRuntime {
   userId: string;
   coachContext?: CoachContext;
-  /** Override dispatcher for tests. */
-  dispatch?: (messages: CoachMessage[], ctx?: CoachContext) => Promise<CoachMessage>;
+  /**
+   * Override dispatcher for tests. When production uses the default
+   * (`sendCoachPrompt`), taskKind is threaded through via the third arg so
+   * the cost-tracker + dispatch router can attribute spend to
+   * `session_generator`.
+   */
+  dispatch?: (
+    messages: CoachMessage[],
+    ctx?: CoachContext,
+    opts?: CoachSendOptions,
+  ) => Promise<CoachMessage>;
   /** Override uuid for tests. */
   uuid?: () => string;
   /** Retry count passed to gemma-json-parser. Default 1. */
@@ -126,10 +144,34 @@ export async function generateSession(
     assertGemmaSessionGenEnabled('session-generator');
   }
 
+  // Enforce per-surface daily budget before spending tokens. Only gates the
+  // real dispatcher — callers that inject their own `dispatch` (tests, eval
+  // harnesses) are allowed through. Throws a typed BudgetExceededError that
+  // the UI can catch to show a quota-exceeded state.
+  if (!runtime.dispatch) {
+    await assertDailyBudget('session_generator');
+  }
+
   const messages = buildSessionGeneratorMessages(input);
   const dispatch = runtime.dispatch ?? sendCoachPrompt;
 
-  const assistantMessage = await dispatch(messages, runtime.coachContext);
+  // Attach `focus: 'session_generator'` so the cost tracker and telemetry
+  // pipelines can attribute usage/tokens back to this surface. Mirrors the
+  // pattern in coach-auto-debrief / drill-explainer where a short snake_case
+  // label is fed through CoachContext.focus (see coach-cost-tracker
+  // CoachTaskKind). Preserves any caller-supplied context fields; a
+  // caller-provided focus wins so explicit attribution overrides the default.
+  const dispatchContext: CoachContext = {
+    ...(runtime.coachContext ?? {}),
+    focus: runtime.coachContext?.focus ?? 'session_generator',
+  };
+
+  // taskKind flows through CoachSendOptions (third arg) so the dispatch router
+  // + cost-tracker attribute spend to `session_generator` on both the primary
+  // turn and any JSON-retry turn.
+  const dispatchOpts: CoachSendOptions = { taskKind: SESSION_GENERATOR_TASK_KIND };
+
+  const assistantMessage = await dispatch(messages, dispatchContext, dispatchOpts);
 
   const retryInvoker = async (ctx: { lastRawText: string; issues?: unknown }): Promise<string> => {
     const retryMessages: CoachMessage[] = [
@@ -140,7 +182,7 @@ export async function generateSession(
         content: `The previous response was not valid JSON or did not match the schema. Issues: ${JSON.stringify(ctx.issues ?? 'syntax error')}. Respond ONLY with corrected JSON.`,
       },
     ];
-    const retryResponse = await dispatch(retryMessages, runtime.coachContext);
+    const retryResponse = await dispatch(retryMessages, dispatchContext, dispatchOpts);
     return retryResponse.content;
   };
 

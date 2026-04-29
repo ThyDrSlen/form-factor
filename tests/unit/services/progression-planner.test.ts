@@ -131,7 +131,7 @@ describe('progression-planner', () => {
 
     it('forwards coach context for persistence', async () => {
       const context = {
-        profile: { id: 'u1', name: 'Test', email: null },
+        profile: { id: 'u1', name: 'Test' },
         sessionId: 'sess-1',
         focus: 'overload',
       };

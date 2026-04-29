@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Switch, ActivityIndicator, Linking } from 'react-native';
+import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Switch, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -13,6 +13,7 @@ import {
   updateNotificationPreferences,
   getNotificationPermissions, // Added
 } from '@/lib/services/notifications';
+import { openExternalUrl, openSystemSettings as openSystemSettingsHelper } from '@/lib/utils/open-external';
 
 type PermissionState = 'granted' | 'undetermined' | 'denied';
 type ToggleKey = 'comments' | 'likes' | 'reminders';
@@ -118,10 +119,15 @@ export default function NotificationSettingsModal() {
   };
 
   const openSystemSettings = () => {
+    const onFallback = () => {
+      toast.show("Couldn't open Settings — enable notifications from the Settings app.", {
+        type: 'error',
+      });
+    };
     if (isIOS()) {
-      Linking.openURL('app-settings:');
+      void openExternalUrl('app-settings:', { onFallback });
     } else {
-      Linking.openSettings();
+      void openSystemSettingsHelper({ onFallback });
     }
   };
 
@@ -183,18 +189,24 @@ export default function NotificationSettingsModal() {
               value={prefs.comments}
               onValueChange={() => handleToggle('comments')}
               disabled={savingKey === 'comments'}
+              accessibilityLabel="Comment notifications"
+              accessibilityHint="Toggle push notifications when someone comments on your video"
             />
             <SettingRow
               label="Likes on my videos"
               value={prefs.likes}
               onValueChange={() => handleToggle('likes')}
               disabled={savingKey === 'likes'}
+              accessibilityLabel="Like notifications"
+              accessibilityHint="Toggle push notifications when someone likes your video"
             />
             <SettingRow
               label="Daily workout reminder"
               value={prefs.reminders}
               onValueChange={() => handleToggle('reminders')}
               disabled={savingKey === 'reminders'}
+              accessibilityLabel="Workout reminder notifications"
+              accessibilityHint="Toggle daily reminders to complete your workout"
             />
           </>
         ) : (
@@ -210,11 +222,15 @@ function SettingRow({
   value,
   onValueChange,
   disabled,
+  accessibilityLabel,
+  accessibilityHint,
 }: {
   label: string;
   value: boolean;
   onValueChange: () => void;
   disabled?: boolean;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }) {
   return (
     <View style={styles.settingRow}>
@@ -225,6 +241,9 @@ function SettingRow({
         disabled={disabled}
         thumbColor={value ? '#fff' : '#CBD7F5'}
         trackColor={{ false: '#223859', true: '#4C8CFF' }}
+        accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityHint={accessibilityHint}
+        accessibilityRole="switch"
       />
     </View>
   );

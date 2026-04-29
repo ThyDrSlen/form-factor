@@ -1,8 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  __clearDailyBudgetOverridesForTests,
   __invalidateHydrationForTests,
   __internal,
+  __setDailyBudgetForTests,
+  assertDailyBudget,
+  getAvailableBudget,
   getWeeklyAggregate,
+  isBudgetExceededError,
   recordCoachUsage,
   resetCoachCostTracker,
 } from '@/lib/services/coach-cost-tracker';
@@ -219,5 +224,243 @@ describe('coach-cost-tracker — recordCoachUsage + getWeeklyAggregate', () => {
     __invalidateHydrationForTests();
     const rehydrated = await getWeeklyAggregate('2026-03-08T12:00:00.000Z');
     expect(rehydrated.totalCalls).toBe(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Wave-29 T8: AsyncStorage QuotaExceededError resilience.
+  //
+  // Targets lib/services/coach-cost-tracker.ts:154-160 (persist()). When the
+  // device is low on storage (common on older iPhones after several
+  // prolonged workout sessions), AsyncStorage.setItem rejects with a
+  // QuotaExceededError-shaped error. The tracker must:
+  //   1. NEVER throw out of recordCoachUsage (coach path must keep working).
+  //   2. Keep the in-memory bucket state correct for the current session so
+  //      getWeeklyAggregate() reflects both events.
+  //   3. Log a warning per failed persist (for observability).
+  //   4. On re-hydration (e.g. app restart), state is empty because the
+  //      failed persist never landed on disk — the data for the session is
+  //      lost, which is ACCEPTABLE because we surface a warning and the UI
+  //      can degrade gracefully to "cost unknown".
+  // ---------------------------------------------------------------------------
+  it('recordCoachUsage survives AsyncStorage QuotaExceededError without throwing', async () => {
+    // Silence the warnWithTs output so the test run is clean. The logger's
+    // console.warn binding is captured at module load time, so a post-load
+    // spyOn does NOT intercept warnWithTs's writes — we rely on the fact
+    // that logger was initialized with the original console.warn before
+    // this spy installs, so the spy only catches any direct console.warn
+    // calls that bypass the logger. We therefore do not ASSERT on the spy;
+    // instead we assert the observable contract (no-throw + in-memory state
+    // correctness + post-invalidate empty state).
+    const origWarn = console.warn;
+    console.warn = jest.fn();
+    const setSpy = jest
+      .spyOn(AsyncStorage, 'setItem')
+      .mockRejectedValue(new Error('QuotaExceededError'));
+
+    try {
+      // Two recordings back-to-back, each triggering a persist that rejects.
+      // Contract #1: recordCoachUsage must not throw on persist failure.
+      await expect(
+        recordCoachUsage({
+          at: '2026-04-20T10:00:00.000Z',
+          provider: 'gemma_cloud',
+          taskKind: 'chat',
+          tokensIn: 120,
+          tokensOut: 60,
+        }),
+      ).resolves.toBeUndefined();
+
+      await expect(
+        recordCoachUsage({
+          at: '2026-04-20T11:00:00.000Z',
+          provider: 'openai',
+          taskKind: 'debrief',
+          tokensIn: 80,
+          tokensOut: 40,
+        }),
+      ).resolves.toBeUndefined();
+
+      // Contract #2: in-memory aggregate reflects BOTH events — the
+      // session's view is correct even though persist failed.
+      const inMemory = await getWeeklyAggregate('2026-04-20T12:00:00.000Z');
+      expect(inMemory.totalCalls).toBe(2);
+      expect(inMemory.totalTokensIn).toBe(200);
+      expect(inMemory.totalTokensOut).toBe(100);
+      expect(inMemory.byProvider.gemma_cloud.calls).toBe(1);
+      expect(inMemory.byProvider.openai.calls).toBe(1);
+      expect(inMemory.byTaskKind.chat.tokensIn).toBe(120);
+      expect(inMemory.byTaskKind.debrief.tokensIn).toBe(80);
+
+      // Contract #3: setItem was actually attempted (proving the persist
+      // path was exercised and swallowed the rejection).
+      expect(setSpy).toHaveBeenCalled();
+
+      // Contract #4: re-hydrate yields empty — because persist failed,
+      // storage has no payload. Documents the acceptable data-loss
+      // behaviour on over-quota devices. We unmock setItem first so the
+      // test helpers (other tests' beforeEach clears) continue to work.
+      setSpy.mockRestore();
+      __invalidateHydrationForTests();
+      const rehydrated = await getWeeklyAggregate('2026-04-20T12:00:00.000Z');
+      expect(rehydrated.totalCalls).toBe(0);
+    } finally {
+      setSpy.mockRestore();
+      console.warn = origWarn;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Integration smoke: coach-service Gemma path records usage (#537).
+//
+// The production wiring fires recordCoachUsage fire-and-forget so a coach
+// turn never blocks on the tracker. Here we call recordCoachUsage directly
+// to mirror what the wiring does, then read getWeeklyAggregate back — if
+// the bucket shape / provider enum drift, this catches it.
+// ---------------------------------------------------------------------------
+describe('coach-cost-tracker — wiring smoke (#537)', () => {
+  it('records a gemma_cloud chat event that rolls up into the weekly aggregate', async () => {
+    await recordCoachUsage({
+      at: '2026-04-17T10:00:00.000Z',
+      provider: 'gemma_cloud',
+      taskKind: 'chat',
+      tokensIn: 25, // 100 chars of prompt / 4
+      tokensOut: 13, // 50 chars of reply / 4
+    });
+    const agg = await getWeeklyAggregate('2026-04-17T12:00:00.000Z');
+    expect(agg.byProvider.gemma_cloud.calls).toBe(1);
+    expect(agg.byProvider.gemma_cloud.tokensIn).toBe(25);
+    expect(agg.byProvider.gemma_cloud.tokensOut).toBe(13);
+    expect(agg.byTaskKind.chat.calls).toBe(1);
+  });
+
+  it('records an openai debrief event with estimated tokens', async () => {
+    await recordCoachUsage({
+      at: '2026-04-17T10:00:00.000Z',
+      provider: 'openai',
+      taskKind: 'debrief',
+      tokensIn: 120,
+      tokensOut: 80,
+    });
+    const agg = await getWeeklyAggregate('2026-04-17T12:00:00.000Z');
+    expect(agg.byProvider.openai.calls).toBe(1);
+    expect(agg.byTaskKind.debrief.tokensIn).toBe(120);
+    expect(agg.byTaskKind.debrief.tokensOut).toBe(80);
+  });
+
+  it('rolls up mixed provider/taskKind events across the week', async () => {
+    await recordCoachUsage({
+      at: '2026-04-17T10:00:00.000Z',
+      provider: 'gemma_cloud',
+      taskKind: 'chat',
+      tokensIn: 10,
+      tokensOut: 10,
+    });
+    await recordCoachUsage({
+      at: '2026-04-17T11:00:00.000Z',
+      provider: 'gemma_cloud',
+      taskKind: 'debrief',
+      tokensIn: 40,
+      tokensOut: 20,
+    });
+    await recordCoachUsage({
+      at: '2026-04-16T10:00:00.000Z',
+      provider: 'openai',
+      taskKind: 'drill_explainer',
+      tokensIn: 30,
+      tokensOut: 15,
+    });
+    const agg = await getWeeklyAggregate('2026-04-17T12:00:00.000Z');
+    expect(agg.totalCalls).toBe(3);
+    expect(agg.byProvider.gemma_cloud.calls).toBe(2);
+    expect(agg.byProvider.openai.calls).toBe(1);
+    expect(agg.byTaskKind.chat.calls).toBe(1);
+    expect(agg.byTaskKind.debrief.calls).toBe(1);
+    expect(agg.byTaskKind.drill_explainer.calls).toBe(1);
+  });
+});
+
+describe('coach-cost-tracker — per-surface daily budgets (#592)', () => {
+  const NOW = '2026-04-17T12:00:00.000Z';
+
+  beforeEach(() => {
+    __clearDailyBudgetOverridesForTests();
+  });
+
+  it('reports full remaining headroom when no usage has been recorded', async () => {
+    const remaining = await getAvailableBudget('session_generator', NOW);
+    expect(remaining).toBe(50_000);
+  });
+
+  it('subtracts tokensIn + tokensOut from the configured daily cap', async () => {
+    await recordCoachUsage({
+      at: NOW,
+      provider: 'gemma_cloud',
+      taskKind: 'session_generator',
+      tokensIn: 1_000,
+      tokensOut: 400,
+    });
+    const remaining = await getAvailableBudget('session_generator', NOW);
+    expect(remaining).toBe(48_600);
+  });
+
+  it('returns Infinity for surfaces without a configured budget', async () => {
+    const remaining = await getAvailableBudget('chat', NOW);
+    expect(remaining).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('clamps remaining at 0 once usage meets or exceeds the budget', async () => {
+    __setDailyBudgetForTests('warmup_generator', 100);
+    await recordCoachUsage({
+      at: NOW,
+      provider: 'gemma_cloud',
+      taskKind: 'warmup_generator',
+      tokensIn: 150,
+      tokensOut: 0,
+    });
+    const remaining = await getAvailableBudget('warmup_generator', NOW);
+    expect(remaining).toBe(0);
+  });
+
+  it('assertDailyBudget is a no-op while under budget', async () => {
+    await expect(assertDailyBudget('session_generator', NOW)).resolves.toBeUndefined();
+  });
+
+  it('assertDailyBudget throws a typed BudgetExceededError once exhausted', async () => {
+    __setDailyBudgetForTests('warmup_generator', 500);
+    await recordCoachUsage({
+      at: NOW,
+      provider: 'gemma_cloud',
+      taskKind: 'warmup_generator',
+      tokensIn: 400,
+      tokensOut: 200,
+    });
+    try {
+      await assertDailyBudget('warmup_generator', NOW);
+      throw new Error('expected assertDailyBudget to throw');
+    } catch (err) {
+      expect(isBudgetExceededError(err)).toBe(true);
+      if (isBudgetExceededError(err)) {
+        expect(err.domain).toBe('coach');
+        expect(err.code).toBe('COACH_BUDGET_EXCEEDED');
+        expect(err.taskKind).toBe('warmup_generator');
+        expect(err.dailyBudget).toBe(500);
+        expect(err.usedTokens).toBeGreaterThanOrEqual(500);
+        expect(err.retryable).toBe(false);
+      }
+    }
+  });
+
+  it('only considers today-date buckets when computing remaining budget', async () => {
+    await recordCoachUsage({
+      at: '2026-04-16T10:00:00.000Z',
+      provider: 'gemma_cloud',
+      taskKind: 'session_generator',
+      tokensIn: 40_000,
+      tokensOut: 9_999,
+    });
+    // Yesterday's usage must NOT count against today's quota.
+    const remaining = await getAvailableBudget('session_generator', NOW);
+    expect(remaining).toBe(50_000);
   });
 });

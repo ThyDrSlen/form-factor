@@ -7,16 +7,23 @@ type Logger = {
   error: LogWriter;
 };
 
-const withTimestamp = (writer: LogWriter): LogWriter => {
+type ConsoleMethod = 'log' | 'info' | 'warn' | 'error';
+
+// Late-bind the underlying `console.*` method on every call so that test
+// doubles like `jest.spyOn(console, 'warn')` — installed after this module
+// loads — are still observed. Capturing `console.warn` eagerly at module
+// init would bake in the pre-spy reference and silently bypass the spy.
+const withTimestamp = (method: ConsoleMethod): LogWriter => {
   return (...args: unknown[]) => {
-    writer(new Date().toISOString(), ...args);
+    // eslint-disable-next-line no-console
+    console[method](new Date().toISOString(), ...args);
   };
 };
 
-export const logWithTs = withTimestamp(console.log);
-export const infoWithTs = withTimestamp(console.info);
-export const warnWithTs = withTimestamp(console.warn);
-export const errorWithTs = withTimestamp(console.error);
+export const logWithTs = withTimestamp('log');
+export const infoWithTs = withTimestamp('info');
+export const warnWithTs = withTimestamp('warn');
+export const errorWithTs = withTimestamp('error');
 
 export const logger: Logger = {
   log: logWithTs,

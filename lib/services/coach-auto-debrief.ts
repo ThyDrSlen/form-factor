@@ -18,6 +18,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { warnWithTs } from '@/lib/logger';
+import { assertDailyBudget } from './coach-cost-tracker';
 import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
 import { sendCoachGemmaPrompt } from './coach-gemma-service';
 import {
@@ -28,6 +29,17 @@ import {
 import { synthesizeMemoryClause } from './coach-memory-context';
 import { getExercisePreferences, type CuePreference } from './coach-cue-feedback';
 import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
+import { isDispatchEnabled } from './coach-model-dispatch-flag';
+import { assertUnderWeeklyCap } from './coach-cost-guard';
+import { recordCoachUsage } from './coach-cost-tracker';
+import { recordExplicitProviderOverride } from './coach-model-dispatch-telemetry';
+
+const AUTO_DEBRIEF_TASK_KIND = 'multi_turn_debrief' as const;
+
+function estimateTokens(text: string): number {
+  if (!text) return 0;
+  return Math.max(1, Math.ceil(text.length / 4));
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -153,6 +165,11 @@ export async function generateAutoDebrief(
   const cached = await getCachedAutoDebrief(input.sessionId);
   if (cached) return cached;
 
+  // Enforce per-surface daily budget. When exceeded, a typed
+  // BudgetExceededError propagates — callers (use-auto-debrief, UI) can catch
+  // and render a quota-exceeded state instead of paying for the dispatch.
+  await assertDailyBudget('auto_debrief');
+
   const provider: CoachProvider = input.provider ?? resolveCloudProvider();
 
   // Memory clause — either from caller or synthesized fresh. Errors swallow
@@ -195,8 +212,33 @@ export async function generateAutoDebrief(
   };
   // Provider dispatch: gemma → sendCoachGemmaPrompt (direct call to
   // coach-gemma edge function); openai → sendCoachPrompt (generic path).
+  // Telemetry: auto-debrief pins an explicit provider, so the dispatch
+  // router in coach-service skips `recordDispatchDecision`. Fire the
+  // explicit-override counter here so the taskKind ('multi_turn_debrief')
+  // still lands in the decision dashboard. Wrapped so a telemetry fault
+  // never blocks the debrief.
+  try {
+    recordExplicitProviderOverride({
+      taskKind: AUTO_DEBRIEF_TASK_KIND,
+      decidedProvider: provider,
+      reason: 'auto-debrief-explicit-provider',
+    });
+  } catch {
+    // Telemetry is never load-bearing.
+  }
   const reply = await dispatch(provider, messages, context);
   const brief = shapeBriefOutput(reply.content);
+
+  // Weekly cost bucket: track auto-debrief as a multi-turn debrief task
+  // under the appropriate provider key. Token estimator is char-based
+  // since the coach edge response does not surface counts today.
+  const promptText = messages.map((m) => m.content).join('\n');
+  void recordCoachUsage({
+    provider: provider === 'gemma' ? 'gemma_cloud' : 'openai',
+    taskKind: AUTO_DEBRIEF_TASK_KIND,
+    tokensIn: estimateTokens(promptText),
+    tokensOut: estimateTokens(reply.content ?? ''),
+  });
 
   const result: AutoDebriefResult = {
     sessionId: input.sessionId,
@@ -214,18 +256,49 @@ async function dispatch(
   messages: CoachMessage[],
   context: CoachContext,
 ): Promise<CoachMessage> {
-  // Direct-call routing: the gemma branch now targets the coach-gemma edge
+  // Pipeline-v2: pass taskKind so the cost-aware dispatcher recognises
+  // this as a complex task (multi_turn_debrief → GPT, not the default
+  // general_chat fallback) and so downstream telemetry (#537) can label
+  // the usage. Flag-off preserves the prior two-arg call shape.
+  const v2Opts = isCoachPipelineV2Enabled()
+    ? ({ taskKind: 'multi_turn_debrief' as const })
+    : undefined;
+
+  // Direct-call routing: the gemma branch targets the coach-gemma edge
   // function directly so Gemma-specific parameters (model, etc.) flow
   // through without going through the generic `coach` function. Failures
   // on the Gemma path still fall back to OpenAI via sendCoachPrompt so a
   // transient Gemma outage doesn't break the auto-debrief.
-  if (provider === 'gemma') {
+  //
+  // Dispatch-flag gate (#536): when `EXPO_PUBLIC_COACH_DISPATCH` is off we
+  // skip the Gemma direct call entirely and fall through to the generic
+  // OpenAI path. This lets the ops team pause Gemma rollouts without
+  // redeploying — any caller that resolved `provider: 'gemma'` via env
+  // still lands on OpenAI.
+  //
+  // Cost-guard (#537): before attempting Gemma, check the weekly cap — if
+  // this user has blown past their budget, silently switch to the OpenAI
+  // path. The guard is a no-op when the env cap is unset.
+  if (provider === 'gemma' && isDispatchEnabled()) {
     try {
-      return await sendCoachGemmaPrompt(messages, context);
+      await assertUnderWeeklyCap('gemma_cloud');
+    } catch (capErr) {
+      warnWithTs(
+        '[coach-auto-debrief] weekly Gemma cap hit, falling back to openai',
+        capErr,
+      );
+      return sendCoachPrompt(messages, { ...context, focus: 'post_session_debrief' }, v2Opts);
+    }
+    try {
+      return await sendCoachGemmaPrompt(
+        messages,
+        context,
+        v2Opts ? { taskKind: v2Opts.taskKind } : { taskKind: 'debrief' },
+      );
     } catch (err) {
       warnWithTs('[coach-auto-debrief] gemma dispatch failed, falling back to openai', err);
-      return sendCoachPrompt(messages, { ...context, focus: 'post_session_debrief' });
+      return sendCoachPrompt(messages, { ...context, focus: 'post_session_debrief' }, v2Opts);
     }
   }
-  return sendCoachPrompt(messages, context);
+  return sendCoachPrompt(messages, context, v2Opts);
 }
