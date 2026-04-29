@@ -26,7 +26,7 @@ import { useRouter } from 'expo-router';
 import { useCameraPermissions } from 'expo-camera';
 
 import { useFirstSessionCheck } from '@/hooks/use-first-session-check';
-import { useToast } from '@/contexts/ToastContext';
+import { useOptionalToast } from '@/contexts/ToastContext';
 import { openSystemSettings } from '@/lib/utils/open-external';
 
 type WizardStep = 'intro' | 'permission' | 'posture' | 'ready';
@@ -52,7 +52,7 @@ function toPermissionState(
 
 export default function FormTrackingSetupScreen() {
   const router = useRouter();
-  const { show: showToast } = useToast();
+  const { show: showToast } = useOptionalToast();
   const [stepIndex, setStepIndex] = useState(0);
   const [requesting, setRequesting] = useState(false);
   const { markSeen } = useFirstSessionCheck();

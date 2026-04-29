@@ -1,6 +1,16 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
+
+// Default-to-zero safe-area inset when no provider is mounted (e.g. unit
+// tests that render ToastProvider standalone). Using the raw context
+// avoids the `useSafeAreaInsets` helper's hard throw.
+const ZERO_INSETS = { top: 0, right: 0, bottom: 0, left: 0 };
+
+function useOptionalSafeAreaInsets() {
+  const value = useContext(SafeAreaInsetsContext);
+  return value ?? ZERO_INSETS;
+}
 
 type ToastType = 'info' | 'success' | 'error';
 
@@ -25,7 +35,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toast, setToast] = useState<ToastData | null>(null);
   const opacity = useRef(new Animated.Value(0)).current;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const insets = useSafeAreaInsets();
+  const insets = useOptionalSafeAreaInsets();
 
   const show = useCallback((message: string, options?: ToastOptions) => {
     if (!message) return;
@@ -107,6 +117,14 @@ export function useToast(): ToastContextValue {
     throw new Error('useToast must be used within a ToastProvider');
   }
   return context;
+}
+
+// Variant for providers/screens that want to emit a toast only when a
+// ToastProvider is mounted (e.g. contexts rendered in unit tests without
+// the full provider stack). Returns a no-op when unavailable.
+const NOOP_TOAST: ToastContextValue = { show: () => undefined };
+export function useOptionalToast(): ToastContextValue {
+  return useContext(ToastContext) ?? NOOP_TOAST;
 }
 
 const styles = StyleSheet.create({
