@@ -24,6 +24,63 @@ import {
   recordDispatchDecision,
   recordDispatchMismatch,
 } from './coach-model-dispatch-telemetry';
+import {
+  recordCoachUsage,
+  type CoachTaskKind as TrackerTaskKind,
+  type CoachProvider as TrackerProvider,
+} from './coach-cost-tracker';
+import { assertUnderWeeklyCap } from './coach-cost-guard';
+
+function estimateTokens(text: string): number {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
+function mapTaskKindToTracker(kind: CoachTaskKind | undefined): TrackerTaskKind {
+  switch (kind) {
+    case 'multi_turn_debrief':
+      return 'debrief';
+    case 'fault_explainer':
+      return 'drill_explainer';
+    case 'session_generator':
+      return 'session_generator';
+    case 'program_design':
+      return 'progression_planner';
+    default:
+      return 'chat';
+  }
+}
+
+function mapProviderToTracker(provider: CoachProvider): TrackerProvider {
+  switch (provider) {
+    case 'openai':
+      return 'openai';
+    case 'gemma-cloud':
+      return 'gemma_cloud';
+    case 'gemma-on-device':
+      return 'gemma_ondevice';
+    default:
+      return 'stub';
+  }
+}
+
+function fireAndForgetRecordUsage(
+  provider: CoachProvider,
+  taskKind: CoachTaskKind | undefined,
+  promptText: string,
+  completionText: string,
+  cacheHit = false,
+): void {
+  void recordCoachUsage({
+    provider: mapProviderToTracker(provider),
+    taskKind: mapTaskKindToTracker(taskKind),
+    tokensIn: estimateTokens(promptText),
+    tokensOut: estimateTokens(completionText),
+    cacheHit,
+  }).catch((err) => {
+    warnWithTs('[coach-service] recordCoachUsage failed', err);
+  });
+}
 
 export type { CoachProvider } from './coach-provider-types';
 import type { LiveSessionSnapshot } from './coach-live-snapshot';
@@ -284,7 +341,7 @@ export async function sendCoachPrompt(
       messages,
       context,
       opts.cacheMs,
-      () => sendCoachPromptInner(messages, context),
+      () => sendCoachPromptInner(messages, context, opts?.taskKind),
       { shaper: opts.shaper }
     );
   }
@@ -323,10 +380,29 @@ export async function sendCoachPrompt(
 
   // No advanced opts: pick cloud provider (explicit hint, dispatcher, user pref, env, or openai default).
   const provider = opts?.provider ?? routedProvider ?? (await resolveCloudProvider());
-  if (provider === 'gemma') {
-    return sendCoachGemmaPrompt(messages, context);
+  // Dispatch-flag gate (#536): only route to Gemma when the global flag is on.
+  if (provider === 'gemma' && isDispatchEnabled()) {
+    try {
+      await assertUnderWeeklyCap('gemma_cloud');
+      return await sendCoachGemmaPrompt(messages, context, {
+        taskKind: opts?.taskKind as string | undefined,
+      });
+    } catch (err) {
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? (err as { code?: string }).code
+          : undefined;
+      if (code === 'COACH_COST_CAP_EXCEEDED') {
+        warnWithTs(
+          '[coach-service] weekly Gemma cap hit, falling back to OpenAI',
+          err,
+        );
+        return sendCoachPromptInner(messages, context, opts?.taskKind);
+      }
+      throw err;
+    }
   }
-  return sendCoachPromptInner(messages, context);
+  return sendCoachPromptInner(messages, context, opts?.taskKind);
 }
 
 async function sendCoachPromptStreaming(
@@ -380,7 +456,8 @@ async function sendCoachPromptStreaming(
 
 async function sendCoachPromptInner(
   messages: CoachMessage[],
-  context?: CoachContext
+  context?: CoachContext,
+  taskKind?: CoachTaskKind,
 ): Promise<CoachMessage> {
   try {
     const memoryClause = await resolveMemoryClause(context);
@@ -598,6 +675,17 @@ async function sendCoachPromptInner(
       configurable: true,
       writable: true,
     });
+
+    // Cost-tracker wiring (#537). Fire-and-forget; never blocks the reply.
+    const promptText = messages.map((m) => m.content ?? '').join('\n');
+    fireAndForgetRecordUsage(
+      provider,
+      taskKind,
+      promptText,
+      responseText,
+      data?.source === 'cache',
+    );
+
     return reply;
   } catch (err) {
     if (err && typeof err === 'object' && 'domain' in err) {
