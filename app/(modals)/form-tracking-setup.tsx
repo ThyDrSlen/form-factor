@@ -28,6 +28,8 @@ import { useRouter } from 'expo-router';
 import { useCameraPermissions } from 'expo-camera';
 
 import { useFirstSessionCheck } from '@/hooks/use-first-session-check';
+import { useOptionalToast } from '@/contexts/ToastContext';
+import { openSystemSettings } from '@/lib/utils/open-external';
 
 type WizardStep = 'intro' | 'permission' | 'posture' | 'ready';
 const STEP_ORDER: WizardStep[] = ['intro', 'permission', 'posture', 'ready'];
@@ -52,6 +54,7 @@ function toPermissionState(
 
 export default function FormTrackingSetupScreen() {
   const router = useRouter();
+  const { show: showToast } = useOptionalToast();
   const [stepIndex, setStepIndex] = useState(0);
   const [requesting, setRequesting] = useState(false);
   const { markSeen } = useFirstSessionCheck();
@@ -90,8 +93,14 @@ export default function FormTrackingSetupScreen() {
   }, [requestPermission, requesting, goNext]);
 
   const handleOpenSettings = useCallback(() => {
-    void Linking.openSettings();
-  }, []);
+    void openSystemSettings({
+      onFallback: () => {
+        showToast("Couldn't open Settings — enable Camera access from the Settings app.", {
+          type: 'error',
+        });
+      },
+    });
+  }, [showToast]);
 
   const handleStart = useCallback(async () => {
     // A9: dismiss any lingering soft keyboard before we navigate — otherwise

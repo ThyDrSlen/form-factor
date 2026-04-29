@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
-import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Linking, ScrollView } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { BackHandler, View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeBack } from '@/hooks/use-safe-back';
+import { useToast } from '@/contexts/ToastContext';
+import { openExternalUrl } from '@/lib/utils/open-external';
+
+const SUPPORT_EMAIL = 'support@formfactor.app';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -64,6 +68,7 @@ const faqs = [
 
 export default function HelpSupportModal() {
   const safeBack = useSafeBack(['/(tabs)/profile', '/profile'], { alwaysReplace: true });
+  const { show: showToast } = useToast();
   const [expandedFAQ, setExpandedFAQ] = useState<number | null>(0);
 
   React.useEffect(() => {
@@ -77,16 +82,30 @@ export default function HelpSupportModal() {
     }
   }, [safeBack]);
 
+  const handleMailFallback = useCallback(() => {
+    showToast(`Couldn't open Mail — email support at ${SUPPORT_EMAIL}`, { type: 'error' });
+  }, [showToast]);
+
+  const handleWebFallback = useCallback((url: string) => {
+    showToast(`Couldn't open link: ${url}`, { type: 'error' });
+  }, [showToast]);
+
   const handleContactSupport = () => {
-    Linking.openURL('mailto:support@formfactor.app?subject=Form Factor Support Request');
+    void openExternalUrl(
+      `mailto:${SUPPORT_EMAIL}?subject=Form Factor Support Request`,
+      { onFallback: handleMailFallback },
+    );
   };
 
   const handleReportBug = () => {
-    Linking.openURL('mailto:support@formfactor.app?subject=Bug Report - Form Factor App');
+    void openExternalUrl(
+      `mailto:${SUPPORT_EMAIL}?subject=Bug Report - Form Factor App`,
+      { onFallback: handleMailFallback },
+    );
   };
 
   const handleOpenDocumentation = () => {
-    Linking.openURL('https://formfactor.app/docs');
+    void openExternalUrl('https://formfactor.app/docs', { onFallback: handleWebFallback });
   };
 
   return (
@@ -149,14 +168,22 @@ export default function HelpSupportModal() {
             icon="logo-twitter"
             title="Follow us on X"
             subtitle="@formfactorapp"
-            onPress={() => Linking.openURL('https://twitter.com/formfactorapp')}
+            onPress={() =>
+              void openExternalUrl('https://twitter.com/formfactorapp', {
+                onFallback: handleWebFallback,
+              })
+            }
           />
           <View style={styles.divider} />
           <SupportOption
             icon="logo-instagram"
             title="Instagram"
             subtitle="@formfactorapp"
-            onPress={() => Linking.openURL('https://instagram.com/formfactorapp')}
+            onPress={() =>
+              void openExternalUrl('https://instagram.com/formfactorapp', {
+                onFallback: handleWebFallback,
+              })
+            }
           />
         </View>
 

@@ -1,6 +1,9 @@
 import * as Network from 'expo-network';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
+import { useOptionalToast } from '@/contexts/ToastContext';
+import { errorWithTs, logWithTs } from '@/lib/logger';
+
 interface NetworkContextValue {
   isOnline: boolean;
   isConnected: boolean;
@@ -24,6 +27,11 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
   // `setState` on this flag rather than let React 18 emit the
   // "can't perform a React state update on an unmounted component" warning.
   const mountedRef = useRef(true);
+  const { show: showToast } = useOptionalToast();
+  // Track the last seen `isOnline` so we can detect a false -> true
+  // transition and surface a "back online" toast. Initialized to null so
+  // the first reading is treated as a baseline (no toast on mount).
+  const prevOnlineRef = useRef<boolean | null>(null);
 
   const checkNetworkStatus = useCallback(async () => {
     try {
@@ -33,14 +41,14 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
       setIsConnected(networkState.isConnected ?? true);
       setNetworkType(networkState.type || null);
 
-      console.log('[NetworkContext] Network status:', {
+      logWithTs('[NetworkContext] Network status:', {
         isOnline: networkState.isInternetReachable,
         isConnected: networkState.isConnected,
         type: networkState.type,
       });
     } catch (error) {
       if (!mountedRef.current) return;
-      console.error('[NetworkContext] Error checking network status:', error);
+      errorWithTs('[NetworkContext] Error checking network status:', error);
       // Default to online if we can't determine status
       setIsOnline(true);
       setIsConnected(true);
@@ -69,6 +77,20 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
       }
     };
   }, [checkNetworkStatus]);
+
+  // Surface a toast when connectivity recovers (false -> true).
+  // The very first reading just seeds the ref so we don't fire on mount.
+  useEffect(() => {
+    const prev = prevOnlineRef.current;
+    if (prev === null) {
+      prevOnlineRef.current = isOnline;
+      return;
+    }
+    if (prev === false && isOnline === true) {
+      showToast('Back online — syncing now', { type: 'info' });
+    }
+    prevOnlineRef.current = isOnline;
+  }, [isOnline, showToast]);
 
   const value = useMemo(
     () => ({ isOnline, isConnected, networkType }),
