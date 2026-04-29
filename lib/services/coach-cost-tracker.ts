@@ -411,6 +411,14 @@ function emptyTaskKindMap(): WeeklyAggregate['byTaskKind'] {
     session_generator: { tokensIn: 0, tokensOut: 0, calls: 0 },
     warmup_generator: { tokensIn: 0, tokensOut: 0, calls: 0 },
     progression_planner: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    form_check: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    voice_debrief: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    voice_nlu: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    rest_period_coaching: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    exercise_swap_explanation: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    multi_turn_debrief: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    program_design: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    fault_explainer: { tokensIn: 0, tokensOut: 0, calls: 0 },
     other: { tokensIn: 0, tokensOut: 0, calls: 0 },
   };
 }

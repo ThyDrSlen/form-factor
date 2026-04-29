@@ -44,11 +44,18 @@ export type CoachTaskKind =
   | 'encouragement'
   | 'fault_explainer'
   | 'voice_intent'
+  | 'voice_nlu'
+  | 'voice_debrief'
   | 'form_vision_check'
+  | 'form_check'
   | 'program_design'
   | 'nutrition_balance'
   | 'multi_turn_debrief'
   | 'session_generator'
+  | 'warmup_generator'
+  | 'progression_planner'
+  | 'rest_period_coaching'
+  | 'exercise_swap_explanation'
   | 'general_chat';
 
 export type CoachModelId =
@@ -114,6 +121,21 @@ function complexCloudForTier(tier: CoachUserTier): CoachModelId {
 // Routing is driven by taskKind. If you're tempted to branch on
 // `CoachContext.focus`, add a new taskKind instead — focus is a cosmetic
 // prompt label and does not reach the dispatcher.
+/**
+ * Pure helper exposing the tier-expected baseline model — what the router
+ * would pick for `(taskKind, signals, userTier)` with NO options overrides.
+ * Callers use this to detect mismatches: when `decideCoachModel(...).model`
+ * diverges from `expectedTierModel(...)`, some feature flag or dispatch
+ * option drove the decision away from the baseline.
+ */
+export function expectedTierModel(
+  taskKind: CoachTaskKind,
+  signals: CoachSignals,
+  userTier: CoachUserTier,
+): CoachModelId {
+  return decideCoachModel(taskKind, signals, userTier).model;
+}
+
 export function decideCoachModel(
   taskKind: CoachTaskKind,
   signals: CoachSignals,
