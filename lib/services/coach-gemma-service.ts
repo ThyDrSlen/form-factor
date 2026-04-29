@@ -1,7 +1,35 @@
 import { supabase } from '@/lib/supabase';
+import { warnWithTs } from '@/lib/logger';
 import { createError } from './ErrorHandler';
 import { parseRetryAfterMs, type CoachContext, type CoachMessage } from './coach-service';
 import type { CoachProvider } from './coach-provider-types';
+import {
+  recordCoachUsage,
+  type CoachTaskKind as TrackerTaskKind,
+} from './coach-cost-tracker';
+
+function estimateGemmaTokens(text: string): number {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
+function mapGemmaTaskKind(input?: string): TrackerTaskKind {
+  switch (input) {
+    case 'debrief':
+    case 'multi_turn_debrief':
+    case 'post_session_debrief':
+      return 'debrief';
+    case 'drill_explainer':
+    case 'fault_explainer':
+      return 'drill_explainer';
+    case 'session_generator':
+      return 'session_generator';
+    case 'program_design':
+      return 'progression_planner';
+    default:
+      return 'chat';
+  }
+}
 
 interface RawCoachGemmaResponse {
   message?: string;
@@ -172,6 +200,18 @@ export async function sendCoachGemmaPrompt(
         writable: true,
       });
     }
+
+    // Cost-tracker wiring (#537). Fire-and-forget; never block the reply.
+    const promptText = messages.map((m) => m.content ?? '').join('\n');
+    void recordCoachUsage({
+      provider: 'gemma_cloud',
+      taskKind: mapGemmaTaskKind(opts?.taskKind),
+      tokensIn: estimateGemmaTokens(promptText),
+      tokensOut: estimateGemmaTokens(responseText),
+    }).catch((err) => {
+      warnWithTs('[coach-gemma-service] recordCoachUsage failed', err);
+    });
+
     return reply;
   } catch (err) {
     if (err && typeof err === 'object' && 'domain' in err) {
