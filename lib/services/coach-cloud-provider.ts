@@ -56,4 +56,22 @@ export async function clearCloudProviderPreference(): Promise<void> {
   await AsyncStorage.removeItem(COACH_CLOUD_PROVIDER_STORAGE_KEY);
 }
 
+/**
+ * Lightweight predicate used by UI surfaces (e.g. CoachAvailabilityBanner,
+ * #557 B4) that need to know whether the current device could reach a
+ * cloud coach *right now*. Today this is a simple network-online check —
+ * all configured cloud providers (openai + gemma) need an internet link
+ * to respond, and there's no per-provider health endpoint we can probe
+ * without burning tokens. We accept `isOnline` from the caller so the
+ * banner can pass through its NetworkContext value without forcing this
+ * module to depend on React.
+ *
+ * The shape is a function rather than a bare boolean so future work can
+ * layer in provider-specific circuit breakers (e.g. rate-limit cooldown
+ * state from coach-failover.ts) without changing any call sites.
+ */
+export function isCloudCoachReachable(opts: { isOnline: boolean }): boolean {
+  return opts.isOnline === true;
+}
+
 export const _internal = { parseProvider, DEFAULT_PROVIDER };

@@ -237,4 +237,69 @@ describe('streamCoachPrompt', () => {
     );
     expect(fakeFetch).toHaveBeenCalledTimes(1);
   });
+
+  it('surfaces provider + model from upstream frames on the streaming path', async () => {
+    const fakeFetch: typeof fetch = jest.fn(
+      async () =>
+        new Response(
+          ndjsonStream([
+            { delta: 'hi', provider: 'gemma-cloud', model: 'gemma-3-4b-it' },
+            { done: true, finishReason: 'STOP' },
+          ]),
+          { status: 200 }
+        )
+    );
+
+    const result = await streamCoachPrompt(
+      [{ role: 'user', content: 'x' }],
+      undefined,
+      () => undefined,
+      { fetchImpl: fakeFetch }
+    );
+
+    expect(result.provider).toBe('gemma-cloud');
+    expect(result.model).toBe('gemma-3-4b-it');
+  });
+
+  it('falls back to opts.provider when upstream frames omit provider metadata', async () => {
+    const fakeFetch: typeof fetch = jest.fn(
+      async () =>
+        new Response(
+          ndjsonStream([{ delta: 'x' }, { done: true }]),
+          { status: 200 }
+        )
+    );
+
+    const result = await streamCoachPrompt(
+      [{ role: 'user', content: 'x' }],
+      undefined,
+      () => undefined,
+      { fetchImpl: fakeFetch, provider: 'openai' }
+    );
+
+    expect(result.provider).toBe('openai');
+    expect(result.model).toBeUndefined();
+  });
+
+  it('surfaces provider + model from the non-streaming Gemma fallback reply', async () => {
+    const reply = { role: 'assistant' as const, content: 'fallback text' };
+    Object.defineProperty(reply, 'provider', { value: 'gemma-cloud', enumerable: false });
+    Object.defineProperty(reply, 'model', { value: 'gemma-3-4b-it', enumerable: false });
+
+    const result = await streamCoachPrompt(
+      [{ role: 'user', content: 'x' }],
+      undefined,
+      () => undefined,
+      {
+        provider: 'gemma',
+        // Cast: the fallback returns a CoachMessage with optional provider/model
+        // annotations — constructing it inline is fine for the assertion path.
+        gemmaFallbackImpl: async () => reply as unknown as import('@/lib/services/coach-service').CoachMessage,
+      }
+    );
+
+    expect(result.text).toBe('fallback text');
+    expect(result.provider).toBe('gemma-cloud');
+    expect(result.model).toBe('gemma-3-4b-it');
+  });
 });

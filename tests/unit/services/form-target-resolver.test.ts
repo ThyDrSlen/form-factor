@@ -1,10 +1,14 @@
 import {
   DEFAULT_FORM_TARGETS,
+  __resetUnknownExerciseLogForTests,
   getDefaultsForExercise,
+  getDefaultsForExerciseWithFlag,
   hasFormTargetDefaults,
   resolveFormTargets,
+  resolveFormTargetsWithFlag,
   type FormTargets,
 } from '@/lib/services/form-target-resolver';
+import * as ErrorHandler from '@/lib/services/ErrorHandler';
 import type { WorkoutTemplate, WorkoutTemplateExercise } from '@/lib/types/workout-session';
 
 function mkExercise(overrides: Partial<WorkoutTemplateExercise> & Pick<WorkoutTemplateExercise, 'exercise_id'>): WorkoutTemplateExercise {
@@ -162,6 +166,94 @@ describe('form-target-resolver', () => {
       // @ts-expect-error — runtime guard
       delete tpl.exercises;
       expect(resolveFormTargets('pullup', tpl)).toEqual(getDefaultsForExercise('pullup'));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // usingGenericTargets provenance flag + log-once observability (#575 item #8)
+  // ---------------------------------------------------------------------------
+  describe('generic-targets fallback observability', () => {
+    let logErrorSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      __resetUnknownExerciseLogForTests();
+      logErrorSpy = jest.spyOn(ErrorHandler, 'logError').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      logErrorSpy.mockRestore();
+    });
+
+    it('returns usingGenericTargets=false for a known exercise', () => {
+      const r = getDefaultsForExerciseWithFlag('pullup');
+      expect(r.usingGenericTargets).toBe(false);
+      expect(r.targets.fqiMin).toBe(80);
+      expect(logErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it('returns usingGenericTargets=true for an unknown exerciseId', () => {
+      const r = getDefaultsForExerciseWithFlag('pullups'); // common typo
+      expect(r.usingGenericTargets).toBe(true);
+      expect(r.targets).toEqual(DEFAULT_FORM_TARGETS);
+    });
+
+    it('logs once per unknown exerciseId (not on every call)', () => {
+      getDefaultsForExerciseWithFlag('pullups');
+      getDefaultsForExerciseWithFlag('pullups');
+      getDefaultsForExerciseWithFlag('pullups');
+      expect(logErrorSpy).toHaveBeenCalledTimes(1);
+      const [err, ctx] = logErrorSpy.mock.calls[0];
+      expect(err.domain).toBe('form-tracking');
+      expect(err.code).toBe('FORM_TARGET_FALLBACK_GENERIC');
+      expect(err.severity).toBe('warning');
+      expect(ctx).toEqual({
+        feature: 'form-tracking',
+        location: 'lib/services/form-target-resolver',
+      });
+    });
+
+    it('logs a separate entry per distinct unknown id', () => {
+      getDefaultsForExerciseWithFlag('pullups');
+      getDefaultsForExerciseWithFlag('squats');
+      expect(logErrorSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('logs for empty/non-string exerciseId (invalid-id reason)', () => {
+      getDefaultsForExerciseWithFlag('');
+      expect(logErrorSpy).toHaveBeenCalledTimes(1);
+      const [err] = logErrorSpy.mock.calls[0];
+      expect((err.details as { reason: string }).reason).toBe('invalid-id');
+    });
+
+    it('legacy getDefaultsForExercise still returns the same FormTargets', () => {
+      __resetUnknownExerciseLogForTests();
+      expect(getDefaultsForExercise('pullup')).toEqual<FormTargets>(
+        getDefaultsForExerciseWithFlag('pullup').targets,
+      );
+      expect(getDefaultsForExercise('unknown')).toEqual(DEFAULT_FORM_TARGETS);
+    });
+
+    it('resolveFormTargetsWithFlag propagates usingGenericTargets from baseline', () => {
+      const r = resolveFormTargetsWithFlag('unknown-xyz');
+      expect(r.usingGenericTargets).toBe(true);
+      expect(r.targets).toEqual(DEFAULT_FORM_TARGETS);
+    });
+
+    it('resolveFormTargetsWithFlag surfaces override targets while still flagging unknown id', () => {
+      const tpl = mkTemplate([
+        mkExercise({ exercise_id: 'unknown-xyz', target_fqi_min: 88 }),
+      ]);
+      const r = resolveFormTargetsWithFlag('unknown-xyz', tpl);
+      expect(r.usingGenericTargets).toBe(true);
+      expect(r.targets.fqiMin).toBe(88);
+      // ROM axes inherit from the generic baseline.
+      expect(r.targets.romMin).toBe(DEFAULT_FORM_TARGETS.romMin);
+      expect(r.targets.romMax).toBe(DEFAULT_FORM_TARGETS.romMax);
+    });
+
+    it('resolveFormTargetsWithFlag reports usingGenericTargets=false for known exercise', () => {
+      const r = resolveFormTargetsWithFlag('pullup');
+      expect(r.usingGenericTargets).toBe(false);
     });
   });
 });

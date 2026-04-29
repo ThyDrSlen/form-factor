@@ -32,6 +32,7 @@ const REASON_LABELS: Record<string, string> = {
   insufficient_samples: 'Not in frame',
   excessive_drift: 'Drifted out of frame',
   timeout: 'Timed out',
+  low_confidence: 'Low confidence',
 };
 
 const REASON_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -39,6 +40,46 @@ const REASON_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   insufficient_samples: 'expand-outline',
   excessive_drift: 'move-outline',
   timeout: 'time-outline',
+  low_confidence: 'sunny-outline',
+};
+
+/**
+ * A14: per-reason remediation copy. Keys mirror the reasons emitted by the
+ * calibration-failure analyzer. When the upstream only passes a
+ * `remediation` query param, we still fall back to that — these strings
+ * win only when the analyzer reason is recognized AND the fallback hasn't
+ * been explicitly overridden.
+ */
+export const REASON_REMEDIATION: Record<string, string> = {
+  low_stability:
+    'Your posture is shifting. Stand still a few seconds before tapping retry.',
+  excessive_drift:
+    "You drifted out of frame. Step back to the original spot and hold.",
+  insufficient_samples:
+    'We need a few more seconds of stillness. Try again in better lighting.',
+  low_confidence:
+    'Camera is having trouble seeing you clearly. Move closer or brighten the room.',
+  timeout:
+    "We couldn't lock in a baseline. Check your lighting and framing, then retry.",
+};
+
+/**
+ * A14: long-form explanation of WHY each reason triggered. Surfaced inside
+ * the new "Why did this happen?" collapsible — users who tap it get a
+ * plain-English description of what the tracker was measuring when it
+ * gave up.
+ */
+export const REASON_EXPLANATION: Record<string, string> = {
+  low_stability:
+    'Calibration averages your pose over a short window. If the pose keeps moving, the average never stabilizes.',
+  excessive_drift:
+    'We track the baseline against your starting framing. A big drift tells us the phone or the subject moved.',
+  insufficient_samples:
+    'We need a minimum number of good frames to trust the baseline. Low light or occlusion leaves us short.',
+  low_confidence:
+    "Every frame comes with a confidence score from the pose model. When it keeps dipping, we won't commit to a baseline.",
+  timeout:
+    'Calibration has an upper time budget. If none of the above have triggered but we still have no stable baseline, we time out so you can retry with fresh framing.',
 };
 
 export default function CalibrationFailureRecoveryModal(): React.ReactElement {
@@ -56,9 +97,14 @@ export default function CalibrationFailureRecoveryModal(): React.ReactElement {
 
   const reason = params.reason ?? 'timeout';
   const title = params.title ?? 'Calibration failed';
+  // A14: prefer the analyzer-provided remediation, fall back to our
+  // per-reason table, and finally to the generic timeout copy.
   const remediation =
     params.remediation ??
-    'We couldn\'t lock in a baseline. Check your lighting and framing, then retry.';
+    REASON_REMEDIATION[reason] ??
+    REASON_REMEDIATION.timeout;
+  const explanation = REASON_EXPLANATION[reason] ?? REASON_EXPLANATION.timeout;
+  const [explanationOpen, setExplanationOpen] = React.useState(false);
   const suggestedExercise = params.suggestedExercise;
 
   const metrics = useMemo(
@@ -95,6 +141,14 @@ export default function CalibrationFailureRecoveryModal(): React.ReactElement {
       params: { exercise: suggestedExercise },
     } as never);
   }, [router, suggestedExercise]);
+
+  // Fallback when the analyzer did not surface a specific suggestion: send
+  // the user to the workouts tab so they can pick any exercise manually.
+  // No dedicated exercise-picker route exists yet in the app; the workouts
+  // tab is the closest canonical entry point for browsing exercises.
+  const handleChooseDifferent = useCallback(() => {
+    router.replace('/(tabs)/workouts' as never);
+  }, [router]);
 
   const handleClose = useCallback(() => {
     router.back();
@@ -134,6 +188,30 @@ export default function CalibrationFailureRecoveryModal(): React.ReactElement {
 
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.body}>{remediation}</Text>
+
+        {/* A14: collapsible "Why did this happen?" explanation keyed to the
+            analyzer reason. Closed by default so the retry CTA stays above
+            the fold. */}
+        <TouchableOpacity
+          style={styles.whyHeader}
+          onPress={() => setExplanationOpen((v) => !v)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: explanationOpen }}
+          accessibilityLabel="Why did this happen?"
+          testID="calibration-why-toggle"
+        >
+          <Text style={styles.whyHeaderLabel}>Why did this happen?</Text>
+          <Ionicons
+            name={explanationOpen ? 'chevron-up' : 'chevron-down'}
+            size={16}
+            color="#8693A8"
+          />
+        </TouchableOpacity>
+        {explanationOpen ? (
+          <View style={styles.whyBody} testID="calibration-why-body">
+            <Text style={styles.whyBodyText}>{explanation}</Text>
+          </View>
+        ) : null}
 
         {(metrics.sampleCount !== null || metrics.avgStability !== null) && (
           <View style={styles.metricsCard}>
@@ -185,7 +263,7 @@ export default function CalibrationFailureRecoveryModal(): React.ReactElement {
           <Text style={styles.ctaSecondaryText}>Open camera guide</Text>
         </TouchableOpacity>
 
-        {suggestedExercise && (
+        {suggestedExercise ? (
           <TouchableOpacity
             style={[styles.ctaButton, styles.ctaTertiary]}
             onPress={handleTryOther}
@@ -196,6 +274,17 @@ export default function CalibrationFailureRecoveryModal(): React.ReactElement {
             <Text style={styles.ctaTertiaryText}>
               Try {formatExerciseLabel(suggestedExercise)} instead
             </Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[styles.ctaButton, styles.ctaTertiary]}
+            onPress={handleChooseDifferent}
+            accessibilityRole="button"
+            accessibilityLabel="Choose a different exercise"
+            testID="calibration-failure-choose-different"
+          >
+            <Ionicons name="swap-horizontal-outline" size={18} color="#8693A8" />
+            <Text style={styles.ctaTertiaryText}>Choose a different exercise</Text>
           </TouchableOpacity>
         )}
 
@@ -351,6 +440,34 @@ const styles = StyleSheet.create({
     color: '#5D6B83',
     textAlign: 'center',
     marginTop: 8,
+    fontFamily: 'Lexend_400Regular',
+  },
+  whyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    marginBottom: 4,
+  },
+  whyHeaderLabel: {
+    color: '#C9D7F4',
+    fontSize: 13,
+    fontWeight: '600',
+    fontFamily: 'Lexend_500Medium',
+  },
+  whyBody: {
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 4,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  whyBodyText: {
+    color: 'rgba(245, 247, 255, 0.78)',
+    fontSize: 13,
+    lineHeight: 20,
     fontFamily: 'Lexend_400Regular',
   },
 });

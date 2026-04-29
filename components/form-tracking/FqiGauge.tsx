@@ -16,10 +16,19 @@
  * `score = null` to render the idle state ("--").
  */
 
-import React, { useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
+import React, { useEffect, useMemo, useRef } from 'react';
+import {
+  AccessibilityInfo,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  type ViewStyle,
+  type StyleProp,
+} from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { MotiView } from 'moti';
+import { Ionicons } from '@expo/vector-icons';
 
 export type FqiGaugeSize = 'sm' | 'md' | 'lg';
 
@@ -34,6 +43,21 @@ export interface FqiGaugeProps {
   accessibilityLabel?: string;
   /** Optional testID for component tests. */
   testID?: string;
+  /**
+   * Optional tap handler. When provided, the gauge renders a subtle (ⓘ)
+   * badge overlay hinting interactivity and becomes tappable — typically
+   * wired to open the FQI explainer modal so users can learn what the
+   * score means. First-time render pulses the badge once so the
+   * discoverability of the tap target survives session start.
+   */
+  onPress?: () => void;
+  /**
+   * When true, skip the first-use pulse animation. Callers that have
+   * already tracked the hint as "seen" (via AsyncStorage, session-scoped
+   * ref, etc.) pass true to avoid re-pulsing on every rerender. When
+   * undefined the pulse fires once per mount.
+   */
+  hasSeenHint?: boolean;
 }
 
 const SIZE_MAP: Record<FqiGaugeSize, { diameter: number; strokeWidth: number; fontSize: number; labelSize: number }> = {
@@ -41,6 +65,23 @@ const SIZE_MAP: Record<FqiGaugeSize, { diameter: number; strokeWidth: number; fo
   md: { diameter: 72, strokeWidth: 6, fontSize: 22, labelSize: 10 },
   lg: { diameter: 96, strokeWidth: 8, fontSize: 30, labelSize: 12 },
 };
+
+type FqiBucket = 'poor' | 'acceptable' | 'good';
+
+function toBucket(score: number | null): FqiBucket | null {
+  if (score == null || Number.isNaN(score)) return null;
+  if (score < 40) return 'poor';
+  if (score < 70) return 'acceptable';
+  return 'good';
+}
+
+function bucketLabel(bucket: FqiBucket): string {
+  return bucket === 'poor'
+    ? 'poor'
+    : bucket === 'acceptable'
+      ? 'acceptable'
+      : 'good';
+}
 
 /** Map an FQI score 0-100 into a semantic color bucket. */
 export function getFqiColor(score: number | null): { fill: string; track: string; text: string } {
@@ -67,6 +108,8 @@ export default function FqiGauge({
   style,
   accessibilityLabel,
   testID,
+  onPress,
+  hasSeenHint,
 }: FqiGaugeProps) {
   const dims = SIZE_MAP[size];
   const clamped = clampScore(score);
@@ -82,6 +125,44 @@ export default function FqiGauge({
     if (score != null) setPulseKey((k) => k + 1);
   }, [score]);
 
+  // One-shot discoverability pulse for the (ⓘ) info badge. Fires on mount
+  // unless the caller signals the hint has already been consumed. Driving
+  // this off a ref rather than state avoids re-pulsing when `score` updates
+  // churn the component.
+  const hintPulsedRef = useRef(false);
+  const [hintPulseKey, setHintPulseKey] = React.useState(0);
+  useEffect(() => {
+    if (!onPress) return;
+    if (hasSeenHint) return;
+    if (hintPulsedRef.current) return;
+    hintPulsedRef.current = true;
+    setHintPulseKey((k) => k + 1);
+  }, [onPress, hasSeenHint]);
+
+  // Screen-reader announcement on FQI bucket changes (poor → ok → good).
+  // accessibilityValue updates alone aren't reliably re-announced by
+  // VoiceOver during live sessions; firing an explicit announcement when
+  // the semantic bucket crosses a threshold gives a vision-impaired user
+  // audible confirmation that form quality shifted. We debounce on bucket
+  // rather than raw score so announcements don't stack every frame.
+  const lastBucketRef = useRef<FqiBucket | null>(null);
+  useEffect(() => {
+    const bucket = toBucket(score);
+    if (bucket === null) {
+      lastBucketRef.current = null;
+      return;
+    }
+    if (lastBucketRef.current === bucket) return;
+    const prev = lastBucketRef.current;
+    lastBucketRef.current = bucket;
+    // Skip the first transition when there was no prior reading — the
+    // accessibilityValue on mount already communicates the initial state.
+    if (prev === null) return;
+    AccessibilityInfo.announceForAccessibility(
+      `Form quality ${bucketLabel(bucket)} — ${Math.round(clamped)} of 100`,
+    );
+  }, [score, clamped]);
+
   const displayScore = score == null ? '--' : Math.round(clamped).toString();
   const label =
     accessibilityLabel ??
@@ -89,18 +170,32 @@ export default function FqiGauge({
       ? 'Form quality index, not yet measured'
       : `Form quality index ${Math.round(clamped)} out of 100`);
 
+  const Container = onPress ? TouchableOpacity : View;
+  // TouchableOpacity on RN swallows `accessibilityValue`, but includes
+  // a touch-target wrapper that VoiceOver announces as "button". When
+  // onPress is present we surface the tap affordance in the a11y hint so
+  // sighted users are not the only ones who learn about the interaction.
+  const containerProps = onPress
+    ? {
+        onPress,
+        accessibilityRole: 'button' as const,
+        accessibilityHint: 'Opens the FQI explainer',
+      }
+    : {
+        accessibilityRole: 'progressbar' as const,
+        accessibilityValue:
+          score == null
+            ? ({ min: 0, max: 100, now: 0, text: 'Not yet measured' } as const)
+            : ({ min: 0, max: 100, now: Math.round(clamped) } as const),
+      };
+
   return (
-    <View
+    <Container
       style={[styles.container, { width: dims.diameter, height: dims.diameter }, style]}
       accessible
-      accessibilityRole="progressbar"
       accessibilityLabel={label}
-      accessibilityValue={
-        score == null
-          ? { min: 0, max: 100, now: 0, text: 'Not yet measured' }
-          : { min: 0, max: 100, now: Math.round(clamped) }
-      }
       testID={testID ?? 'fqi-gauge'}
+      {...containerProps}
     >
       <Svg
         width={dims.diameter}
@@ -159,7 +254,27 @@ export default function FqiGauge({
           </Text>
         </View>
       </MotiView>
-    </View>
+
+      {onPress ? (
+        <MotiView
+          // Re-mount on hintPulseKey so the first-render pulse replays
+          // exactly once (see the effect above).
+          key={`fqi-hint-${hintPulseKey}`}
+          style={styles.infoBadge}
+          from={hasSeenHint ? undefined : { opacity: 0.2, scale: 0.6 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: 'timing', duration: 420 }}
+          testID={`${testID ?? 'fqi-gauge'}-info-badge`}
+          pointerEvents="none"
+        >
+          <Ionicons
+            name="information-circle"
+            size={Math.round(dims.diameter * 0.22)}
+            color="rgba(255, 255, 255, 0.92)"
+          />
+        </MotiView>
+      ) : null}
+    </Container>
   );
 }
 
@@ -182,5 +297,14 @@ const styles = StyleSheet.create({
     color: '#9AACD1',
     fontWeight: '600',
     letterSpacing: 1,
+  },
+  infoBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    shadowColor: '#000',
+    shadowOpacity: 0.45,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
   },
 });

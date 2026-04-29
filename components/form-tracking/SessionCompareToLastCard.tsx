@@ -55,6 +55,11 @@ export interface SessionCompareToLastCardProps {
    * "Retry" button.
    */
   onRetry?: () => void;
+  /**
+   * Optional display name for the exercise, surfaced in the "first session"
+   * placeholder copy. When absent we fall back to a generic string.
+   */
+  exerciseName?: string;
   testID?: string;
 }
 
@@ -105,6 +110,7 @@ export function SessionCompareToLastCard({
   loading = false,
   error = null,
   onRetry,
+  exerciseName,
   testID = 'session-compare-to-last-card',
 }: SessionCompareToLastCardProps) {
   // Error state wins over loading so a retry is always reachable.
@@ -158,7 +164,35 @@ export function SessionCompareToLastCard({
     );
   }
 
-  if (!comparison || !comparison.priorSessionId) return null;
+  // No comparison payload at all → genuine "no data" (exercise unsupported,
+  // aggregator skipped, etc.). Stay silent to avoid adding empty real estate.
+  if (!comparison) return null;
+
+  // Comparison exists but there is no prior session to diff against → this
+  // is the user's first logged session for this exercise. Render a
+  // low-emphasis placeholder so the debrief doesn't leave a blank gap where
+  // the progress section lives.
+  if (!comparison.priorSessionId) {
+    const titleExercise = exerciseName?.trim() ? exerciseName : 'this exercise';
+    return (
+      <View
+        style={[styles.card, styles.placeholderCard]}
+        testID={`${testID}-first-session`}
+        accessibilityRole="summary"
+        accessibilityLabel={`First session for ${titleExercise}. No comparison yet — we'll chart progress once you log another.`}
+      >
+        <View style={styles.header}>
+          <Ionicons name="sparkles-outline" size={16} color="#6F80A0" />
+          <Text style={styles.placeholderTitle}>
+            First session for {titleExercise}
+          </Text>
+        </View>
+        <Text style={styles.placeholderBody}>
+          No comparison yet — we&apos;ll chart progress once you log another.
+        </Text>
+      </View>
+    );
+  }
 
   const deltas: DeltaSpec[] = [
     {
@@ -348,6 +382,23 @@ const styles = StyleSheet.create({
     fontFamily: 'Lexend_500Medium',
     fontSize: 13,
     fontWeight: '600',
+  },
+  placeholderCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    gap: 6,
+  },
+  placeholderTitle: {
+    color: '#C9D7F4',
+    fontFamily: 'Lexend_500Medium',
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  placeholderBody: {
+    color: '#6F80A0',
+    fontFamily: 'Lexend_400Regular',
+    fontSize: 12,
+    lineHeight: 18,
   },
 });
 

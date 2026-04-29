@@ -29,6 +29,14 @@ export interface PreCalibrationStatus {
   framesObserved: number;
   /** Whether the modal should mount at all (false after suppression cap). */
   shouldShow: boolean;
+  /**
+   * When true, the next session start bypasses the suppression check and
+   * forces the pre-calibration modal to surface again even if the user
+   * hit the success cap. Flipped by `setForceRecalibration(true)` from
+   * the pre-set UI; consumed + reset by `reset()` so the force applies
+   * only to the next session boundary.
+   */
+  forceRecalibration: boolean;
 }
 
 export interface UsePreCalibrationStatusReturn {
@@ -41,6 +49,8 @@ export interface UsePreCalibrationStatusReturn {
   markFailed: () => void;
   /** Reset all collected state — used when a fresh workout begins. */
   reset: () => void;
+  /** Toggle the one-shot force-recalibration flag from the pre-set UI. */
+  setForceRecalibration: (value: boolean) => void;
 }
 
 const clamp01 = (n: number): number => {
@@ -56,6 +66,7 @@ export function usePreCalibrationStatus(): UsePreCalibrationStatusReturn {
     confidence: 0,
     framesObserved: 0,
     shouldShow: true,
+    forceRecalibration: false,
   });
   const sumRef = useRef(0);
   const countRef = useRef(0);
@@ -92,7 +103,24 @@ export function usePreCalibrationStatus(): UsePreCalibrationStatusReturn {
       confidence: 0,
       framesObserved: 0,
       shouldShow: prev.shouldShow,
+      // Consume the one-shot force flag on reset so it only applies to
+      // the session boundary immediately following the user toggle.
+      forceRecalibration: false,
     }));
+  }, []);
+
+  const setForceRecalibration = useCallback((value: boolean) => {
+    setStatus((prev) => {
+      if (prev.forceRecalibration === value) return prev;
+      return {
+        ...prev,
+        // When the user explicitly asks to recalibrate, ensure shouldShow
+        // is true for the upcoming session boundary regardless of the
+        // stored suppression count. reset() later drops the force flag.
+        shouldShow: value ? true : prev.shouldShow,
+        forceRecalibration: value,
+      };
+    });
   }, []);
 
   const markFailed = useCallback(() => {
@@ -154,6 +182,7 @@ export function usePreCalibrationStatus(): UsePreCalibrationStatusReturn {
     markSuccess,
     markFailed,
     reset,
+    setForceRecalibration,
   };
 }
 

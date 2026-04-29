@@ -7,7 +7,7 @@
  */
 
 import React, { useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { sessionStyles as styles, colors } from '@/styles/workout-session.styles';
 import type { WorkoutSessionSet, SetType } from '@/lib/types/workout-session';
@@ -20,6 +20,15 @@ interface SetRowProps {
   onCompleteSet: (setId: string) => void;
   onMenuPress: (setId: string) => void;
   onNotesPress?: (setId: string) => void;
+  /**
+   * If the form-tracking rep detector observed a rep count for this set,
+   * pass it here. When the user's manual `actual_reps` edit diverges by
+   * more than one rep from the detector, we render a subtle warning
+   * ("Detector counted N reps") under the Reps field. Optional — callers
+   * that don't have a detector reading should leave this undefined and
+   * the feature degrades gracefully.
+   */
+  detectedReps?: number;
 }
 
 const SET_TYPE_COLORS: Record<SetType, string> = {
@@ -31,9 +40,32 @@ const SET_TYPE_COLORS: Record<SetType, string> = {
   timed: colors.restActive,
 };
 
-function SetRow({ set, index, isTimed, onUpdateSet, onCompleteSet, onMenuPress, onNotesPress }: SetRowProps) {
+function SetRow({
+  set,
+  index,
+  isTimed,
+  onUpdateSet,
+  onCompleteSet,
+  onMenuPress,
+  onNotesPress,
+  detectedReps,
+}: SetRowProps) {
   const isCompleted = !!set.completed_at;
   const circleColor = SET_TYPE_COLORS[set.set_type] || colors.accent;
+
+  // Show a divergence hint when the user has manually edited `actual_reps`
+  // to a value that differs from the detector's observation by more than
+  // one rep. The one-rep deadband swallows the off-by-one noise typical of
+  // rep detectors and only surfaces meaningful mismatches.
+  const detectorDivergence =
+    !isTimed &&
+    typeof detectedReps === 'number' &&
+    Number.isFinite(detectedReps) &&
+    typeof set.actual_reps === 'number' &&
+    Number.isFinite(set.actual_reps) &&
+    Math.abs(set.actual_reps - detectedReps) > 1
+      ? detectedReps
+      : null;
 
   const handleWeightChange = useCallback(
     (text: string) => {
@@ -114,6 +146,16 @@ function SetRow({ set, index, isTimed, onUpdateSet, onCompleteSet, onMenuPress, 
           editable={!isCompleted}
           selectTextOnFocus
         />
+        {detectorDivergence != null ? (
+          <Text
+            style={detectorDivergenceStyle}
+            numberOfLines={1}
+            accessibilityLabel={`Detector counted ${detectorDivergence} reps`}
+            testID="set-row-detector-divergence"
+          >
+            Detector: {detectorDivergence}
+          </Text>
+        ) : null}
       </View>
 
       {/* Notes column */}
@@ -157,5 +199,14 @@ function SetRow({ set, index, isTimed, onUpdateSet, onCompleteSet, onMenuPress, 
     </View>
   );
 }
+
+const detectorDivergenceStyle = StyleSheet.create({
+  hint: {
+    fontFamily: 'Lexend_400Regular',
+    fontSize: 10,
+    color: colors.warmup,
+    marginTop: 2,
+  },
+}).hint;
 
 export default React.memo(SetRow);

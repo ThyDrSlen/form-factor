@@ -286,11 +286,27 @@ export const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: spacing.md,
   },
+  modalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm + spacing.xs,
+  },
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: tabColors.textPrimary,
     marginBottom: spacing.sm + spacing.xs,
+    flex: 1,
+  },
+  modalCloseButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: borderRadius.md,
+    backgroundColor: 'rgba(154, 172, 209, 0.1)',
+    marginLeft: spacing.sm,
   },
   modalLabel: {
     fontSize: 14,
@@ -340,6 +356,9 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 18,
     borderRadius: borderRadius.md,
     borderWidth: 1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalButtonSecondary: {
     borderColor: tabColors.border,

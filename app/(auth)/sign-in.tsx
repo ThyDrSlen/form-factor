@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Image, KeyboardAvoidingView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import { isIOS } from '@/lib/platform-utils';
 
 type FormData = {
@@ -10,11 +11,17 @@ type FormData = {
   fullName?: string;
 };
 
+type FieldError = { field: 'email' | 'password' | 'fullName' | 'form'; message: string };
+
 export default function SignInScreen() {
   const router = useRouter();
+  const { show: showToast } = useToast();
+  // TODO(wave-36): honor `mode=existing` query to default to the existing-account tab
+  // (forwarded from app/(onboarding)/welcome.tsx's "I already have an account" CTA).
   const [isSignUp, setIsSignUp] = useState(false);
   const [isMagicLink, setIsMagicLink] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [fieldError, setFieldError] = useState<FieldError | null>(null);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     email: '',
@@ -76,19 +83,93 @@ export default function SignInScreen() {
     return message || 'An unexpected error occurred. Please try again.';
   };
 
+  /**
+   * Wave-31 Pack A / A8 (#562): map common Supabase auth errors to the
+   * specific form field that owns them, so the validation copy appears
+   * *next to* the field instead of only in the generic banner at the
+   * top of the card. Falls through to the legacy `getErrorMessage` for
+   * anything we don't recognize.
+   */
+  const mapSupabaseError = (error: any): FieldError => {
+    if (!error) return { field: 'form', message: '' };
+
+    const raw = (error.message || error.toString() || '').toLowerCase();
+    const code = (error.code || error.name || '').toString().toLowerCase();
+
+    // email_already_exists
+    if (
+      code === 'email_already_exists' ||
+      raw.includes('email_already_exists') ||
+      raw.includes('user already registered') ||
+      raw.includes('already registered')
+    ) {
+      return { field: 'email', message: 'Email already exists. Sign in instead?' };
+    }
+
+    // weak_password
+    if (
+      code === 'weak_password' ||
+      raw.includes('weak_password') ||
+      raw.includes('password should be at least') ||
+      raw.includes('password is too weak')
+    ) {
+      return {
+        field: 'password',
+        message: 'Password too weak. Use at least 6 characters with letters and numbers.',
+      };
+    }
+
+    // invalid_credentials
+    if (
+      code === 'invalid_credentials' ||
+      raw.includes('invalid_credentials') ||
+      raw.includes('invalid login credentials')
+    ) {
+      return { field: 'password', message: 'Invalid email or password.' };
+    }
+
+    // network_error
+    if (
+      code === 'network_error' ||
+      raw.includes('network request failed') ||
+      raw.includes('network connection failed') ||
+      raw.includes('unable to connect')
+    ) {
+      return {
+        field: 'form',
+        message: 'Network error — check your connection and try again.',
+      };
+    }
+
+    // Fall back to the existing generic mapper for unrecognized codes
+    return { field: 'form', message: getErrorMessage(error) };
+  };
+
+  const applyFieldError = (err: unknown) => {
+    const mapped = mapSupabaseError(err);
+    setFieldError(mapped.message ? mapped : null);
+    if (mapped.field === 'form') {
+      setErrorMessage(mapped.message);
+    } else {
+      setErrorMessage('');
+    }
+  };
+
   const handleEmailAuth = async () => {
     if (!formData.email || !formData.password) {
       setErrorMessage('Please fill in all fields');
+      setFieldError(null);
       return;
     }
 
     setErrorMessage('');
+    setFieldError(null);
     clearError();
 
     try {
       if (isSignUp) {
         if (!formData.fullName?.trim()) {
-          setErrorMessage('Please enter your full name');
+          setFieldError({ field: 'fullName', message: 'Please enter your full name' });
           return;
         }
         const { error } = await signUpWithEmail(
@@ -97,21 +178,25 @@ export default function SignInScreen() {
           { fullName: formData.fullName }
         );
         if (error) {
-          setErrorMessage(getErrorMessage(error));
+          applyFieldError(error);
           return;
         }
+        // Wave-31 Pack A / A8 (#562): celebratory toast on sign-up success.
+        // The Alert below is kept so users on slow networks still see a
+        // blocking confirmation they need to open their inbox.
+        showToast('Account created — check your email', { type: 'success' });
         setIsSignUp(false);
         setFormData((prev) => ({ ...prev, password: '' }));
         Alert.alert('Success', 'Check your email to confirm your account, then sign in.');
       } else {
         const { error } = await signInWithEmail(formData.email, formData.password);
         if (error) {
-          setErrorMessage(getErrorMessage(error));
+          applyFieldError(error);
           return;
         }
       }
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      applyFieldError(error);
     }
   };
 
@@ -200,11 +285,14 @@ export default function SignInScreen() {
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Email</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, fieldError?.field === 'email' && styles.inputError]}
                 placeholder="Email"
                 placeholderTextColor="#6781A6"
                 value={formData.email}
-                onChangeText={(text) => setFormData(prev => ({ ...prev, email: text.trim() }))}
+                onChangeText={(text) => {
+                  setFormData(prev => ({ ...prev, email: text.trim() }));
+                  if (fieldError?.field === 'email') setFieldError(null);
+                }}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
@@ -213,22 +301,31 @@ export default function SignInScreen() {
                 returnKeyType={isSignUp && !isMagicLink ? 'next' : 'done'}
                 editable={!isSigningIn}
               />
+              {fieldError?.field === 'email' && (
+                <Text style={styles.fieldErrorText}>{fieldError.message}</Text>
+              )}
             </View>
 
             {isSignUp && !isMagicLink && (
               <View style={styles.inputContainer}>
                 <Text style={styles.inputLabel}>Full Name</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, fieldError?.field === 'fullName' && styles.inputError]}
                   placeholder="Full Name"
                   placeholderTextColor="#6781A6"
                   value={formData.fullName}
-                  onChangeText={(text) => setFormData((prev) => ({ ...prev, fullName: text }))}
+                  onChangeText={(text) => {
+                    setFormData((prev) => ({ ...prev, fullName: text }));
+                    if (fieldError?.field === 'fullName') setFieldError(null);
+                  }}
                   autoCapitalize="words"
                   autoCorrect={false}
                   returnKeyType="next"
                   editable={!isSigningIn}
                 />
+                {fieldError?.field === 'fullName' && (
+                  <Text style={styles.fieldErrorText}>{fieldError.message}</Text>
+                )}
               </View>
             )}
 
@@ -237,17 +334,23 @@ export default function SignInScreen() {
                 <View style={styles.inputContainer}>
                   <Text style={styles.inputLabel}>Password</Text>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, fieldError?.field === 'password' && styles.inputError]}
                     placeholder="Password"
                     placeholderTextColor="#6781A6"
                     value={formData.password}
-                    onChangeText={(text) => setFormData(prev => ({ ...prev, password: text }))}
+                    onChangeText={(text) => {
+                      setFormData(prev => ({ ...prev, password: text }));
+                      if (fieldError?.field === 'password') setFieldError(null);
+                    }}
                     secureTextEntry
                     autoComplete={isSignUp ? 'new-password' : 'current-password'}
                     textContentType={isSignUp ? 'newPassword' : 'password'}
                     returnKeyType="done"
                     editable={!isSigningIn}
                   />
+                  {fieldError?.field === 'password' && (
+                    <Text style={styles.fieldErrorText}>{fieldError.message}</Text>
+                  )}
                 </View>
 
                 <TouchableOpacity
@@ -308,6 +411,7 @@ export default function SignInScreen() {
                   setIsMagicLink(false);
                   setMagicLinkSent(false);
                   setErrorMessage('');
+                  setFieldError(null);
                   clearError();
                 }}
                 disabled={isSigningIn}
@@ -331,6 +435,9 @@ export default function SignInScreen() {
               style={[styles.socialButton, isSigningIn && styles.buttonDisabled]}
               onPress={() => handleSocialAuth('google')}
               disabled={isSigningIn}
+              accessibilityRole="button"
+              accessibilityLabel="Sign in with Google"
+              accessibilityHint="Double-tap to authenticate"
             >
               <Text style={styles.socialButtonText}>
                 Continue with Google
@@ -342,6 +449,9 @@ export default function SignInScreen() {
                 style={[styles.socialButton, isSigningIn && styles.buttonDisabled]}
                 onPress={() => handleSocialAuth('apple')}
                 disabled={isSigningIn}
+                accessibilityRole="button"
+                accessibilityLabel="Sign in with Apple"
+                accessibilityHint="Double-tap to authenticate"
               >
                 <Text style={styles.socialButtonText}>
                   Continue with Apple
@@ -430,6 +540,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#F5F7FF',
     minHeight: 50,
+  },
+  inputError: {
+    borderColor: '#FF453A',
+  },
+  fieldErrorText: {
+    marginTop: 6,
+    marginLeft: 4,
+    fontSize: 12,
+    color: '#FF453A',
   },
   loginButton: {
     backgroundColor: '#007AFF',

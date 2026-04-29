@@ -14,12 +14,73 @@ import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
 import { evaluateSafety } from './coach-safety';
 import {
   decideCoachModel,
+  expectedTierModel,
   type CoachTaskKind,
   type CoachUserTier,
   type CoachSignals,
 } from './coach-model-dispatch';
 import { isDispatchEnabled } from './coach-model-dispatch-flag';
-import { recordDispatchDecision } from './coach-model-dispatch-telemetry';
+import {
+  recordDispatchDecision,
+  recordDispatchMismatch,
+} from './coach-model-dispatch-telemetry';
+import {
+  recordCoachUsage,
+  type CoachTaskKind as TrackerTaskKind,
+  type CoachProvider as TrackerProvider,
+} from './coach-cost-tracker';
+import { assertUnderWeeklyCap } from './coach-cost-guard';
+
+function estimateTokens(text: string): number {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
+function mapTaskKindToTracker(kind: CoachTaskKind | undefined): TrackerTaskKind {
+  switch (kind) {
+    case 'multi_turn_debrief':
+      return 'debrief';
+    case 'fault_explainer':
+      return 'drill_explainer';
+    case 'session_generator':
+      return 'session_generator';
+    case 'program_design':
+      return 'progression_planner';
+    default:
+      return 'chat';
+  }
+}
+
+function mapProviderToTracker(provider: CoachProvider): TrackerProvider {
+  switch (provider) {
+    case 'openai':
+      return 'openai';
+    case 'gemma-cloud':
+      return 'gemma_cloud';
+    case 'gemma-on-device':
+      return 'gemma_ondevice';
+    default:
+      return 'stub';
+  }
+}
+
+function fireAndForgetRecordUsage(
+  provider: CoachProvider,
+  taskKind: CoachTaskKind | undefined,
+  promptText: string,
+  completionText: string,
+  cacheHit = false,
+): void {
+  void recordCoachUsage({
+    provider: mapProviderToTracker(provider),
+    taskKind: mapTaskKindToTracker(taskKind),
+    tokensIn: estimateTokens(promptText),
+    tokensOut: estimateTokens(completionText),
+    cacheHit,
+  }).catch((err) => {
+    warnWithTs('[coach-service] recordCoachUsage failed', err);
+  });
+}
 
 export type { CoachProvider } from './coach-provider-types';
 import type { LiveSessionSnapshot } from './coach-live-snapshot';
@@ -45,11 +106,24 @@ export interface CoachMessage {
 }
 
 export interface CoachContext {
+  /**
+   * Identifier and display name only. NEVER include email, phone, or other
+   * PII — prompts flow to third-party LLMs (OpenAI, Google Gemma cloud) and
+   * may be logged at the edge. Keep this field minimal. Downstream edge
+   * functions still accept an optional `email` in their input schema for
+   * backward compatibility, but the client MUST NOT populate it.
+   */
   profile?: {
     id?: string;
     name?: string | null;
-    email?: string | null;
   };
+  /**
+   * User-context label for prompt composition ONLY (e.g. 'fitness_coach',
+   * 'pre-set-stance-preview'). Does NOT influence cost-aware routing — use
+   * `CoachSendOptions.taskKind` to control which provider/model serves the
+   * request. Callers that rely on `focus` for routing will silently hit the
+   * default dispatch path.
+   */
   focus?: string;
   sessionId?: string;
   /**
@@ -105,6 +179,10 @@ export interface CoachSendOptions {
    * `EXPO_PUBLIC_COACH_DISPATCH=on`, the task kind is fed to
    * `decideCoachModel()` to pick a provider (tactical → Gemma, complex → GPT)
    * before the legacy provider hint runs. Omitted means "general_chat".
+   *
+   * NOTE: `taskKind` is the ONLY routing signal. `CoachContext.focus` is a
+   * cosmetic prompt label and does not affect model selection — always set
+   * `taskKind` for new surfaces that should be cost-aware routed.
    */
   taskKind?: CoachTaskKind;
   /** Pipeline-v2 user tier for cost-aware model routing. Defaults to 'free'. */
@@ -128,6 +206,55 @@ interface RawCoachResponse {
 
 const DEFAULT_MODEL_ID = 'gpt-5.4-mini';
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
+
+/**
+ * Parse a `Retry-After` header value per RFC 7231. The header carries either
+ * an integer number of seconds OR an HTTP-date. Returns the delay in
+ * milliseconds, or undefined if the value can't be parsed.
+ *
+ * Exported for reuse by `coach-gemma-service.ts` — the two services share the
+ * same 429 handling contract.
+ */
+export function parseRetryAfterMs(raw: string | null | undefined): number | undefined {
+  if (!raw) return undefined;
+  const asInt = Number.parseInt(raw, 10);
+  if (Number.isFinite(asInt) && asInt >= 0 && /^\d+$/.test(raw.trim())) {
+    return asInt * 1000;
+  }
+  const asDate = Date.parse(raw);
+  if (Number.isFinite(asDate)) {
+    return Math.max(0, asDate - Date.now());
+  }
+  return undefined;
+}
+
+/**
+ * Extract a `Retry-After` delay (ms) from a Supabase Edge Functions failure
+ * tuple. Handles both shapes the SDK returns on 429:
+ *   - `response.headers.get('Retry-After')` — the raw Response from a
+ *     FunctionsHttpError.
+ *   - `error.context.headers.get('Retry-After')` — the same Response, but
+ *     surfaced via the error wrapper.
+ * Returns undefined when neither path yields a header.
+ */
+function extractRetryAfterMs(
+  response: Response | undefined,
+  error: unknown,
+): number | undefined {
+  const fromResponse = response?.headers?.get?.('Retry-After');
+  if (fromResponse) {
+    const parsed = parseRetryAfterMs(fromResponse);
+    if (parsed !== undefined) return parsed;
+  }
+  const ctx = (error as { context?: unknown } | null | undefined)?.context;
+  if (ctx && typeof ctx === 'object' && 'headers' in ctx) {
+    const headers = (ctx as { headers?: { get?: (k: string) => string | null } }).headers;
+    const raw = headers?.get?.('Retry-After') ?? null;
+    const parsed = parseRetryAfterMs(raw);
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
+}
 
 /**
  * Feature-flag gate for prepending cross-session memory to coach prompts.
@@ -214,7 +341,7 @@ export async function sendCoachPrompt(
       messages,
       context,
       opts.cacheMs,
-      () => sendCoachPromptInner(messages, context),
+      () => sendCoachPromptInner(messages, context, opts?.taskKind),
       { shaper: opts.shaper }
     );
   }
@@ -232,13 +359,18 @@ export async function sendCoachPrompt(
     opts?.taskKind &&
     opts.provider === undefined
   ) {
-    const decision = decideCoachModel(
-      opts.taskKind,
-      opts.dispatchSignals ?? {},
-      opts.userTier ?? 'free',
-    );
+    const signals = opts.dispatchSignals ?? {};
+    const tier = opts.userTier ?? 'free';
+    const decision = decideCoachModel(opts.taskKind, signals, tier);
     try {
       recordDispatchDecision(decision);
+      // Tier ↔ model mismatch telemetry. When the tier-expected baseline
+      // diverges from the model we actually dispatched (because of a flag,
+      // forceCloud override, visionFallback, or high-fault upgrade) emit a
+      // `coach_dispatch_mismatch:<expected>:<actual>` counter so product can
+      // monitor how often dispatch overrides fire in production.
+      const expected = expectedTierModel(opts.taskKind, signals, tier);
+      recordDispatchMismatch(expected, decision.model, decision.reason);
     } catch {
       // Telemetry is never load-bearing; swallow any recorder fault so the
       // coach turn still proceeds.
@@ -248,10 +380,29 @@ export async function sendCoachPrompt(
 
   // No advanced opts: pick cloud provider (explicit hint, dispatcher, user pref, env, or openai default).
   const provider = opts?.provider ?? routedProvider ?? (await resolveCloudProvider());
-  if (provider === 'gemma') {
-    return sendCoachGemmaPrompt(messages, context);
+  // Dispatch-flag gate (#536): only route to Gemma when the global flag is on.
+  if (provider === 'gemma' && isDispatchEnabled()) {
+    try {
+      await assertUnderWeeklyCap('gemma_cloud');
+      return await sendCoachGemmaPrompt(messages, context, {
+        taskKind: opts?.taskKind as string | undefined,
+      });
+    } catch (err) {
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? (err as { code?: string }).code
+          : undefined;
+      if (code === 'COACH_COST_CAP_EXCEEDED') {
+        warnWithTs(
+          '[coach-service] weekly Gemma cap hit, falling back to OpenAI',
+          err,
+        );
+        return sendCoachPromptInner(messages, context, opts?.taskKind);
+      }
+      throw err;
+    }
   }
-  return sendCoachPromptInner(messages, context);
+  return sendCoachPromptInner(messages, context, opts?.taskKind);
 }
 
 async function sendCoachPromptStreaming(
@@ -305,7 +456,8 @@ async function sendCoachPromptStreaming(
 
 async function sendCoachPromptInner(
   messages: CoachMessage[],
-  context?: CoachContext
+  context?: CoachContext,
+  taskKind?: CoachTaskKind,
 ): Promise<CoachMessage> {
   try {
     const memoryClause = await resolveMemoryClause(context);
@@ -315,7 +467,7 @@ async function sendCoachPromptInner(
         ? { ...(context ?? {}), memoryClause }
         : context;
 
-    const { data, error } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
+    const { data, error, response } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
       body: { messages: outgoingMessages, context: outgoingContext },
     });
 
@@ -353,11 +505,15 @@ async function sendCoachPromptInner(
       }
 
       if (isRateLimited) {
+        const retryAfterMs = extractRetryAfterMs(response, error);
         throw createError(
           'network',
           'COACH_RATE_LIMITED',
           'Coach is rate-limited — try again in a moment.',
-          { details: error, retryable: true }
+          {
+            details: retryAfterMs !== undefined ? { error, retryAfterMs } : error,
+            retryable: true,
+          }
         );
       }
 
@@ -382,11 +538,18 @@ async function sendCoachPromptInner(
         /too many requests/i.test(data.error);
 
       if (isRateLimitedPayload) {
+        const retryAfterMs = extractRetryAfterMs(response, error);
         throw createError(
           'network',
           'COACH_RATE_LIMITED',
           'Coach is rate-limited — try again in a moment.',
-          { details: data.error, retryable: true }
+          {
+            details:
+              retryAfterMs !== undefined
+                ? { error: data.error, retryAfterMs }
+                : data.error,
+            retryable: true,
+          }
         );
       }
 
@@ -512,6 +675,17 @@ async function sendCoachPromptInner(
       configurable: true,
       writable: true,
     });
+
+    // Cost-tracker wiring (#537). Fire-and-forget; never blocks the reply.
+    const promptText = messages.map((m) => m.content ?? '').join('\n');
+    fireAndForgetRecordUsage(
+      provider,
+      taskKind,
+      promptText,
+      responseText,
+      data?.source === 'cache',
+    );
+
     return reply;
   } catch (err) {
     if (err && typeof err === 'object' && 'domain' in err) {

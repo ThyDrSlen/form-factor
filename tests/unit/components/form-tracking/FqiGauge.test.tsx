@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { render, fireEvent } from '@testing-library/react-native';
 
 jest.mock('moti', () => {
   const { View } = jest.requireActual('react-native');
@@ -43,6 +43,32 @@ describe('FqiGauge', () => {
   it('falls back to a neutral label when score is null', () => {
     const { getByTestId } = render(<FqiGauge score={null} />);
     expect(getByTestId('fqi-gauge').props.accessibilityLabel).toMatch(/not yet measured/i);
+  });
+
+  it('does not render the info badge when onPress is not provided', () => {
+    const { queryByTestId } = render(<FqiGauge score={72} />);
+    expect(queryByTestId('fqi-gauge-info-badge')).toBeNull();
+  });
+
+  it('renders the info badge and switches to button role when onPress is provided', () => {
+    const onPress = jest.fn();
+    const { getByTestId } = render(<FqiGauge score={72} onPress={onPress} />);
+    const node = getByTestId('fqi-gauge');
+    expect(node.props.accessibilityRole).toBe('button');
+    expect(node.props.accessibilityHint).toBe('Opens the FQI explainer');
+    expect(getByTestId('fqi-gauge-info-badge')).toBeTruthy();
+  });
+
+  it('invokes onPress when the gauge is tapped', () => {
+    const onPress = jest.fn();
+    const { getByTestId } = render(<FqiGauge score={72} onPress={onPress} />);
+    fireEvent.press(getByTestId('fqi-gauge'));
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the progressbar role when onPress is absent', () => {
+    const { getByTestId } = render(<FqiGauge score={50} />);
+    expect(getByTestId('fqi-gauge').props.accessibilityRole).toBe('progressbar');
   });
 
   describe('getFqiColor', () => {

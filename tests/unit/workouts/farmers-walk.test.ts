@@ -184,3 +184,103 @@ describe('farmers-walk: calculateMetrics', () => {
     expect(cues?.some((m) => /shoulders/i.test(m))).toBe(true);
   });
 });
+
+// ===========================================================================
+// Complementary: phase FSM invalid transitions, load imbalance, edge cases
+// ===========================================================================
+
+describe('farmers-walk: phase FSM invalid transitions and idempotence', () => {
+  const nextPhase = (cur: FarmersWalkPhase, m: FarmersWalkMetrics): FarmersWalkPhase =>
+    farmersWalkDefinition.getNextPhase(cur, angles(), m);
+
+  test('pickup stays put when avgHip remains below standingHip', () => {
+    // Athlete still bent over the weights — must not prematurely advance to carry.
+    const mid = (FARMERS_WALK_THRESHOLDS.hingeHip + FARMERS_WALK_THRESHOLDS.standingHip) / 2;
+    expect(nextPhase('pickup', metrics({ avgHip: mid }))).toBe('pickup');
+  });
+
+  test('carry stays put when hip remains above hingeHip (no ghost set_down)', () => {
+    const justAboveHinge = FARMERS_WALK_THRESHOLDS.hingeHip + 5;
+    expect(nextPhase('carry', metrics({ avgHip: justAboveHinge }))).toBe('carry');
+  });
+
+  test('set_down is idempotent while the athlete holds the hinge position', () => {
+    // Stays in set_down until a full stand re-emerges.
+    const hinge = FARMERS_WALK_THRESHOLDS.hingeHip;
+    expect(nextPhase('set_down', metrics({ avgHip: hinge }))).toBe('set_down');
+    expect(nextPhase('set_down', metrics({ avgHip: hinge - 1 }))).toBe('set_down');
+  });
+
+  test('tracking loss on either arms or legs sends the FSM back to setup from any phase', () => {
+    for (const current of ['pickup', 'carry', 'set_down'] as const) {
+      expect(nextPhase(current, metrics({ armsTracked: false }))).toBe('setup');
+      expect(nextPhase(current, metrics({ legsTracked: false }))).toBe('setup');
+    }
+  });
+});
+
+describe('farmers-walk: load imbalance (asymmetry-as-percent) derivations', () => {
+  // The raw metric is an absolute degree difference. Downstream UI often
+  // normalizes it to a percentage of the asymmetry threshold so a single
+  // threshold-pct readout can be tested regardless of future threshold tuning.
+  const shoulderImbalancePct = (m: FarmersWalkMetrics) =>
+    (m.shoulderSymmetry / FARMERS_WALK_THRESHOLDS.shoulderAsymmetryMax) * 100;
+  const hipImbalancePct = (m: FarmersWalkMetrics) =>
+    (m.hipSymmetry / FARMERS_WALK_THRESHOLDS.hipAsymmetryMax) * 100;
+
+  test('balanced shoulders produce 0% imbalance', () => {
+    const m = farmersWalkDefinition.calculateMetrics(
+      angles({ leftShoulder: 90, rightShoulder: 90 }),
+    );
+    expect(shoulderImbalancePct(m)).toBeCloseTo(0, 5);
+  });
+
+  test('shoulders at the asymmetry threshold produce ~100% imbalance', () => {
+    const diff = FARMERS_WALK_THRESHOLDS.shoulderAsymmetryMax;
+    const m = farmersWalkDefinition.calculateMetrics(
+      angles({ leftShoulder: 90 - diff / 2, rightShoulder: 90 + diff / 2 }),
+    );
+    expect(shoulderImbalancePct(m)).toBeCloseTo(100, 5);
+  });
+
+  test('hip imbalance scales linearly with lateral diff', () => {
+    const halfDiff = FARMERS_WALK_THRESHOLDS.hipAsymmetryMax / 2;
+    const m = farmersWalkDefinition.calculateMetrics(
+      angles({ leftHip: 170 - halfDiff / 2, rightHip: 170 + halfDiff / 2 }),
+    );
+    expect(hipImbalancePct(m)).toBeCloseTo(50, 5);
+  });
+
+  test('imbalance is direction-agnostic (abs)', () => {
+    const m1 = farmersWalkDefinition.calculateMetrics(
+      angles({ leftShoulder: 80, rightShoulder: 100 }),
+    );
+    const m2 = farmersWalkDefinition.calculateMetrics(
+      angles({ leftShoulder: 100, rightShoulder: 80 }),
+    );
+    expect(shoulderImbalancePct(m1)).toBeCloseTo(shoulderImbalancePct(m2), 5);
+  });
+});
+
+describe('farmers-walk: fault conjunction (dropping proxy via fast pickup)', () => {
+  const faultById = (id: string) => farmersWalkDefinition.faults.find((f) => f.id === id);
+
+  test('rushed_pickup AND short_carry together fire for a "drop and bail" attempt', () => {
+    // Dropping the weights after a moment of carry presents to the detector as
+    // a rushed pickup followed by a short total carry time. Both faults should
+    // trigger so the debrief UI can surface "you bailed early".
+    const rushed = faultById('rushed_pickup');
+    const short = faultById('short_carry');
+    const ctx = baseRepContext({ durationMs: 1500 });
+    expect(rushed!.condition(ctx)).toBe(true);
+    expect(short!.condition(ctx)).toBe(true);
+  });
+
+  test('neither fires on a clean 10-second carry', () => {
+    const rushed = faultById('rushed_pickup');
+    const short = faultById('short_carry');
+    const ctx = baseRepContext({ durationMs: 10_000 });
+    expect(rushed!.condition(ctx)).toBe(false);
+    expect(short!.condition(ctx)).toBe(false);
+  });
+});

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createCueRotator } from '@/lib/services/cue-rotator';
 import { CUE_ROTATION_VARIANTS } from '@/lib/services/cue-rotator-variants';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Alert,
   Modal,
@@ -40,6 +41,7 @@ import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type MediaPipePose2D } from '@/lib/arkit/ARKitBodyTracker';
 import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
+import { useFormTrackingSettings } from '@/hooks/use-form-tracking-settings';
 import { audioSessionManager } from '@/lib/services/audio-session-manager';
 import { useToast } from '@/contexts/ToastContext';
 import { CrashBoundary } from '@/components/CrashBoundary';
@@ -97,13 +99,14 @@ import {
   type PullupScoringResult,
 } from '@/lib/tracking-quality';
 import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
-import { useWorkoutController } from '@/hooks/use-workout-controller';
+import { useWorkoutController, isPendingRepsAtStopSignal } from '@/hooks/use-workout-controller';
 import { usePRDetection } from '@/hooks/use-pr-detection';
 import { PRCelebrationBadge } from '@/components/form-tracking/PRCelebrationBadge';
 import { ProgressionSuggestionBadge } from '@/components/form-tracking/ProgressionSuggestionBadge';
 import { useProgressionSuggestion } from '@/hooks/use-progression-suggestion';
 import { emitFormMilestone, useSessionRunner } from '@/lib/stores/session-runner';
 import type { FormTargets } from '@/lib/services/form-target-resolver';
+import { getDefaultsForExerciseWithFlag } from '@/lib/services/form-target-resolver';
 import {
   DEFAULT_DETECTION_MODE,
   getWorkoutByMode,
@@ -350,6 +353,19 @@ export default function ScanARKitScreen() {
   const DEV = __DEV__;
   const router = useRouter();
   const { show: showToast } = useToast();
+  // Form-tracking global preferences. We only read the two feedback-modality
+  // toggles here — `countAudioEnabled` gates the 3-2-1 rep countdown and
+  // `hapticsEnabled` gates the rep-complete / start / stop haptic pulses.
+  // Voice gating is handled elsewhere (usePremiumCueAudio). Mirror both into
+  // refs so callback-stable callsites don't need to re-render when the user
+  // toggles either in settings.
+  const { settings: formTrackingSettings } = useFormTrackingSettings();
+  const countAudioEnabledRef = React.useRef<boolean>(formTrackingSettings.countAudioEnabled);
+  const hapticsEnabledRef = React.useRef<boolean>(formTrackingSettings.hapticsEnabled);
+  useEffect(() => {
+    countAudioEnabledRef.current = formTrackingSettings.countAudioEnabled;
+    hapticsEnabledRef.current = formTrackingSettings.hapticsEnabled;
+  }, [formTrackingSettings.countAudioEnabled, formTrackingSettings.hapticsEnabled]);
   const params = useLocalSearchParams<{ fixturePlayback?: string; fixture?: string; trackingDebug?: string; templateId?: string }>();
   const fixturePlaybackRequested = params.fixturePlayback === '1';
   // Issue #447 — deep-link / scheduled-workout template binding.
@@ -430,9 +446,40 @@ export default function ScanARKitScreen() {
     () => getFormTargetsFor(detectionMode),
     [getFormTargetsFor, detectionMode],
   );
+  // Provenance flag — true when `detectionMode` isn't a first-class exercise
+  // and the resolver fell back to DEFAULT_FORM_TARGETS. Kept as a boolean so
+  // a later PR can light up a subtle "generic thresholds" badge without any
+  // UI churn now. #575 item #8.
+  const usingGenericTargets = useMemo(
+    () => getDefaultsForExerciseWithFlag(detectionMode).usingGenericTargets,
+    [detectionMode],
+  );
+  const usingGenericTargetsRef = React.useRef<boolean>(usingGenericTargets);
+  useEffect(() => {
+    usingGenericTargetsRef.current = usingGenericTargets;
+  }, [usingGenericTargets]);
   const activeFormTargetsRef = React.useRef<FormTargets>(activeFormTargets);
   useEffect(() => {
+    const prev = activeFormTargetsRef.current;
     activeFormTargetsRef.current = activeFormTargets;
+    // When form targets shift (e.g. user just picked a template override for
+    // the active exercise) the cue-hysteresis boundary that was computed
+    // against the old thresholds becomes stale — already-spoken cues can
+    // re-fire under the new boundary because the TTS hook's 5s repeat-guard
+    // sees them as "different" cues. Reset both boundaries in tandem. Skip
+    // on first-render init (prev === current) since nothing's rotated yet.
+    // (#575 item #1, targets-only leg.)
+    const targetsChanged =
+      prev !== activeFormTargets &&
+      (prev.fqiMin !== activeFormTargets.fqiMin ||
+        prev.romMin !== activeFormTargets.romMin ||
+        prev.romMax !== activeFormTargets.romMax);
+    if (targetsChanged) {
+      cueHysteresisControllerRef.current.resetAll();
+      cueHysteresisLastTickRef.current = null;
+      stablePrimaryCueRef.current = null;
+      lastSpokenCueRef.current = null;
+    }
     if (deepLinkTemplateId) {
       logWithTs('[ScanARKit] Active form targets', {
         exerciseId: detectionMode,
@@ -466,6 +513,22 @@ export default function ScanARKitScreen() {
   const [gestureRecordingEnabled, setGestureRecordingEnabled] = useState(true);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  // Retry-able upload failure surface. When a manual video upload
+  // rejects (network blip, auth refresh, 5xx), we stash the last
+  // attempted payload so the banner's "Retry" action can re-invoke
+  // uploadRecordedVideo without requiring the user to re-encode or
+  // navigate back to the preview. Cleared on success / dismiss.
+  const [uploadRetryPayload, setUploadRetryPayload] = useState<{
+    uri: string;
+    exercise: string;
+    metrics: ClipUploadMetrics;
+    message: string;
+  } | null>(null);
+  const lastUploadPayloadRef = React.useRef<{
+    uri: string;
+    exercise: string;
+    metrics: ClipUploadMetrics;
+  } | null>(null);
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [isExitMidSessionSheetVisible, setIsExitMidSessionSheetVisible] = useState(false);
   const [showDebugStats, setShowDebugStats] = useState(false);
@@ -523,16 +586,19 @@ export default function ScanARKitScreen() {
   const adaptiveFps = useAdaptiveFps({ enabled: arOverlaysV2 });
   const [sustainedOcclusionHint, setSustainedOcclusionHint] =
     useState<SustainedOcclusionEvent | null>(null);
-  const sustainedOcclusionTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sustainedOcclusionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Persistent banner (#551): the sustained-occlusion cue used to auto-
+  // dismiss after 3.2s, which meant a user whose hand was covering a
+  // joint long enough for the native manager to fire the event lost the
+  // guidance almost immediately — especially bad when the joint stayed
+  // hidden. The banner now sticks until the user taps "Got it" (via
+  // dismissSustainedOcclusion below); re-entry of a sustained occlusion
+  // with a different joint set overwrites the existing banner.
   const handleSustainedOcclusion = useCallback((event: SustainedOcclusionEvent) => {
     setSustainedOcclusionHint(event);
-    if (sustainedOcclusionTimerRef.current) {
-      clearTimeout(sustainedOcclusionTimerRef.current);
-    }
-    sustainedOcclusionTimerRef.current = setTimeout(() => {
-      setSustainedOcclusionHint(null);
-      sustainedOcclusionTimerRef.current = null;
-    }, 3200);
+  }, []);
+  const dismissSustainedOcclusion = useCallback(() => {
+    setSustainedOcclusionHint(null);
   }, []);
   const occlusionManagerRef = React.useRef<OcclusionHoldManager | null>(null);
   if (occlusionManagerRef.current === null) {
@@ -541,14 +607,6 @@ export default function ScanARKitScreen() {
       onSustainedOcclusion: handleSustainedOcclusion,
     });
   }
-  useEffect(() => {
-    return () => {
-      if (sustainedOcclusionTimerRef.current) {
-        clearTimeout(sustainedOcclusionTimerRef.current);
-        sustainedOcclusionTimerRef.current = null;
-      }
-    };
-  }, []);
   // ---------------------------------------------------------------
 
   const [watchMirrorEnabled, setWatchMirrorEnabled] = useState(Platform.OS === 'ios');
@@ -560,6 +618,10 @@ export default function ScanARKitScreen() {
   const watchTrackingPublishAtRef = React.useRef(0);
   const watchTrackingSignatureRef = React.useRef<string | null>(null);
   const lastTrackingQualityRef = React.useRef<number | null>(null);
+  // Tracks the previous confidence tier so mid-set degradation warnings fire
+  // once on the high → low transition edge rather than on every frame. See
+  // emitMidSetDegradationIfTransition below for the thresholds.
+  const lastConfidenceTierRef = React.useRef<'high' | 'low' | null>(null);
   const [shadowModeEnabled, setShadowModeEnabled] = useState(true);
   const shadowModeEnabledRef = React.useRef(true);
   const shadowStatsRef = React.useRef(createShadowStatsAccumulator());
@@ -575,6 +637,17 @@ export default function ScanARKitScreen() {
   const mediaPipeModelVersionRef = React.useRef<string>(MEDIAPIPE_POSE_LANDMARKER_VERSION);
   const lastShadowMeanAbsDeltaRef = React.useRef<number | null>(null);
   const [mediaPipeModelPath, setMediaPipeModelPath] = useState<string | null>(null);
+  // Tracks the initial pose-model download / init phase so the UI can
+  // surface a "Downloading pose model…" modal. The flag starts as true
+  // on iOS where the bundled MediaPipe Lite asset must be resolved
+  // (and occasionally re-downloaded on first run). The effect below
+  // that loads MEDIAPIPE_LITE_MODEL_ASSET flips it to false on success
+  // OR failure, and supportStatus resolving to 'supported' /
+  // 'unsupported' also clears it so the modal cannot persist past the
+  // skeleton gate.
+  const [isPoseModelLoading, setIsPoseModelLoading] = useState<boolean>(
+    Platform.OS === 'ios',
+  );
   const mediaPipePollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const mediaPipePollInFlightRef = React.useRef(false);
   const partialTrackingHideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -680,6 +753,7 @@ export default function ScanARKitScreen() {
 
     if (Platform.OS !== 'ios') {
       setMediaPipeModelPath(null);
+      setIsPoseModelLoading(false);
       return () => {
         cancelled = true;
       };
@@ -707,6 +781,10 @@ export default function ScanARKitScreen() {
         if (!cancelled) {
           setMediaPipeModelPath(null);
         }
+      } finally {
+        if (!cancelled) {
+          setIsPoseModelLoading(false);
+        }
       }
     };
 
@@ -716,6 +794,17 @@ export default function ScanARKitScreen() {
       cancelled = true;
     };
   }, [DEV]);
+
+  // Safety: once BodyTracker finishes its capability probe, stop
+  // showing the loading modal regardless of the asset path resolution
+  // state above. This covers the unsupported case where the effect
+  // above never runs (non-iOS) plus any race where supportStatus
+  // resolves before the asset download finishes.
+  useEffect(() => {
+    if (supportStatus === 'supported' || supportStatus === 'unsupported') {
+      setIsPoseModelLoading(false);
+    }
+  }, [supportStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -783,14 +872,23 @@ export default function ScanARKitScreen() {
       shadowModeEnabled &&
       shadowProviderRuntime === 'mediapipe';
 
-    if (!shouldPollMediaPipe) {
+    // Shared teardown helper — called unconditionally from the effect
+    // cleanup so the interval + in-flight flag reset always fire on
+    // unmount regardless of which branch of the effect ran. Previously the
+    // cleanup duplicated this logic and could drift from the guard-block
+    // version if only one site was updated during a refactor.
+    const teardownPoll = () => {
       if (mediaPipePollTimerRef.current) {
         clearInterval(mediaPipePollTimerRef.current);
         mediaPipePollTimerRef.current = null;
       }
       mediaPipePollInFlightRef.current = false;
+    };
+
+    if (!shouldPollMediaPipe) {
+      teardownPoll();
       mediaPipePoseRef.current = null;
-      return;
+      return teardownPoll;
     }
 
     let active = true;
@@ -832,11 +930,10 @@ export default function ScanARKitScreen() {
 
     return () => {
       active = false;
-      if (mediaPipePollTimerRef.current) {
-        clearInterval(mediaPipePollTimerRef.current);
-        mediaPipePollTimerRef.current = null;
-      }
-      mediaPipePollInFlightRef.current = false;
+      // Always run teardown, unconditionally, outside any guard — a
+      // leaked interval keeps waking the native bridge after the user
+      // leaves the scan tab and tanks battery/thermal.
+      teardownPoll();
     };
   }, [DEV, isTracking, shadowModeEnabled, shadowProviderRuntime]);
 
@@ -848,6 +945,19 @@ export default function ScanARKitScreen() {
   }, []);
 
   const repIndexTrackerRef = React.useRef(new RepIndexTracker());
+  // Stable mirror of `repCount` for callback closures (telemetry, cue logger).
+  // Telemetry events fire asynchronously after phase transitions, so reading
+  // React state inside the closure can attribute the cue to the wrong rep
+  // (closure captured the *previous* value). We snapshot into this ref on
+  // every rep-complete callback and read from it in logCueEvent().
+  const repCountRef = React.useRef(0);
+
+  // Epoch-ms timestamp of the most recent rep-start phase transition. Used
+  // by the live pullup partial-scoring path so the scoring call reflects
+  // *actual* elapsed time for the in-flight rep instead of a hardcoded
+  // placeholder. Reset to 0 on rep complete, phase reset, and tracking
+  // stop so subsequent scoring calls fall back to the safe default.
+  const repStartTsRef = React.useRef<number>(0);
 
   const lastPoseTimestampRef = React.useRef<number | null>(null);
   const recordingActiveRef = React.useRef(false);
@@ -865,6 +975,11 @@ export default function ScanARKitScreen() {
   // do not re-announce on mode swaps / transient phase re-entries. Reset
   // to false inside startTracking + stopTracking.
   const repCountdownFiredRef = React.useRef(false);
+  // Throttles VoiceOver/TalkBack rep-completion announcements so burst
+  // sets (e.g. 10 reps in 5s) don't flood the screen-reader queue. At
+  // most one announcement every 400ms; the SVG rep counter itself is
+  // not announceable so this is the primary a11y affordance for reps.
+  const lastRepAnnounceAtMsRef = React.useRef(0);
 
   const { speak: speakCue, stop: stopSpeech } = usePremiumCueAudio({
     enabled: audioFeedbackEnabled && isScreenFocused,
@@ -894,7 +1009,10 @@ export default function ScanARKitScreen() {
         cue: evt.cue,
         mode: detectionMode,
         phase,
-        repCount,
+        // Read from the ref rather than the closure-captured React state so
+        // cues that emit just after a rep-complete phase transition attribute
+        // to the latest rep (see #575 item #3).
+        repCount: repCountRef.current,
         reason: evt.reason,
         throttled: evt.throttled,
         dropped: evt.action !== 'spoken',
@@ -1034,6 +1152,11 @@ export default function ScanARKitScreen() {
       }
       if (nextPhase === activeWorkoutDef.repBoundary.startPhase) {
         repIndexTrackerRef.current.startRep(repCount);
+        // Capture the rep-start epoch timestamp so the live partial-scoring
+        // block below can pass a real elapsed duration into
+        // scorePullupWithComponentAvailability instead of the hardcoded
+        // 1000ms placeholder that was previously used.
+        repStartTsRef.current = Date.now();
         // Start of a new rep: clear the per-rep shadow-drift accumulator so
         // the next rep's delta metrics are not polluted by the previous rep.
         shadowStatsPerRepRef.current = createShadowStatsAccumulator();
@@ -1041,7 +1164,16 @@ export default function ScanARKitScreen() {
     },
     onRepComplete: (repNumber: number, fqi: number) => {
       setRepCount(repNumber);
+      // Snapshot into a ref so async telemetry closures (logCueEvent) read
+      // the current count instead of the value captured when the closure was
+      // created — avoids attributing cues to the prior rep when phase
+      // transitions fire asynchronously.
+      repCountRef.current = repNumber;
       repIndexTrackerRef.current.endRep();
+      // Clear the in-flight rep timestamp; live partial scoring between
+      // reps will fall back to the 1000ms safe default until the next
+      // rep-start phase transition captures a fresh epoch.
+      repStartTsRef.current = 0;
       if (Number.isFinite(fqi)) {
         sessionFqiScoresRef.current.push(fqi);
       }
@@ -1051,14 +1183,31 @@ export default function ScanARKitScreen() {
       // Additive rep-complete haptic: the workout controller already fires
       // a Light impact through the shared haptic bus, but testers reported
       // that in noisy gym environments the light tap is easy to miss. When
-      // the user has audio/cue feedback enabled we also fire a Heavy impact
-      // here so successful reps register unambiguously. Gated by
-      // audioFeedbackEnabledRef.current (mirrors the cue-audio toggle) so
-      // users who explicitly silenced cues don't get a phantom extra buzz.
-      if (audioFeedbackEnabledRef.current) {
+      // the user has audio/cue feedback enabled AND hasn't muted haptics we
+      // also fire a Heavy impact here so successful reps register
+      // unambiguously. Gated by audioFeedbackEnabledRef.current (mirrors
+      // the cue-audio toggle) + hapticsEnabledRef.current (form-tracking
+      // settings) so users who silenced either don't get a phantom buzz.
+      if (audioFeedbackEnabledRef.current && hapticsEnabledRef.current) {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {
           /* native bridge unavailable — silent */
         });
+      }
+      // VoiceOver/TalkBack announcement. The rep-counter overlay is an
+      // SVG <Text>, which RN does not expose to screen readers, so we
+      // rely on announceForAccessibility. Throttled to 400ms to avoid
+      // queue pile-up during fast sets (RN queues announcements rather
+      // than coalescing them). No-op on web.
+      if (Platform.OS !== 'web') {
+        const nowMs = Date.now();
+        if (nowMs - lastRepAnnounceAtMsRef.current >= 400) {
+          lastRepAnnounceAtMsRef.current = nowMs;
+          try {
+            AccessibilityInfo.announceForAccessibility(`Rep ${repNumber}`);
+          } catch {
+            /* a11y bridge unavailable — silent */
+          }
+        }
       }
     },
     onPullupScoring: (
@@ -1072,7 +1221,18 @@ export default function ScanARKitScreen() {
         meta?.source === 'frame' ? 'frame-live' : 'onPullupScoring-rep-complete'
       );
     },
-  }), [activeWorkoutDef, repCount, transitionPhase, updatePartialTrackingBadgeVisibility]);
+    // Surface pending-rep warnings to the user (#575 item #10). The
+    // controller fires this both during the session (single-rep retry
+    // failures) and at stop-time (via flushPendingRepsOnStop) with a
+    // distinct sentinel we can discriminate on.
+    onRepLogFailure: (error: unknown, queueDepth: number) => {
+      if (isPendingRepsAtStopSignal(error)) {
+        showToast(`${queueDepth} rep${queueDepth === 1 ? '' : 's'} pending sync — we'll retry when you're back online.`, {
+          type: 'info',
+        });
+      }
+    },
+  }), [activeWorkoutDef, repCount, showToast, transitionPhase, updatePartialTrackingBadgeVisibility]);
 
   const workoutController = useWorkoutController(detectionMode, {
     sessionId: sessionIdRef.current,
@@ -1085,6 +1245,7 @@ export default function ScanARKitScreen() {
     reset: resetWorkoutController,
     setWorkout: setWorkoutController,
     addRepCue: addWorkoutRepCue,
+    flushPendingRepsOnStop,
   } = workoutController;
 
   useEffect(() => {
@@ -1093,6 +1254,7 @@ export default function ScanARKitScreen() {
     restPhaseRef.current = nextInitialPhase;
     setActivePhase(nextInitialPhase);
     setRepCount(0);
+    repCountRef.current = 0;
     setActiveMetrics(null);
     setLivePullupPartialStatus(null);
     lastLivePartialBadgeRef.current = null;
@@ -1103,9 +1265,26 @@ export default function ScanARKitScreen() {
     mediaPipePoseRef.current = null;
     realtimeFormEngineRef.current = createRealtimeEngineState();
     lastShadowMeanAbsDeltaRef.current = null;
+    // Clear session-wide FQI accumulator BEFORE swapping the workout
+    // controller so the first rep of the new exercise can't briefly land in
+    // the previous exercise's score array (#575 item #4). Without this the
+    // stopTracking() avg-fqi milestone and session-summary both mix scores
+    // across exercises when the user swaps mid-session.
+    sessionFqiScoresRef.current = [];
+    // Cue-hysteresis + TTS-throttle have independent state (hysteresis
+    // stable-cue ref + TTS last-phrase ref). When the user swaps exercises
+    // mid-session the same cue text can remain "stable" under the new
+    // thresholds, and the TTS hook's 5s repeat-guard treats it as a
+    // duplicate — so already-muted cues re-fire as the targets flip.
+    // Resetting both boundaries in tandem keeps them coherent (#575 item
+    // #1). stopSpeech() also drains the pending speech queue so the user
+    // doesn't hear a cue from the prior exercise after the swap.
+    resetCueHysteresis();
+    lastSpokenCueRef.current = null;
+    stopSpeech();
     resetBaselineDebugMetrics();
     setWorkoutController(detectionMode);
-  }, [createRealtimeEngineState, detectionMode, resetBaselineDebugMetrics, setWorkoutController]);
+  }, [createRealtimeEngineState, detectionMode, resetBaselineDebugMetrics, resetCueHysteresis, setWorkoutController, stopSpeech]);
 
   useEffect(() => {
     if (DEV) {
@@ -1184,6 +1363,7 @@ export default function ScanARKitScreen() {
     repIndexTrackerRef.current.reset();
     resetWorkoutController();
     setRepCount(0);
+    repCountRef.current = 0;
     setActiveMetrics(null);
     setFps(30);
     setFixturePlaybackFramesProcessed(0);
@@ -1548,7 +1728,13 @@ export default function ScanARKitScreen() {
                 rightShoulder: next.rightShoulder,
               },
             },
-            durationMs: 1000,
+            // Use real elapsed time for the in-flight rep when available so
+            // the live partial scoring (visibility badge + component
+            // availability) reflects actual tempo instead of a 1s constant.
+            // Fall back to 1000ms before the first rep-start transition.
+            durationMs: repStartTsRef.current > 0
+              ? Math.max(1, Date.now() - repStartTsRef.current)
+              : 1000,
             joints: canonicalFrame.joints,
           });
 
@@ -1572,9 +1758,39 @@ export default function ScanARKitScreen() {
         });
         if (typeof smoothingResult?.trackingQuality === 'number') {
           lastTrackingQualityRef.current = smoothingResult.trackingQuality;
+          // Mid-set confidence degradation: warn once when the tier flips from
+          // high → low during an active rep. The tier is only classified when
+          // we are mid-set (between repBoundary.startPhase and the next rep-
+          // complete), so between-set frames stay quiet. A Schmitt-trigger-
+          // style pair of thresholds avoids chatter around the boundary.
+          const HIGH_ENTER = 0.7;
+          const LOW_ENTER = 0.5;
+          const quality = smoothingResult.trackingQuality;
+          const inActiveRep = repIndexTrackerRef.current.current() !== null;
+          if (inActiveRep) {
+            let nextTier: 'high' | 'low' | null = lastConfidenceTierRef.current;
+            if (quality >= HIGH_ENTER) nextTier = 'high';
+            else if (quality <= LOW_ENTER) nextTier = 'low';
+            const prevTier = lastConfidenceTierRef.current;
+            if (prevTier === 'high' && nextTier === 'low') {
+              showToast('Tracking degraded — check lighting / framing', {
+                type: 'error',
+              });
+              void Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Warning,
+              ).catch(() => {
+                /* haptics unavailable — silent */
+              });
+            }
+            lastConfidenceTierRef.current = nextTier;
+          } else {
+            // Outside a rep: reset so the next rep's baseline starts neutral.
+            lastConfidenceTierRef.current = null;
+          }
         }
       } else {
         lastTrackingQualityRef.current = null;
+        lastConfidenceTierRef.current = null;
         repIndexTrackerRef.current.reset();
         resetWorkoutController({ preserveRepCount: true });
         setActiveMetrics(null);
@@ -1666,11 +1882,22 @@ export default function ScanARKitScreen() {
       }
       const key = joint.name.toLowerCase();
       seenKeys.add(key);
-      const prev = cache.get(key);
+      let prev = cache.get(key);
+      // Drop any cached entry that was ever poisoned with a non-finite
+      // component (NaN / +-Infinity). Without this guard a single bad
+      // incoming frame would contaminate every subsequent eased value
+      // because `prev.x + (target - prev.x) * alpha` === NaN, and the
+      // result gets written back into the cache forever.
+      if (prev && (!Number.isFinite(prev.x) || !Number.isFinite(prev.y))) {
+        cache.delete(key);
+        prev = undefined;
+      }
       const targetX = joint.x;
       const targetY = joint.y;
-      const easedX = prev ? prev.x + (targetX - prev.x) * alpha : targetX;
-      const easedY = prev ? prev.y + (targetY - prev.y) * alpha : targetY;
+      const safeTargetX = Number.isFinite(targetX) ? targetX : prev?.x ?? 0;
+      const safeTargetY = Number.isFinite(targetY) ? targetY : prev?.y ?? 0;
+      const easedX = prev ? prev.x + (safeTargetX - prev.x) * alpha : safeTargetX;
+      const easedY = prev ? prev.y + (safeTargetY - prev.y) * alpha : safeTargetY;
       // Reinsert to move this key to the tail (most-recently-used) slot; Map
       // preserves insertion order so the head is always the oldest entry.
       if (prev) cache.delete(key);
@@ -1748,11 +1975,14 @@ export default function ScanARKitScreen() {
       repIndexTrackerRef.current.reset();
       resetWorkoutController();
       setRepCount(0);
+      repCountRef.current = 0;
       setActiveMetrics(null);
       resetBaselineDebugMetrics();
       resetCueHysteresis();
       repCountdownFiredRef.current = false;
       sessionFqiScoresRef.current = [];
+      repStartTsRef.current = 0;
+      lastConfidenceTierRef.current = null;
 
       const startTime = Date.now();
       shadowStatsRef.current = createShadowStatsAccumulator();
@@ -1765,21 +1995,36 @@ export default function ScanARKitScreen() {
 
       if (DEV) logWithTs('[ScanARKit] Tracking started successfully in', elapsed, 'ms');
 
-      if (Platform.OS === 'ios') {
+      if (Platform.OS === 'ios' && hapticsEnabledRef.current) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
 
       // Fire the 3-2-1 pre-announce once per tracking start. Gated on the
-      // user preference + the EXPO_PUBLIC_REP_COUNTDOWN env flag inside
-      // playRepCountdown itself. Errors are swallowed — countdown is a
-      // nice-to-have, not a blocker for the tracking loop.
-      if (!repCountdownFiredRef.current) {
+      // user preference (form-tracking `countAudioEnabled` toggle) + the
+      // EXPO_PUBLIC_REP_COUNTDOWN env flag inside playRepCountdown itself.
+      // Errors are swallowed — countdown is a nice-to-have, not a blocker
+      // for the tracking loop.
+      if (!repCountdownFiredRef.current && countAudioEnabledRef.current) {
         repCountdownFiredRef.current = true;
         playRepCountdown().catch((error) => {
           if (DEV) warnWithTs('[ScanARKit] rep countdown failed', error);
         });
       }
     } catch (error) {
+      // Native start can throw AFTER `useBodyTracking` has already flipped
+      // its internal isTracking to true (see ARKitBodyTracker.ios.ts
+      // startTracking — setIsTracking(true) runs before the async body can
+      // reject asynchronously). Call stopNativeTracking() here so the hook
+      // resets isTracking -> false, tears down its pose-polling interval,
+      // and we don't keep the UI rendered as if tracking were live. Also
+      // clear the rep-countdown latch so a retry fires the pre-announce
+      // again.
+      try {
+        stopNativeTracking();
+      } catch (stopError) {
+        if (DEV) warnWithTs('[ScanARKit] stopNativeTracking after failed start also threw', stopError);
+      }
+      repCountdownFiredRef.current = false;
       errorWithTs('[ScanARKit] ❌ Failed to start tracking:', error);
       if (DEV) {
         errorWithTs('[ScanARKit] Error details:', {
@@ -1791,6 +2036,7 @@ export default function ScanARKitScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     startNativeTracking,
+    stopNativeTracking,
     transitionPhase,
     cameraPosition,
     logWithTs,
@@ -1833,6 +2079,21 @@ export default function ScanARKitScreen() {
     const exerciseKeyAtStop = detectionMode;
     const sessionIdAtStop = sessionIdRef.current;
 
+    // Drop any pending sustained-occlusion hint timer so the badge doesn't
+    // bleed into the next session with a stale "Some joints hidden" toast
+    // (#575 item #6). The hint state is also cleared to match.
+    if (sustainedOcclusionTimerRef.current) {
+      clearTimeout(sustainedOcclusionTimerRef.current);
+      sustainedOcclusionTimerRef.current = null;
+    }
+    setSustainedOcclusionHint(null);
+
+    // Surface any reps that failed to persist before the controller resets
+    // its pending-writes queue (#575 item #10). The callback below emits a
+    // user-facing "N reps pending sync" toast so the user knows their work
+    // wasn't lost even though we can't block stopTracking on a drain.
+    flushPendingRepsOnStop();
+
     try {
       if (isRecording) {
         try {
@@ -1856,6 +2117,7 @@ export default function ScanARKitScreen() {
       repIndexTrackerRef.current.reset();
       resetWorkoutController();
       setRepCount(0);
+      repCountRef.current = 0;
       setFps(0);
       realtimeFormEngineRef.current = createRealtimeEngineState();
       lastShadowMeanAbsDeltaRef.current = null;
@@ -1867,10 +2129,12 @@ export default function ScanARKitScreen() {
       resetCueHysteresis();
       repCountdownFiredRef.current = false;
       sessionFqiScoresRef.current = [];
+      repStartTsRef.current = 0;
+      lastConfidenceTierRef.current = null;
 
       if (DEV) logWithTs('[ScanARKit] Tracking stopped');
 
-      if (Platform.OS === 'ios') {
+      if (Platform.OS === 'ios' && hapticsEnabledRef.current) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
 
@@ -1956,6 +2220,7 @@ export default function ScanARKitScreen() {
     resetWorkoutController,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
+    flushPendingRepsOnStop,
   ]);
 
   // Cleanup on unmount
@@ -2164,11 +2429,19 @@ export default function ScanARKitScreen() {
     metrics.lastCue = primaryCue;
   }, [primaryCue]);
 
+    // The watch-mirror timer polls BodyTracker.getCurrentFrameSnapshot()
+    // ~1Hz while tracking. Previously it only checked `isTracking`, so when
+    // useAppStatePause flipped `isPaused=true` on background/inactive (phone
+    // lock, Control Center, incoming call) the poll kept firing, burning
+    // battery AND keeping the ARKit session half-alive. Gate the whole
+    // mirror surface on BOTH `isTracking` AND `!appStatePause.isPaused` so
+    // the timer teardown fires the moment the app backgrounds. #575 item #9.
     const canMirrorFromArkit =
       Platform.OS === 'ios' &&
       watchMirrorEnabled &&
       isScreenFocused &&
       isTracking &&
+      !appStatePause.isPaused &&
       cameraPosition === 'back';
     const watchMirrorActive =
       canMirrorFromArkit &&
@@ -2194,6 +2467,14 @@ export default function ScanARKitScreen() {
 
       watchMirrorInFlightRef.current = true;
 
+      // INVARIANT: every exit path below (success, early return, any
+      // synchronous throw from BodyTracker.getCurrentFrameSnapshot or
+      // sendMessage, and any rejection from the awaited native promise)
+      // MUST fall through to the outer finally so the in-flight flag is
+      // reset — otherwise a single failed snapshot wedges the watch-mirror
+      // timer forever. If this function is ever refactored to split the
+      // snapshot call into a helper, wrap that helper in its own
+      // try-finally as well.
       try {
         let base64: string | null = null;
         let width: number | undefined;
@@ -2333,21 +2614,44 @@ export default function ScanARKitScreen() {
     }, [watchMirrorActive, captureAndSendWatchMirror]);
 
     // Watch Connectivity: Listen for commands
+    //
+    // The watch channel is asynchronous: a user can tap "start" on the
+    // watch, foreground-background the phone, and the message still
+    // arrives ~1s later. Without a focus + latest-ref guard the handler
+    // would call startTracking()/stopTracking() closures captured at the
+    // time the effect ran, which may reference stale props (for example
+    // isTracking=false even though tracking already started via a
+    // concurrent tap on the phone). Reading from refs at call time keeps
+    // the decision based on current state, and the isScreenFocused check
+    // prevents late messages arriving after the user navigated away from
+    // the scan tab from kicking the camera back on.
+    const isTrackingRef = useRef(isTracking);
+    const supportStatusRef = useRef(supportStatus);
+    const isScreenFocusedRef = useRef(isScreenFocused);
+    useEffect(() => { isTrackingRef.current = isTracking; }, [isTracking]);
+    useEffect(() => { supportStatusRef.current = supportStatus; }, [supportStatus]);
+    useEffect(() => { isScreenFocusedRef.current = isScreenFocused; }, [isScreenFocused]);
+
     useEffect(() => {
       const unsubscribe = watchEvents.addListener('message', (message: { command?: string }) => {
+        // Ignore late messages arriving after the screen unfocused /
+        // unmounted; see the comment block above for rationale.
+        if (!isScreenFocusedRef.current) {
+          return;
+        }
         if (message.command === 'start') {
-          if (!isTracking && supportStatus === 'supported') {
+          if (!isTrackingRef.current && supportStatusRef.current === 'supported') {
             startTracking();
           }
         } else if (message.command === 'stop') {
-          if (isTracking) {
+          if (isTrackingRef.current) {
             stopTracking();
           }
         }
       });
 
       return () => unsubscribe();
-    }, [isTracking, supportStatus, startTracking, stopTracking]);
+    }, [startTracking, stopTracking]);
 
     // Watch Connectivity: Sync state
     useEffect(() => {
@@ -2410,6 +2714,9 @@ export default function ScanARKitScreen() {
 
     const uploadRecordedVideo = useCallback(async (payload: { uri: string; exercise: string; metrics: ClipUploadMetrics }) => {
       if (uploading) return false;
+      // Stash the payload up-front so a post-failure Retry can re-invoke
+      // without requiring the preview sheet to stay mounted.
+      lastUploadPayloadRef.current = payload;
       try {
         setPreviewError(null);
         const info = await FileSystem.getInfoAsync(payload.uri);
@@ -2431,17 +2738,48 @@ export default function ScanARKitScreen() {
           exercise: payload.exercise,
           metrics: payload.metrics,
         });
+        // Clear any retry affordance on success.
+        setUploadRetryPayload(null);
         return true;
       } catch (error) {
         errorWithTs('[ScanARKit] Upload recorded video failed', error);
         const message = error instanceof Error ? error.message : 'Could not upload recording.';
         setPreviewError(message);
+        // Keep the Alert for the active preview flow, but also surface a
+        // persistent banner with a Retry button that stays visible after
+        // the user dismisses the Alert and closes the preview.
+        setUploadRetryPayload({
+          uri: payload.uri,
+          exercise: payload.exercise,
+          metrics: payload.metrics,
+          message,
+        });
         Alert.alert('Upload failed', message);
         return false;
       } finally {
         setUploading(false);
       }
     }, [uploading]);
+
+    const retryUploadRecordedVideo = useCallback(() => {
+      const pending = uploadRetryPayload ?? lastUploadPayloadRef.current;
+      if (!pending) {
+        setUploadRetryPayload(null);
+        return;
+      }
+      // Clear the banner optimistically; uploadRecordedVideo will
+      // re-arm it on a subsequent failure and will clear on success.
+      setUploadRetryPayload(null);
+      void uploadRecordedVideo({
+        uri: pending.uri,
+        exercise: pending.exercise,
+        metrics: pending.metrics,
+      });
+    }, [uploadRetryPayload, uploadRecordedVideo]);
+
+    const dismissUploadRetry = useCallback(() => {
+      setUploadRetryPayload(null);
+    }, []);
 
     const autoUploadAnalysisVideo = useCallback(async (payload: { uri: string; exercise: string; metrics: ClipUploadMetrics }) => {
       try {
@@ -2764,18 +3102,70 @@ export default function ScanARKitScreen() {
   if (supportStatus === 'unknown') {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loaderContainer}>
-          <View style={styles.loaderCard}>
+        <View
+          style={styles.loaderContainer}
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel="Loading body tracking"
+          accessibilityState={{ busy: true }}
+          testID="scan-arkit-loader"
+        >
+          <View style={styles.loaderCard} accessibilityElementsHidden>
             <View style={styles.loaderLineShort} />
             <View style={styles.loaderLine} />
             <View style={styles.loaderLine} />
           </View>
-          <View style={styles.loaderCard}>
+          <View style={styles.loaderCard} accessibilityElementsHidden>
             <View style={styles.loaderLineShort} />
             <View style={styles.loaderLine} />
             <View style={styles.loaderLine} />
           </View>
+          <Text style={styles.loaderCaption} accessibilityElementsHidden>
+            Initializing form tracking…
+          </Text>
         </View>
+        {/*
+         * Pose-model loading modal (#551).
+         *
+         * On iOS the MediaPipe pose-landmarker lite model has to be
+         * resolved from the bundled asset (and occasionally re-downloaded
+         * on first run). We surface the progress via an indeterminate
+         * modal so users know the screen hasn't hung. Dismisses
+         * automatically once supportStatus resolves or the asset download
+         * effect completes (see setIsPoseModelLoading(false) calls above).
+         */}
+        <Modal
+          visible={isPoseModelLoading}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => {
+            // User-initiated close: clear the flag so the modal goes away.
+            // If tracking still needs the model, subsequent frames will
+            // degrade gracefully to the proxy provider + surface the
+            // existing "Pose tracking degraded" toast.
+            setIsPoseModelLoading(false);
+          }}
+        >
+          <View style={styles.poseModelModalBackdrop}>
+            <View
+              style={styles.poseModelModalCard}
+              accessible
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              accessibilityLabel="Downloading pose model"
+              testID="scan-arkit-pose-model-loading-modal"
+            >
+              <ActivityIndicator size="large" color="#4C8CFF" />
+              <Text style={styles.poseModelModalTitle}>
+                Downloading pose model…
+              </Text>
+              <Text style={styles.poseModelModalSubtitle}>
+                One-time setup on this device.
+              </Text>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     );
   }
@@ -3228,17 +3618,86 @@ export default function ScanARKitScreen() {
             </View>
           ) : null}
 
-          {/* Occlusion micro-toast */}
+          {/*
+           * Video-upload retry banner (#551).
+           *
+           * When uploadRecordedVideo rejects, the try-catch already fires
+           * an Alert and sets previewError, but the user loses the
+           * affordance once they dismiss the Alert and close the preview.
+           * This banner persists with a Retry pill that re-invokes the
+           * upload using the stored URI — no re-encoding, no re-navigate.
+           */}
+          {uploadRetryPayload ? (
+            <View
+              style={[scanArV2Styles.banner, scanArV2Styles.bannerError]}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              testID="scan-arkit-upload-retry-banner"
+            >
+              <Ionicons name="cloud-offline-outline" size={18} color="#FCA5A5" />
+              <Text style={scanArV2Styles.bannerText}>
+                Upload failed — {uploadRetryPayload.message}
+              </Text>
+              <TouchableOpacity
+                onPress={retryUploadRecordedVideo}
+                style={scanArV2Styles.bannerAction}
+                accessibilityRole="button"
+                accessibilityLabel="Retry video upload"
+                disabled={uploading}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                testID="scan-arkit-upload-retry-button"
+              >
+                <Text style={scanArV2Styles.bannerActionText}>
+                  {uploading ? 'Retrying…' : 'Retry'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={dismissUploadRetry}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss upload retry banner"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={scanArV2Styles.bannerDismiss}
+                testID="scan-arkit-upload-retry-dismiss"
+              >
+                <Ionicons name="close" size={14} color="#F5F7FF" />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {/*
+           * Persistent sustained-occlusion banner (#551).
+           *
+           * Replaces the 3.2s micro-toast. The banner sticks until the
+           * user taps "Got it" or the OcclusionHoldManager clears the
+           * sustained state by calling handleSustainedOcclusion(null).
+           * A dismiss button is essential — on long-limb occlusion (e.g.
+           * squat with arms crossed over camera) the old toast faded
+           * before the user could read what joint was hidden.
+           */}
           {arOverlaysV2 && sustainedOcclusionHint ? (
             <View
-              style={[scanArV2Styles.microToast]}
+              style={[scanArV2Styles.banner, scanArV2Styles.bannerError]}
               accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              testID="scan-arkit-sustained-occlusion-banner"
             >
               <Ionicons name="eye-off-outline" size={14} color="#F5F7FF" />
-              <Text style={scanArV2Styles.microToastText}>
-                Adjust clothing — {sustainedOcclusionHint.jointNames.length} joint
-                {sustainedOcclusionHint.jointNames.length === 1 ? '' : 's'} hidden
+              <Text
+                style={scanArV2Styles.microToastText}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                Adjust clothing —{' '}
+                {sustainedOcclusionHint.jointNames.slice(0, 3).join(', ')} hidden
               </Text>
+              {sustainedOcclusionHint.jointNames.length > 3 ? (
+                <Text
+                  style={scanArV2Styles.microToastText}
+                  numberOfLines={1}
+                >
+                  +{sustainedOcclusionHint.jointNames.length - 3} more
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
@@ -3810,6 +4269,15 @@ const scanArV2Styles = StyleSheet.create({
     color: '#F5F7FF',
     fontSize: 12,
     fontWeight: '700',
+  },
+  bannerDismiss: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    marginLeft: 6,
   },
   microToast: {
     position: 'absolute',

@@ -28,10 +28,11 @@ export default function RootRedirect() {
     }
   }, [user, loading, router]);
 
-  // Show loading while determining where to redirect
+  // Show loading while determining where to redirect — use app dark bg so
+  // we don't flash a light screen before the authed dark UI takes over.
   return (
     <View style={styles.container}>
-      <ActivityIndicator size="large" color="#007AFF" />
+      <ActivityIndicator size="large" color="#4C8CFF" />
     </View>
   );
 }
@@ -41,6 +42,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8F9FF',
+    backgroundColor: '#050E1F',
   },
 });

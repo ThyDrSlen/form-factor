@@ -8,6 +8,29 @@
  *
  * Implemented as a plain overlay Modal so it works on web + iOS
  * without BottomSheet state juggling.
+ *
+ * WAVE-35 FOLLOW-UP: wire the exercise-swap-explainer Gemma surface
+ * so the sheet can render a 2-3 sentence plain-language explanation of
+ * the swap below the action buttons. Example integration inside a
+ * parent screen (wire from whoever mounts this sheet):
+ *
+ *   import { explainExerciseSwap } from '@/lib/services/exercise-swap-explainer';
+ *
+ *   // When `targetExerciseName` or `currentExerciseName` changes:
+ *   const [swapCopy, setSwapCopy] = useState<string | null>(null);
+ *   useEffect(() => {
+ *     if (!visible || !currentExerciseName) return;
+ *     let cancelled = false;
+ *     explainExerciseSwap({
+ *       fromExerciseId: currentExerciseName,
+ *       toExerciseId: targetExerciseName,
+ *       reason: 'variation',
+ *     }).then((r) => { if (!cancelled) setSwapCopy(r.explanation); });
+ *     return () => { cancelled = true; };
+ *   }, [visible, currentExerciseName, targetExerciseName]);
+ *
+ * The service never throws (falls back to a generic string on any
+ * Gemma failure) so the parent doesn't need error handling.
  */
 import React from 'react';
 import {

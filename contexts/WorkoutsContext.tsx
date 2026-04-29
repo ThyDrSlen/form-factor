@@ -2,6 +2,7 @@ import React, { createContext, ReactNode, useCallback, useContext, useEffect, us
 import * as Crypto from 'expo-crypto';
 import { localDB } from '../lib/services/database/local-db';
 import { syncService } from '../lib/services/database/sync-service';
+import { errorWithTs, logWithTs } from '../lib/logger';
 import { useNetwork } from './NetworkContext';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
@@ -66,10 +67,10 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
         duration: item.duration,
         date: item.date,
       }));
-      console.log('[WorkoutsProvider] Loaded workouts from local DB:', transformedWorkouts.length);
+      logWithTs('[WorkoutsContext] Loaded workouts from local DB:', transformedWorkouts.length);
       setWorkouts(transformedWorkouts);
     } catch (error) {
-      console.error('[WorkoutsProvider] Error loading local workouts:', error);
+      errorWithTs('[WorkoutsContext] Error loading local workouts:', error);
       setError('Failed to load workouts. Pull to refresh.');
     }
   }, []);
@@ -77,11 +78,11 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
   const performSync = useCallback(async () => {
     try {
       setIsSyncing(true);
-      console.log('[WorkoutsProvider] Performing sync...');
+      logWithTs('[WorkoutsContext] Performing sync...');
       await syncService.fullSync();
       await loadLocalWorkouts();
     } catch (error) {
-      console.error('[WorkoutsProvider] Error during sync:', error);
+      errorWithTs('[WorkoutsContext] Error during sync:', error);
     } finally {
       setIsSyncing(false);
     }
@@ -90,7 +91,7 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
   const initializeData = useCallback(async () => {
     try {
       setLoading(true);
-      console.log('[WorkoutsProvider] Initializing local database...');
+      logWithTs('[WorkoutsContext] Initializing local database...');
 
       // Initialize local DB
       await localDB.initialize();
@@ -103,7 +104,7 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
         await performSync();
       }
     } catch (error) {
-      console.error('[WorkoutsProvider] Error initializing:', error);
+      errorWithTs('[WorkoutsContext] Error initializing:', error);
     } finally {
       setLoading(false);
     }
@@ -153,8 +154,8 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
 
   const deleteWorkout = useCallback(async (id: string) => {
     try {
-      console.log('[WorkoutsProvider] Deleting workout:', id);
-      
+      logWithTs('[WorkoutsContext] Deleting workout:', id);
+
       // Soft delete in local DB (marks as deleted, not synced)
       await localDB.softDeleteWorkout(id);
 
@@ -163,18 +164,18 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
 
       if (isOnline) {
         void syncService.syncToSupabase().catch((syncError) => {
-          console.error('[WorkoutsProvider] Background sync failed after add:', syncError);
+          errorWithTs('[WorkoutsContext] Background sync failed after add:', syncError);
           showToast('Sync failed. Changes saved locally.', { type: 'error' });
         });
       }
     } catch (err) {
-      console.error('[WorkoutsProvider] Error deleting workout:', err);
+      errorWithTs('[WorkoutsContext] Error deleting workout:', err);
     }
   }, [isOnline]);
 
   const addWorkout = useCallback(async (workout: Workout) => {
     try {
-      console.log('[WorkoutsProvider] Adding workout:', workout);
+      logWithTs('[WorkoutsContext] Adding workout:', workout);
 
       // Generate UUID if not provided
       const workoutId = workout.id || Crypto.randomUUID();
@@ -196,12 +197,12 @@ export const WorkoutsProvider = ({ children }: { children: ReactNode }) => {
 
       if (isOnline) {
         void syncService.syncToSupabase().catch((syncError) => {
-          console.error('[WorkoutsProvider] Background sync failed after add:', syncError);
+          errorWithTs('[WorkoutsContext] Background sync failed after add:', syncError);
           showToast('Sync failed. Changes saved locally.', { type: 'error' });
         });
       }
     } catch (error) {
-      console.error('[WorkoutsProvider] Error adding workout:', error);
+      errorWithTs('[WorkoutsContext] Error adding workout:', error);
       throw error;
     }
   }, [isOnline]);

@@ -59,9 +59,13 @@ interface WheelPickerProps {
   onChange: (value: number) => void;
   accessibilityLabel?: string;
   formatValue?: (value: number) => string;
+  /** Lower bound for the numeric keypad fallback (inclusive). */
+  min?: number;
+  /** Upper bound for the numeric keypad fallback (inclusive). */
+  max?: number;
 }
 
-function WheelPicker({ label, values, selectedValue, onChange, accessibilityLabel, formatValue }: WheelPickerProps) {
+function WheelPicker({ label, values, selectedValue, onChange, accessibilityLabel, formatValue, min, max }: WheelPickerProps) {
   const listRef = useRef<FlatList<number>>(null);
   const loopData = useMemo(() => {
     const repeated = [] as number[];
@@ -72,6 +76,19 @@ function WheelPicker({ label, values, selectedValue, onChange, accessibilityLabe
   }, [values]);
 
   const middleSegmentStart = values.length * Math.floor(LOOP_MULTIPLIER / 2);
+  const [inputText, setInputText] = useState<string>(`${selectedValue}`);
+  const [inputFocused, setInputFocused] = useState(false);
+  const effectiveMin = min ?? (values.length > 0 ? Math.min(...values) : 0);
+  const effectiveMax = max ?? (values.length > 0 ? Math.max(...values) : 0);
+
+  // Keep the keypad value in sync with the wheel when the user scrolls. We
+  // only overwrite while the field isn't focused so in-flight edits aren't
+  // clobbered mid-keystroke.
+  useEffect(() => {
+    if (!inputFocused) {
+      setInputText(`${selectedValue}`);
+    }
+  }, [selectedValue, inputFocused]);
 
   useEffect(() => {
     const targetIndex = loopData.findIndex((value, index) => index >= middleSegmentStart && value === selectedValue);
@@ -95,6 +112,28 @@ function WheelPicker({ label, values, selectedValue, onChange, accessibilityLabe
     // Add haptic feedback when value changes
     Haptics.selectionAsync();
     onChange(value);
+  };
+
+  // Commit the keypad value: clamp to [min, max] and find the nearest
+  // allowed wheel value (handles non-contiguous sets like weight in 5 lb
+  // increments). Empty input clamps to the lower bound.
+  const commitInputText = (raw: string) => {
+    const digitsOnly = raw.replace(/[^0-9]/g, '');
+    if (!digitsOnly) {
+      onChange(effectiveMin);
+      setInputText(`${effectiveMin}`);
+      return;
+    }
+    const parsed = Number(digitsOnly);
+    const clamped = Math.max(effectiveMin, Math.min(effectiveMax, parsed));
+    let nearest = clamped;
+    if (values.length > 0) {
+      nearest = values.reduce((best, candidate) =>
+        Math.abs(candidate - clamped) < Math.abs(best - clamped) ? candidate : best,
+      values[0]);
+    }
+    onChange(nearest);
+    setInputText(`${nearest}`);
   };
 
   return (
@@ -123,6 +162,30 @@ function WheelPicker({ label, values, selectedValue, onChange, accessibilityLabe
         />
         <View pointerEvents="none" style={styles.wheelSelectionOverlay} />
       </View>
+      {/*
+        Wave-31 Pack A / A7 (#562): numeric keypad fallback for motor-
+        impaired users who can't precisely scroll the wheel. Two-way
+        sync: scrolling the wheel updates the field, typing commits on
+        blur / submit and snaps the wheel to the nearest allowed value.
+      */}
+      <TextInput
+        style={styles.wheelInput}
+        keyboardType="number-pad"
+        value={inputText}
+        onChangeText={setInputText}
+        onFocus={() => setInputFocused(true)}
+        onBlur={() => {
+          setInputFocused(false);
+          commitInputText(inputText);
+        }}
+        onSubmitEditing={() => commitInputText(inputText)}
+        selectTextOnFocus
+        returnKeyType="done"
+        accessibilityLabel={`${label} numeric input`}
+        accessibilityHint={`Enter a number between ${effectiveMin} and ${effectiveMax}`}
+        maxLength={5}
+        testID={`wheel-input-${label.toLowerCase()}`}
+      />
     </View>
   );
 }
@@ -276,13 +339,22 @@ export default function AddWorkoutScreen() {
           style={styles.gradientCard}
         >
           <View style={styles.wheelsRow}>
-            <WheelPicker label="Sets" values={SET_OPTIONS} selectedValue={sets} onChange={setSets} />
+            <WheelPicker
+              label="Sets"
+              values={SET_OPTIONS}
+              selectedValue={sets}
+              onChange={setSets}
+              min={1}
+              max={20}
+            />
             <WheelPicker
               label="Reps"
               values={REP_OPTIONS}
               selectedValue={reps}
               onChange={setReps}
               formatValue={(value) => (value === 0 ? '—' : `${value}`)}
+              min={0}
+              max={40}
             />
             <WheelPicker
               label="Weight"
@@ -290,6 +362,8 @@ export default function AddWorkoutScreen() {
               selectedValue={weight}
               onChange={setWeight}
               formatValue={(value) => (value === 0 ? '—' : `${value} lb`)}
+              min={0}
+              max={500}
             />
           </View>
         </LinearGradient>
@@ -502,6 +576,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: '#1B2E4A',
     backgroundColor: 'rgba(76, 140, 255, 0.08)',
+  },
+  wheelInput: {
+    marginTop: 8,
+    width: '100%',
+    backgroundColor: '#0F2339',
+    borderWidth: 1,
+    borderColor: '#1B2E4A',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    fontSize: 16,
+    color: '#F5F7FF',
+    textAlign: 'center',
+    minHeight: 38,
   },
   saveButton: {
     flexDirection: 'row',

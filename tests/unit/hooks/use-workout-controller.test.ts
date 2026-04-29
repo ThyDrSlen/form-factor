@@ -986,5 +986,179 @@ describe('useWorkoutController', () => {
       expect(hook.result.current.state.repCount).toBe(1);
       expect(onRepLogFailure).toHaveBeenCalled();
     });
+
+    // -------------------------------------------------------------------------
+    // flushPendingRepsOnStop + getPendingRepCount (#575 item #10)
+    // -------------------------------------------------------------------------
+
+    it('getPendingRepCount returns 0 when no reps have failed', () => {
+      const hook = renderHook(() =>
+        useWorkoutController('pullup' as any, {
+          sessionId: 'test-session',
+          enableHaptics: false,
+        })
+      );
+      expect(hook.result.current.getPendingRepCount()).toBe(0);
+    });
+
+    it('getPendingRepCount reflects queued failed writes', async () => {
+      mockLogRep.mockRejectedValue(new Error('offline'));
+      const hook = renderHook(() =>
+        useWorkoutController('pullup' as any, {
+          sessionId: 'test-session',
+          enableHaptics: false,
+        })
+      );
+
+      driveOneRep(hook);
+      await act(async () => { await Promise.resolve(); });
+      expect(hook.result.current.getPendingRepCount()).toBe(1);
+    });
+
+    it('flushPendingRepsOnStop fires onRepLogFailure with PENDING_REPS_AT_STOP signal when queue non-empty', async () => {
+      const onRepLogFailure = jest.fn();
+      mockLogRep.mockRejectedValue(new Error('offline'));
+
+      const hook = renderHook(() =>
+        useWorkoutController('pullup' as any, {
+          sessionId: 'test-session',
+          enableHaptics: false,
+          callbacks: { onRepLogFailure },
+        })
+      );
+
+      driveOneRep(hook);
+      await act(async () => { await Promise.resolve(); });
+
+      onRepLogFailure.mockClear();
+
+      const reportedCount = hook.result.current.flushPendingRepsOnStop();
+      expect(reportedCount).toBe(1);
+      expect(onRepLogFailure).toHaveBeenCalledTimes(1);
+      const [errArg, depthArg] = onRepLogFailure.mock.calls[0];
+      expect(errArg).toMatchObject({ code: 'PENDING_REPS_AT_STOP', count: 1 });
+      expect(depthArg).toBe(1);
+    });
+
+    it('flushPendingRepsOnStop is a no-op when queue is empty', () => {
+      const onRepLogFailure = jest.fn();
+      const hook = renderHook(() =>
+        useWorkoutController('pullup' as any, {
+          sessionId: 'test-session',
+          enableHaptics: false,
+          callbacks: { onRepLogFailure },
+        })
+      );
+
+      expect(hook.result.current.flushPendingRepsOnStop()).toBe(0);
+      expect(onRepLogFailure).not.toHaveBeenCalled();
+    });
+
+    it('flushPendingRepsOnStop swallows callback throws so stopTracking can complete', async () => {
+      const onRepLogFailure = jest.fn(() => {
+        throw new Error('toast layer exploded');
+      });
+      mockLogRep.mockRejectedValue(new Error('offline'));
+
+      const hook = renderHook(() =>
+        useWorkoutController('pullup' as any, {
+          sessionId: 'test-session',
+          enableHaptics: false,
+          callbacks: { onRepLogFailure },
+        })
+      );
+
+      driveOneRep(hook);
+      await act(async () => { await Promise.resolve(); });
+
+      onRepLogFailure.mockClear();
+      // flush-on-stop callback throws but the method itself must not throw.
+      onRepLogFailure.mockImplementationOnce(() => {
+        throw new Error('toast layer exploded');
+      });
+      expect(() => hook.result.current.flushPendingRepsOnStop()).not.toThrow();
+    });
+
+    it('isPendingRepsAtStopSignal discriminates the sentinel', () => {
+      const { isPendingRepsAtStopSignal } = jest.requireActual<
+        typeof import('@/hooks/use-workout-controller')
+      >('@/hooks/use-workout-controller');
+      expect(isPendingRepsAtStopSignal({ code: 'PENDING_REPS_AT_STOP', count: 3 })).toBe(true);
+      expect(isPendingRepsAtStopSignal(new Error('other'))).toBe(false);
+      expect(isPendingRepsAtStopSignal(null)).toBe(false);
+      expect(isPendingRepsAtStopSignal('string')).toBe(false);
+    });
+  });
+
+  // =========================================================================
+  // pendingRepCount — queue-depth visibility for UI retry affordances
+  // =========================================================================
+
+  describe('pendingRepCount', () => {
+    const driveOneRep = (hook: ReturnType<typeof renderHook>, startMs = 1000) => {
+      (fakeWorkoutDef.getNextPhase as jest.Mock).mockReturnValue('down');
+      act(() => { jest.setSystemTime(startMs); (hook.result.current as any).processFrame(makeAngles(90)); });
+      act(() => { jest.setSystemTime(startMs + 1); (hook.result.current as any).processFrame(makeAngles(90)); });
+      (fakeWorkoutDef.getNextPhase as jest.Mock).mockReturnValue('up');
+      act(() => { jest.setSystemTime(startMs + 2000); (hook.result.current as any).processFrame(makeAngles(90)); });
+      act(() => { jest.setSystemTime(startMs + 2001); (hook.result.current as any).processFrame(makeAngles(90)); });
+    };
+
+    it('starts at 0 before any rep has been logged', () => {
+      const hook = renderHook(() =>
+        useWorkoutController('pullup' as any, defaultOptions())
+      );
+      expect(hook.result.current.pendingRepCount).toBe(0);
+    });
+
+    it('increments when logRep rejects and decrements after a successful drain', async () => {
+      // First rep fails, second succeeds.
+      mockLogRep
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValue('rep-id-1');
+
+      const hook = renderHook(() =>
+        useWorkoutController('pullup' as any, {
+          sessionId: 'test-session',
+          enableHaptics: false,
+        })
+      );
+
+      driveOneRep(hook, 1000);
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+      // After first failure, queue has 1 pending rep.
+      expect(hook.result.current.pendingRepCount).toBe(1);
+
+      // Drive a second rep. The drain on entry should flush the pending rep
+      // first (success), then log the new rep (success).
+      driveOneRep(hook, 5000);
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // Queue drained back to 0.
+      expect(hook.result.current.pendingRepCount).toBe(0);
+    });
+
+    it('resets to 0 on controller reset()', async () => {
+      mockLogRep.mockRejectedValueOnce(new Error('offline'));
+
+      const hook = renderHook(() =>
+        useWorkoutController('pullup' as any, {
+          sessionId: 'test-session',
+          enableHaptics: false,
+        })
+      );
+
+      driveOneRep(hook, 1000);
+      await act(async () => { await Promise.resolve(); });
+      expect(hook.result.current.pendingRepCount).toBe(1);
+
+      act(() => { hook.result.current.reset(); });
+      expect(hook.result.current.pendingRepCount).toBe(0);
+    });
   });
 });

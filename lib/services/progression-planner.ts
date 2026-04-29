@@ -14,6 +14,15 @@
 import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
 import type { ExerciseHistorySummary } from './exercise-history-service';
 import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
+import { recordCoachUsage } from './coach-cost-tracker';
+import { recordExplicitProviderOverride } from './coach-model-dispatch-telemetry';
+
+const PROGRESSION_TASK_KIND = 'program_design' as const;
+
+function estimateTokens(text: string): number {
+  if (!text) return 0;
+  return Math.max(1, Math.ceil(text.length / 4));
+}
 
 type SendCoachPromptOpts = Parameters<typeof sendCoachPrompt>[2];
 
@@ -150,13 +159,46 @@ export async function generateProgressionPlan(
   // lets callers bypass the env-resolved provider when they already know
   // what they want (e.g. pre-wired task-kind dispatch).
   const pipelineOpts: SendCoachPromptOpts | undefined = isCoachPipelineV2Enabled()
-    ? { provider: resolveProgressionProvider() }
-    : undefined;
+    ? { provider: resolveProgressionProvider(), taskKind: PROGRESSION_TASK_KIND }
+    : { taskKind: PROGRESSION_TASK_KIND };
   const mergedOpts: SendCoachPromptOpts | undefined =
     opts !== undefined
       ? { ...pipelineOpts, ...opts }
       : pipelineOpts;
+
+  // Telemetry: the planner pins an explicit provider when pipeline-v2 is
+  // on, so the dispatch router in coach-service skips
+  // `recordDispatchDecision`. Fire the explicit-override counter here so
+  // the taskKind ('program_design') still lands in the decision
+  // dashboard. Caller-supplied opts win over the computed provider (same
+  // precedence as the merge above).
+  const decidedProvider: 'gemma' | 'openai' = (() => {
+    const hint = mergedOpts?.provider;
+    if (hint === 'gemma' || hint === 'openai') return hint;
+    return 'openai';
+  })();
+  try {
+    recordExplicitProviderOverride({
+      taskKind: PROGRESSION_TASK_KIND,
+      decidedProvider,
+      reason: 'progression-planner-explicit-provider',
+    });
+  } catch {
+    // Telemetry is never load-bearing.
+  }
+
   const response = await sendCoachPrompt(messages, input.context, mergedOpts);
+
+  // Weekly cost bucket: program design is a complex task. Estimator is
+  // char-based (upstream token counts are not surfaced today).
+  const promptText = messages.map((m) => m.content).join('\n');
+  void recordCoachUsage({
+    provider: decidedProvider === 'gemma' ? 'gemma_cloud' : 'openai',
+    taskKind: PROGRESSION_TASK_KIND,
+    tokensIn: estimateTokens(promptText),
+    tokensOut: estimateTokens(response.content ?? ''),
+  });
+
   const plan: ProgressionPlan = {
     text: response.content,
     promptPreview: prompt,

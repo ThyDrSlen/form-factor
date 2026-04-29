@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { BackHandler, Modal, View, Text, StyleSheet, TouchableOpacity, Linking, ScrollView } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { BackHandler, Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeBack } from '@/hooks/use-safe-back';
+import { useToast } from '@/contexts/ToastContext';
+import { openExternalUrl } from '@/lib/utils/open-external';
 
 type LinkItemProps = {
   icon?: string;
@@ -41,11 +43,16 @@ const changelog = [
 
 export default function AboutModal() {
   const safeBack = useSafeBack(['/(tabs)/profile', '/profile'], { alwaysReplace: true });
+  const { show: showToast } = useToast();
 
   const appVersion = Constants.expoConfig?.version || '1.0.0';
   const buildNumber = Constants.expoConfig?.ios?.buildNumber || '1';
   const [showChangelog, setShowChangelog] = useState(false);
   const [isNewVersion, setIsNewVersion] = useState(false);
+
+  const handleLinkFallback = useCallback((url: string) => {
+    showToast(`Couldn't open link: ${url}`, { type: 'error' });
+  }, [showToast]);
 
   useEffect(() => {
     AsyncStorage.getItem(LAST_SEEN_VERSION_KEY).then((lastSeen) => {
@@ -67,15 +74,15 @@ export default function AboutModal() {
   }, [safeBack]);
 
   const handleTermsOfService = () => {
-    Linking.openURL('https://formfactor.app/terms');
+    void openExternalUrl('https://formfactor.app/terms', { onFallback: handleLinkFallback });
   };
 
   const handlePrivacyPolicy = () => {
-    Linking.openURL('https://formfactor.app/privacy');
+    void openExternalUrl('https://formfactor.app/privacy', { onFallback: handleLinkFallback });
   };
 
   const handleLicenses = () => {
-    Linking.openURL('https://formfactor.app/licenses');
+    void openExternalUrl('https://formfactor.app/licenses', { onFallback: handleLinkFallback });
   };
 
   const handleChangelog = () => {
@@ -85,7 +92,7 @@ export default function AboutModal() {
   };
 
   const handleWebsite = () => {
-    Linking.openURL('https://formfactor.app');
+    void openExternalUrl('https://formfactor.app', { onFallback: handleLinkFallback });
   };
 
   return (
@@ -159,13 +166,21 @@ export default function AboutModal() {
           <LinkItem
             logo="logo-twitter"
             title="Follow us on X"
-            onPress={() => Linking.openURL('https://twitter.com/formfactorapp')}
+            onPress={() =>
+              void openExternalUrl('https://twitter.com/formfactorapp', {
+                onFallback: handleLinkFallback,
+              })
+            }
           />
           <View style={styles.divider} />
           <LinkItem
             logo="logo-instagram"
             title="Follow us on Instagram"
-            onPress={() => Linking.openURL('https://instagram.com/formfactorapp')}
+            onPress={() =>
+              void openExternalUrl('https://instagram.com/formfactorapp', {
+                onFallback: handleLinkFallback,
+              })
+            }
           />
         </View>
 

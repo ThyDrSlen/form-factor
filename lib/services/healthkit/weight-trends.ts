@@ -317,8 +317,22 @@ export function analyzeWeightTrends(
     throw new Error('No weight data available for analysis');
   }
 
+  // Filter corrupt entries BEFORE the sort so downstream analysis never
+  // sees timestamps from the future (e.g. device clock drift, dated-in-
+  // future HealthKit samples during daylight-saving transitions) or
+  // non-finite values (NaN/Infinity from a failed numeric coercion).
+  // Either would corrupt the regression, min/max stats, and pattern
+  // detection silently, producing nonsensical trends with no signal.
+  const nowMs = Date.now();
+  const sanitized = data.filter(
+    (p) => Number.isFinite(p.date) && p.date <= nowMs && Number.isFinite(p.value),
+  );
+  if (sanitized.length === 0) {
+    throw new Error('No weight data available for analysis');
+  }
+
   // Sort data by date
-  const sortedData = [...data].sort((a, b) => a.date - b.date);
+  const sortedData = [...sanitized].sort((a, b) => a.date - b.date);
   
   // Get current weight (most recent)
   const current = {

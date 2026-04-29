@@ -30,6 +30,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
+import { warnWithTs } from '@/lib/logger';
 import { getFqiColor } from './FqiGauge';
 
 export interface FqiExplainerModalProps {
@@ -92,7 +93,14 @@ export function FqiExplainerModal({
     if (!exerciseId) return;
     onDismiss();
     const encoded = encodeURIComponent(exerciseId);
-    router.push(`/(modals)/form-quality-recovery?exerciseId=${encoded}` as `/${string}`);
+    // Guard against a bad route (e.g. registry out-of-sync after a refactor)
+    // so the crash doesn't propagate past the dismissed modal. router.push
+    // throws synchronously for invalid routes in expo-router.
+    try {
+      router.push(`/(modals)/form-quality-recovery?exerciseId=${encoded}` as `/${string}`);
+    } catch (err) {
+      warnWithTs('[FqiExplainerModal] router.push to form-quality-recovery failed', err);
+    }
   };
 
   return (

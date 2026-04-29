@@ -5,6 +5,7 @@
  * Kept separate from the generator service so it can be unit tested in isolation.
  */
 import type { GoalProfile } from '@/lib/types/workout-session';
+import { hardenAgainstInjection } from './coach-injection-hardener';
 import { getFewShots } from './template-generation-few-shots';
 import type { CoachMessage } from './coach-service';
 
@@ -58,15 +59,30 @@ export function buildSessionGeneratorMessages(input: SessionGeneratorInput): Coa
 }
 
 function buildUserLine(input: SessionGeneratorInput): string {
+  // Harden every user-supplied string before it lands in the prompt. This
+  // neutralises prompt-break tokens (ChatML, Gemma turn markers, "ignore
+  // previous", etc.) and escapes structural characters like backticks /
+  // angle brackets so an adversarial intent cannot reopen the system
+  // prompt. Equipment + exercise slugs flow through the same hardener with
+  // tighter length caps since they are expected to be short identifiers.
+  // See lib/services/coach-injection-hardener.ts for the full contract.
+  const intent = hardenAgainstInjection(input.intent, { maxLength: 400 });
+  const equipment = (input.equipment ?? []).map((e) =>
+    hardenAgainstInjection(e, { maxLength: 60 }),
+  );
+  const slugs = (input.availableExerciseSlugs ?? []).map((s) =>
+    hardenAgainstInjection(s, { maxLength: 80 }),
+  );
+
   const parts: string[] = [];
-  parts.push(`Intent: ${input.intent.trim()}`);
+  parts.push(`Intent: ${intent}`);
   if (input.goalProfile) parts.push(`Goal profile: ${input.goalProfile}`);
   if (input.durationMin != null) parts.push(`Duration: ${input.durationMin} min`);
-  if (input.equipment && input.equipment.length > 0) {
-    parts.push(`Equipment: ${input.equipment.join(', ')}`);
+  if (equipment.length > 0) {
+    parts.push(`Equipment: ${equipment.join(', ')}`);
   }
-  if (input.availableExerciseSlugs && input.availableExerciseSlugs.length > 0) {
-    parts.push(`Prefer exercise_slug from: [${input.availableExerciseSlugs.join(', ')}]`);
+  if (slugs.length > 0) {
+    parts.push(`Prefer exercise_slug from: [${slugs.join(', ')}]`);
   }
   parts.push('Respond with JSON only.');
   return parts.join('\n');

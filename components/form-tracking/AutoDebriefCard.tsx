@@ -15,7 +15,20 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { AutoDebriefResult, CoachProvider } from '@/lib/services/coach-auto-debrief';
+
+/**
+ * Upper bound on raw error strings that reach the user-visible card. Error
+ * copy from the coach pipeline can be verbose (stack traces, provider
+ * payloads); we truncate to keep the card compact and avoid layout blowups.
+ */
+export const AUTO_DEBRIEF_ERROR_MAX_CHARS = 120;
+
+function truncateError(raw: string, max: number = AUTO_DEBRIEF_ERROR_MAX_CHARS): string {
+  if (raw.length <= max) return raw;
+  return `${raw.slice(0, Math.max(0, max - 1))}…`;
+}
 
 /**
  * Grace window for the "Coach is preparing your feedback…" empty copy.
@@ -35,6 +48,12 @@ export interface AutoDebriefCardProps {
   error: string | null;
   data: AutoDebriefResult | null;
   onRetry?: () => void;
+  /**
+   * Optional dismiss handler for the error state. When provided, the error
+   * card renders an X button in the top-right that calls this callback.
+   * Absent → no dismiss affordance (hosting screen opts in explicitly).
+   */
+  onDismissError?: () => void;
   /**
    * True when the parent considers the user "fresh off a session" — e.g.
    * the debrief screen was opened right after session end. Signals the card
@@ -72,20 +91,36 @@ export default function AutoDebriefCard({
   error,
   data,
   onRetry,
+  onDismissError,
   awaitingResult = false,
   testIDPrefix = 'auto-debrief',
 }: AutoDebriefCardProps) {
   // Track whether we are still within the awaiting-grace window. Starts true
   // when `awaitingResult` is first seen and flips to false after the grace
   // timeout — at which point the card falls back to the history empty copy.
+  //
+  // `graceEpochRef` is incremented every time `awaitingResult` flips true.
+  // The timeout callback captures its own epoch and only commits state when
+  // its epoch still matches the current ref. This prevents a stale timeout
+  // from a prior grace window flipping `inGrace` back to false on top of a
+  // freshly-started grace window (A1 — epoch-keyed setInGrace).
   const [inGrace, setInGrace] = useState(awaitingResult);
+  const graceEpochRef = useRef(0);
   useEffect(() => {
     if (!awaitingResult) {
+      // A new awaitingResult=true will start a new epoch; we still bump
+      // here so any in-flight "set false after grace" timer from a previous
+      // window can be treated as stale when/if the next true arrives.
       setInGrace(false);
       return;
     }
+    graceEpochRef.current += 1;
+    const myEpoch = graceEpochRef.current;
     setInGrace(true);
-    const handle = setTimeout(() => setInGrace(false), AUTO_DEBRIEF_EMPTY_GRACE_MS);
+    const handle = setTimeout(() => {
+      if (graceEpochRef.current !== myEpoch) return;
+      setInGrace(false);
+    }, AUTO_DEBRIEF_EMPTY_GRACE_MS);
     return () => clearTimeout(handle);
   }, [awaitingResult]);
 
@@ -109,15 +144,30 @@ export default function AutoDebriefCard({
   }
 
   if (error) {
+    const displayedError = truncateError(error);
     return (
       <View
         testID={`${testIDPrefix}-error`}
         accessibilityRole="alert"
-        accessibilityLabel={`Failed to load debrief: ${error}`}
+        accessibilityLabel={`Failed to load debrief: ${displayedError}`}
         style={[styles.card, styles.errorCard]}
       >
-        <Text style={styles.title}>Session debrief</Text>
-        <Text style={styles.errorMessage}>Couldn’t load your debrief. {error}</Text>
+        <View style={styles.header}>
+          <Text style={styles.title}>Session debrief</Text>
+          {onDismissError ? (
+            <TouchableOpacity
+              testID={`${testIDPrefix}-dismiss-error`}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss debrief error"
+              onPress={onDismissError}
+              style={styles.dismissButton}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close" size={16} color="#FCA5A5" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+        <Text style={styles.errorMessage}>Couldn’t load your debrief. {displayedError}</Text>
         {onRetry ? (
           <TouchableOpacity
             testID={`${testIDPrefix}-retry`}
@@ -288,5 +338,13 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: '#60A5FA',
+  },
+  dismissButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(252, 165, 165, 0.12)',
   },
 });

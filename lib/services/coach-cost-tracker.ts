@@ -12,6 +12,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { warnWithTs } from '@/lib/logger';
+import { createError, type AppError } from './ErrorHandler';
 
 // =============================================================================
 // Types
@@ -22,9 +23,19 @@ export type CoachProvider = 'openai' | 'gemma_cloud' | 'gemma_ondevice' | 'stub'
 export type CoachTaskKind =
   | 'chat'
   | 'debrief'
+  | 'auto_debrief'
   | 'drill_explainer'
   | 'session_generator'
+  | 'warmup_generator'
   | 'progression_planner'
+  | 'form_check'
+  | 'voice_debrief'
+  | 'voice_nlu'
+  | 'rest_period_coaching'
+  | 'exercise_swap_explanation'
+  | 'multi_turn_debrief'
+  | 'program_design'
+  | 'fault_explainer'
   | 'other';
 
 export interface CoachUsageEvent {
@@ -248,6 +259,131 @@ export async function getWeeklyAggregate(
   };
 }
 
+// =============================================================================
+// Per-surface daily budgets (#592 wave-35)
+// =============================================================================
+//
+// Each generator / auto-debrief / drill-explainer surface gets its own daily
+// budget cap so a runaway loop on one feature can't drain the whole weekly
+// allowance. Defaults are conservative — they reflect realistic usage patterns
+// observed in wave-27/28 telemetry (debriefs run once per session, generators
+// once or twice per day, drill explainers fire 3-5× per session). Kept
+// hardcoded since product hasn't asked for user-facing configurability yet.
+// Pipeline v2 can override by mutating `__setDailyBudgetForTests` in tests.
+
+const DEFAULT_DAILY_BUDGETS: Readonly<Partial<Record<CoachTaskKind, number>>> = Object.freeze({
+  session_generator: 50_000,
+  warmup_generator: 10_000,
+  auto_debrief: 20_000,
+  debrief: 20_000, // alias matching existing surface label
+  drill_explainer: 15_000,
+});
+
+const dailyBudgetOverrides = new Map<CoachTaskKind, number>();
+
+function resolveDailyBudget(taskKind: CoachTaskKind): number | undefined {
+  if (dailyBudgetOverrides.has(taskKind)) {
+    return dailyBudgetOverrides.get(taskKind);
+  }
+  return DEFAULT_DAILY_BUDGETS[taskKind];
+}
+
+/**
+ * Get remaining token headroom for a given surface on `nowIso`'s date.
+ *
+ * Sums tokensIn + tokensOut across all providers for the surface on that day.
+ * Returns `Infinity` when no budget is configured (unbounded surface).
+ */
+export async function getAvailableBudget(
+  taskKind: CoachTaskKind,
+  nowIso: string = new Date().toISOString(),
+): Promise<number> {
+  await hydrate();
+  const budget = resolveDailyBudget(taskKind);
+  if (budget === undefined) return Number.POSITIVE_INFINITY;
+
+  const date = dateKey(nowIso);
+  let used = 0;
+  for (const b of state.buckets) {
+    if (b.date === date && b.taskKind === taskKind) {
+      used += b.tokensIn + b.tokensOut;
+    }
+  }
+  return Math.max(0, budget - used);
+}
+
+/**
+ * Shape of the typed budget-exceeded error. Callers can `instanceof`-check
+ * via the exported helper or switch on `domain`/`code` via the AppError
+ * envelope.
+ */
+export interface BudgetExceededError extends AppError {
+  code: 'COACH_BUDGET_EXCEEDED';
+  taskKind: CoachTaskKind;
+  usedTokens: number;
+  dailyBudget: number;
+}
+
+export function isBudgetExceededError(err: unknown): err is BudgetExceededError {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: unknown }).code === 'COACH_BUDGET_EXCEEDED'
+  );
+}
+
+export function createBudgetExceededError(
+  taskKind: CoachTaskKind,
+  usedTokens: number,
+  dailyBudget: number,
+): BudgetExceededError {
+  const base = createError(
+    'coach',
+    'COACH_BUDGET_EXCEEDED',
+    `Daily coach budget exceeded for ${taskKind} (used ${usedTokens} / ${dailyBudget} tokens).`,
+    { retryable: false, severity: 'warning' },
+  );
+  return { ...base, code: 'COACH_BUDGET_EXCEEDED', taskKind, usedTokens, dailyBudget };
+}
+
+/**
+ * Throw a typed BudgetExceededError when the daily budget for `taskKind` is
+ * already exhausted. No-op when the surface has no configured budget, or
+ * when there is remaining headroom. Intended as a pre-dispatch guard —
+ * callers invoke this before hitting the Gemma/OpenAI edge functions so
+ * the UI can show a quota-exceeded state without paying for the call.
+ */
+export async function assertDailyBudget(
+  taskKind: CoachTaskKind,
+  nowIso: string = new Date().toISOString(),
+): Promise<void> {
+  const budget = resolveDailyBudget(taskKind);
+  if (budget === undefined) return;
+
+  const remaining = await getAvailableBudget(taskKind, nowIso);
+  if (remaining > 0) return;
+
+  const used = budget - remaining; // remaining is capped at 0 so used >= budget
+  throw createBudgetExceededError(taskKind, used, budget);
+}
+
+/** Tests-only: override the daily budget for a given surface. */
+export function __setDailyBudgetForTests(
+  taskKind: CoachTaskKind,
+  tokens: number | undefined,
+): void {
+  if (tokens === undefined) {
+    dailyBudgetOverrides.delete(taskKind);
+  } else {
+    dailyBudgetOverrides.set(taskKind, tokens);
+  }
+}
+
+/** Tests-only: clear every override. */
+export function __clearDailyBudgetOverridesForTests(): void {
+  dailyBudgetOverrides.clear();
+}
+
 /** Reset the tracker. Intended for tests and sign-out. */
 export async function resetCoachCostTracker(): Promise<void> {
   state.buckets = [];
@@ -278,9 +414,19 @@ function emptyTaskKindMap(): WeeklyAggregate['byTaskKind'] {
   return {
     chat: { tokensIn: 0, tokensOut: 0, calls: 0 },
     debrief: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    auto_debrief: { tokensIn: 0, tokensOut: 0, calls: 0 },
     drill_explainer: { tokensIn: 0, tokensOut: 0, calls: 0 },
     session_generator: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    warmup_generator: { tokensIn: 0, tokensOut: 0, calls: 0 },
     progression_planner: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    form_check: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    voice_debrief: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    voice_nlu: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    rest_period_coaching: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    exercise_swap_explanation: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    multi_turn_debrief: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    program_design: { tokensIn: 0, tokensOut: 0, calls: 0 },
+    fault_explainer: { tokensIn: 0, tokensOut: 0, calls: 0 },
     other: { tokensIn: 0, tokensOut: 0, calls: 0 },
   };
 }

@@ -54,8 +54,81 @@ const ALLOWED_MODELS = new Set([
   'gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano',
   'gpt-5.4-mini', 'gpt-4-turbo', 'o3-mini', 'o4-mini',
 ]);
-const RAW_MODEL = (Deno.env.get('COACH_MODEL') || 'gpt-5.4-mini').trim();
-const DEFAULT_MODEL = ALLOWED_MODELS.has(RAW_MODEL) ? RAW_MODEL : 'gpt-5.4-mini';
+
+// Model dispatch (#557 finding B2): split primary/fallback so we can roll a
+// new model out gradually instead of flipping everyone at once. Hash(userId)
+// is compared against COACH_MODEL_ROLLOUT_PCT; inside the cohort we use the
+// primary, outside it we use the fallback. Both must pass the allowlist —
+// an unknown value for either env falls back to the hard default.
+const HARD_DEFAULT_MODEL = 'gpt-5.4-mini';
+const RAW_PRIMARY_MODEL = (Deno.env.get('COACH_MODEL') || HARD_DEFAULT_MODEL).trim();
+const RAW_FALLBACK_MODEL = (Deno.env.get('COACH_FALLBACK_MODEL') || HARD_DEFAULT_MODEL).trim();
+const PRIMARY_MODEL = ALLOWED_MODELS.has(RAW_PRIMARY_MODEL)
+  ? RAW_PRIMARY_MODEL
+  : HARD_DEFAULT_MODEL;
+const FALLBACK_MODEL = ALLOWED_MODELS.has(RAW_FALLBACK_MODEL)
+  ? RAW_FALLBACK_MODEL
+  : HARD_DEFAULT_MODEL;
+
+function parseRolloutPct(raw: string | undefined): number {
+  if (!raw) return 100;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 100;
+  // Clamp to [0, 100] so accidental 150 or -10 can't skew cohort assignment.
+  if (n < 0) return 0;
+  if (n > 100) return 100;
+  return Math.floor(n);
+}
+
+const COACH_MODEL_ROLLOUT_PCT = parseRolloutPct(
+  Deno.env.get('COACH_MODEL_ROLLOUT_PCT'),
+);
+
+/**
+ * Stable 0-99 bucket for a user id. Uses a 32-bit FNV-1a variant so the
+ * hash is deterministic across Deno workers without pulling in crypto.
+ * The exact hash doesn't matter — it only needs to be stable and
+ * uniformly distributed across the user-id keyspace.
+ */
+function hashUserToBucket(userId: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < userId.length; i += 1) {
+    hash ^= userId.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % 100;
+}
+
+/**
+ * Pick the model for a given user. When rollout=100 everyone hits primary;
+ * when rollout=0 everyone hits fallback; anything in between picks a
+ * deterministic cohort keyed on userId so the same user consistently gets
+ * the same path (good for cache hits + support repro).
+ */
+function resolveModelForUser(userId: string): {
+  model: string;
+  path: 'primary' | 'fallback';
+} {
+  // Fast path: full or zero rollout doesn't need a hash.
+  if (COACH_MODEL_ROLLOUT_PCT >= 100) return { model: PRIMARY_MODEL, path: 'primary' };
+  if (COACH_MODEL_ROLLOUT_PCT <= 0) return { model: FALLBACK_MODEL, path: 'fallback' };
+  const bucket = hashUserToBucket(userId);
+  return bucket < COACH_MODEL_ROLLOUT_PCT
+    ? { model: PRIMARY_MODEL, path: 'primary' }
+    : { model: FALLBACK_MODEL, path: 'fallback' };
+}
+
+// Exported for harness use — the Deno entry point doesn't tree-shake named
+// exports so exposing these is safe and lets future tests assert cohort math.
+export const __modelDispatchInternals = {
+  parseRolloutPct,
+  hashUserToBucket,
+  resolveModelForUser,
+  PRIMARY_MODEL,
+  FALLBACK_MODEL,
+  COACH_MODEL_ROLLOUT_PCT,
+};
+
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
 const MAX_MESSAGES = 12;
 const MAX_CONTENT_LENGTH = 1200;
@@ -140,9 +213,15 @@ export const __rateLimitInternals = {
   },
 };
 
-if (RAW_MODEL !== DEFAULT_MODEL) {
-  console.warn(`[coach] COACH_MODEL "${RAW_MODEL}" is not in allowed list, falling back to "${DEFAULT_MODEL}"`);
+if (RAW_PRIMARY_MODEL !== PRIMARY_MODEL) {
+  console.warn(`[coach] COACH_MODEL "${RAW_PRIMARY_MODEL}" is not in allowed list, falling back to "${PRIMARY_MODEL}"`);
 }
+if (RAW_FALLBACK_MODEL !== FALLBACK_MODEL) {
+  console.warn(`[coach] COACH_FALLBACK_MODEL "${RAW_FALLBACK_MODEL}" is not in allowed list, falling back to "${FALLBACK_MODEL}"`);
+}
+console.log(
+  `[coach] model dispatch: primary=${PRIMARY_MODEL} fallback=${FALLBACK_MODEL} rollout_pct=${COACH_MODEL_ROLLOUT_PCT}`,
+);
 
 if (!OPENAI_API_KEY) {
   console.warn(
@@ -349,7 +428,7 @@ function buildPrompt(context?: CoachContext) {
   return [baseSystem];
 }
 
-async function generateReply(body: RequestBody) {
+async function generateReply(body: RequestBody, userId: string) {
   if (!OPENAI_API_KEY) {
     return badRequest('Coach is not configured (missing OPENAI_API_KEY).', { status: 500 });
   }
@@ -359,8 +438,14 @@ async function generateReply(body: RequestBody) {
     return badRequest('messages array is required');
   }
 
+  // #557 B2: route the user to primary or fallback based on rollout cohort.
+  // Log the path so we can observe rollout ramps (and support/debug
+  // per-user reports: "I was served primary vs fallback today").
+  const { model, path } = resolveModelForUser(userId);
+  console.log(`[coach] dispatch path=${path} model=${model} user=${userId.slice(0, 8)}…`);
+
   const payload = {
-    model: DEFAULT_MODEL,
+    model,
     temperature: TEMPERATURE,
     max_completion_tokens: MAX_TOKENS,
     messages: [...buildPrompt(body.context), ...inputMessages],
@@ -452,7 +537,7 @@ serve(async (req: Request) => {
 
   try {
     const body = (await req.json()) as RequestBody;
-    return await generateReply(body);
+    return await generateReply(body, user.id);
   } catch (err) {
     console.error('[coach] Request failed', { userId: user.id, error: err });
     return badRequest('Invalid request payload', { status: 400 });

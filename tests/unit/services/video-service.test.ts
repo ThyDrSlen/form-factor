@@ -752,3 +752,240 @@ describe('video-service signed URLs', () => {
     expect(mockSupabase.storage.from).toHaveBeenCalledWith('video-thumbnails');
   });
 });
+
+// =============================================================================
+// Upload progress, mid-upload network error, thumbnail timeout (Issue #545)
+// =============================================================================
+//
+// Targets the four gaps called out by #545:
+//   1. Progress-callback propagation (skipped — production API does not
+//      expose progress yet).
+//   2. Mid-upload network error → cleanup + error surfacing.
+//   3. Thumbnail-generation timeout → main upload still completes.
+//   4. Pre-upload file-size validation → rejected before any network I/O.
+
+describe('video-service upload progress & network failure recovery', () => {
+  const firstExtra = getExpoExtras()[0] ?? {};
+  const originalExtra = { ...firstExtra };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setSupabaseConfig(
+      originalExtra.supabaseUrl ?? 'https://test.supabase.co',
+      originalExtra.supabaseAnonKey ?? 'test-anon-key',
+    );
+    configureSupabaseMocks();
+    mockSupabaseAuth.getUser.mockResolvedValue({
+      data: { user: { id: 'test-user-id' } },
+      error: null,
+    });
+    mockSupabaseAuth.getSession.mockResolvedValue({
+      data: { session: { access_token: 'test-token' } },
+      error: null,
+    });
+  });
+
+  // ---- 1. Progress callback propagation (deferred) -----------------------
+  //
+  // Production `FileSystem.uploadAsync` call site at video-service.ts:161
+  // does NOT pass an `onProgress` callback nor expose one to consumers. The
+  // #545 acceptance criterion says: "If the service doesn't currently expose
+  // progress, add the test to drive that requirement but keep it test.skip
+  // with a comment pointing to future work." The production change is
+  // tracked separately — this test will flip to passing once
+  // `uploadWorkoutVideo` accepts an `onProgress` option and threads it into
+  // FileSystem.uploadAsync.
+  test.skip('propagates onProgress events from FileSystem.uploadAsync to the caller (BLOCKED on production API extension — see #545)', async () => {
+    // Intended shape (once production exposes it):
+    //
+    //   const progressEvents: number[] = [];
+    //   mockUploadAsync.mockImplementation(async (_url, _uri, opts) => {
+    //     opts.onProgress?.({ totalByteSent: 1024, totalBytesExpectedToSend: 2048 });
+    //     opts.onProgress?.({ totalByteSent: 2048, totalBytesExpectedToSend: 2048 });
+    //     return { status: 200, body: '{}' };
+    //   });
+    //   await uploadWorkoutVideo({
+    //     fileUri: 'file://test.mp4',
+    //     onProgress: (fraction) => progressEvents.push(fraction),
+    //   });
+    //   expect(progressEvents).toEqual([0.5, 1]);
+  });
+
+  // ---- 2. Mid-upload network error ---------------------------------------
+
+  it('surfaces a typed error when the network drops mid-upload and does not persist a partial video row', async () => {
+    mockGetInfoAsync.mockResolvedValue({ exists: true, size: 1024 });
+
+    // FileSystem.uploadAsync rejects partway through (mobile-network blip).
+    mockUploadAsync.mockRejectedValue(new Error('Network request failed'));
+
+    let insertCalls = 0;
+    mockSupabase.from.mockImplementation(() => ({
+      insert: jest.fn(() => {
+        insertCalls++;
+        return {
+          select: jest.fn().mockReturnThis(),
+          single: jest.fn().mockResolvedValue({ data: null, error: null }),
+        };
+      }),
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+      single: jest.fn().mockResolvedValue({ data: null, error: null }),
+    }));
+
+    await expect(
+      uploadWorkoutVideo({
+        fileUri: 'file://test.mp4',
+        exercise: 'Squat',
+      }),
+    ).rejects.toThrow(/Network request failed/);
+
+    // Critical: no DB row written for a failed upload — the failure must
+    // propagate BEFORE the insert side-effect runs.
+    expect(insertCalls).toBe(0);
+  });
+
+  it('surfaces HTTP-error status codes (non-2xx) as explicit Upload failed errors', async () => {
+    mockGetInfoAsync.mockResolvedValue({ exists: true, size: 2048 });
+    mockUploadAsync.mockResolvedValue({
+      status: 413,
+      body: 'Request entity too large',
+    });
+
+    await expect(
+      uploadWorkoutVideo({
+        fileUri: 'file://big.mp4',
+      }),
+    ).rejects.toThrow('Upload failed (413)');
+  });
+
+  it('mid-upload rejection does not leak a thumbnail (thumbnail generator never runs if main upload fails first)', async () => {
+    mockGetInfoAsync.mockResolvedValue({ exists: true, size: 1024 });
+    mockUploadAsync.mockRejectedValueOnce(new Error('Connection reset'));
+    mockGetThumbnailAsync.mockResolvedValue({ uri: 'file://thumb.jpg' });
+
+    await expect(
+      uploadWorkoutVideo({ fileUri: 'file://test.mp4' }),
+    ).rejects.toThrow(/Connection reset/);
+
+    // Thumbnail generation is gated on the video upload succeeding —
+    // VideoThumbnails.getThumbnailAsync must NOT have been called.
+    expect(mockGetThumbnailAsync).not.toHaveBeenCalled();
+  });
+
+  // ---- 3. Thumbnail-generation timeout → main upload completes -----------
+
+  it('thumbnail-generation timeout does not prevent the main upload from succeeding', async () => {
+    mockGetInfoAsync.mockResolvedValue({ exists: true, size: 1024 });
+    mockUploadAsync.mockResolvedValue({ status: 200, body: '{}' });
+
+    // Thumbnail generator hangs long enough to mimic a timeout. Real impl
+    // catches any error (see video-service.ts:381-384 `warnWithTs`). We use
+    // a rejected timeout to emulate a would-be AbortError/timeout.
+    mockGetThumbnailAsync.mockRejectedValue(new Error('Thumbnail timed out'));
+
+    const result = await uploadWorkoutVideo({
+      fileUri: 'file://test.mp4',
+      exercise: 'Deadlift',
+    });
+
+    // Main upload should still have persisted a video row, just without a
+    // thumbnail path.
+    expect(result).toMatchObject({ user_id: 'test-user-id' });
+    // The insert fallback used in `configureSupabaseMocks` returns a
+    // default video row; key assertion is that the upload itself did
+    // not throw and the insert ran.
+  });
+
+  it('large file skips thumbnail entirely (per maxThumbnailBytes guard) — upload still completes', async () => {
+    // Verifies the production branch at video-service.ts:385-387 which
+    // skips thumbnail generation for big files to avoid memory pressure.
+    mockGetInfoAsync.mockResolvedValue({
+      exists: true,
+      size: 90 * 1024 * 1024, // 90MB
+    });
+    mockUploadAsync.mockResolvedValue({ status: 200, body: '{}' });
+
+    const result = await uploadWorkoutVideo({
+      fileUri: 'file://huge.mp4',
+      maxThumbnailBytes: 80 * 1024 * 1024, // 80MB threshold — skip
+    });
+
+    expect(result).toMatchObject({ user_id: 'test-user-id' });
+    expect(mockGetThumbnailAsync).not.toHaveBeenCalled();
+  });
+
+  // ---- 4. Pre-upload file-size validation --------------------------------
+
+  it('rejects oversized files BEFORE any network I/O (no getSession, no uploadAsync call)', async () => {
+    mockGetInfoAsync.mockResolvedValue({
+      exists: true,
+      size: 500 * 1024 * 1024, // 500MB — way over the 250MB default cap
+    });
+
+    await expect(
+      uploadWorkoutVideo({ fileUri: 'file://too-big.mp4' }),
+    ).rejects.toThrow(/File is too large/);
+
+    // No network I/O happened — uploadAsync was never invoked.
+    expect(mockUploadAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects zero-byte / missing files with a clear error before any network I/O', async () => {
+    mockGetInfoAsync.mockResolvedValue({ exists: false });
+
+    await expect(
+      uploadWorkoutVideo({ fileUri: 'file://missing.mp4' }),
+    ).rejects.toThrow(/File does not exist/);
+
+    expect(mockUploadAsync).not.toHaveBeenCalled();
+    expect(mockGetThumbnailAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized metrics payloads as validation errors BEFORE any I/O', async () => {
+    mockGetInfoAsync.mockResolvedValue({ exists: true, size: 1024 });
+
+    // Build a metrics payload that exceeds the 10 KiB cap at
+    // video-service.ts:332-336.
+    const bigMetrics: Record<string, string> = {};
+    for (let i = 0; i < 2000; i++) {
+      bigMetrics[`k${i}`] = 'x'.repeat(20);
+    }
+
+    // createError() returns a typed AppError object (not a thrown Error
+    // instance) — use rejects.toMatchObject against the AppError shape
+    // so we assert the typed domain + code and not just a message regex.
+    await expect(
+      uploadWorkoutVideo({
+        fileUri: 'file://test.mp4',
+        metrics: bigMetrics,
+      }),
+    ).rejects.toMatchObject({
+      domain: 'validation',
+      code: 'INVALID_INPUT',
+      message: expect.stringMatching(/Metrics payload exceeds maximum size/),
+    });
+
+    expect(mockUploadAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized exercise-name strings as validation errors BEFORE any I/O', async () => {
+    mockGetInfoAsync.mockResolvedValue({ exists: true, size: 1024 });
+
+    const tooLong = 'x'.repeat(300); // 300 chars > 255 cap
+
+    await expect(
+      uploadWorkoutVideo({
+        fileUri: 'file://test.mp4',
+        exercise: tooLong,
+      }),
+    ).rejects.toMatchObject({
+      domain: 'validation',
+      code: 'INVALID_INPUT',
+      message: expect.stringMatching(/Exercise name exceeds maximum length/),
+    });
+
+    expect(mockUploadAsync).not.toHaveBeenCalled();
+  });
+});

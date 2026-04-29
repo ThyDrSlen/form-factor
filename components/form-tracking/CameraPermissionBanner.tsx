@@ -19,9 +19,10 @@
  *   - `accessibilityLiveRegion="polite"` so screen readers announce the
  *     banner when it appears without interrupting in-progress speech.
  */
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useCameraPermissions } from 'expo-camera';
 
 import {
   useCameraPermissionGuard,
@@ -35,6 +36,11 @@ export interface CameraPermissionBannerProps {
    */
   options?: UseCameraPermissionGuardOptions;
   /**
+   * A17: called when the permission transitions from denied/revoked/
+   * undetermined back to granted so the parent can restart tracking.
+   */
+  onResume?: () => void;
+  /**
    * Optional testID override.
    */
   testID?: string;
@@ -42,14 +48,74 @@ export interface CameraPermissionBannerProps {
 
 export function CameraPermissionBanner({
   options,
+  onResume,
   testID = 'camera-permission-banner',
 }: CameraPermissionBannerProps) {
   const { status, openSettings } = useCameraPermissionGuard({
     detectRevoke: true,
     ...options,
   });
+  const [permission, requestPermission] = useCameraPermissions();
+
+  // A17: when permission flips to granted, fire onResume() exactly once
+  // per transition so the host can restart whatever tracking needed the
+  // camera. We track the previous status via a ref so we don't re-fire
+  // on every re-render.
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    if (
+      (prev === 'denied' || prev === 'revoked' || prev === 'unknown') &&
+      status === 'granted'
+    ) {
+      onResume?.();
+    }
+    prevStatusRef.current = status;
+  }, [status, onResume]);
+
+  // A17: when permission is 'undetermined' (never asked), the banner
+  // offers an inline "Allow camera" button that invokes
+  // requestCameraPermissionsAsync() directly. No need to bounce through
+  // Settings for a first-time ask. We detect undetermined via the raw
+  // expo-camera hook — the guard maps both never-asked and denied to
+  // "denied" once it has a non-null value.
+  const isUndetermined =
+    permission?.status === 'undetermined' ||
+    (permission?.canAskAgain === true && permission?.granted === false);
+  if (isUndetermined) {
+    return (
+      <View
+        style={[styles.banner, styles.bannerUndetermined]}
+        accessibilityLiveRegion="polite"
+        testID={`${testID}-undetermined`}
+      >
+        <View style={styles.iconBubble}>
+          <Ionicons name="videocam-outline" size={18} color="#FFFFFF" />
+        </View>
+        <View style={styles.body}>
+          <Text style={styles.title}>Allow camera for live tracking</Text>
+          <Text style={styles.subtitle}>
+            We only use frames on-device — no video leaves your phone.
+          </Text>
+        </View>
+        <Pressable
+          onPress={() => {
+            void requestPermission();
+          }}
+          style={({ pressed }) => [styles.allowButton, pressed && styles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Allow camera access"
+          testID={`${testID}-allow-button`}
+        >
+          <Text style={styles.allowButtonText}>Allow</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   if (status !== 'denied' && status !== 'revoked') {
+    // granted (or other unknown) — banner auto-dismisses. onResume has
+    // already fired via the effect above on the transition.
     return null;
   }
 
@@ -97,6 +163,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
   },
+  bannerUndetermined: {
+    backgroundColor: 'rgba(20, 45, 82, 0.94)',
+    borderColor: '#4C8CFF',
+  },
   pressed: {
     opacity: 0.85,
   },
@@ -122,6 +192,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
     fontWeight: '600',
+  },
+  allowButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: '#4C8CFF',
+  },
+  allowButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 });
 

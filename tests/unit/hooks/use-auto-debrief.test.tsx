@@ -36,7 +36,11 @@ jest.mock('@/lib/stores/session-runner', () => ({
   },
 }));
 
-import { AUTO_DEBRIEF_TIMEOUT_MESSAGE, useAutoDebrief } from '@/hooks/use-auto-debrief';
+import {
+  AUTO_DEBRIEF_TIMEOUT_MESSAGE,
+  useAutoDebrief,
+  type UseAutoDebriefState,
+} from '@/hooks/use-auto-debrief';
 
 function makeEvent() {
   return {
@@ -284,6 +288,106 @@ describe('useAutoDebrief', () => {
 
     await waitFor(() => {
       expect(result.current.error).toBe('no analytics available');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // initialInput on-mount leg (#575 item #5)
+  // ---------------------------------------------------------------------------
+  describe('initialInput', () => {
+    it('fires generateAutoDebrief once on mount when initialInput provided', async () => {
+      mockGenerate.mockResolvedValue({
+        sessionId: 'sess-recap',
+        provider: 'openai',
+        brief: 'Recap generated.',
+        generatedAt: 'now',
+      });
+
+      const { result } = renderHook(() =>
+        useAutoDebrief({
+          buildInput: () => null,
+          initialInput: {
+            sessionId: 'sess-recap',
+            analytics: { ...makeAnalytics(), sessionId: 'sess-recap' },
+          },
+        }),
+      );
+
+      await waitFor(() => {
+        expect(result.current.data?.sessionId).toBe('sess-recap');
+      });
+      expect(mockGenerate).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not fire when initialInput is null', async () => {
+      renderHook(() =>
+        useAutoDebrief({
+          buildInput: () => null,
+          initialInput: null,
+        }),
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockGenerate).not.toHaveBeenCalled();
+    });
+
+    it('does not fire when auto-debrief feature flag is off', async () => {
+      mockIsEnabled.mockReturnValue(false);
+      renderHook(() =>
+        useAutoDebrief({
+          buildInput: () => null,
+          initialInput: {
+            sessionId: 'sess-recap',
+            analytics: makeAnalytics(),
+          },
+        }),
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockGenerate).not.toHaveBeenCalled();
+    });
+
+    it('fires exactly once per mount even when prop identity changes', async () => {
+      mockGenerate.mockResolvedValue({
+        sessionId: 'sess-recap',
+        provider: 'openai',
+        brief: 'Done.',
+        generatedAt: 'now',
+      });
+
+      const initial = {
+        sessionId: 'sess-recap',
+        analytics: { ...makeAnalytics(), sessionId: 'sess-recap' },
+      };
+      type Props = { input: typeof initial | null };
+      const { rerender } = renderHook<UseAutoDebriefState, Props>(
+        ({ input }) =>
+          useAutoDebrief({
+            buildInput: () => null,
+            initialInput: input,
+          }),
+        { initialProps: { input: initial } },
+      );
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // Force re-render with a different input reference — the guard should
+      // ignore the second value since we only want a single on-mount run.
+      rerender({
+        input: {
+          sessionId: 'sess-recap-2',
+          analytics: { ...makeAnalytics(), sessionId: 'sess-recap-2' },
+        },
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockGenerate).toHaveBeenCalledTimes(1);
     });
   });
 });

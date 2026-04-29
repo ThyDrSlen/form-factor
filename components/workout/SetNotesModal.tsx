@@ -64,6 +64,11 @@ export default function SetNotesModal({ visible, notes, onSave, onClose }: SetNo
                 multiline
                 numberOfLines={3}
                 autoFocus
+                // A10: keyboard "send" action submits the note. `blurOnSubmit`
+                // ensures the keyboard drops after send on iOS multiline fields.
+                returnKeyType="send"
+                blurOnSubmit
+                onSubmitEditing={handleSave}
               />
               <View style={modalStyles.actions}>
                 <TouchableOpacity style={modalStyles.cancelBtn} onPress={onClose}>

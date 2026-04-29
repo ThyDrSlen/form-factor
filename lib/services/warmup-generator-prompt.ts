@@ -3,6 +3,7 @@
  *
  * Composes the system + few-shot + user prompt for pre-session warmup generation.
  */
+import { hardenAgainstInjection } from './coach-injection-hardener';
 import { getFewShots } from './template-generation-few-shots';
 import type { CoachMessage } from './coach-service';
 
@@ -40,11 +41,22 @@ export function buildWarmupGeneratorMessages(input: WarmupGeneratorInput): Coach
     messages.push({ role: 'assistant', content: ex.response });
   }
 
+  // Harden every user-supplied string before it lands in the prompt. Exercise
+  // slugs get a tighter length cap (short identifiers), userContext uses the
+  // default 400-char cap for free-form notes. See
+  // lib/services/coach-injection-hardener.ts for the full contract.
+  const slugs = input.exerciseSlugs.map((s) =>
+    hardenAgainstInjection(s, { maxLength: 80 }),
+  );
+  const userContext = input.userContext
+    ? hardenAgainstInjection(input.userContext, { maxLength: 400 })
+    : '';
+
   const parts: string[] = [];
-  parts.push(`Upcoming exercises: ${input.exerciseSlugs.join(', ')}`);
+  parts.push(`Upcoming exercises: ${slugs.join(', ')}`);
   if (input.durationMin != null) parts.push(`Target duration: ${input.durationMin} min`);
-  if (input.userContext && input.userContext.trim().length > 0) {
-    parts.push(`User context: ${input.userContext.trim()}`);
+  if (userContext.length > 0) {
+    parts.push(`User context: ${userContext}`);
   }
   parts.push('Respond with JSON only.');
 

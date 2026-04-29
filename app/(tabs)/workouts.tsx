@@ -6,6 +6,7 @@ import { DeleteAction } from '@/components';
 import { AskCoachCTA } from '@/components/form-tracking/AskCoachCTA';
 import { FormQualityBadgeRow } from '@/components/workouts/FormQualityBadgeRow';
 import { OverloadAnalyticsCard } from '@/components/workouts/OverloadAnalyticsCard';
+import { WorkoutCardSkeleton } from '@/components/workouts/WorkoutCardSkeleton';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUnits } from '@/contexts/UnitsContext';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
@@ -18,7 +19,6 @@ import { exportSession } from '@/lib/services/session-export-service';
 import { isWorkoutCoachRecallEnabled } from '@/lib/services/workout-coach-recall-flag';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
     Alert,
     FlatList,
     RefreshControl,
@@ -375,6 +375,9 @@ export default function WorkoutsScreen() {
             <View style={styles.cardFooter}>
               <TouchableOpacity
                 style={styles.actionButton}
+                accessibilityRole="button"
+                accessibilityLabel={`View ${item.exercise} details`}
+                accessibilityHint="Opens workout detail summary"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   const lines = [
@@ -389,16 +392,19 @@ export default function WorkoutsScreen() {
                 }}
                 activeOpacity={0.7}
               >
-                <Ionicons name="eye-outline" size={16} color="#007AFF" />
+                <Ionicons name="eye-outline" size={16} color="#007AFF" accessible={false} />
                 <Text style={styles.actionText}>View</Text>
               </TouchableOpacity>
               <View style={styles.divider} />
               <TouchableOpacity
                 style={[styles.actionButton, styles.shareActionButton]}
+                accessibilityRole="button"
+                accessibilityLabel={`Share ${item.exercise} stats`}
+                accessibilityHint="Opens the native share sheet with your workout summary"
                 onPress={() => handleShareWorkout(item)}
                 activeOpacity={0.85}
               >
-                <Ionicons name="share-outline" size={18} color="#4C8CFF" />
+                <Ionicons name="share-outline" size={18} color="#4C8CFF" accessible={false} />
                 <View style={styles.shareTextWrapper}>
                   <Text style={[styles.actionText, styles.shareActionTitle]}>Share</Text>
                   <Text style={styles.actionSubtext}>Send stats</Text>
@@ -412,6 +418,8 @@ export default function WorkoutsScreen() {
                 confirmTitle="Delete workout?"
                 confirmMessage={`This will permanently remove \"${item.exercise}\".`}
                 style={styles.deleteAction}
+                accessibilityLabel={`Delete ${item.exercise}`}
+                accessibilityHint="Permanently removes this workout from your history"
               />
             </View>
             {coachRecallEnabled ? (
@@ -433,11 +441,19 @@ export default function WorkoutsScreen() {
     );
   };
 
+  // Skeleton placeholders on cold-load keep the tab usable on slow networks
+  // (#562/A1). Render 3 shimmer cards that mirror the real-card dimensions so
+  // users see structure instead of a blank spinner. When the fetch completes,
+  // the FlatList below takes over; when the list arrives empty, the empty
+  // state with illustration + CTA takes over.
   if (loading && !workouts.length) {
     return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Loading your workouts</Text>
+      <View style={styles.container} testID="workouts-skeleton-container">
+        <View style={styles.list}>
+          <WorkoutCardSkeleton testID="workout-card-skeleton-0" />
+          <WorkoutCardSkeleton testID="workout-card-skeleton-1" />
+          <WorkoutCardSkeleton testID="workout-card-skeleton-2" />
+        </View>
       </View>
     );
   }

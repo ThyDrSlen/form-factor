@@ -392,6 +392,19 @@ class LocalDatabase {
       );
     `);
 
+    // A18: debrief notes — per-session free text notes + starred fault ids
+    // + saved-for-next-time cue ids. Local-only for now; a follow-up wires
+    // this to Supabase once the schema is approved.
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS debrief_notes (
+        session_id TEXT PRIMARY KEY,
+        notes TEXT NOT NULL DEFAULT '',
+        starred_fault_ids TEXT NOT NULL DEFAULT '[]',
+        saved_cues INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
     // Create indexes for better query performance
     await this.db.execAsync(`
       CREATE INDEX IF NOT EXISTS idx_foods_date ON foods(date DESC);
@@ -1347,8 +1360,90 @@ class LocalDatabase {
       DELETE FROM workout_session_exercises;
       DELETE FROM workout_session_sets;
       DELETE FROM workout_session_events;
+      DELETE FROM debrief_notes;
     `);
     logWithTs('[LocalDB] All data cleared');
+  }
+
+  // =========================================================================
+  // A18 — Debrief notes
+  // =========================================================================
+
+  /**
+   * Upsert per-session debrief notes: free-text notes, starred fault ids,
+   * and whether the user asked us to save the cues as personalized for
+   * next time. Overwrites any existing row for the same sessionId.
+   */
+  async saveDebriefNotes(
+    sessionId: string,
+    notes: string,
+    starredFaultIds: string[],
+    savedCues: boolean,
+  ): Promise<void> {
+    if (!this.db) await this.initialize();
+    if (!this.db) throw new Error('Database not initialized');
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `INSERT INTO debrief_notes (session_id, notes, starred_fault_ids, saved_cues, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET
+         notes = excluded.notes,
+         starred_fault_ids = excluded.starred_fault_ids,
+         saved_cues = excluded.saved_cues,
+         updated_at = excluded.updated_at`,
+      [
+        sessionId,
+        notes ?? '',
+        JSON.stringify(Array.isArray(starredFaultIds) ? starredFaultIds : []),
+        savedCues ? 1 : 0,
+        now,
+      ],
+    );
+  }
+
+  /**
+   * Read the most recent debrief-notes row for the given session. Returns
+   * null when no notes have been saved yet.
+   */
+  async getDebriefNotes(sessionId: string): Promise<
+    | {
+        sessionId: string;
+        notes: string;
+        starredFaultIds: string[];
+        savedCues: boolean;
+        updatedAt: string;
+      }
+    | null
+  > {
+    if (!this.db) await this.initialize();
+    if (!this.db) return null;
+    const row = await this.db.getFirstAsync<{
+      session_id: string;
+      notes: string;
+      starred_fault_ids: string;
+      saved_cues: number;
+      updated_at: string;
+    }>(
+      'SELECT session_id, notes, starred_fault_ids, saved_cues, updated_at FROM debrief_notes WHERE session_id = ?',
+      [sessionId],
+    );
+    if (!row) return null;
+    let starred: string[] = [];
+    try {
+      const parsed = JSON.parse(row.starred_fault_ids);
+      if (Array.isArray(parsed)) {
+        starred = parsed.filter((id): id is string => typeof id === 'string');
+      }
+    } catch {
+      // tolerate legacy / malformed rows
+    }
+    return {
+      sessionId: row.session_id,
+      notes: row.notes ?? '',
+      starredFaultIds: starred,
+      savedCues: row.saved_cues === 1,
+      updatedAt: row.updated_at,
+    };
   }
 
   async close(): Promise<void> {

@@ -25,6 +25,14 @@ interface ExerciseCardProps {
   onSetMenuPress: (setId: string) => void;
   onExerciseMenuPress: (sessionExerciseId: string) => void;
   onNotesPress?: (setId: string) => void;
+  /**
+   * Optional map of setId → rep count observed by the form-tracking rep
+   * detector. Forwarded to SetRow so a manual actual_reps edit that
+   * diverges by more than one from the detector can surface a subtle
+   * "Detector: N" hint. Left undefined by callsites that have no
+   * detector stream wired up yet.
+   */
+  detectedRepsBySetId?: Record<string, number>;
 }
 
 function ExerciseCard({
@@ -36,6 +44,7 @@ function ExerciseCard({
   onSetMenuPress,
   onExerciseMenuPress,
   onNotesPress,
+  detectedRepsBySetId,
 }: ExerciseCardProps) {
   const isTimed = exercise.exercise?.is_timed ?? false;
   const exerciseName = exercise.exercise?.name ?? 'Exercise';
@@ -88,6 +97,7 @@ function ExerciseCard({
           onCompleteSet={onCompleteSet}
           onMenuPress={onSetMenuPress}
           onNotesPress={onNotesPress}
+          detectedReps={detectedRepsBySetId?.[s.id]}
         />
       ))}
 

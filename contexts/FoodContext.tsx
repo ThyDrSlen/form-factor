@@ -2,6 +2,7 @@ import React, { createContext, ReactNode, useCallback, useContext, useEffect, us
 import * as Crypto from 'expo-crypto';
 import { localDB } from '../lib/services/database/local-db';
 import { syncService } from '../lib/services/database/sync-service';
+import { errorWithTs, logWithTs, warnWithTs } from '../lib/logger';
 import { useNetwork } from './NetworkContext';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
@@ -58,10 +59,10 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
         fat: item.fat,
         date: item.date,
       }));
-      console.log('[FoodProvider] Loaded foods from local DB:', transformedFoods.length);
+      logWithTs('[FoodContext] Loaded foods from local DB:', transformedFoods.length);
       setFoods(transformedFoods);
     } catch (error) {
-      console.error('[FoodProvider] Error loading local foods:', error);
+      errorWithTs('[FoodContext] Error loading local foods:', error);
       setError('Failed to load food entries. Pull to refresh.');
     }
   }, []);
@@ -69,11 +70,11 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
   const performSync = useCallback(async () => {
     try {
       setIsSyncing(true);
-      console.log('[FoodProvider] Performing sync...');
+      logWithTs('[FoodContext] Performing sync...');
       await syncService.fullSync();
       await loadLocalFoods();
     } catch (error) {
-      console.error('[FoodProvider] Error during sync:', error);
+      errorWithTs('[FoodContext] Error during sync:', error);
     } finally {
       setIsSyncing(false);
     }
@@ -82,7 +83,7 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
   const initializeData = useCallback(async () => {
     try {
       setLoading(true);
-      console.log('[FoodProvider] Initializing local database...');
+      logWithTs('[FoodContext] Initializing local database...');
 
       // Initialize local DB
       await localDB.initialize();
@@ -95,7 +96,7 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
         await performSync();
       }
     } catch (error) {
-      console.error('[FoodProvider] Error initializing:', error);
+      errorWithTs('[FoodContext] Error initializing:', error);
     } finally {
       setLoading(false);
     }
@@ -142,8 +143,8 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
 
   const deleteFood = useCallback(async (id: string) => {
     try {
-      console.log('[FoodProvider] Deleting food:', id);
-      
+      logWithTs('[FoodContext] Deleting food:', id);
+
       // Soft delete in local DB (marks as deleted, not synced)
       await localDB.softDeleteFood(id);
 
@@ -153,18 +154,18 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
       // Sync to Supabase if online (fire-and-forget — local write already done)
       if (isOnline) {
         void syncService.syncToSupabase().catch(err => {
-          console.warn('[FoodContext] Sync failed:', err);
+          warnWithTs('[FoodContext] Sync failed:', err);
           showToast('Sync failed. Changes saved locally.', { type: 'error' });
         });
       }
     } catch (err) {
-      console.error('[FoodProvider] Error deleting food:', err);
+      errorWithTs('[FoodContext] Error deleting food:', err);
     }
   }, [isOnline]);
 
   const addFood = useCallback(async (food: FoodEntry) => {
     try {
-      console.log('[FoodProvider] Adding food:', food);
+      logWithTs('[FoodContext] Adding food:', food);
 
       // Generate UUID if not provided
       const foodId = food.id || Crypto.randomUUID();
@@ -187,12 +188,12 @@ export const FoodProvider = ({ children }: { children: ReactNode }) => {
       // Sync to Supabase if online (fire-and-forget — local write already done)
       if (isOnline) {
         void syncService.syncToSupabase().catch(err => {
-          console.warn('[FoodContext] Sync failed:', err);
+          warnWithTs('[FoodContext] Sync failed:', err);
           showToast('Sync failed. Changes saved locally.', { type: 'error' });
         });
       }
     } catch (error) {
-      console.error('[FoodProvider] Error adding food:', error);
+      errorWithTs('[FoodContext] Error adding food:', error);
       throw error;
     }
   }, [isOnline]);

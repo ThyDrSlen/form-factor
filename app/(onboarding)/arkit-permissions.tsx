@@ -69,6 +69,10 @@ export default function ARKitPermissionsScreen() {
     trackOnboardingEvent('step_view', 'arkit-permissions');
   }, []);
 
+  // A11: split the permission-check effect from the intro animation so a
+  // slow permission lookup (first app launch / cold start) doesn't hold the
+  // fade-in/slide-in animation hostage. The animation now runs exactly once
+  // on mount; the permission-granted redirect runs independently.
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -82,11 +86,16 @@ export default function ARKitPermissionsScreen() {
         useNativeDriver: true,
       }),
     ]).start();
+    // Intentionally omit `permission` from deps so re-renders triggered by a
+    // late-arriving permission status don't restart the intro animation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  useEffect(() => {
     if (permission?.granted) {
       router.replace('/(onboarding)/arkit-usage');
     }
-  }, [fadeAnim, slideAnim, permission?.granted, router]);
+  }, [permission?.granted, router]);
 
   const handleRequestPermission = async () => {
     if (isRequesting) return;
@@ -221,8 +230,15 @@ export default function ARKitPermissionsScreen() {
 
           {/* Action Buttons */}
           <Animated.View style={[styles.actionsSection, { opacity: fadeAnim }]}>
-            {permission?.status === 'denied' ? (
-              <TouchableOpacity 
+            {permission === null ? (
+              // A11: permission status hasn't resolved yet — show a subtle
+              // spinner row so the CTA area isn't empty during cold start.
+              <View style={styles.permissionPending} testID="arkit-permission-loading">
+                <ActivityIndicator size="small" color="#4C8CFF" />
+                <Text style={styles.permissionPendingText}>Checking camera access…</Text>
+              </View>
+            ) : permission?.status === 'denied' ? (
+              <TouchableOpacity
                 style={styles.settingsButton}
                 onPress={handleOpenSettings}
               >
@@ -230,7 +246,7 @@ export default function ARKitPermissionsScreen() {
                 <Text style={styles.settingsButtonText}>Open Settings</Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.permissionButton, isRequesting && styles.permissionButtonDisabled]}
                 onPress={handleRequestPermission}
                 disabled={isRequesting}
@@ -450,5 +466,17 @@ const styles = StyleSheet.create({
     color: '#9AACD1',
     fontSize: 16,
     fontWeight: '600',
+  },
+  permissionPending: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 16,
+  },
+  permissionPendingText: {
+    color: '#9AACD1',
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

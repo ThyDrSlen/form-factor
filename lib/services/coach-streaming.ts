@@ -53,6 +53,18 @@ export interface StreamCoachResult {
   durationMs: number;
   /** finishReason from the upstream provider, when present. */
   finishReason?: string;
+  /**
+   * Upstream provider that served this stream (e.g. `gemma-cloud`, `openai`).
+   * Additive — callers may inspect for telemetry or eval harness attribution;
+   * older producers that don't surface `provider` leave it undefined.
+   */
+  provider?: string;
+  /**
+   * Model identifier surfaced by the upstream frame metadata (streaming path)
+   * or by the underlying `CoachMessage` reply (non-streaming Gemma fallback).
+   * Additive — undefined when the producer doesn't advertise it.
+   */
+  model?: string;
 }
 
 interface StreamFrame {
@@ -60,6 +72,9 @@ interface StreamFrame {
   done?: boolean;
   finishReason?: string;
   error?: string;
+  /** Optional metadata frame surfaced by upstream providers. */
+  provider?: string;
+  model?: string;
 }
 
 const DEFAULT_FUNCTION_NAME = (
@@ -156,6 +171,8 @@ export async function streamCoachPrompt(
   let ttftMs = 0;
   let text = '';
   let finishReason: string | undefined;
+  let provider: string | undefined;
+  let model: string | undefined;
 
   for await (const frame of readNdjsonFrames(response.body)) {
     if (frame.error) {
@@ -165,6 +182,15 @@ export async function streamCoachPrompt(
         frame.error,
         { retryable: true }
       );
+    }
+    // Capture provider/model whenever any frame advertises them so telemetry
+    // can attribute the result regardless of whether the upstream emits the
+    // fields on the leading chunk or the final done frame.
+    if (typeof frame.provider === 'string' && frame.provider.length > 0) {
+      provider = frame.provider;
+    }
+    if (typeof frame.model === 'string' && frame.model.length > 0) {
+      model = frame.model;
     }
     if (typeof frame.delta === 'string' && frame.delta.length > 0) {
       if (chunkCount === 0) ttftMs = Date.now() - startedAt;
@@ -178,12 +204,21 @@ export async function streamCoachPrompt(
     }
   }
 
+  // When the caller pinned a provider via opts, surface that as the default
+  // so telemetry remains attributable even when the upstream doesn't emit
+  // an explicit provider frame.
+  if (!provider && opts?.provider) {
+    provider = opts.provider;
+  }
+
   return {
     text,
     chunkCount,
     ttftMs,
     durationMs: Date.now() - startedAt,
     finishReason,
+    provider,
+    model,
   };
 }
 
@@ -299,10 +334,21 @@ async function streamGemmaViaNonStreamingFallback(
     onChunk(text);
   }
 
+  // The fallback consumes a `CoachMessage` whose provider/model are attached
+  // as non-enumerable properties by `sendCoachGemmaPrompt` (see
+  // coach-gemma-service.ts:119-132). Surface them on the streaming result so
+  // callers get the same attribution they would from the server-SSE path.
+  // Fall back to the caller-supplied provider hint when the reply didn't
+  // carry its own annotation (e.g. test stubs returning bare CoachMessages).
+  const replyProvider = typeof reply.provider === 'string' ? reply.provider : undefined;
+  const replyModel = typeof reply.model === 'string' ? reply.model : undefined;
+
   return {
     text,
     chunkCount: text.length > 0 ? 1 : 0,
     ttftMs,
     durationMs: Date.now() - startedAt,
+    provider: replyProvider ?? opts?.provider,
+    model: replyModel,
   };
 }

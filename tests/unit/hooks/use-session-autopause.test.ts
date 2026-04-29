@@ -130,4 +130,39 @@ describe('useSessionAutopause', () => {
     rerender({});
     await waitFor(() => expect(result.current.needsResume).toBe(false));
   });
+
+  it('unregisters the AppState listener on unmount (effect cleanup fires)', () => {
+    const { unmount } = renderHook(() => useSessionAutopause());
+    expect(appStateListeners).toHaveLength(1);
+
+    unmount();
+
+    expect(appStateListeners).toHaveLength(0);
+  });
+
+  it('exposes pauseReason from the underlying pause store', () => {
+    mockPauseState.reason = 'background';
+    const { result } = renderHook(() => useSessionAutopause());
+    expect(result.current.pauseReason).toBe('background');
+  });
+
+  it('does not attempt to pause when the app backgrounds without an active session', async () => {
+    mockSessionSelectorState.current = { activeSession: null };
+    renderHook(() => useSessionAutopause());
+    await act(async () => {
+      appStateListeners[0]('background');
+    });
+    expect(mockPause).not.toHaveBeenCalled();
+  });
+
+  it('disabling mid-lifecycle removes the listener', () => {
+    const { rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => useSessionAutopause({ enabled }),
+      { initialProps: { enabled: true } },
+    );
+    expect(appStateListeners).toHaveLength(1);
+
+    rerender({ enabled: false });
+    expect(appStateListeners).toHaveLength(0);
+  });
 });

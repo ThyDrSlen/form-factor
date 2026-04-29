@@ -34,6 +34,68 @@ describe('weight-trends', () => {
       expect(() => analyzeWeightTrends([])).toThrow('No weight data available for analysis');
     });
 
+    it('filters out entries with non-finite timestamps before analysis', () => {
+      const now = Date.now();
+      const data: HealthMetricPoint[] = [
+        { date: now - 2 * 86400000, value: 80 },
+        { date: Number.NaN, value: 79.5 }, // corrupt timestamp
+        { date: Number.POSITIVE_INFINITY, value: 81 }, // corrupt timestamp
+        { date: now, value: 78 },
+      ];
+
+      const analysis = analyzeWeightTrends(data);
+      // Current weight must come from the valid most-recent entry (78),
+      // not from the Infinity-dated noise.
+      expect(analysis.current.weight).toBe(78);
+      expect(analysis.current.timestamp).toBe(now);
+      // Min/max should reflect only the sanitized set (80 and 78).
+      expect(analysis.statistics.min).toBe(78);
+      expect(analysis.statistics.max).toBe(80);
+    });
+
+    it('filters out entries with non-finite values before analysis', () => {
+      const now = Date.now();
+      const data: HealthMetricPoint[] = [
+        { date: now - 86400000, value: 80 },
+        { date: now - 3600000, value: Number.NaN },
+        { date: now, value: 78 },
+      ];
+
+      const analysis = analyzeWeightTrends(data);
+      expect(analysis.current.weight).toBe(78);
+      expect(analysis.statistics.min).toBe(78);
+      expect(analysis.statistics.max).toBe(80);
+    });
+
+    it('filters out future-dated entries before analysis', () => {
+      const now = Date.now();
+      const future = now + 30 * 86400000; // 30 days ahead (clock drift)
+      const data: HealthMetricPoint[] = [
+        { date: now - 2 * 86400000, value: 80 },
+        { date: now - 86400000, value: 79 },
+        { date: now, value: 78 },
+        { date: future, value: 65 }, // impossible future sample
+      ];
+
+      const analysis = analyzeWeightTrends(data);
+      // Current weight must not be taken from the future entry.
+      expect(analysis.current.weight).toBe(78);
+      expect(analysis.current.timestamp).toBe(now);
+      expect(analysis.statistics.min).toBe(78);
+      expect(analysis.statistics.max).toBe(80);
+    });
+
+    it('throws when all entries are non-finite or future-dated', () => {
+      const future = Date.now() + 86400000;
+      const data: HealthMetricPoint[] = [
+        { date: Number.NaN, value: 80 },
+        { date: future, value: 78 },
+      ];
+      expect(() => analyzeWeightTrends(data)).toThrow(
+        'No weight data available for analysis',
+      );
+    });
+
     it('returns analysis for a single data point', () => {
       const data: HealthMetricPoint[] = [
         { date: Date.now(), value: 75 },

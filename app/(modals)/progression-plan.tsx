@@ -184,9 +184,17 @@ export default function ProgressionPlanModal() {
         >
           <Ionicons name="construct" size={40} color={TEXT_SECONDARY} />
           <Text style={styles.loadingText}>
-            Progression planner is turned off. Enable it with
-            EXPO_PUBLIC_PROGRESSION_PLAN=on to preview.
+            Progression planner is coming soon. We&apos;ll let you know when it&apos;s ready.
           </Text>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => router.back()}
+            accessibilityLabel="Close"
+            accessibilityRole="button"
+            testID="progression-plan-disabled-close"
+          >
+            <Text style={styles.primaryButtonText}>Close</Text>
+          </TouchableOpacity>
         </View>
       ) : loading ? (
         <View

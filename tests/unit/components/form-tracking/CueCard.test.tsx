@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { render, fireEvent } from '@testing-library/react-native';
 
 jest.mock('moti', () => {
   const { View } = jest.requireActual('react-native');
@@ -30,6 +30,38 @@ describe('CueCard', () => {
     );
     expect(getByTestId('cue-card').props.accessibilityLabel).toMatch(/CRITICAL/);
     expect(getByText(/cannot detect your body/i)).toBeTruthy();
+  });
+
+  it('does not render a dismiss button when onDismiss is not provided', () => {
+    const { queryByTestId } = render(
+      <CueCard
+        cue={{
+          message: 'Go a little deeper.',
+          priority: 'advisory',
+          faultType: 'rom',
+        }}
+      />,
+    );
+    expect(queryByTestId('cue-card-dismiss')).toBeNull();
+  });
+
+  it('renders a dismiss button and invokes onDismiss when tapped', () => {
+    const onDismiss = jest.fn();
+    const { getByTestId } = render(
+      <CueCard
+        cue={{
+          message: 'Nice work — keep breathing.',
+          priority: 'advisory',
+          faultType: 'generic',
+        }}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    const btn = getByTestId('cue-card-dismiss');
+    expect(btn.props.accessibilityLabel).toBe('Dismiss form cue');
+    fireEvent.press(btn);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
   it('uses assertive live region for critical cues and polite otherwise', () => {

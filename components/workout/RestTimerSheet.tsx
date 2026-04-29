@@ -7,8 +7,8 @@
  * + mobility + reflection content tailored to the just-completed set.
  */
 
-import React, { useEffect, useMemo, useRef, useState, forwardRef } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState, forwardRef } from 'react';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { sessionStyles as styles, colors } from '@/styles/workout-session.styles';
 import { useSessionRunner } from '@/lib/stores/session-runner';
@@ -50,6 +50,17 @@ const RestTimerSheet = forwardRef<BottomSheet, RestTimerSheetProps>(({ onClose }
   const { recommendation, refresh } = useBetweenSetsCoach();
   const [remaining, setRemaining] = useState(0);
   const haptedForTimerRef = useRef<string | null>(null);
+  // Signal that the user has already confirmed the dismissal via the Alert
+  // (or the timer hit 0). Without this gate the confirm Alert would
+  // re-prompt indefinitely when the sheet's `onClose` fires after a snap-
+  // back animation.
+  const dismissConfirmedRef = useRef(false);
+  // Mirror `remaining` into a ref so the `onClose` handler can read the
+  // latest value without re-creating the callback on every tick.
+  const remainingRef = useRef(0);
+  useEffect(() => {
+    remainingRef.current = remaining;
+  }, [remaining]);
 
   useEffect(() => {
     if (!restTimer) {
@@ -99,14 +110,60 @@ const RestTimerSheet = forwardRef<BottomSheet, RestTimerSheetProps>(({ onClose }
   }
 
   const handleReady = async () => {
+    dismissConfirmedRef.current = true;
     await skipRest();
     onClose();
   };
 
   const handleSkip = async () => {
+    dismissConfirmedRef.current = true;
     await skipRest();
     onClose();
   };
+
+  // Re-open the sheet (after a cancel from the confirm Alert) by snapping the
+  // forwarded ref back to the only snap point. Safe when `ref` is a callback
+  // ref or null — the optional chain handles both.
+  const reopenSheet = useCallback(() => {
+    if (typeof ref === 'function') return;
+    ref?.current?.snapToIndex(0);
+  }, [ref]);
+
+  // Intercept the BottomSheet close callback: if the rest timer is still
+  // running and the user dismissed it via a swipe (not the Ready / Skip
+  // buttons, which gate on dismissConfirmedRef), confirm the intent before
+  // actually clearing session state. Cancel snaps the sheet back open.
+  const handleSheetClose = useCallback(() => {
+    if (dismissConfirmedRef.current || remainingRef.current <= 0) {
+      dismissConfirmedRef.current = false;
+      onClose();
+      return;
+    }
+    Alert.alert(
+      'Dismiss rest timer?',
+      'Your rest timer is still running. Dismiss anyway?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => {
+            // Sheet already animated closed — re-snap back so the user
+            // doesn't lose an active rest countdown to an accidental swipe.
+            reopenSheet();
+          },
+        },
+        {
+          text: 'Dismiss',
+          style: 'destructive',
+          onPress: () => {
+            dismissConfirmedRef.current = true;
+            onClose();
+          },
+        },
+      ],
+      { cancelable: true, onDismiss: reopenSheet },
+    );
+  }, [onClose, reopenSheet]);
 
   const restComplete = remaining <= 0;
 
@@ -116,7 +173,7 @@ const RestTimerSheet = forwardRef<BottomSheet, RestTimerSheetProps>(({ onClose }
       index={0}
       snapPoints={snapPoints}
       enablePanDownToClose
-      onClose={onClose}
+      onClose={handleSheetClose}
       backgroundStyle={{ backgroundColor: colors.background }}
       handleIndicatorStyle={{ backgroundColor: colors.textSecondary }}
     >
