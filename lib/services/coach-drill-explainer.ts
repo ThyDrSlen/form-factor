@@ -115,11 +115,10 @@ export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDri
   // Pipeline-v2: pass taskKind so the dispatcher recognises this as a
   // tactical `fault_explainer` (→ Gemma tier) rather than falling back to
   // general_chat, and so cost-tracker telemetry (#537) labels correctly.
-  // When V2 is off we omit opts entirely to preserve the two-arg call
-  // shape that existing tests assert against.
-  const taskKindOpts = pipelineV2
-    ? ({ taskKind: 'fault_explainer' as const })
-    : null;
+  // Wave-34: even in legacy flag-off mode we annotate the taskKind for
+  // cost-tracker bucketing. No provider hint is attached in legacy mode
+  // (the legacy cloud provider resolves inside coach-service).
+  const taskKindOpts = { taskKind: 'fault_explainer' as const };
 
   // Gemma-first attempt (both flags on). On any error we fall through to the
   // env-resolved provider below. Success returns provider='gemma' (#539).
@@ -128,7 +127,7 @@ export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDri
       // taskKind='fault_explainer' slots this call into the tactical
       // Gemma bucket of the dispatch router (see coach-model-dispatch.ts).
       const reply = await sendCoachPrompt(messages, context, {
-        ...(taskKindOpts ?? {}),
+        ...taskKindOpts,
         provider: 'gemma',
       });
       const text = (reply.content ?? '').trim();
@@ -153,10 +152,9 @@ export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDri
   const fallbackProvider: DrillExplainerProvider = pipelineV2 ? 'openai' : 'cloud';
 
   try {
-    const cloudOpts =
-      resolvedProvider
-        ? { ...(taskKindOpts ?? {}), provider: resolvedProvider }
-        : taskKindOpts ?? undefined;
+    const cloudOpts = resolvedProvider
+      ? { ...taskKindOpts, provider: resolvedProvider }
+      : taskKindOpts;
     const reply = await sendCoachPrompt(messages, context, cloudOpts);
     const text = (reply.content ?? '').trim();
     const actualProvider = mapToDrillProvider(reply.provider) ?? fallbackProvider;

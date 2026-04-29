@@ -14,7 +14,12 @@
  */
 import * as Crypto from 'expo-crypto';
 import { assertDailyBudget } from './coach-cost-tracker';
-import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
+import {
+  sendCoachPrompt,
+  type CoachContext,
+  type CoachMessage,
+  type CoachSendOptions,
+} from './coach-service';
 import { parseGemmaJsonResponse, schema, type JsonSchema } from './gemma-json-parser';
 import { assertGemmaSessionGenEnabled } from './gemma-session-gen-flag';
 import {
@@ -97,8 +102,17 @@ export interface HydratedTemplate {
 export interface SessionGeneratorRuntime {
   userId: string;
   coachContext?: CoachContext;
-  /** Override dispatcher for tests. */
-  dispatch?: (messages: CoachMessage[], ctx?: CoachContext) => Promise<CoachMessage>;
+  /**
+   * Override dispatcher for tests. When production uses the default
+   * (`sendCoachPrompt`), taskKind is threaded through via the third arg so
+   * the cost-tracker + dispatch router can attribute spend to
+   * `session_generator`.
+   */
+  dispatch?: (
+    messages: CoachMessage[],
+    ctx?: CoachContext,
+    opts?: CoachSendOptions,
+  ) => Promise<CoachMessage>;
   /** Override uuid for tests. */
   uuid?: () => string;
   /** Retry count passed to gemma-json-parser. Default 1. */
@@ -152,7 +166,12 @@ export async function generateSession(
     focus: runtime.coachContext?.focus ?? 'session_generator',
   };
 
-  const assistantMessage = await dispatch(messages, dispatchContext);
+  // taskKind flows through CoachSendOptions (third arg) so the dispatch router
+  // + cost-tracker attribute spend to `session_generator` on both the primary
+  // turn and any JSON-retry turn.
+  const dispatchOpts: CoachSendOptions = { taskKind: SESSION_GENERATOR_TASK_KIND };
+
+  const assistantMessage = await dispatch(messages, dispatchContext, dispatchOpts);
 
   const retryInvoker = async (ctx: { lastRawText: string; issues?: unknown }): Promise<string> => {
     const retryMessages: CoachMessage[] = [
@@ -163,7 +182,7 @@ export async function generateSession(
         content: `The previous response was not valid JSON or did not match the schema. Issues: ${JSON.stringify(ctx.issues ?? 'syntax error')}. Respond ONLY with corrected JSON.`,
       },
     ];
-    const retryResponse = await dispatch(retryMessages, dispatchContext);
+    const retryResponse = await dispatch(retryMessages, dispatchContext, dispatchOpts);
     return retryResponse.content;
   };
 

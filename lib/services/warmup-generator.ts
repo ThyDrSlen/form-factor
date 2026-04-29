@@ -6,7 +6,12 @@
  * row materialization — callers consume directly as a checklist).
  */
 import { assertDailyBudget } from './coach-cost-tracker';
-import { sendCoachPrompt, type CoachContext, type CoachMessage } from './coach-service';
+import {
+  sendCoachPrompt,
+  type CoachContext,
+  type CoachMessage,
+  type CoachSendOptions,
+} from './coach-service';
 import { parseGemmaJsonResponse, schema, type JsonSchema } from './gemma-json-parser';
 import { assertGemmaSessionGenEnabled } from './gemma-session-gen-flag';
 import {
@@ -48,8 +53,12 @@ const MOVEMENT_SHAPE: JsonSchema<WarmupMovement> = schema.object({
   notes: schema.optional(schema.string()),
 });
 
-/** Task-kind hint exported for tests + callers that want to key telemetry. */
-export const WARMUP_GENERATOR_TASK_KIND = 'warmup_generator' as const;
+/**
+ * Task-kind hint passed to `sendCoachPrompt` so the cost-tracker attributes
+ * warmup-generator spend and the dispatch router can pick Gemma when enabled.
+ * Exported so tests + callers can reference the literal without duplicating it.
+ */
+export const WARMUP_GENERATOR_TASK_KIND = 'progression_planner' as const;
 
 export const WARMUP_PLAN_SCHEMA: JsonSchema<WarmupPlan> = schema.object({
   name: schema.string({ minLength: 1 }),
@@ -63,7 +72,16 @@ export const WARMUP_PLAN_SCHEMA: JsonSchema<WarmupPlan> = schema.object({
 
 export interface WarmupGeneratorRuntime {
   coachContext?: CoachContext;
-  dispatch?: (messages: CoachMessage[], ctx?: CoachContext) => Promise<CoachMessage>;
+  /**
+   * Dispatcher override for tests. When production uses the default
+   * (`sendCoachPrompt`), taskKind is threaded through via the third arg so the
+   * cost-tracker can attribute spend to `progression_planner`.
+   */
+  dispatch?: (
+    messages: CoachMessage[],
+    ctx?: CoachContext,
+    opts?: CoachSendOptions,
+  ) => Promise<CoachMessage>;
   maxRetries?: number;
   /**
    * Bypass the EXPO_PUBLIC_GEMMA_SESSION_GEN gate. Intended for integration
@@ -99,7 +117,12 @@ export async function generateWarmup(
     focus: runtime.coachContext?.focus ?? 'warmup_generator',
   };
 
-  const response = await dispatch(messages, dispatchContext);
+  // taskKind flows through CoachSendOptions (third arg) so the dispatch router
+  // + cost-tracker attribute spend to `progression_planner` on both the
+  // primary turn and the JSON-retry turn.
+  const dispatchOpts: CoachSendOptions = { taskKind: WARMUP_GENERATOR_TASK_KIND };
+
+  const response = await dispatch(messages, dispatchContext, dispatchOpts);
 
   const retryInvoker = async (ctx: { lastRawText: string; issues?: unknown }): Promise<string> => {
     const retryMessages: CoachMessage[] = [
@@ -110,7 +133,7 @@ export async function generateWarmup(
         content: `The previous response did not match the warmup schema. Issues: ${JSON.stringify(ctx.issues ?? 'syntax error')}. Respond ONLY with corrected JSON.`,
       },
     ];
-    const retry = await dispatch(retryMessages, dispatchContext);
+    const retry = await dispatch(retryMessages, dispatchContext, dispatchOpts);
     return retry.content;
   };
 

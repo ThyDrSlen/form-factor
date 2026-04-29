@@ -30,10 +30,11 @@ describe('weight-trends: null / NaN / drift handling', () => {
     expect(analysis.statistics.standardDeviation).toBe(0);
   });
 
-  test('mixed NaN-date + finite-date: analysis completes without throwing', () => {
-    // Reality: the sort comparator `a.date - b.date` yields NaN when one side
-    // is non-finite. We document that the function still returns an analysis
-    // object (doesn't crash), rather than silently dropping the NaN entry.
+  test('mixed NaN-date + finite-date: analysis completes without throwing and drops the NaN entry', () => {
+    // wave-35 hardened analyzeWeightTrends to sanitize non-finite timestamps
+    // before sort (see lib/services/healthkit/weight-trends.ts). Document the
+    // new contract: the NaN-dated sample is filtered out, so min/max reflect
+    // only the finite-dated entries.
     const now = Date.now();
     const data: HealthMetricPoint[] = [
       { date: Number.NaN, value: 75 },
@@ -42,29 +43,27 @@ describe('weight-trends: null / NaN / drift handling', () => {
     ];
 
     const analysis = analyzeWeightTrends(data);
-    // Current is the "last" in the sorted array — don't pin to a specific
-    // value because NaN sort order is JS-engine-defined. Just assert the
-    // function produced a sane statistics block including the finite values.
-    expect(analysis.statistics.min).toBe(75);
+    // With the NaN entry dropped, only 78 and 80 survive.
+    expect(analysis.statistics.min).toBe(78);
     expect(analysis.statistics.max).toBe(80);
     expect(Number.isFinite(analysis.statistics.standardDeviation)).toBe(true);
   });
 
-  test('timestamp drift (future-dated entry) is preserved in the current weight', () => {
-    // If a bad device clock writes a future timestamp, the sort places it at
-    // the end and `current` reflects that value. Documenting the contract so
-    // a future "filter out future timestamps" guard is a visible regression.
+  test('timestamp drift (future-dated entry) is filtered out of the current weight', () => {
+    // wave-35 filter: future-dated samples are dropped before analysis so a
+    // bad device clock can't surface a fabricated 200kg "latest" value.
     const now = Date.now();
     const future = now + 365 * 24 * 60 * 60 * 1000;
     const data: HealthMetricPoint[] = [
       { date: now - 2 * 86400000, value: 80 },
       { date: now - 86400000, value: 79 },
-      { date: future, value: 200 }, // clearly drifted
+      { date: future, value: 200 }, // clearly drifted — filtered
     ];
 
     const analysis = analyzeWeightTrends(data);
-    expect(analysis.current.weight).toBe(200);
-    expect(analysis.current.timestamp).toBe(future);
+    // Most recent *valid* entry is the one dated `now - 86400000` (value 79).
+    expect(analysis.current.weight).toBe(79);
+    expect(analysis.current.timestamp).toBe(now - 86400000);
   });
 
   test('all-finite monotonic decrease detects "losing" trend in summary', () => {

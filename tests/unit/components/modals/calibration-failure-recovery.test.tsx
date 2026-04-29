@@ -96,12 +96,13 @@ describe('CalibrationFailureRecoveryModal — render (wave-30 C2)', () => {
     },
   );
 
-  test('falls back to default reason label when reason is unknown (e.g. low_confidence)', () => {
-    // `low_confidence` is NOT in the source reason map; the modal should
+  test('falls back to default reason label when reason is unknown (e.g. mystery_reason)', () => {
+    // Wave-34 A14 expanded the REASON_LABELS map to include `low_confidence`,
+    // so this test picks a genuinely-unknown reason key. The modal should
     // degrade gracefully to the generic "Issue detected" label rather
     // than crashing or rendering an empty tag.
     const { getByText, getByLabelText } = renderWith({
-      reason: 'low_confidence',
+      reason: 'mystery_reason',
       title: 'Something went sideways',
     });
 

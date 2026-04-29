@@ -12,9 +12,9 @@ import { warnWithTs } from '@/lib/logger';
 import type { FrameSnapshot, JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 import { sendCoachPrompt, type CoachMessage } from './coach-service';
 import { sendCoachGemmaPrompt } from './coach-gemma-service';
-import { isDispatchEnabled } from './coach-model-dispatch-flag';
 import { assertUnderWeeklyCap } from './coach-cost-guard';
 import { recordCoachUsage } from './coach-cost-tracker';
+import { hardenAgainstInjection } from './coach-injection-hardener';
 
 export type PreSetPreviewProvider = 'gemma' | 'openai';
 
@@ -78,11 +78,15 @@ function interpretVerdict(raw: string): { verdict: string; isFormGood: boolean }
 }
 
 function isGemmaEnabled(): boolean {
-  return process.env[GEMMA_PROVIDER_ENV] === 'gemma' && isDispatchEnabled();
+  // Evaluated at call-time so tests can mutate process.env between cases.
+  return process.env[GEMMA_PROVIDER_ENV] === 'gemma';
 }
 
 async function callGemma(prompt: string): Promise<string> {
-  const messages: CoachMessage[] = [{ role: 'user', content: prompt }];
+  // Harden the prompt before dispatch so adversarial exercise names cannot
+  // smuggle prompt-break tokens into the Gemma system message.
+  const hardened = hardenAgainstInjection(prompt, { maxLength: 1000 });
+  const messages: CoachMessage[] = [{ role: 'user', content: hardened }];
   const reply = await sendCoachGemmaPrompt(messages, {
     focus: 'pre-set-stance-preview-gemma',
   });
@@ -90,7 +94,10 @@ async function callGemma(prompt: string): Promise<string> {
 }
 
 async function callOpenAI(prompt: string): Promise<string> {
-  const messages: CoachMessage[] = [{ role: 'user', content: prompt }];
+  // Same hardening as the Gemma path — defense in depth against injected
+  // exercise names / angle text before the prompt reaches the cloud model.
+  const hardened = hardenAgainstInjection(prompt, { maxLength: 1000 });
+  const messages: CoachMessage[] = [{ role: 'user', content: hardened }];
   const reply = await sendCoachPrompt(messages, {
     focus: 'pre-set-stance-preview',
   });
