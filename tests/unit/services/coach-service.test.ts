@@ -3,6 +3,8 @@ const mockInsert = jest.fn();
 const mockFrom = jest.fn(() => ({
   insert: mockInsert,
 }));
+const mockGetAllWorkouts = jest.fn();
+const mockLogError = jest.fn();
 const mockCreateError = jest.fn(
   (
     domain: string,
@@ -28,12 +30,20 @@ jest.mock('@/lib/supabase', () => ({
   },
 }));
 
+jest.mock('@/lib/services/database/local-db', () => ({
+  localDB: {
+    getAllWorkouts: mockGetAllWorkouts,
+  },
+}));
+
 jest.mock('@/lib/services/ErrorHandler', () => ({
   createError: mockCreateError,
+  logError: mockLogError,
 }));
 
 jest.mock('../../../lib/services/ErrorHandler', () => ({
   createError: mockCreateError,
+  logError: mockLogError,
 }));
 
 let sendCoachPrompt: typeof import('@/lib/services/coach-service')['sendCoachPrompt'];
@@ -49,11 +59,7 @@ describe('coach-service', () => {
     jest.clearAllMocks();
     mockInvoke.mockResolvedValue({ data: { message: 'Keep your chest up.' }, error: null });
     mockInsert.mockResolvedValue({ error: null });
-    jest.spyOn(console, 'warn').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
+    mockGetAllWorkouts.mockResolvedValue([]);
   });
 
   it('classifies a 404 invoke failure as COACH_NOT_DEPLOYED', async () => {
@@ -129,4 +135,113 @@ describe('coach-service', () => {
       })
     );
   });
+
+  it('includes recent workout summary in coach context when local history exists', async () => {
+    mockGetAllWorkouts.mockResolvedValue([
+      {
+        id: 'w-1',
+        exercise: 'Back Squat',
+        sets: 5,
+        reps: 5,
+        weight: 225,
+        duration: null,
+        date: '2026-04-29T10:00:00.000Z',
+        synced: 1,
+        deleted: 0,
+        updated_at: '2026-04-29T10:05:00.000Z',
+      },
+      {
+        id: 'w-2',
+        exercise: 'Bench Press',
+        sets: 4,
+        reps: 8,
+        weight: 155,
+        duration: null,
+        date: '2026-04-27T10:00:00.000Z',
+        synced: 1,
+        deleted: 0,
+        updated_at: '2026-04-27T10:05:00.000Z',
+      },
+    ]);
+
+    await sendCoachPrompt(baseMessages, {
+      profile: { id: 'user-123', name: 'Pat' },
+      focus: 'strength_training',
+      sessionId: 'session-9',
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'coach',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          messages: baseMessages,
+          context: expect.objectContaining({
+            focus: 'strength_training',
+            workoutSummary: 'Recent workouts: 2026-04-29: Back Squat (5x5, weight 225); 2026-04-27: Bench Press (4x8, weight 155)',
+          }),
+        }),
+      })
+    );
+  });
+
+  it('logs and skips workout context when local workout history fails', async () => {
+    mockGetAllWorkouts.mockRejectedValue(new Error('db offline'));
+
+    await expect(sendCoachPrompt(baseMessages, { focus: 'recovery' })).resolves.toEqual({
+      role: 'assistant',
+      content: 'Keep your chest up.',
+    });
+
+    expect(mockLogError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        domain: 'storage',
+        code: 'COACH_WORKOUT_CONTEXT_FAILED',
+      }),
+      expect.objectContaining({
+        feature: 'workouts',
+        location: 'sendCoachPrompt.buildCoachContext',
+      })
+    );
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'coach',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          context: { focus: 'recovery' },
+        }),
+      })
+    );
+  });
+
+  it('logs persistence failures without failing the coach response', async () => {
+    mockInsert.mockResolvedValue({ error: { message: 'insert failed' } });
+
+    await expect(
+      sendCoachPrompt(baseMessages, {
+        profile: { id: 'user-123' },
+        focus: 'squat',
+        sessionId: 'session-9',
+      })
+    ).resolves.toEqual({
+      role: 'assistant',
+      content: 'Keep your chest up.',
+    });
+    await Promise.resolve();
+
+    expect(mockLogError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        domain: 'storage',
+        code: 'COACH_CONVERSATION_PERSIST_FAILED',
+      }),
+      expect.objectContaining({
+        feature: 'app',
+        location: 'sendCoachPrompt.persistCoachConversation',
+        meta: expect.objectContaining({
+          sessionId: 'session-9',
+          userId: 'user-123',
+        }),
+      })
+    );
+  });
 });
+
+export {};

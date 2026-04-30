@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
-import { errorWithTs, warnWithTs } from '@/lib/logger';
-import { createError } from './ErrorHandler';
+import { localDB, type LocalWorkout } from '@/lib/services/database/local-db';
+import { createError, logError } from './ErrorHandler';
 
 export type CoachRole = 'user' | 'assistant' | 'system';
 
@@ -18,6 +18,7 @@ export interface CoachContext {
   };
   focus?: string;
   sessionId?: string;
+  workoutSummary?: string;
 }
 
 interface RawCoachResponse {
@@ -28,14 +29,136 @@ interface RawCoachResponse {
 }
 
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
+const MAX_WORKOUT_CONTEXT_ITEMS = 3;
+const MAX_WORKOUT_CONTEXT_LENGTH = 280;
+
+function formatWorkoutValue(value?: number): string | null {
+  if (typeof value !== 'number' || isNaN(value) || value <= 0) {
+    return null;
+  }
+
+  return value % 1 === 0 ? String(value) : value.toFixed(1);
+}
+
+function formatWorkoutSummaryItem(workout: LocalWorkout): string {
+  const dateLabel = workout.date.split('T')[0] || workout.date;
+  const exerciseLabel = workout.exercise.trim() || 'Workout';
+  const details: string[] = [];
+
+  if (workout.sets > 0 && typeof workout.reps === 'number' && workout.reps > 0) {
+    details.push(`${workout.sets}x${workout.reps}`);
+  } else if (workout.sets > 0) {
+    details.push(`${workout.sets} sets`);
+  } else if (typeof workout.reps === 'number' && workout.reps > 0) {
+    details.push(`${workout.reps} reps`);
+  }
+
+  const weightLabel = formatWorkoutValue(workout.weight);
+  if (weightLabel) {
+    details.push(`weight ${weightLabel}`);
+  }
+
+  const durationLabel = formatWorkoutValue(workout.duration);
+  if (durationLabel) {
+    details.push(`${durationLabel} min`);
+  }
+
+  return details.length > 0
+    ? `${dateLabel}: ${exerciseLabel} (${details.join(', ')})`
+    : `${dateLabel}: ${exerciseLabel}`;
+}
+
+function summarizeRecentWorkouts(workouts: LocalWorkout[]): string | undefined {
+  const recentWorkouts = workouts.slice(0, MAX_WORKOUT_CONTEXT_ITEMS);
+  if (recentWorkouts.length === 0) {
+    return undefined;
+  }
+
+  const summary = `Recent workouts: ${recentWorkouts
+    .map(formatWorkoutSummaryItem)
+    .join('; ')}`;
+
+  return summary.length > MAX_WORKOUT_CONTEXT_LENGTH
+    ? `${summary.slice(0, MAX_WORKOUT_CONTEXT_LENGTH - 1).replace(/\s+$/, '')}…`
+    : summary;
+}
+
+async function buildCoachContext(context?: CoachContext): Promise<CoachContext | undefined> {
+  let workoutSummary: string | undefined;
+
+  try {
+    workoutSummary = summarizeRecentWorkouts(await localDB.getAllWorkouts());
+  } catch (err) {
+    logError(
+      createError(
+        'storage',
+        'COACH_WORKOUT_CONTEXT_FAILED',
+        'Unable to load workout history for coach context',
+        {
+          details: err,
+          retryable: false,
+          severity: 'warning',
+        }
+      ),
+      {
+        feature: 'workouts',
+        location: 'sendCoachPrompt.buildCoachContext',
+      }
+    );
+  }
+
+  if (!context && !workoutSummary) {
+    return undefined;
+  }
+
+  if (!workoutSummary) {
+    return context;
+  }
+
+  return {
+    ...context,
+    workoutSummary,
+  };
+}
+
+async function persistCoachConversation(
+  insertPayload: Record<string, unknown>,
+  sessionId: string,
+  userId: string,
+): Promise<void> {
+  const { error } = await supabase.from('coach_conversations').insert(insertPayload);
+
+  if (!error) {
+    return;
+  }
+
+  logError(
+    createError(
+      'storage',
+      'COACH_CONVERSATION_PERSIST_FAILED',
+      'Failed to persist coach conversation',
+      {
+        details: error,
+        retryable: true,
+        severity: 'warning',
+      }
+    ),
+    {
+      feature: 'app',
+      location: 'sendCoachPrompt.persistCoachConversation',
+      meta: { sessionId, userId },
+    }
+  );
+}
 
 export async function sendCoachPrompt(
   messages: CoachMessage[],
   context?: CoachContext
 ): Promise<CoachMessage> {
   try {
+    const requestContext = await buildCoachContext(context);
     const { data, error } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
-      body: { messages, context },
+      body: { messages, context: requestContext },
     });
 
     if (error) {
@@ -113,15 +236,7 @@ export async function sendCoachPrompt(
         context: { focus: context.focus },
         metadata: { model: 'gpt-5.4-mini', timestamp: new Date().toISOString() },
       };
-      supabase.from('coach_conversations').insert(insertPayload).then(({ error: insertErr }) => {
-        if (!insertErr) return;
-        warnWithTs('[coach] Conversation persist failed, retrying once', insertErr.message);
-        supabase.from('coach_conversations').insert(insertPayload).then(({ error: retryErr }) => {
-          if (retryErr) {
-            errorWithTs('[coach] Conversation persist failed after retry', retryErr.message);
-          }
-        });
-      });
+      void persistCoachConversation(insertPayload, context.sessionId, context.profile.id);
     }
 
     return {
