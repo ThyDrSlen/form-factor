@@ -67,7 +67,11 @@ describe('progressive-overload', () => {
         personalRecords,
         currentWeight: 190,
         currentReps: 5,
-      })).toBe(true);
+      })).toEqual({
+        isPR: true,
+        prType: 'weight',
+        previousBest: 185,
+      });
     });
 
     it('detects a rep PR for bodyweight movements with null weight', () => {
@@ -82,7 +86,11 @@ describe('progressive-overload', () => {
         personalRecords,
         currentWeight: null,
         currentReps: 18,
-      })).toBe(true);
+      })).toEqual({
+        isPR: true,
+        prType: 'reps',
+        previousBest: 15,
+      });
     });
 
     it('detects a time PR for timed exercises', () => {
@@ -96,7 +104,30 @@ describe('progressive-overload', () => {
         exercise: { id: 'ex-plank', name: 'Plank', is_timed: true },
         personalRecords,
         currentSeconds: 75,
-      })).toBe(true);
+      })).toEqual({
+        isPR: true,
+        prType: null,
+        previousBest: 60,
+      });
+    });
+
+    it('falls back to volume PRs when load stays under the max weight', () => {
+      const personalRecords: ExercisePersonalRecords = {
+        maxWeight: 200,
+        maxReps: 5,
+        maxDurationSeconds: null,
+      };
+
+      expect(detectPR({
+        exercise: { id: 'ex-bench', name: 'Bench Press', is_timed: false },
+        personalRecords,
+        currentWeight: 185,
+        currentReps: 6,
+      })).toEqual({
+        isPR: true,
+        prType: 'volume',
+        previousBest: 1000,
+      });
     });
   });
 
@@ -105,14 +136,38 @@ describe('progressive-overload', () => {
       expect(getSuggestedWeight({
         exercise: { id: 'ex-bench', name: 'Bench Press', is_timed: false },
         history: [makeHistoryRow({ actual_weight: 205 })],
-      })).toBe(205);
+        unit: 'kg',
+      })).toEqual({
+        weight: 205,
+        reps: 5,
+        unit: 'kg',
+        source: 'previous_session',
+      });
     });
 
-    it('returns null when there is no usable load history', () => {
+    it('returns previous-session reps for bodyweight lifts without load', () => {
       expect(getSuggestedWeight({
         exercise: { id: 'ex-pushup', name: 'Push-Up', is_timed: false },
         history: [makeHistoryRow({ actual_weight: null, planned_weight: null, actual_reps: 20 })],
-      })).toBeNull();
+      })).toEqual({
+        weight: 0,
+        reps: 20,
+        unit: 'lb',
+        source: 'previous_session',
+      });
+    });
+
+    it('returns a no-history object when no previous session data exists', () => {
+      expect(getSuggestedWeight({
+        exercise: { id: 'ex-bench', name: 'Bench Press', is_timed: false },
+        history: [],
+        unit: 'kg',
+      })).toEqual({
+        weight: 0,
+        reps: 0,
+        unit: 'kg',
+        source: 'no_history',
+      });
     });
 
     it('returns null for timed exercises', () => {
@@ -134,6 +189,9 @@ describe('progressive-overload', () => {
 
       expect(suggestion.lastSessionWeight).toBe(185);
       expect(suggestion.suggestedWeight).toBe(185);
+      expect(suggestion.suggestedReps).toBe(5);
+      expect(suggestion.suggestedUnit).toBe('lb');
+      expect(suggestion.suggestionSource).toBe('previous_session');
       expect(suggestion.helperText).toContain('Last session topped out at 185 lb');
     });
 
@@ -146,6 +204,8 @@ describe('progressive-overload', () => {
 
       expect(suggestion.isBodyweightLike).toBe(true);
       expect(suggestion.suggestedWeight).toBeNull();
+      expect(suggestion.suggestedReps).toBe(20);
+      expect(suggestion.suggestionSource).toBe('previous_session');
       expect(suggestion.helperText).toContain('bodyweight');
     });
   });
