@@ -100,6 +100,14 @@ function readNotificationString(payload: NotificationPayload, key: string): stri
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
+function readNotificationEntityId(data: NotificationPayload): string | null {
+  return (
+    readNotificationString(data, 'videoId') ||
+    readNotificationString(data, 'postId') ||
+    readNotificationString(data, 'targetId')
+  );
+}
+
 function buildScanRoute(templateId: string): string {
   return `/(tabs)/scan-arkit?templateId=${encodeURIComponent(templateId)}`;
 }
@@ -142,6 +150,8 @@ export function getNotificationRoute(data: NotificationPayload): string | null {
   const type = readNotificationString(data, 'type');
   const deepLink = readNotificationString(data, 'deepLink');
   const templateId = readNotificationString(data, 'templateId');
+  const entityId = readNotificationEntityId(data);
+  const userId = readNotificationString(data, 'userId') || readNotificationString(data, 'targetId');
 
   if ((type === 'workout_reminder' || !type) && deepLink) {
     const linkedTemplateId = parseTemplateIdFromUrl(deepLink);
@@ -155,6 +165,19 @@ export function getNotificationRoute(data: NotificationPayload): string | null {
   }
 
   switch (type) {
+    case 'comment':
+    case 'like':
+      return entityId
+        ? `/(modals)/video-comments?videoId=${encodeURIComponent(entityId)}&returnTo=videos`
+        : '/(tabs)/index';
+    case 'follow':
+      return userId
+        ? `/(modals)/user-profile?userId=${encodeURIComponent(userId)}`
+        : '/(modals)/followers';
+    case 'workout':
+      return '/(tabs)/workouts';
+    case 'rest_timer':
+      return null;
     case 'coach':
       return '/(tabs)/coach';
     case 'shared_inbox':
