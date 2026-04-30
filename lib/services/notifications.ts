@@ -22,6 +22,9 @@ export type NotificationPreferences = {
   comments: boolean;
   likes: boolean;
   reminders: boolean;
+  pr_celebrations: boolean;
+  streak_alerts: boolean;
+  rest_day_suggestions: boolean;
   timezone: string | null;
   quiet_hours: string | null;
   created_at?: string;
@@ -192,7 +195,7 @@ export async function registerDevicePushToken(
   return { status: permissionStatus, token };
 }
 
-let pushTokenSubscription: Notifications.Subscription | null = null;
+let pushTokenSubscription: ReturnType<typeof Notifications.addPushTokenListener> | null = null;
 
 export function startPushTokenRefreshListener(userId: string) {
   stopPushTokenRefreshListener();
@@ -243,9 +246,23 @@ const DEFAULT_PREFERENCES: Omit<NotificationPreferences, 'user_id'> = {
   comments: true,
   likes: true,
   reminders: true,
+  pr_celebrations: true,
+  streak_alerts: true,
+  rest_day_suggestions: true,
   timezone: null,
   quiet_hours: null,
 };
+
+function normalizeNotificationPreferences(
+  userId: string,
+  prefs?: Partial<NotificationPreferences> | null,
+): NotificationPreferences {
+  return {
+    user_id: prefs?.user_id ?? userId,
+    ...DEFAULT_PREFERENCES,
+    ...prefs,
+  };
+}
 
 export async function loadNotificationPreferences(userId: string): Promise<NotificationPreferences> {
   const { data, error, status } = await supabase
@@ -257,10 +274,10 @@ export async function loadNotificationPreferences(userId: string): Promise<Notif
   if (error) {
     if (status !== 406) {
       warnWithTs('[notifications] Failed to load preferences, using defaults', { status, error: error.message });
-      return { user_id: userId, ...DEFAULT_PREFERENCES };
+      return normalizeNotificationPreferences(userId);
     }
   } else if (data) {
-    return data as NotificationPreferences;
+    return normalizeNotificationPreferences(userId, data as Partial<NotificationPreferences>);
   }
 
   const { data: created, error: createError } = await supabase
@@ -274,10 +291,24 @@ export async function loadNotificationPreferences(userId: string): Promise<Notif
 
   if (createError) {
     warnWithTs('[notifications] Failed to create default preferences, using in-memory defaults', createError);
-    return { user_id: userId, ...DEFAULT_PREFERENCES };
+    return normalizeNotificationPreferences(userId);
   }
 
-  return created as NotificationPreferences;
+  return normalizeNotificationPreferences(userId, created as Partial<NotificationPreferences>);
+}
+
+export async function sendCoachTipNotification(userId: string, tip: string) {
+  return supabase.functions.invoke('notify', {
+    body: {
+      userIds: [userId],
+      title: 'Coach tip',
+      body: tip,
+      data: {
+        type: 'coach_tip',
+        tip,
+      },
+    },
+  });
 }
 
 /**
@@ -353,5 +384,5 @@ export async function updateNotificationPreferences(
     throw error;
   }
 
-  return data as NotificationPreferences;
+  return normalizeNotificationPreferences(userId, data as Partial<NotificationPreferences>);
 }
