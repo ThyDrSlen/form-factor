@@ -101,6 +101,7 @@ import {
   registerDevicePushToken,
   startPushTokenRefreshListener,
   stopPushTokenRefreshListener,
+  syncPushTokenRefreshListener,
   unregisterDevicePushToken,
   loadNotificationPreferences,
   updateNotificationPreferences,
@@ -836,6 +837,27 @@ describe('handleNotificationResponse', () => {
     expect(route).toBeNull();
     expect(navigate).not.toHaveBeenCalled();
   });
+
+  it('ignores the explicit rest timer dismiss action', () => {
+    const navigate = jest.fn();
+
+    const route = handleNotificationResponse(
+      {
+        actionIdentifier: 'dismiss',
+        notification: {
+          request: {
+            content: {
+              data: { type: 'coach' },
+            },
+          },
+        },
+      } as any,
+      navigate,
+    );
+
+    expect(route).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
 });
 
 describe('push token refresh listener', () => {
@@ -882,6 +904,29 @@ describe('push token refresh listener', () => {
     stopPushTokenRefreshListener();
     expect(secondRemove).toHaveBeenCalledTimes(1);
   });
+
+  it('sync helper starts the listener for an active user and stops it on cleanup', () => {
+    const remove = jest.fn();
+    mockAddPushTokenListener.mockReturnValue({ remove });
+
+    const cleanup = syncPushTokenRefreshListener('user-123');
+
+    expect(mockAddPushTokenListener).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('sync helper stops any existing listener when no active user remains', () => {
+    const remove = jest.fn();
+    mockAddPushTokenListener.mockReturnValue({ remove });
+
+    syncPushTokenRefreshListener('user-123');
+    syncPushTokenRefreshListener(undefined);
+
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(mockAddPushTokenListener).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ===========================================================================
@@ -918,7 +963,17 @@ describe('module initialization', () => {
       expect.arrayContaining([
         ['social', expect.any(Array)],
         ['coach', expect.any(Array)],
-        ['rest_timer', [], { customDismissAction: true }],
+        [
+          'rest_timer',
+          [
+            {
+              identifier: 'dismiss',
+              buttonTitle: 'Dismiss',
+              options: { opensAppToForeground: false },
+            },
+          ],
+          { customDismissAction: true },
+        ],
         ['workout_reminder', expect.any(Array)],
       ]),
     );

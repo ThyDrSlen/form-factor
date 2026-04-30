@@ -22,7 +22,10 @@ import { VoiceControlProvider } from '../contexts/VoiceControlContext';
 import { isVoiceControlPipelineEnabled } from '@/lib/services/voice-pipeline-flag';
 import { logWithTs, warnWithTs } from '@/lib/logger';
 import { isOnboardingCompleted } from '@/lib/services/onboarding';
-import { handleNotificationResponse } from '@/lib/services/notifications';
+import {
+  handleNotificationResponse,
+  syncPushTokenRefreshListener,
+} from '@/lib/services/notifications';
 import { hasSeenWelcome } from '@/app/(onboarding)/welcome';
 import { MilestoneToastBridge } from '@/components/MilestoneToastBridge';
 import { SessionTelemetryBinder } from '@/components/telemetry/SessionTelemetryBinder';
@@ -218,6 +221,8 @@ function InitialLayout() {
       subscription.remove();
     };
   }, [router]);
+
+  useEffect(() => syncPushTokenRefreshListener(user?.id), [user?.id]);
 
   useEffect(() => {
     if (user) {
