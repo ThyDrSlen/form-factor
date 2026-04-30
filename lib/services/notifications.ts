@@ -40,6 +40,7 @@ const DEVICE_ID_KEY = 'ff.notifications.device_id';
 const TOKEN_UPSERT_MAX_RETRIES = 2;
 const TOKEN_UPSERT_RETRY_DELAY_MS = 1000;
 const DISMISSED_ACTION_IDENTIFIER = 'expo.notifications.actions.DISMISSED';
+const REST_TIMER_DISMISS_ACTION_IDENTIFIER = 'dismiss';
 
 type NotificationPayload = Record<string, unknown>;
 type NotificationNavigator = (route: string) => void;
@@ -63,9 +64,17 @@ async function registerNotificationCategories() {
     await Notifications.setNotificationCategoryAsync('coach', [
       { identifier: 'reply', buttonTitle: 'Reply', options: { opensAppToForeground: true } },
     ]);
-    await Notifications.setNotificationCategoryAsync('rest_timer', [], {
-      customDismissAction: true,
-    });
+    await Notifications.setNotificationCategoryAsync(
+      'rest_timer',
+      [
+        {
+          identifier: REST_TIMER_DISMISS_ACTION_IDENTIFIER,
+          buttonTitle: 'Dismiss',
+          options: { opensAppToForeground: false },
+        },
+      ],
+      { customDismissAction: true },
+    );
     // Templated-workout reminder (issue #447). "Start" action opens the app
     // with the deep-link payload so scan-arkit can auto-bind the template.
     await Notifications.setNotificationCategoryAsync('workout_reminder', [
@@ -169,7 +178,10 @@ export function handleNotificationResponse(
   response: Notifications.NotificationResponse,
   navigate: NotificationNavigator,
 ): string | null {
-  if (response.actionIdentifier === DISMISSED_ACTION_IDENTIFIER) {
+  if (
+    response.actionIdentifier === DISMISSED_ACTION_IDENTIFIER ||
+    response.actionIdentifier === REST_TIMER_DISMISS_ACTION_IDENTIFIER
+  ) {
     return null;
   }
 
@@ -302,6 +314,16 @@ export function stopPushTokenRefreshListener() {
     pushTokenSubscription.remove();
     pushTokenSubscription = null;
   }
+}
+
+export function syncPushTokenRefreshListener(userId?: string | null) {
+  if (!userId) {
+    stopPushTokenRefreshListener();
+    return stopPushTokenRefreshListener;
+  }
+
+  startPushTokenRefreshListener(userId);
+  return stopPushTokenRefreshListener;
 }
 
 export async function unregisterDevicePushToken(userId?: string) {
