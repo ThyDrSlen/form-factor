@@ -2,19 +2,19 @@
 
 
 
-Form Factor is an iOS-first fitness and health app built with Expo and Supabase. It gives real-time form cues from the phone camera—counting reps, flagging issues (e.g., swing on pull-ups, squat depth), and auto-logging sets—to improve outcomes and reduce injury. It also delivers fast offline workout/food logging, HealthKit-powered trends, video and form capture, and an experimental ARKit body-tracking flow. Web is mostly display-first.
+Form Factor is an iOS-first fitness and health app built with Expo and Supabase. It gives real-time form cues from the phone camera—counting reps, flagging issues (e.g., swing on pull-ups, squat depth), and auto-logging sets—to improve outcomes and reduce injury. It also delivers fast offline workout/food logging, HealthKit-powered trends, video and form capture, AI coaching with dispatch guardrails, and an experimental ARKit body-tracking flow. Web is mostly display-first.
 
 ## What it does
 - Tracking: Offline-first foods and workouts using SQLite with sync queue, realtime backfill, conflict handling, and soft delete to Supabase.
 - Health: HealthKit permissions, summaries (steps, HR, weight), trend analysis, and historical bulk sync to Supabase; watch connectivity helpers included.
-- Form & media: ARKit body-tracking tab (pull-up/push-up rep detection, speech cues, Vision Camera overlay), Fusion Engine (combines camera, watch, and audio data), video capture/upload to Supabase Storage, and a feed with signed URLs plus comments.
-- Coach & notifications: AI coach backed by Supabase Edge Function `coach` (OpenAI), push token registration and preferences, and Edge Function `notify` for Expo push delivery.
-- UI/Navigation: Expo Router tabs, React Native Paper components; web target is read-only with Playwright smoke coverage.
+- Form & media: ARKit body-tracking tab with pull-up/push-up rep detection, confidence and occlusion feedback, calibration/debrief recovery flows, speech cues, Vision Camera overlays, video capture/upload to Supabase Storage, and a feed with signed URLs plus comments.
+- Coach & notifications: AI coach backed by Supabase Edge Functions with provider dispatch, task-kind routing, retry/cost guardrails, offline queueing, push token registration/preferences, and Edge Function `notify` for Expo push delivery.
+- UI/Navigation: Expo Router tabs, React Native Paper components, accessibility labels/hints, haptic feedback, keyboard-friendly forms, and Playwright smoke coverage for the web target.
 
 ## Status and roadmap
-- Implemented: offline foods/workouts, HealthKit summaries/trends, video upload + feed, AI coach, push notification plumbing, Playwright auth flow, Jest unit scaffolding, Fusion Engine (v1).
-- In progress: ARKit body-tracking polish (see `docs/ARKIT_BODY_TRACKING_GUIDE.md`) and metrics upload, broader E2E coverage, telemetry/error-handling hardening.
-- Planned: Richer social/feed interactions, ML recommendations, production push campaigns.
+- Implemented: offline foods/workouts, HealthKit summaries/trends, video upload + feed, AI coach dispatch/cost controls, push notification plumbing, Playwright auth flow, broad Jest coverage, Fusion Engine (v1), and form-tracking UX resilience across calibration, live sessions, and debriefs.
+- In progress: ARKit body-tracking polish (see `docs/ARKIT_BODY_TRACKING_GUIDE.md`) and metrics upload, broader end-to-end coverage, telemetry/error-handling hardening, and TestFlight readiness.
+- Planned: Richer social/feed interactions, ML recommendations, production push campaigns, and continued coach model-routing evaluation.
 
 ## Repository layout
 - `app/`: Expo Router screens (`(auth)`, `(tabs)`, `(modals)`); ARKit scan and dashboard live here.
