@@ -773,6 +773,32 @@ describe('updateNotificationPreferences', () => {
 // ===========================================================================
 
 describe('getNotificationRoute', () => {
+  it('routes comment notifications to the video comments modal', () => {
+    expect(getNotificationRoute({ type: 'comment', videoId: 'vid-123' })).toBe(
+      '/(modals)/video-comments?videoId=vid-123&returnTo=videos',
+    );
+  });
+
+  it('routes like notifications using postId fallback', () => {
+    expect(getNotificationRoute({ type: 'like', postId: 'vid-456' })).toBe(
+      '/(modals)/video-comments?videoId=vid-456&returnTo=videos',
+    );
+  });
+
+  it('routes follow notifications to the user-profile modal', () => {
+    expect(getNotificationRoute({ type: 'follow', userId: 'user-123' })).toBe(
+      '/(modals)/user-profile?userId=user-123',
+    );
+  });
+
+  it('routes workout notifications to the workouts tab', () => {
+    expect(getNotificationRoute({ type: 'workout' })).toBe('/(tabs)/workouts');
+  });
+
+  it('does not navigate for rest timer notifications', () => {
+    expect(getNotificationRoute({ type: 'rest_timer' })).toBeNull();
+  });
+
   it('routes coach notifications to the coach tab', () => {
     expect(getNotificationRoute({ type: 'coach' })).toBe('/(tabs)/coach');
   });
@@ -796,6 +822,48 @@ describe('getNotificationRoute', () => {
 });
 
 describe('handleNotificationResponse', () => {
+  it('navigates comment notifications to video comments', () => {
+    const navigate = jest.fn();
+
+    const route = handleNotificationResponse(
+      {
+        actionIdentifier: Notifications.DEFAULT_ACTION_IDENTIFIER,
+        notification: {
+          request: {
+            content: {
+              data: { type: 'comment', videoId: 'vid-123' },
+            },
+          },
+        },
+      } as any,
+      navigate,
+    );
+
+    expect(route).toBe('/(modals)/video-comments?videoId=vid-123&returnTo=videos');
+    expect(navigate).toHaveBeenCalledWith('/(modals)/video-comments?videoId=vid-123&returnTo=videos');
+  });
+
+  it('navigates follow notifications to user-profile', () => {
+    const navigate = jest.fn();
+
+    const route = handleNotificationResponse(
+      {
+        actionIdentifier: Notifications.DEFAULT_ACTION_IDENTIFIER,
+        notification: {
+          request: {
+            content: {
+              data: { type: 'follow', userId: 'user-123' },
+            },
+          },
+        },
+      } as any,
+      navigate,
+    );
+
+    expect(route).toBe('/(modals)/user-profile?userId=user-123');
+    expect(navigate).toHaveBeenCalledWith('/(modals)/user-profile?userId=user-123');
+  });
+
   it('navigates for supported notification payloads', () => {
     const navigate = jest.fn();
 
