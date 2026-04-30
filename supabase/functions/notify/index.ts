@@ -2,6 +2,8 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4?target=deno';
 
+import { checkNotifyRateLimit, sanitizeNotificationData } from './validation';
+
 interface PushRequest {
   userIds?: string[];
   tokens?: string[];
@@ -21,6 +23,7 @@ type ExpoPushMessage = {
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const MAX_BATCH = 90;
 const MAX_IDS = 1000;
+const notifyRateLimits = new Map<string, { count: number; windowStart: number }>();
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -157,9 +160,31 @@ serve(async (req: Request) => {
     const payload = (await req.json()) as PushRequest;
     const title = payload.title?.trim();
     const body = payload.body?.trim();
+    const sanitizedData = sanitizeNotificationData(payload.data ?? {});
+    const rateLimitUserIds = Array.isArray(payload.userIds)
+      ? Array.from(new Set(payload.userIds.filter((userId) => typeof userId === 'string' && userId.length > 0)))
+      : [];
+
+    if (rateLimitUserIds.length === 0 && typeof sanitizedData.userId === 'string') {
+      rateLimitUserIds.push(sanitizedData.userId);
+    }
 
     if (!title || !body) {
       return jsonResponse({ error: 'title and body are required' }, 400);
+    }
+
+    for (const userId of rateLimitUserIds) {
+      const rateLimit = checkNotifyRateLimit(userId, notifyRateLimits);
+
+      if (!rateLimit.allowed) {
+        return jsonResponse(
+          {
+            error: 'Rate limit exceeded',
+            retryAfter: rateLimit.retryAfter,
+          },
+          429,
+        );
+      }
     }
 
     const tokenList: string[] = [];
@@ -182,7 +207,7 @@ serve(async (req: Request) => {
       sound: 'default',
       title: title.slice(0, 64),
       body: body.slice(0, 180),
-      data: payload.data ?? {},
+      data: sanitizedData,
     }));
 
     const result = await sendExpoMessages(messages);
