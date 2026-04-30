@@ -18,12 +18,31 @@ export interface DetectPRInput {
 export interface SuggestedWeightInput {
   exercise?: ExerciseLike | null;
   history: ExerciseHistoryEntry[];
+  unit?: string | null;
+}
+
+export type ProgressiveOverloadPrType = 'weight' | 'volume' | 'reps';
+
+export interface DetectPRResult {
+  isPR: boolean;
+  prType: ProgressiveOverloadPrType | null;
+  previousBest: number | null;
+}
+
+export interface SuggestedWeightResult {
+  weight: number;
+  reps: number;
+  unit: string;
+  source: 'previous_session' | 'no_history';
 }
 
 export interface ProgressiveOverloadSuggestion {
   exerciseId: string;
   lastSessionWeight: number | null;
   suggestedWeight: number | null;
+  suggestedReps: number | null;
+  suggestedUnit: string | null;
+  suggestionSource: SuggestedWeightResult['source'] | null;
   helperText: string;
   isTimed: boolean;
   isBodyweightLike: boolean;
@@ -44,6 +63,17 @@ function latestSessionRows(history: ExerciseHistoryEntry[]): ExerciseHistoryEntr
   const latestSessionId = history[0]?.session_id;
   if (!latestSessionId) return [];
   return history.filter((row) => row.session_id === latestSessionId);
+}
+
+function getLastSessionReps(history: ExerciseHistoryEntry[]): number | null {
+  const latestRows = latestSessionRows(history);
+  for (const row of latestRows) {
+    if (isFiniteNumber(row.actual_reps)) {
+      return row.actual_reps;
+    }
+  }
+
+  return null;
 }
 
 export function getLastSessionWeight(history: ExerciseHistoryEntry[]): number | null {
@@ -69,37 +99,99 @@ export function detectPR({
   currentWeight,
   currentReps,
   currentSeconds,
-}: DetectPRInput): boolean {
+}: DetectPRInput): DetectPRResult {
   if (!personalRecords) {
-    return false;
+    return {
+      isPR: false,
+      prType: null,
+      previousBest: null,
+    };
   }
 
   if (exercise?.is_timed) {
-    return isFiniteNumber(currentSeconds)
-      && isFiniteNumber(personalRecords.maxDurationSeconds)
-      && currentSeconds > personalRecords.maxDurationSeconds;
+    const previousBest = isFiniteNumber(personalRecords.maxDurationSeconds)
+      ? personalRecords.maxDurationSeconds
+      : null;
+
+    return {
+      isPR: isFiniteNumber(currentSeconds)
+        && isFiniteNumber(personalRecords.maxDurationSeconds)
+        && currentSeconds > personalRecords.maxDurationSeconds,
+      prType: null,
+      previousBest,
+    };
   }
 
   if (isFiniteNumber(currentWeight)) {
-    return isFiniteNumber(personalRecords.maxWeight)
-      && currentWeight > personalRecords.maxWeight;
+    if (isFiniteNumber(personalRecords.maxWeight) && currentWeight > personalRecords.maxWeight) {
+      return {
+        isPR: true,
+        prType: 'weight',
+        previousBest: personalRecords.maxWeight,
+      };
+    }
+
+    if (
+      isFiniteNumber(currentReps)
+      && isFiniteNumber(personalRecords.maxWeight)
+      && isFiniteNumber(personalRecords.maxReps)
+    ) {
+      const currentVolume = currentWeight * currentReps;
+      const previousBest = personalRecords.maxWeight * personalRecords.maxReps;
+      if (currentVolume > previousBest) {
+        return {
+          isPR: true,
+          prType: 'volume',
+          previousBest,
+        };
+      }
+    }
   }
 
-  return isFiniteNumber(currentReps)
-    && isFiniteNumber(personalRecords.maxReps)
-    && currentReps > personalRecords.maxReps;
+  if (isFiniteNumber(currentReps) && isFiniteNumber(personalRecords.maxReps)) {
+    return {
+      isPR: currentReps > personalRecords.maxReps,
+      prType: currentReps > personalRecords.maxReps ? 'reps' : null,
+      previousBest: personalRecords.maxReps,
+    };
+  }
+
+  return {
+    isPR: false,
+    prType: null,
+    previousBest: null,
+  };
 }
 
 export function getSuggestedWeight({
   exercise,
   history,
-}: SuggestedWeightInput): number | null {
+  unit,
+}: SuggestedWeightInput): SuggestedWeightResult | null {
+  const resolvedUnit = typeof unit === 'string' && unit.trim().length > 0 ? unit : 'lb';
+
   if (exercise?.is_timed) {
     return null;
   }
 
   const lastSessionWeight = getLastSessionWeight(history);
-  return isFiniteNumber(lastSessionWeight) ? lastSessionWeight : null;
+  const lastSessionReps = getLastSessionReps(history);
+
+  if (isFiniteNumber(lastSessionWeight) || isFiniteNumber(lastSessionReps)) {
+    return {
+      weight: isFiniteNumber(lastSessionWeight) ? lastSessionWeight : 0,
+      reps: isFiniteNumber(lastSessionReps) ? lastSessionReps : 0,
+      unit: resolvedUnit,
+      source: 'previous_session',
+    };
+  }
+
+  return {
+    weight: 0,
+    reps: 0,
+    unit: resolvedUnit,
+    source: 'no_history',
+  };
 }
 
 export function buildProgressiveOverloadSuggestion({
@@ -109,12 +201,13 @@ export function buildProgressiveOverloadSuggestion({
   unit,
 }: BuildProgressiveOverloadSuggestionInput): ProgressiveOverloadSuggestion {
   const lastSessionWeight = getLastSessionWeight(history);
-  const suggestedWeight = getSuggestedWeight({ exercise, history });
+  const suggestedWeight = getSuggestedWeight({ exercise, history, unit });
+  const isSuggestedLoad = suggestedWeight?.source === 'previous_session' && suggestedWeight.weight > 0;
   const isTimed = Boolean(exercise?.is_timed);
   const isBodyweightLike = !isTimed && !isFiniteNumber(lastSessionWeight);
   const helperText = buildProgressiveOverloadHelperText({
     lastSessionWeight,
-    suggestedWeight,
+    suggestedWeight: isSuggestedLoad ? suggestedWeight.weight : null,
     unit,
     isTimed,
     isBodyweight: isBodyweightLike,
@@ -125,7 +218,10 @@ export function buildProgressiveOverloadSuggestion({
   return {
     exerciseId: exercise?.id ?? history[0]?.exercise_id ?? '',
     lastSessionWeight,
-    suggestedWeight,
+    suggestedWeight: isSuggestedLoad ? suggestedWeight.weight : null,
+    suggestedReps: suggestedWeight?.reps ?? null,
+    suggestedUnit: suggestedWeight?.unit ?? unit ?? null,
+    suggestionSource: suggestedWeight?.source ?? null,
     helperText,
     isTimed,
     isBodyweightLike,
