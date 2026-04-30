@@ -45,6 +45,16 @@ export interface CoachAction {
   priority: 'high' | 'medium' | 'low';
 }
 
+export interface ProgressiveOverloadHelperTextInput {
+  lastSessionWeight?: number | null;
+  suggestedWeight?: number | null;
+  unit?: string | null;
+  isTimed?: boolean;
+  isBodyweight?: boolean;
+  didHitPr?: boolean;
+  hasHistory?: boolean;
+}
+
 export type FatigueConfidenceLevel = 'high' | 'medium' | 'low' | 'insufficient';
 
 export interface FatigueConfidence {
@@ -209,6 +219,7 @@ export function scoreFatigueSignals(signals: FatigueSignals): {
 export function buildCoachActions(input: {
   fatigueLevel: FatigueLevel;
   signals: FatigueSignals;
+  overload?: ProgressiveOverloadHelperTextInput;
 }): CoachAction[] {
   const actions: CoachAction[] = [];
 
@@ -258,7 +269,7 @@ export function buildCoachActions(input: {
     actions.push({
       id: 'progressive-overload',
       title: 'Progress with small overload',
-      detail: 'Fatigue signals are stable. Consider +2.5% load or one extra quality rep next set.',
+      detail: buildProgressiveOverloadHelperText(input.overload),
       priority: 'low',
     });
   }
@@ -267,6 +278,55 @@ export function buildCoachActions(input: {
   return [...actions]
     .sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority])
     .slice(0, 3);
+}
+
+function formatLoad(weight: number, unit?: string | null): string {
+  const resolvedUnit = typeof unit === 'string' && unit.trim().length > 0 ? unit.trim() : 'lb';
+  return `${Number.isInteger(weight) ? weight : Number(weight.toFixed(2))} ${resolvedUnit}`;
+}
+
+export function buildProgressiveOverloadHelperText(
+  input?: ProgressiveOverloadHelperTextInput,
+): string {
+  if (!input) {
+    return 'Fatigue signals are stable. Consider +2.5% load or one extra quality rep next set.';
+  }
+
+  if (input.didHitPr) {
+    if (input.isTimed) {
+      return 'New time PR logged. Repeat that pacing next session before stretching the clock.';
+    }
+
+    if (input.isBodyweight) {
+      return 'New bodyweight PR logged. Match that rep quality next session, then add one clean rep.';
+    }
+
+    if (typeof input.suggestedWeight === 'number' && Number.isFinite(input.suggestedWeight)) {
+      return `New PR logged. Open around ${formatLoad(input.suggestedWeight, input.unit)} next session and keep the reps crisp.`;
+    }
+  }
+
+  if (input.isTimed) {
+    return input.hasHistory
+      ? 'Last session gives you a time target. Match that duration first, then add seconds only if form stays clean.'
+      : 'Fatigue signals are stable. Hold today’s pace, then add seconds once the movement still looks sharp.';
+  }
+
+  if (input.isBodyweight) {
+    return input.hasHistory
+      ? 'Last session was bodyweight-based. Repeat that rep target first, then chase one cleaner rep.'
+      : 'Fatigue signals are stable. Repeat the same bodyweight standard and add reps only if quality holds.';
+  }
+
+  if (typeof input.lastSessionWeight === 'number' && Number.isFinite(input.lastSessionWeight)) {
+    return `Last session topped out at ${formatLoad(input.lastSessionWeight, input.unit)}. Start there again and add load only if the reps stay clean.`;
+  }
+
+  if (typeof input.suggestedWeight === 'number' && Number.isFinite(input.suggestedWeight)) {
+    return `Use ${formatLoad(input.suggestedWeight, input.unit)} as your next working load and progress only if form stays sharp.`;
+  }
+
+  return 'Fatigue signals are stable. Consider +2.5% load or one extra quality rep next set.';
 }
 
 export function scoreFatigueConfidence(input: {
