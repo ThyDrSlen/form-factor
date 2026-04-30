@@ -242,20 +242,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Refresh push token when a real user signs in
   useEffect(() => {
-    const syncPushToken = async () => {
-      if (!user || isMockUser) return;
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-      try {
-        const result = await registerDevicePushToken(user.id, { requestPermission: false });
-        if (result.error) {
-          console.warn('[Auth] Push token registration warning:', result.error);
+    const registerPushTokenWithRetry = async (userId: string) => {
+      const delaysMs = [0, 1000, 2000];
+
+      for (let attempt = 0; attempt < delaysMs.length; attempt++) {
+        if (delaysMs[attempt] > 0) {
+          await wait(delaysMs[attempt]);
         }
-      } catch (err) {
-        console.warn('[Auth] Failed to register push token:', err);
+
+        try {
+          const result = await registerDevicePushToken(userId, { requestPermission: false });
+          if (!result.error) {
+            return;
+          }
+
+          console.warn('[Auth] Push token registration warning:', result.error, { attempt: attempt + 1 });
+        } catch (err) {
+          console.warn('[Auth] Failed to register push token:', err, { attempt: attempt + 1 });
+        }
       }
     };
 
-    syncPushToken();
+    const syncPushToken = async () => {
+      if (!user || isMockUser) return;
+
+      await registerPushTokenWithRetry(user.id);
+    };
+
+    void syncPushToken();
   }, [user?.id, isMockUser]);
 
   const handleAuthCallback = useCallback(async (url: string): Promise<void> => {
