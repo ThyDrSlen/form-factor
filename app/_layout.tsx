@@ -1,6 +1,7 @@
 import './global.css';
 import { Slot, usePathname, useRouter, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
+import * as Notifications from 'expo-notifications';
 import React, { Component, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, View, Text as RNText, StyleSheet, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -21,6 +22,7 @@ import { VoiceControlProvider } from '../contexts/VoiceControlContext';
 import { isVoiceControlPipelineEnabled } from '@/lib/services/voice-pipeline-flag';
 import { logWithTs, warnWithTs } from '@/lib/logger';
 import { isOnboardingCompleted } from '@/lib/services/onboarding';
+import { handleNotificationResponse } from '@/lib/services/notifications';
 import { hasSeenWelcome } from '@/app/(onboarding)/welcome';
 import { MilestoneToastBridge } from '@/components/MilestoneToastBridge';
 import { SessionTelemetryBinder } from '@/components/telemetry/SessionTelemetryBinder';
@@ -202,6 +204,18 @@ function InitialLayout() {
     return () => {
       cancelled = true;
       sub.remove();
+    };
+  }, [router]);
+
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      handleNotificationResponse(response, (route) => {
+        router.push(route as never);
+      });
+    });
+
+    return () => {
+      subscription.remove();
     };
   }, [router]);
 

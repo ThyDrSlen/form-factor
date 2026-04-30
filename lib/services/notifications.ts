@@ -7,6 +7,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { PermissionStatus } from 'expo-modules-core';
 import { errorWithTs, infoWithTs, warnWithTs } from '@/lib/logger';
+import { parseTemplateIdFromUrl } from '@/lib/services/workout-scheduler';
 import { supabase } from '../supabase';
 
 let Device: typeof ExpoDevice | undefined;
@@ -38,6 +39,10 @@ const LAST_PUSH_TOKEN_KEY = 'ff.notifications.last_token';
 const DEVICE_ID_KEY = 'ff.notifications.device_id';
 const TOKEN_UPSERT_MAX_RETRIES = 2;
 const TOKEN_UPSERT_RETRY_DELAY_MS = 1000;
+const DISMISSED_ACTION_IDENTIFIER = 'expo.notifications.actions.DISMISSED';
+
+type NotificationPayload = Record<string, unknown>;
+type NotificationNavigator = (route: string) => void;
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -58,6 +63,9 @@ async function registerNotificationCategories() {
     await Notifications.setNotificationCategoryAsync('coach', [
       { identifier: 'reply', buttonTitle: 'Reply', options: { opensAppToForeground: true } },
     ]);
+    await Notifications.setNotificationCategoryAsync('rest_timer', [], {
+      customDismissAction: true,
+    });
     // Templated-workout reminder (issue #447). "Start" action opens the app
     // with the deep-link payload so scan-arkit can auto-bind the template.
     await Notifications.setNotificationCategoryAsync('workout_reminder', [
@@ -76,6 +84,114 @@ function getProjectId() {
   const configProjectId = (Constants.expoConfig as { projectId?: string } | undefined)?.projectId;
 
   return process.env.EXPO_PUBLIC_PUSH_PROJECT_ID || easProjectId || configProjectId;
+}
+
+function readNotificationString(payload: NotificationPayload, key: string): string | null {
+  const value = payload[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function buildScanRoute(templateId: string): string {
+  return `/(tabs)/scan-arkit?templateId=${encodeURIComponent(templateId)}`;
+}
+
+async function saveDevicePushToken(userId: string, token: string): Promise<{ error?: string }> {
+  const deviceId = await getDeviceId();
+
+  const tokenPayload = {
+    token,
+    user_id: userId,
+    platform: Platform.OS,
+    app_version: Application.nativeApplicationVersion || 'dev',
+    device_id: deviceId,
+    last_seen_at: new Date().toISOString(),
+  };
+
+  let lastUpsertError: { message: string } | null = null;
+  for (let attempt = 0; attempt <= TOKEN_UPSERT_MAX_RETRIES; attempt++) {
+    const { error: upsertErr } = await supabase.from('notification_tokens').upsert(tokenPayload);
+    if (!upsertErr) {
+      lastUpsertError = null;
+      break;
+    }
+    lastUpsertError = upsertErr;
+    if (attempt < TOKEN_UPSERT_MAX_RETRIES) {
+      await new Promise((r) => setTimeout(r, TOKEN_UPSERT_RETRY_DELAY_MS * (attempt + 1)));
+    }
+  }
+
+  if (lastUpsertError) {
+    errorWithTs('[notifications] Failed to save push token after retries', lastUpsertError);
+    return { error: lastUpsertError.message };
+  }
+
+  await AsyncStorage.setItem(LAST_PUSH_TOKEN_KEY, token);
+  return {};
+}
+
+export function getNotificationRoute(data: NotificationPayload): string | null {
+  const type = readNotificationString(data, 'type');
+  const deepLink = readNotificationString(data, 'deepLink');
+  const templateId = readNotificationString(data, 'templateId');
+
+  if ((type === 'workout_reminder' || !type) && deepLink) {
+    const linkedTemplateId = parseTemplateIdFromUrl(deepLink);
+    if (linkedTemplateId) {
+      return buildScanRoute(linkedTemplateId);
+    }
+  }
+
+  if ((type === 'workout_reminder' || !type) && templateId) {
+    return buildScanRoute(templateId);
+  }
+
+  switch (type) {
+    case 'coach':
+      return '/(tabs)/coach';
+    case 'shared_inbox':
+    case 'share_thread':
+      return '/(modals)/shared-inbox';
+    case 'follow_request':
+      return '/(modals)/follow-requests';
+    case 'followers':
+      return '/(modals)/followers';
+    case 'user_profile':
+      return '/(modals)/user-profile';
+    case 'notifications':
+    case 'social':
+      return '/(modals)/notifications';
+    default:
+      return null;
+  }
+}
+
+export function handleNotificationResponse(
+  response: Notifications.NotificationResponse,
+  navigate: NotificationNavigator,
+): string | null {
+  if (response.actionIdentifier === DISMISSED_ACTION_IDENTIFIER) {
+    return null;
+  }
+
+  const data = response.notification.request.content.data;
+  const route = getNotificationRoute(
+    data && typeof data === 'object' && !Array.isArray(data) ? data : {},
+  );
+
+  if (!route) {
+    return null;
+  }
+
+  infoWithTs('[notifications] Routing notification response', {
+    actionIdentifier: response.actionIdentifier,
+    route,
+    type: readNotificationString(
+      data && typeof data === 'object' && !Array.isArray(data) ? data : {},
+      'type',
+    ),
+  });
+  navigate(route);
+  return route;
 }
 
 async function getDeviceId() {
@@ -158,36 +274,11 @@ export async function registerDevicePushToken(
 
   const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
   const token = tokenResponse.data;
-  const deviceId = await getDeviceId();
+  const result = await saveDevicePushToken(userId, token);
 
-  const tokenPayload = {
-    token,
-    user_id: userId,
-    platform: Platform.OS,
-    app_version: Application.nativeApplicationVersion || 'dev',
-    device_id: deviceId,
-    last_seen_at: new Date().toISOString(),
-  };
-
-  let lastUpsertError: { message: string } | null = null;
-  for (let attempt = 0; attempt <= TOKEN_UPSERT_MAX_RETRIES; attempt++) {
-    const { error: upsertErr } = await supabase.from('notification_tokens').upsert(tokenPayload);
-    if (!upsertErr) {
-      lastUpsertError = null;
-      break;
-    }
-    lastUpsertError = upsertErr;
-    if (attempt < TOKEN_UPSERT_MAX_RETRIES) {
-      await new Promise((r) => setTimeout(r, TOKEN_UPSERT_RETRY_DELAY_MS * (attempt + 1)));
-    }
+  if (result.error) {
+    return { status: permissionStatus, error: result.error, token };
   }
-
-  if (lastUpsertError) {
-    errorWithTs('[notifications] Failed to save push token after retries', lastUpsertError);
-    return { status: permissionStatus, error: lastUpsertError.message, token };
-  }
-
-  await AsyncStorage.setItem(LAST_PUSH_TOKEN_KEY, token);
 
   return { status: permissionStatus, token };
 }
@@ -199,19 +290,9 @@ export function startPushTokenRefreshListener(userId: string) {
   pushTokenSubscription = Notifications.addPushTokenListener(async (tokenData) => {
     const newToken = tokenData.data;
     infoWithTs('[notifications] Push token refreshed, re-registering', { userId });
-    const deviceId = await getDeviceId();
-    const { error } = await supabase.from('notification_tokens').upsert({
-      token: newToken,
-      user_id: userId,
-      platform: Platform.OS,
-      app_version: Application.nativeApplicationVersion || 'dev',
-      device_id: deviceId,
-      last_seen_at: new Date().toISOString(),
-    });
-    if (error) {
-      errorWithTs('[notifications] Failed to save refreshed token', error);
-    } else {
-      await AsyncStorage.setItem(LAST_PUSH_TOKEN_KEY, newToken);
+    const result = await saveDevicePushToken(userId, newToken);
+    if (result.error) {
+      errorWithTs('[notifications] Failed to save refreshed token', result.error);
     }
   });
 }
