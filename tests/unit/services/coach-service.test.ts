@@ -136,7 +136,7 @@ describe('coach-service', () => {
     );
   });
 
-  it('includes recent workout summary in coach context when local history exists', async () => {
+  it('includes up to five recent workouts and best-performance context when local history exists', async () => {
     mockGetAllWorkouts.mockResolvedValue([
       {
         id: 'w-1',
@@ -162,6 +162,54 @@ describe('coach-service', () => {
         deleted: 0,
         updated_at: '2026-04-27T10:05:00.000Z',
       },
+      {
+        id: 'w-3',
+        exercise: 'Pull Up',
+        sets: 4,
+        reps: 12,
+        weight: 0,
+        duration: null,
+        date: '2026-04-25T10:00:00.000Z',
+        synced: 1,
+        deleted: 0,
+        updated_at: '2026-04-25T10:05:00.000Z',
+      },
+      {
+        id: 'w-4',
+        exercise: 'Romanian Deadlift',
+        sets: 3,
+        reps: 8,
+        weight: 245,
+        duration: null,
+        date: '2026-04-23T10:00:00.000Z',
+        synced: 1,
+        deleted: 0,
+        updated_at: '2026-04-23T10:05:00.000Z',
+      },
+      {
+        id: 'w-5',
+        exercise: 'Bike Intervals',
+        sets: 6,
+        reps: null,
+        weight: null,
+        duration: 18,
+        date: '2026-04-21T10:00:00.000Z',
+        synced: 1,
+        deleted: 0,
+        updated_at: '2026-04-21T10:05:00.000Z',
+      },
+      {
+        id: 'w-6',
+        exercise: 'Old Session',
+        sets: 2,
+        reps: 20,
+        weight: null,
+        duration: null,
+        date: '2026-04-18T10:00:00.000Z',
+        synced: 1,
+        deleted: 0,
+        updated_at: '2026-04-18T10:05:00.000Z',
+      },
     ]);
 
     await sendCoachPrompt(baseMessages, {
@@ -177,7 +225,8 @@ describe('coach-service', () => {
           messages: baseMessages,
           context: expect.objectContaining({
             focus: 'strength_training',
-            workoutSummary: 'Recent workouts: 2026-04-29: Back Squat (5x5, weight 225); 2026-04-27: Bench Press (4x8, weight 155)',
+            workoutSummary:
+              'Recent workouts: 2026-04-29: Back Squat (5x5, weight 225); 2026-04-27: Bench Press (4x8, weight 155); 2026-04-25: Pull Up (4x12); 2026-04-23: Romanian Deadlift (3x8, weight 245); 2026-04-21: Bike Intervals (6 sets, 18 min). Best performance: Romanian Deadlift 245 x 8; Old Session 20 reps',
           }),
         }),
       })

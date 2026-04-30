@@ -29,8 +29,9 @@ interface RawCoachResponse {
 }
 
 const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
-const MAX_WORKOUT_CONTEXT_ITEMS = 3;
-const MAX_WORKOUT_CONTEXT_LENGTH = 280;
+const MAX_RECENT_WORKOUT_CONTEXT_ITEMS = 5;
+const MAX_BEST_PERFORMANCE_ITEMS = 2;
+const MAX_WORKOUT_CONTEXT_LENGTH = 420;
 
 function formatWorkoutValue(value?: number): string | null {
   if (typeof value !== 'number' || isNaN(value) || value <= 0) {
@@ -68,8 +69,63 @@ function formatWorkoutSummaryItem(workout: LocalWorkout): string {
     : `${dateLabel}: ${exerciseLabel}`;
 }
 
+function formatBestPerformanceItem(workout: LocalWorkout): string | null {
+  const exerciseLabel = workout.exercise.trim();
+  if (!exerciseLabel) {
+    return null;
+  }
+
+  const weightLabel = formatWorkoutValue(workout.weight);
+  const repsLabel = formatWorkoutValue(workout.reps);
+
+  if (weightLabel && repsLabel) {
+    return `${exerciseLabel} ${weightLabel} x ${repsLabel}`;
+  }
+
+  if (weightLabel) {
+    return `${exerciseLabel} ${weightLabel}`;
+  }
+
+  if (repsLabel) {
+    return `${exerciseLabel} ${repsLabel} reps`;
+  }
+
+  return null;
+}
+
+function pickBestPerformanceWorkouts(workouts: LocalWorkout[]): LocalWorkout[] {
+  const workoutsWithWeight = workouts.filter(
+    (workout) => typeof workout.weight === 'number' && !isNaN(workout.weight) && workout.weight > 0
+  );
+  const workoutsWithReps = workouts.filter(
+    (workout) => typeof workout.reps === 'number' && !isNaN(workout.reps) && workout.reps > 0
+  );
+
+  const heaviestWorkout = workoutsWithWeight.sort((a, b) => {
+    if ((b.weight || 0) !== (a.weight || 0)) {
+      return (b.weight || 0) - (a.weight || 0);
+    }
+
+    return b.date.localeCompare(a.date);
+  })[0];
+
+  const highestRepWorkout = workoutsWithReps
+    .filter((workout) => !heaviestWorkout || workout.id !== heaviestWorkout.id)
+    .sort((a, b) => {
+      if ((b.reps || 0) !== (a.reps || 0)) {
+        return (b.reps || 0) - (a.reps || 0);
+      }
+
+      return b.date.localeCompare(a.date);
+    })[0];
+
+  return [heaviestWorkout, highestRepWorkout]
+    .filter((workout): workout is LocalWorkout => Boolean(workout))
+    .slice(0, MAX_BEST_PERFORMANCE_ITEMS);
+}
+
 function summarizeRecentWorkouts(workouts: LocalWorkout[]): string | undefined {
-  const recentWorkouts = workouts.slice(0, MAX_WORKOUT_CONTEXT_ITEMS);
+  const recentWorkouts = workouts.slice(0, MAX_RECENT_WORKOUT_CONTEXT_ITEMS);
   if (recentWorkouts.length === 0) {
     return undefined;
   }
@@ -83,11 +139,39 @@ function summarizeRecentWorkouts(workouts: LocalWorkout[]): string | undefined {
     : summary;
 }
 
+function summarizeBestPerformances(workouts: LocalWorkout[]): string | undefined {
+  const bestSummary = pickBestPerformanceWorkouts(workouts)
+    .map(formatBestPerformanceItem)
+    .filter((item): item is string => Boolean(item));
+
+  if (bestSummary.length === 0) {
+    return undefined;
+  }
+
+  return `Best performance: ${bestSummary.join('; ')}`;
+}
+
+function combineWorkoutContextSummary(workouts: LocalWorkout[]): string | undefined {
+  const parts = [
+    summarizeRecentWorkouts(workouts),
+    summarizeBestPerformances(workouts),
+  ].filter((part): part is string => Boolean(part));
+
+  if (parts.length === 0) {
+    return undefined;
+  }
+
+  const summary = parts.join('. ');
+  return summary.length > MAX_WORKOUT_CONTEXT_LENGTH
+    ? `${summary.slice(0, MAX_WORKOUT_CONTEXT_LENGTH - 1).replace(/\s+$/, '')}…`
+    : summary;
+}
+
 async function buildCoachContext(context?: CoachContext): Promise<CoachContext | undefined> {
   let workoutSummary: string | undefined;
 
   try {
-    workoutSummary = summarizeRecentWorkouts(await localDB.getAllWorkouts());
+    workoutSummary = combineWorkoutContextSummary(await localDB.getAllWorkouts());
   } catch (err) {
     logError(
       createError(
