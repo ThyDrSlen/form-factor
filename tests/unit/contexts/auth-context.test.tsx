@@ -697,7 +697,7 @@ describe('AuthContext', () => {
       expect(mockUnsubscribe).toHaveBeenCalled();
     });
 
-    it('attempts push token registration three times with 0ms, 1000ms, and 2000ms semantics when registration keeps failing', async () => {
+    it('attempts push token registration three times with 1000ms, 2000ms, and 4000ms exponential backoff when registration keeps failing', async () => {
       jest.useFakeTimers();
 
       const mockRegisterDevicePushToken = registerDevicePushToken as jest.MockedFunction<typeof registerDevicePushToken>;
@@ -713,13 +713,22 @@ describe('AuthContext', () => {
         authStateChangeCallback!('SIGNED_IN', mockSession);
       });
 
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(999);
+      });
+      expect(mockRegisterDevicePushToken).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1);
+      });
+
       await waitFor(() => {
         expect(mockRegisterDevicePushToken).toHaveBeenCalledTimes(1);
       });
       expect(mockRegisterDevicePushToken).toHaveBeenNthCalledWith(1, mockUser.id, { requestPermission: false });
 
       await act(async () => {
-        await jest.advanceTimersByTimeAsync(999);
+        await jest.advanceTimersByTimeAsync(1999);
       });
       expect(mockRegisterDevicePushToken).toHaveBeenCalledTimes(1);
 
@@ -733,7 +742,7 @@ describe('AuthContext', () => {
       expect(mockRegisterDevicePushToken).toHaveBeenNthCalledWith(2, mockUser.id, { requestPermission: false });
 
       await act(async () => {
-        await jest.advanceTimersByTimeAsync(1999);
+        await jest.advanceTimersByTimeAsync(3999);
       });
       expect(mockRegisterDevicePushToken).toHaveBeenCalledTimes(2);
 
