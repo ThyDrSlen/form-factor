@@ -245,12 +245,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
     const registerPushTokenWithRetry = async (userId: string) => {
-      const delaysMs = [0, 1000, 2000];
+      const delaysMs = [1000, 2000, 4000];
 
       for (let attempt = 0; attempt < delaysMs.length; attempt++) {
-        if (delaysMs[attempt] > 0) {
-          await wait(delaysMs[attempt]);
-        }
+        await wait(delaysMs[attempt]);
 
         try {
           const result = await registerDevicePushToken(userId, { requestPermission: false });
