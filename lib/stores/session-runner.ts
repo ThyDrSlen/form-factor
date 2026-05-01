@@ -36,6 +36,10 @@ import {
   type PriorSession,
   type MilestoneResult,
 } from '@/lib/services/form-milestone-detector';
+import {
+  buildProgressiveOverloadSuggestion,
+  type ProgressiveOverloadSuggestion,
+} from '@/lib/services/progressive-overload';
 import type {
   WorkoutSession,
   WorkoutSessionExercise,
@@ -61,6 +65,7 @@ export interface SessionRunnerState {
   activeSession: WorkoutSession | null;
   exercises: (WorkoutSessionExercise & { exercise?: Exercise })[];
   sets: Record<string, WorkoutSessionSet[]>; // keyed by session_exercise_id
+  exerciseSuggestionsByExerciseId: Record<string, ProgressiveOverloadSuggestion>;
 
   // Form-target slice (issue #447) — keyed by `exercise_id` (not session-exercise-id)
   // so consumers can resolve targets by the active scan exercise. Populated from
@@ -121,6 +126,8 @@ export interface SessionRunnerState {
   duplicateSet: (setId: string, count?: number) => Promise<void>;
   updateSetType: (setId: string, setType: SetType) => Promise<void>;
   duplicateExercise: (sessionExerciseId: string) => Promise<void>;
+  loadExerciseSuggestion: (exerciseId: string) => Promise<ProgressiveOverloadSuggestion | null>;
+  getExerciseSuggestionFor: (exerciseId: string) => ProgressiveOverloadSuggestion | null;
   /**
    * Resolve the active form targets for a given exerciseId.
    * Prefers template overrides threaded on startSession, falls back to
@@ -422,6 +429,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
   activeSession: null,
   exercises: [],
   sets: {},
+  exerciseSuggestionsByExerciseId: {},
   formTargetsByExercise: {},
   restTimer: null,
   restTimerCompletionTimeout: null,
@@ -441,6 +449,35 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
     const override = map[exerciseId];
     if (override) return override;
     return getDefaultsForExercise(exerciseId);
+  },
+  getExerciseSuggestionFor: (exerciseId: string): ProgressiveOverloadSuggestion | null => {
+    return get().exerciseSuggestionsByExerciseId[exerciseId] ?? null;
+  },
+  loadExerciseSuggestion: async (exerciseId) => {
+    if (!exerciseId) return null;
+
+    try {
+      const exercise = await getExerciseById(exerciseId);
+      const history = await localDB.getExerciseHistory(exerciseId, 24);
+      const personalRecords = await localDB.getPersonalRecords(exerciseId);
+      const suggestion = buildProgressiveOverloadSuggestion({
+        exercise,
+        history,
+        personalRecords,
+      });
+
+      set((state) => ({
+        exerciseSuggestionsByExerciseId: {
+          ...state.exerciseSuggestionsByExerciseId,
+          [exerciseId]: suggestion,
+        },
+      }));
+
+      return suggestion;
+    } catch (error) {
+      errorWithTs(`[SessionRunner] Failed to load suggestion for ${exerciseId}:`, error);
+      return null;
+    }
   },
 
   // =========================================================================
@@ -482,11 +519,13 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       const sessionObj = session as unknown as WorkoutSession;
       const exercises = await loadSessionExercises(sessionId);
       const sets = await loadSessionSets(exercises);
+      const exerciseSuggestionsByExerciseId = await loadExerciseSuggestions(exercises);
 
       set({
         activeSession: sessionObj,
         exercises,
         sets,
+        exerciseSuggestionsByExerciseId,
         formTargetsByExercise,
         restTimer: null,
         restTimerCompletionTimeout: null,
@@ -544,6 +583,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
 
     // Auto-add first set
     await get().addSet(id);
+    void get().loadExerciseSuggestion(exerciseId);
 
     return id;
   },
@@ -1010,6 +1050,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       activeSession: null,
       exercises: [],
       sets: {},
+      exerciseSuggestionsByExerciseId: {},
       formTargetsByExercise: {},
       restTimer: null,
       restTimerCompletionTimeout: null,
@@ -1049,6 +1090,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
           activeSession: null,
           exercises: [],
           sets: {},
+          exerciseSuggestionsByExerciseId: {},
           formTargetsByExercise: {},
           restTimer: null,
           restTimerCompletionTimeout: null,
@@ -1064,6 +1106,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       const session = rows[0];
       const exercises = await loadSessionExercises(session.id);
       const sets = await loadSessionSets(exercises);
+      const exerciseSuggestionsByExerciseId = await loadExerciseSuggestions(exercises);
       // Rehydrate form-target overrides from the originating template so
       // scan-arkit still sees per-exercise targets after an app resume.
       const formTargetsByExercise = session.template_id
@@ -1120,6 +1163,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
         activeSession: session,
         exercises,
         sets,
+        exerciseSuggestionsByExerciseId,
         formTargetsByExercise,
         restTimer,
         isPaused: false,
@@ -1317,6 +1361,37 @@ async function loadSessionSets(
   }
 
   return sets;
+}
+
+async function loadExerciseSuggestions(
+  exercises: (WorkoutSessionExercise & { exercise?: Exercise })[],
+): Promise<Record<string, ProgressiveOverloadSuggestion>> {
+  const suggestions: Record<string, ProgressiveOverloadSuggestion> = {};
+  const seenExerciseIds = new Set<string>();
+
+  for (const sessionExercise of exercises) {
+    const exerciseId = sessionExercise.exercise_id;
+    if (!exerciseId || seenExerciseIds.has(exerciseId)) {
+      continue;
+    }
+
+    seenExerciseIds.add(exerciseId);
+
+    try {
+      const history = await localDB.getExerciseHistory(exerciseId, 24);
+      const personalRecords = await localDB.getPersonalRecords(exerciseId);
+      const suggestion = buildProgressiveOverloadSuggestion({
+        exercise: sessionExercise.exercise,
+        history,
+        personalRecords,
+      });
+      suggestions[exerciseId] = suggestion;
+    } catch (error) {
+      errorWithTs(`[SessionRunner] Failed to hydrate suggestion for ${exerciseId}:`, error);
+    }
+  }
+
+  return suggestions;
 }
 
 async function materializeTemplate(

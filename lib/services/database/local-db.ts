@@ -69,6 +69,28 @@ export interface LocalNutritionGoals {
   updated_at: string;
 }
 
+export interface ExerciseHistoryEntry {
+  id: string;
+  session_id: string;
+  session_exercise_id: string;
+  exercise_id: string;
+  set_type: string;
+  planned_weight: number | null;
+  actual_weight: number | null;
+  actual_reps: number | null;
+  actual_seconds: number | null;
+  completed_at: string;
+  session_started_at: string;
+  session_ended_at: string | null;
+}
+
+export interface ExercisePersonalRecords {
+  maxWeight: number | null;
+  maxReps: number | null;
+  maxVolume: number | null;
+  maxDurationSeconds: number | null;
+}
+
 export type SyncTableName = 'foods' | 'workouts' | 'health_metrics' | 'nutrition_goals';
 export type SyncOperation = 'upsert' | 'delete';
 
@@ -877,6 +899,83 @@ class LocalDatabase {
       params.push(Math.floor(limit));
     }
     return dbResult.data.getAllAsync<LocalWorkout>(query, params);
+  }
+
+  async getExerciseHistory(
+    exerciseId: string,
+    limit = 20,
+  ): Promise<ExerciseHistoryEntry[]> {
+    const dbResult = await this.ensureInitialized();
+    if (!dbResult.ok) {
+      throw new Error(dbResult.error.message);
+    }
+
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 20;
+
+    return dbResult.data.getAllAsync<ExerciseHistoryEntry>(
+      `SELECT
+         ws.id,
+         wse.session_id,
+         ws.session_exercise_id,
+         wse.exercise_id,
+         ws.set_type,
+         ws.planned_weight,
+         ws.actual_weight,
+         ws.actual_reps,
+         ws.actual_seconds,
+         ws.completed_at,
+         s.started_at AS session_started_at,
+         s.ended_at AS session_ended_at
+       FROM workout_session_sets ws
+       JOIN workout_session_exercises wse
+         ON wse.id = ws.session_exercise_id
+        AND COALESCE(wse.deleted, 0) = 0
+       JOIN workout_sessions s
+         ON s.id = wse.session_id
+        AND COALESCE(s.deleted, 0) = 0
+       WHERE wse.exercise_id = ?
+         AND COALESCE(ws.deleted, 0) = 0
+         AND ws.completed_at IS NOT NULL
+       ORDER BY COALESCE(s.ended_at, s.started_at) DESC, ws.completed_at DESC, ws.sort_order DESC
+       LIMIT ?`,
+      [exerciseId, safeLimit],
+    );
+  }
+
+  async getPersonalRecords(exerciseId: string): Promise<ExercisePersonalRecords> {
+    const dbResult = await this.ensureInitialized();
+    if (!dbResult.ok) {
+      throw new Error(dbResult.error.message);
+    }
+
+    const rows = await dbResult.data.getAllAsync<ExercisePersonalRecords>(
+      `SELECT
+         MAX(ws.actual_weight) AS maxWeight,
+         MAX(ws.actual_reps) AS maxReps,
+         MAX(CASE
+           WHEN ws.actual_weight IS NOT NULL AND ws.actual_reps IS NOT NULL
+           THEN ws.actual_weight * ws.actual_reps
+         END) AS maxVolume,
+         MAX(ws.actual_seconds) AS maxDurationSeconds
+       FROM workout_session_sets ws
+       JOIN workout_session_exercises wse
+         ON wse.id = ws.session_exercise_id
+        AND COALESCE(wse.deleted, 0) = 0
+       JOIN workout_sessions s
+         ON s.id = wse.session_id
+        AND COALESCE(s.deleted, 0) = 0
+       WHERE wse.exercise_id = ?
+         AND COALESCE(ws.deleted, 0) = 0
+         AND ws.completed_at IS NOT NULL`,
+      [exerciseId],
+    );
+
+    return rows[0] ?? {
+      maxWeight: null,
+      maxReps: null,
+      maxVolume: null,
+      maxDurationSeconds: null,
+    };
   }
 
   // Health Metric operations
