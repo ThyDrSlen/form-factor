@@ -87,6 +87,7 @@ export interface ExerciseHistoryEntry {
 export interface ExercisePersonalRecords {
   maxWeight: number | null;
   maxReps: number | null;
+  maxVolume: number | null;
   maxDurationSeconds: number | null;
 }
 
@@ -951,6 +952,10 @@ class LocalDatabase {
       `SELECT
          MAX(ws.actual_weight) AS maxWeight,
          MAX(ws.actual_reps) AS maxReps,
+         MAX(CASE
+           WHEN ws.actual_weight IS NOT NULL AND ws.actual_reps IS NOT NULL
+           THEN ws.actual_weight * ws.actual_reps
+         END) AS maxVolume,
          MAX(ws.actual_seconds) AS maxDurationSeconds
        FROM workout_session_sets ws
        JOIN workout_session_exercises wse
@@ -968,6 +973,7 @@ class LocalDatabase {
     return rows[0] ?? {
       maxWeight: null,
       maxReps: null,
+      maxVolume: null,
       maxDurationSeconds: null,
     };
   }

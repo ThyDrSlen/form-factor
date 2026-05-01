@@ -59,6 +59,7 @@ describe('progressive-overload', () => {
       const personalRecords: ExercisePersonalRecords = {
         maxWeight: 185,
         maxReps: 8,
+        maxVolume: 1480,
         maxDurationSeconds: null,
       };
 
@@ -78,6 +79,7 @@ describe('progressive-overload', () => {
       const personalRecords: ExercisePersonalRecords = {
         maxWeight: null,
         maxReps: 15,
+        maxVolume: null,
         maxDurationSeconds: null,
       };
 
@@ -97,6 +99,7 @@ describe('progressive-overload', () => {
       const personalRecords: ExercisePersonalRecords = {
         maxWeight: null,
         maxReps: null,
+        maxVolume: null,
         maxDurationSeconds: 60,
       };
 
@@ -111,10 +114,11 @@ describe('progressive-overload', () => {
       });
     });
 
-    it('falls back to volume PRs when load stays under the max weight', () => {
+    it('uses the real historical max volume instead of mixing max weight and reps', () => {
       const personalRecords: ExercisePersonalRecords = {
         maxWeight: 200,
         maxReps: 5,
+        maxVolume: 1050,
         maxDurationSeconds: null,
       };
 
@@ -126,7 +130,7 @@ describe('progressive-overload', () => {
       })).toEqual({
         isPR: true,
         prType: 'volume',
-        previousBest: 1000,
+        previousBest: 1050,
       });
     });
   });
@@ -183,7 +187,7 @@ describe('progressive-overload', () => {
       const suggestion = buildProgressiveOverloadSuggestion({
         exercise: { id: 'ex-bench', name: 'Bench Press', is_timed: false },
         history: [makeHistoryRow({ actual_weight: 185 })],
-        personalRecords: { maxWeight: 185, maxReps: 8, maxDurationSeconds: null },
+        personalRecords: { maxWeight: 185, maxReps: 8, maxVolume: 1480, maxDurationSeconds: null },
         unit: 'lb',
       });
 
@@ -199,7 +203,7 @@ describe('progressive-overload', () => {
       const suggestion = buildProgressiveOverloadSuggestion({
         exercise: { id: 'ex-pushup', name: 'Push-Up', is_timed: false },
         history: [makeHistoryRow({ actual_weight: null, planned_weight: null, actual_reps: 20 })],
-        personalRecords: { maxWeight: null, maxReps: 20, maxDurationSeconds: null },
+        personalRecords: { maxWeight: null, maxReps: 20, maxVolume: null, maxDurationSeconds: null },
       });
 
       expect(suggestion.isBodyweightLike).toBe(true);
