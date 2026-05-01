@@ -1,8 +1,10 @@
 import {
   checkNotifyRateLimit,
+  deriveNotifyRateLimitKeys,
   MAX_NOTIFICATION_DATA_LENGTH,
   NOTIFY_RATE_LIMIT_MAX_REQUESTS,
   sanitizeNotificationData,
+  TOKEN_ONLY_NOTIFY_RATE_LIMIT_KEY,
 } from '@/supabase/functions/notify/validation';
 
 describe('sanitizeNotificationData', () => {
@@ -80,5 +82,36 @@ describe('checkNotifyRateLimit', () => {
     expect(checkNotifyRateLimit('user-123', limits, windowStart + 60_000)).toEqual({
       allowed: true,
     });
+  });
+});
+
+describe('deriveNotifyRateLimitKeys', () => {
+  it('prefers deduped explicit userIds', () => {
+    expect(
+      deriveNotifyRateLimitKeys({
+        userIds: ['user-123', '', 'user-123', 'user-456'],
+        sanitizedData: { userId: 'fallback-user' },
+        tokens: ['ExponentPushToken[token-1]'],
+      }),
+    ).toEqual(['user-123', 'user-456']);
+  });
+
+  it('falls back to sanitized data userId when userIds are absent', () => {
+    expect(
+      deriveNotifyRateLimitKeys({
+        sanitizedData: { userId: 'user-789' },
+        tokens: ['ExponentPushToken[token-1]'],
+      }),
+    ).toEqual(['user-789']);
+  });
+
+  it('returns a token-only fallback key when only raw tokens are present', () => {
+    expect(
+      deriveNotifyRateLimitKeys({
+        userIds: [],
+        sanitizedData: {},
+        tokens: ['', 'ExponentPushToken[token-1]'],
+      }),
+    ).toEqual([TOKEN_ONLY_NOTIFY_RATE_LIMIT_KEY]);
   });
 });
