@@ -2,7 +2,11 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4?target=deno';
 
-import { checkNotifyRateLimit, sanitizeNotificationData } from './validation';
+import {
+  checkNotifyRateLimit,
+  deriveNotifyRateLimitKeys,
+  sanitizeNotificationData,
+} from './validation';
 
 interface PushRequest {
   userIds?: string[];
@@ -161,20 +165,18 @@ serve(async (req: Request) => {
     const title = payload.title?.trim();
     const body = payload.body?.trim();
     const sanitizedData = sanitizeNotificationData(payload.data ?? {});
-    const rateLimitUserIds = Array.isArray(payload.userIds)
-      ? Array.from(new Set(payload.userIds.filter((userId) => typeof userId === 'string' && userId.length > 0)))
-      : [];
-
-    if (rateLimitUserIds.length === 0 && typeof sanitizedData.userId === 'string') {
-      rateLimitUserIds.push(sanitizedData.userId);
-    }
+    const rateLimitKeys = deriveNotifyRateLimitKeys({
+      userIds: payload.userIds,
+      sanitizedData,
+      tokens: payload.tokens,
+    });
 
     if (!title || !body) {
       return jsonResponse({ error: 'title and body are required' }, 400);
     }
 
-    for (const userId of rateLimitUserIds) {
-      const rateLimit = checkNotifyRateLimit(userId, notifyRateLimits);
+    for (const rateLimitKey of rateLimitKeys) {
+      const rateLimit = checkNotifyRateLimit(rateLimitKey, notifyRateLimits);
 
       if (!rateLimit.allowed) {
         return jsonResponse(
