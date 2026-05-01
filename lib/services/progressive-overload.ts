@@ -133,11 +133,10 @@ export function detectPR({
 
     if (
       isFiniteNumber(currentReps)
-      && isFiniteNumber(personalRecords.maxWeight)
-      && isFiniteNumber(personalRecords.maxReps)
+      && isFiniteNumber(personalRecords.maxVolume)
     ) {
       const currentVolume = currentWeight * currentReps;
-      const previousBest = personalRecords.maxWeight * personalRecords.maxReps;
+      const previousBest = personalRecords.maxVolume;
       if (currentVolume > previousBest) {
         return {
           isPR: true,
