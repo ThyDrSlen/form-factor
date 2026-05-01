@@ -63,8 +63,12 @@ jest.mock('@/lib/logger', () => ({
 
 // Supabase — we build chains per-test, so the factory just provides `from`
 const mockFrom = jest.fn();
+const mockInvoke = jest.fn();
 jest.mock('@/lib/supabase', () => ({
-  supabase: { from: (...args: any[]) => mockFrom(...args) },
+  supabase: {
+    from: (...args: any[]) => mockFrom(...args),
+    functions: { invoke: (...args: any[]) => mockInvoke(...args) },
+  },
 }));
 
 // ---------------------------------------------------------------------------
@@ -93,6 +97,7 @@ import {
   registerDevicePushToken,
   unregisterDevicePushToken,
   loadNotificationPreferences,
+  sendCoachTipNotification,
   updateNotificationPreferences,
 } from '@/lib/services/notifications';
 
@@ -114,27 +119,6 @@ function fakeBytes(len: number): Uint8Array {
   const arr = new Uint8Array(len);
   for (let i = 0; i < len; i++) arr[i] = i;
   return arr;
-}
-
-/**
- * Build a Supabase-style chainable query mock.
- * Every chaining method returns the same object so the chain resolves
- * to `{ data, error, status }` regardless of call order.
- */
-function createChain(data: any, error: any = null, status = 200) {
-  const resolved = { data, error, status };
-  const chain: Record<string, jest.Mock> = {};
-  const methods = ['select', 'eq', 'match', 'single', 'upsert', 'delete'];
-  methods.forEach((m) => {
-    chain[m] = jest.fn().mockReturnValue(chain);
-  });
-  // Make the chain thenable so `await supabase.from(...).select(...)` works
-  Object.defineProperty(chain, 'then', {
-    value: (onFulfilled: any, onRejected?: any) =>
-      Promise.resolve(resolved).then(onFulfilled, onRejected),
-    configurable: true,
-  });
-  return chain;
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +292,6 @@ describe('registerDevicePushToken', () => {
     mockGetPermissionsAsync.mockResolvedValue({ status: 'undetermined' });
     mockRequestPermissionsAsync.mockResolvedValue({ status: 'granted' });
 
-    const chain = createChain(null, null);
     mockFrom.mockReturnValue({ upsert: jest.fn().mockResolvedValue({ error: null }) });
 
     await registerDevicePushToken('user-123');
@@ -576,6 +559,9 @@ describe('loadNotificationPreferences', () => {
     comments: true,
     likes: true,
     reminders: true,
+    pr_celebrations: true,
+    streak_alerts: true,
+    rest_day_suggestions: true,
     timezone: null,
     quiet_hours: null,
   };
@@ -586,6 +572,9 @@ describe('loadNotificationPreferences', () => {
       comments: false,
       likes: true,
       reminders: false,
+      pr_celebrations: false,
+      streak_alerts: true,
+      rest_day_suggestions: false,
       timezone: 'America/New_York',
       quiet_hours: '22:00-07:00',
     };
@@ -631,8 +620,43 @@ describe('loadNotificationPreferences', () => {
         comments: true,
         likes: true,
         reminders: true,
+        pr_celebrations: true,
+        streak_alerts: true,
+        rest_day_suggestions: true,
       }),
     );
+  });
+
+  it('fills in new workout preference types for legacy rows', async () => {
+    const mockSingle = jest.fn().mockResolvedValue({
+      data: {
+        user_id: userId,
+        comments: false,
+        likes: true,
+        reminders: false,
+        timezone: null,
+        quiet_hours: null,
+      },
+      error: null,
+      status: 200,
+    });
+    const mockEq = jest.fn().mockReturnValue({ single: mockSingle });
+    const mockSelect = jest.fn().mockReturnValue({ eq: mockEq });
+    mockFrom.mockReturnValue({ select: mockSelect });
+
+    const result = await loadNotificationPreferences(userId);
+
+    expect(result).toEqual({
+      user_id: userId,
+      comments: false,
+      likes: true,
+      reminders: false,
+      pr_celebrations: true,
+      streak_alerts: true,
+      rest_day_suggestions: true,
+      timezone: null,
+      quiet_hours: null,
+    });
   });
 
   it('returns in-memory defaults when auto-create fails after 406', async () => {
@@ -692,6 +716,9 @@ describe('updateNotificationPreferences', () => {
       comments: false,
       likes: true,
       reminders: true,
+      pr_celebrations: true,
+      streak_alerts: false,
+      rest_day_suggestions: true,
       timezone: null,
       quiet_hours: null,
     };
@@ -730,6 +757,9 @@ describe('updateNotificationPreferences', () => {
         comments: true,
         likes: false,
         reminders: true,
+        pr_celebrations: true,
+        streak_alerts: true,
+        rest_day_suggestions: true,
         timezone: 'US/Pacific',
         quiet_hours: null,
       },
@@ -748,6 +778,66 @@ describe('updateNotificationPreferences', () => {
       { user_id: userId, likes: false, timezone: 'US/Pacific' },
       { onConflict: 'user_id' },
     );
+  });
+
+  it('normalizes new workout preference types in update responses', async () => {
+    const mockSingle = jest.fn().mockResolvedValue({
+      data: {
+        user_id: userId,
+        comments: true,
+        likes: true,
+        reminders: true,
+        timezone: null,
+        quiet_hours: null,
+      },
+      error: null,
+    });
+    const mockSelect = jest.fn().mockReturnValue({ single: mockSingle });
+    const mockUpsert = jest.fn().mockReturnValue({ select: mockSelect });
+    mockFrom.mockReturnValue({ upsert: mockUpsert });
+
+    const result = await updateNotificationPreferences(userId, { streak_alerts: false });
+
+    expect(result).toEqual({
+      user_id: userId,
+      comments: true,
+      likes: true,
+      reminders: true,
+      pr_celebrations: true,
+      streak_alerts: true,
+      rest_day_suggestions: true,
+      timezone: null,
+      quiet_hours: null,
+    });
+    expect(mockUpsert).toHaveBeenCalledWith(
+      { user_id: userId, streak_alerts: false },
+      { onConflict: 'user_id' },
+    );
+  });
+});
+
+// ===========================================================================
+// sendCoachTipNotification
+// ===========================================================================
+
+describe('sendCoachTipNotification', () => {
+  it('invokes notify edge function with coach tip payload', async () => {
+    mockInvoke.mockResolvedValue({ data: { delivered: 1 }, error: null });
+
+    const result = await sendCoachTipNotification('user-999', 'Take a lighter recovery day tomorrow.');
+
+    expect(mockInvoke).toHaveBeenCalledWith('notify', {
+      body: {
+        userIds: ['user-999'],
+        title: 'Coach tip',
+        body: 'Take a lighter recovery day tomorrow.',
+        data: {
+          type: 'coach_tip',
+          tip: 'Take a lighter recovery day tomorrow.',
+        },
+      },
+    });
+    expect(result).toEqual({ data: { delivered: 1 }, error: null });
   });
 });
 
