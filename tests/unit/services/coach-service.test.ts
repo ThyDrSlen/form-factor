@@ -325,7 +325,7 @@ describe('coach-service', () => {
     expect(mockFrom).not.toHaveBeenCalledWith('coach_conversations');
   });
 
-  it('retries persist once when initial insert fails', async () => {
+  it('logs persistence failure without retrying when initial insert fails', async () => {
     let insertCallCount = 0;
     mockInsert.mockImplementation(() => {
       insertCallCount++;
@@ -344,7 +344,21 @@ describe('coach-service', () => {
     // Wait for the fire-and-forget promises
     await new Promise((r) => setTimeout(r, 50));
 
-    expect(insertCallCount).toBe(2);
+    expect(insertCallCount).toBe(1);
+    expect(mockLogError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        domain: 'storage',
+        code: 'COACH_CONVERSATION_PERSIST_FAILED',
+      }),
+      expect.objectContaining({
+        feature: 'app',
+        location: 'sendCoachPrompt.persistCoachConversation',
+        meta: expect.objectContaining({
+          sessionId: 'sess-1',
+          userId: 'user-1',
+        }),
+      })
+    );
   });
 
   it('uses the env-configured function name', () => {
