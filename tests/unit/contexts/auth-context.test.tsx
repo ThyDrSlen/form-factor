@@ -2,6 +2,8 @@ import React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react-native';
 import type * as AuthContextModule from '@/contexts/AuthContext';
 import type { Session, User } from '@supabase/supabase-js';
+import { registerDevicePushToken } from '@/lib/services/notifications';
+import { PermissionStatus } from 'expo-modules-core';
 
 // Mock user and session data
 const mockUser: User = {
@@ -135,6 +137,11 @@ describe('AuthContext', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     authStateChangeCallback = null;
+
+    (registerDevicePushToken as jest.MockedFunction<typeof registerDevicePushToken>).mockResolvedValue({
+      status: PermissionStatus.GRANTED,
+      error: undefined,
+    });
     
     // Default mock implementations
     mockSessionManager.getStoredSession.mockResolvedValue(null);
@@ -152,6 +159,10 @@ describe('AuthContext', () => {
     
     mockLocalDB.clearAllData.mockResolvedValue(undefined);
     mockSyncService.cleanupRealtimeSync.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   describe('useAuth hook', () => {
@@ -684,6 +695,65 @@ describe('AuthContext', () => {
       unmount();
 
       expect(mockUnsubscribe).toHaveBeenCalled();
+    });
+
+    it('attempts push token registration three times with 1000ms, 2000ms, and 4000ms exponential backoff when registration keeps failing', async () => {
+      jest.useFakeTimers();
+
+      const mockRegisterDevicePushToken = registerDevicePushToken as jest.MockedFunction<typeof registerDevicePushToken>;
+      mockRegisterDevicePushToken.mockRejectedValue(new Error('push registration failed'));
+
+      renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => {
+        expect(authStateChangeCallback).not.toBeNull();
+      });
+
+      await act(async () => {
+        authStateChangeCallback!('SIGNED_IN', mockSession);
+      });
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(999);
+      });
+      expect(mockRegisterDevicePushToken).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1);
+      });
+
+      await waitFor(() => {
+        expect(mockRegisterDevicePushToken).toHaveBeenCalledTimes(1);
+      });
+      expect(mockRegisterDevicePushToken).toHaveBeenNthCalledWith(1, mockUser.id, { requestPermission: false });
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1999);
+      });
+      expect(mockRegisterDevicePushToken).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1);
+      });
+
+      await waitFor(() => {
+        expect(mockRegisterDevicePushToken).toHaveBeenCalledTimes(2);
+      });
+      expect(mockRegisterDevicePushToken).toHaveBeenNthCalledWith(2, mockUser.id, { requestPermission: false });
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(3999);
+      });
+      expect(mockRegisterDevicePushToken).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1);
+      });
+
+      await waitFor(() => {
+        expect(mockRegisterDevicePushToken).toHaveBeenCalledTimes(3);
+      });
+      expect(mockRegisterDevicePushToken).toHaveBeenNthCalledWith(3, mockUser.id, { requestPermission: false });
     });
   });
 

@@ -4,6 +4,8 @@ const mockFrom = jest.fn(() => ({
   insert: mockInsert,
 }));
 const mockRecordCoachUsage = jest.fn().mockResolvedValue(undefined);
+const mockGetAllWorkouts = jest.fn();
+const mockLogError = jest.fn();
 const mockCreateError = jest.fn(
   (
     domain: string,
@@ -29,14 +31,20 @@ jest.mock('@/lib/supabase', () => ({
   },
 }));
 
+jest.mock('@/lib/services/database/local-db', () => ({
+  localDB: {
+    getAllWorkouts: mockGetAllWorkouts,
+  },
+}));
+
 jest.mock('@/lib/services/ErrorHandler', () => ({
   createError: mockCreateError,
-  logError: jest.fn(),
+  logError: mockLogError,
 }));
 
 jest.mock('../../../lib/services/ErrorHandler', () => ({
   createError: mockCreateError,
-  logError: jest.fn(),
+  logError: mockLogError,
 }));
 
 // Cost-tracker wiring (#537): verify recordCoachUsage fires on happy path.
@@ -57,11 +65,7 @@ describe('coach-service', () => {
     jest.clearAllMocks();
     mockInvoke.mockResolvedValue({ data: { message: 'Keep your chest up.' }, error: null });
     mockInsert.mockResolvedValue({ error: null });
-    jest.spyOn(console, 'warn').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
+    mockGetAllWorkouts.mockResolvedValue([]);
   });
 
   it('classifies a 404 invoke failure as COACH_NOT_DEPLOYED', async () => {
@@ -321,7 +325,7 @@ describe('coach-service', () => {
     expect(mockFrom).not.toHaveBeenCalledWith('coach_conversations');
   });
 
-  it('retries persist once when initial insert fails', async () => {
+  it('logs persistence failure without retrying when initial insert fails', async () => {
     let insertCallCount = 0;
     mockInsert.mockImplementation(() => {
       insertCallCount++;
@@ -340,7 +344,21 @@ describe('coach-service', () => {
     // Wait for the fire-and-forget promises
     await new Promise((r) => setTimeout(r, 50));
 
-    expect(insertCallCount).toBe(2);
+    expect(insertCallCount).toBe(1);
+    expect(mockLogError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        domain: 'storage',
+        code: 'COACH_CONVERSATION_PERSIST_FAILED',
+      }),
+      expect.objectContaining({
+        feature: 'app',
+        location: 'sendCoachPrompt.persistCoachConversation',
+        meta: expect.objectContaining({
+          sessionId: 'sess-1',
+          userId: 'user-1',
+        }),
+      })
+    );
   });
 
   it('uses the env-configured function name', () => {
@@ -424,5 +442,164 @@ describe('coach-service', () => {
       const result = await sendCoachPrompt(baseMessages);
       expect(result.content).toBe('Reply.');
     });
+
+  });
+
+  it('includes up to five recent workouts and best-performance context when local history exists', async () => {
+    mockGetAllWorkouts.mockResolvedValue([
+      {
+        id: 'w-1',
+        exercise: 'Back Squat',
+        sets: 5,
+        reps: 5,
+        weight: 225,
+        duration: null,
+        date: '2026-04-29T10:00:00.000Z',
+        synced: 1,
+        deleted: 0,
+        updated_at: '2026-04-29T10:05:00.000Z',
+      },
+      {
+        id: 'w-2',
+        exercise: 'Bench Press',
+        sets: 4,
+        reps: 8,
+        weight: 155,
+        duration: null,
+        date: '2026-04-27T10:00:00.000Z',
+        synced: 1,
+        deleted: 0,
+        updated_at: '2026-04-27T10:05:00.000Z',
+      },
+      {
+        id: 'w-3',
+        exercise: 'Pull Up',
+        sets: 4,
+        reps: 12,
+        weight: 0,
+        duration: null,
+        date: '2026-04-25T10:00:00.000Z',
+        synced: 1,
+        deleted: 0,
+        updated_at: '2026-04-25T10:05:00.000Z',
+      },
+      {
+        id: 'w-4',
+        exercise: 'Romanian Deadlift',
+        sets: 3,
+        reps: 8,
+        weight: 245,
+        duration: null,
+        date: '2026-04-23T10:00:00.000Z',
+        synced: 1,
+        deleted: 0,
+        updated_at: '2026-04-23T10:05:00.000Z',
+      },
+      {
+        id: 'w-5',
+        exercise: 'Bike Intervals',
+        sets: 6,
+        reps: null,
+        weight: null,
+        duration: 18,
+        date: '2026-04-21T10:00:00.000Z',
+        synced: 1,
+        deleted: 0,
+        updated_at: '2026-04-21T10:05:00.000Z',
+      },
+      {
+        id: 'w-6',
+        exercise: 'Old Session',
+        sets: 2,
+        reps: 20,
+        weight: null,
+        duration: null,
+        date: '2026-04-18T10:00:00.000Z',
+        synced: 1,
+        deleted: 0,
+        updated_at: '2026-04-18T10:05:00.000Z',
+      },
+    ]);
+
+    await sendCoachPrompt(baseMessages, {
+      profile: { id: 'user-123', name: 'Pat' },
+      focus: 'strength_training',
+      sessionId: 'session-9',
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'coach',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          messages: baseMessages,
+          context: expect.objectContaining({
+            focus: 'strength_training',
+            workoutSummary:
+              'Recent workouts: 2026-04-29: Back Squat (5x5, weight 225); 2026-04-27: Bench Press (4x8, weight 155); 2026-04-25: Pull Up (4x12); 2026-04-23: Romanian Deadlift (3x8, weight 245); 2026-04-21: Bike Intervals (6 sets, 18 min). Best performance: Romanian Deadlift 245 x 8; Old Session 20 reps',
+          }),
+        }),
+      })
+    );
+  });
+
+  it('logs and skips workout context when local workout history fails', async () => {
+    mockGetAllWorkouts.mockRejectedValue(new Error('db offline'));
+
+    await expect(sendCoachPrompt(baseMessages, { focus: 'recovery' })).resolves.toEqual({
+      role: 'assistant',
+      content: 'Keep your chest up.',
+    });
+
+    expect(mockLogError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        domain: 'storage',
+        code: 'COACH_WORKOUT_CONTEXT_FAILED',
+      }),
+      expect.objectContaining({
+        feature: 'workouts',
+        location: 'sendCoachPrompt.buildCoachContext',
+      })
+    );
+    expect(mockInvoke).toHaveBeenCalledWith(
+      'coach',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          context: { focus: 'recovery' },
+        }),
+      })
+    );
+  });
+
+  it('logs persistence failures without failing the coach response', async () => {
+    mockInsert.mockResolvedValue({ error: { message: 'insert failed' } });
+
+    await expect(
+      sendCoachPrompt(baseMessages, {
+        profile: { id: 'user-123' },
+        focus: 'squat',
+        sessionId: 'session-9',
+      })
+    ).resolves.toEqual({
+      role: 'assistant',
+      content: 'Keep your chest up.',
+    });
+    await Promise.resolve();
+
+    expect(mockLogError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        domain: 'storage',
+        code: 'COACH_CONVERSATION_PERSIST_FAILED',
+      }),
+      expect.objectContaining({
+        feature: 'app',
+        location: 'sendCoachPrompt.persistCoachConversation',
+        meta: expect.objectContaining({
+          sessionId: 'session-9',
+          userId: 'user-123',
+        }),
+      })
+    );
   });
 });
+
+export {};

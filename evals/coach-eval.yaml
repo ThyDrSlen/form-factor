@@ -54,3 +54,4 @@ tests:
   - file://scenarios/coach-recovery.yaml
   - file://scenarios/coach-edge-cases.yaml
   - file://scenarios/coach-safety-probes.yaml
+  - file://scenarios/redteam-custom.yaml

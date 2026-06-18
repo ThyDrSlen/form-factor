@@ -2,6 +2,12 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4?target=deno';
 
+import {
+  checkNotifyRateLimit,
+  deriveNotifyRateLimitKeys,
+  sanitizeNotificationData,
+} from './validation';
+
 interface PushRequest {
   userIds?: string[];
   tokens?: string[];
@@ -21,6 +27,7 @@ type ExpoPushMessage = {
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const MAX_BATCH = 90;
 const MAX_IDS = 1000;
+const notifyRateLimits = new Map<string, { count: number; windowStart: number }>();
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -157,6 +164,12 @@ serve(async (req: Request) => {
     const payload = (await req.json()) as PushRequest;
     const title = payload.title?.trim();
     const body = payload.body?.trim();
+    const sanitizedData = sanitizeNotificationData(payload.data ?? {});
+    const rateLimitKeys = deriveNotifyRateLimitKeys({
+      userIds: payload.userIds,
+      sanitizedData,
+      tokens: payload.tokens,
+    });
 
     if (!title || !body) {
       return jsonResponse({ error: 'title and body are required' }, 400);
@@ -166,6 +179,20 @@ serve(async (req: Request) => {
       const dataStr = JSON.stringify(payload.data);
       if (dataStr.length > 4096) {
         return jsonResponse({ error: 'data payload exceeds 4KB limit' }, 400);
+      }
+    }
+
+    for (const rateLimitKey of rateLimitKeys) {
+      const rateLimit = checkNotifyRateLimit(rateLimitKey, notifyRateLimits);
+
+      if (!rateLimit.allowed) {
+        return jsonResponse(
+          {
+            error: 'Rate limit exceeded',
+            retryAfter: rateLimit.retryAfter,
+          },
+          429,
+        );
       }
     }
 
@@ -189,7 +216,7 @@ serve(async (req: Request) => {
       sound: 'default',
       title: title.slice(0, 64),
       body: body.slice(0, 180),
-      data: payload.data ?? {},
+      data: sanitizedData,
     }));
 
     const result = await sendExpoMessages(messages);

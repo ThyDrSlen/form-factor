@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4?target=deno';
+import { isOpenAIResponse } from './validation';
 
 type Role = 'user' | 'assistant' | 'system';
 
@@ -128,10 +129,12 @@ export const __modelDispatchInternals = {
   FALLBACK_MODEL,
   COACH_MODEL_ROLLOUT_PCT,
 };
-
+const corsHeaders = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-const MAX_MESSAGES = 12;
-const MAX_CONTENT_LENGTH = 1200;
 const MAX_TOKENS = Number(Deno.env.get('COACH_MAX_TOKENS') || 320);
 const TEMPERATURE = Number(Deno.env.get('COACH_TEMPERATURE') || 0.6);
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -234,11 +237,7 @@ function badRequest(message: string, init?: ResponseInit) {
     JSON.stringify({ error: message }),
     {
       status: init?.status ?? 400,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-      },
+      headers: corsHeaders,
       ...init,
     },
   );
@@ -247,11 +246,7 @@ function badRequest(message: string, init?: ResponseInit) {
 function ok(body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
     status: 200,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    },
+    headers: corsHeaders,
   });
 }
 
@@ -466,15 +461,15 @@ async function generateReply(body: RequestBody, userId: string) {
       signal: controller.signal,
     });
   } catch (fetchErr) {
-    clearTimeout(timeoutId);
     const isTimeout = fetchErr instanceof DOMException && fetchErr.name === 'AbortError';
     console.error('[coach] OpenAI fetch failed', { timeout: isTimeout, error: fetchErr });
     return badRequest(
       isTimeout ? 'Coach took too long to respond. Please try again.' : 'Failed to reach coach service.',
       { status: 504 },
     );
+  } finally {
+    clearTimeout(timeoutId);
   }
-  clearTimeout(timeoutId);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -484,7 +479,13 @@ async function generateReply(body: RequestBody, userId: string) {
 
   let data: OpenAIResponse;
   try {
-    data = (await response.json()) as OpenAIResponse;
+    const json = (await response.json()) as unknown;
+    if (!isOpenAIResponse(json)) {
+      console.error('[coach] Unexpected OpenAI response structure', JSON.stringify(json));
+      return badRequest('Upstream returned an unexpected response format.', { status: 502 });
+    }
+
+    data = json;
   } catch (_parseErr) {
     console.error('[coach] Failed to parse OpenAI response as JSON');
     return badRequest('Upstream returned an invalid response.', { status: 502 });

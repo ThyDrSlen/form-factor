@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { BackHandler, View, Text, StyleSheet, TouchableOpacity, Switch, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
@@ -16,17 +16,58 @@ import {
 import { openExternalUrl, openSystemSettings as openSystemSettingsHelper } from '@/lib/utils/open-external';
 
 type PermissionState = 'granted' | 'undetermined' | 'denied';
-type ToggleKey = 'comments' | 'likes' | 'reminders';
+type ToggleKey =
+  | 'comments'
+  | 'likes'
+  | 'reminders'
+  | 'pr_celebrations'
+  | 'streak_alerts'
+  | 'rest_day_suggestions';
+type PreferencesState = 'loading' | 'ready' | 'signed_out' | 'error';
 
 export default function NotificationSettingsModal() {
   const { user } = useAuth();
   const toast = useToast();
   const safeBack = useSafeBack(['/(tabs)/profile', '/profile'], { alwaysReplace: true });
   const [permission, setPermission] = useState<PermissionState>('undetermined');
-  const [loading, setLoading] = useState(true);
+  const [preferencesState, setPreferencesState] = useState<PreferencesState>('loading');
   const [registering, setRegistering] = useState(false);
   const [savingKey, setSavingKey] = useState<ToggleKey | null>(null);
   const [prefs, setPrefs] = useState<{ [key in ToggleKey]: boolean } | null>(null);
+
+  const applyPreferences = useCallback((existing: Awaited<ReturnType<typeof loadNotificationPreferences>>) => {
+    setPrefs({
+      comments: existing.comments,
+      likes: existing.likes,
+      reminders: existing.reminders,
+      pr_celebrations: existing.pr_celebrations,
+      streak_alerts: existing.streak_alerts,
+      rest_day_suggestions: existing.rest_day_suggestions,
+    });
+  }, []);
+
+  const loadSettings = useCallback(async () => {
+    setPreferencesState('loading');
+    try {
+      const status = await getNotificationPermissions();
+      setPermission(status);
+
+      if (!user?.id) {
+        setPrefs(null);
+        setPreferencesState('signed_out');
+        return;
+      }
+
+      const existing = await loadNotificationPreferences(user.id);
+      applyPreferences(existing);
+      setPreferencesState('ready');
+    } catch (err) {
+      setPrefs(null);
+      setPreferencesState('error');
+      warnWithTs('[notifications] Failed to load settings', err);
+      toast.show('Unable to load notification settings', { type: 'error' });
+    }
+  }, [applyPreferences, toast, user?.id]);
 
   const statusLabel = useMemo(() => {
     if (permission === 'granted') return 'Enabled';
@@ -35,29 +76,8 @@ export default function NotificationSettingsModal() {
   }, [permission]);
 
   useEffect(() => {
-    const bootstrap = async () => {
-      try {
-        const status = await getNotificationPermissions();
-        setPermission(status);
-
-        if (user?.id) {
-          const existing = await loadNotificationPreferences(user.id);
-          setPrefs({
-            comments: existing.comments,
-            likes: existing.likes,
-            reminders: existing.reminders,
-          });
-        }
-      } catch (err) {
-        warnWithTs('[notifications] Failed to load settings', err);
-        toast.show('Unable to load notification settings', { type: 'error' });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    bootstrap();
-  }, [toast, user?.id]);
+    void loadSettings();
+  }, [loadSettings]);
 
   useEffect(() => {
     if (!isAndroid()) return;
@@ -104,11 +124,14 @@ export default function NotificationSettingsModal() {
 
     try {
       const updated = await updateNotificationPreferences(user.id, { [key]: nextPrefs[key] });
-      setPrefs({
-        comments: updated.comments,
-        likes: updated.likes,
-        reminders: updated.reminders,
-      });
+        setPrefs({
+          comments: updated.comments,
+          likes: updated.likes,
+          reminders: updated.reminders,
+          pr_celebrations: updated.pr_celebrations,
+          streak_alerts: updated.streak_alerts,
+          rest_day_suggestions: updated.rest_day_suggestions,
+        });
     } catch (err) {
       warnWithTs('[notifications] Failed to update preferences', err);
       setPrefs(prefs);
@@ -180,9 +203,9 @@ export default function NotificationSettingsModal() {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Preferences</Text>
-        {loading ? (
+        {preferencesState === 'loading' ? (
           <ActivityIndicator color="#4C8CFF" style={{ marginTop: 12 }} />
-        ) : prefs ? (
+        ) : preferencesState === 'ready' && prefs ? (
           <>
             <SettingRow
               label="Comments on my videos"
@@ -208,7 +231,38 @@ export default function NotificationSettingsModal() {
               accessibilityLabel="Workout reminder notifications"
               accessibilityHint="Toggle daily reminders to complete your workout"
             />
+            <SettingRow
+              label="PR celebrations"
+              value={prefs.pr_celebrations}
+              onValueChange={() => handleToggle('pr_celebrations')}
+              disabled={savingKey === 'pr_celebrations'}
+              accessibilityLabel="PR celebration notifications"
+              accessibilityHint="Toggle alerts when you hit a personal record"
+            />
+            <SettingRow
+              label="Workout streak alerts"
+              value={prefs.streak_alerts}
+              onValueChange={() => handleToggle('streak_alerts')}
+              disabled={savingKey === 'streak_alerts'}
+              accessibilityLabel="Workout streak notifications"
+              accessibilityHint="Toggle alerts that celebrate your workout streak"
+            />
+            <SettingRow
+              label="Rest day suggestions"
+              value={prefs.rest_day_suggestions}
+              onValueChange={() => handleToggle('rest_day_suggestions')}
+              disabled={savingKey === 'rest_day_suggestions'}
+              accessibilityLabel="Rest day suggestion notifications"
+              accessibilityHint="Toggle suggestions to take a recovery day"
+            />
           </>
+        ) : preferencesState === 'error' ? (
+          <View style={styles.inlineState}>
+            <Text style={styles.cardSubtitle}>We could not load your notification settings.</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={() => void loadSettings()}>
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <Text style={styles.cardSubtitle}>Sign in to adjust your notification settings.</Text>
         )}
@@ -347,6 +401,23 @@ const styles = StyleSheet.create({
   secondaryText: {
     color: '#9AACD1',
     fontWeight: '600',
+  },
+  inlineState: {
+    marginTop: 12,
+    gap: 10,
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(76, 140, 255, 0.16)',
+    borderWidth: 1,
+    borderColor: '#4C8CFF',
+  },
+  retryText: {
+    color: '#E9EFFF',
+    fontWeight: '700',
   },
   settingRow: {
     flexDirection: 'row',

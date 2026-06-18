@@ -7,12 +7,14 @@ import { Platform } from 'react-native';
 
 jest.mock('expo-notifications', () => ({
   __esModule: true,
+  DEFAULT_ACTION_IDENTIFIER: 'expo.notifications.actions.DEFAULT',
   getPermissionsAsync: jest.fn(),
   requestPermissionsAsync: jest.fn(),
   getExpoPushTokenAsync: jest.fn(),
   setNotificationChannelAsync: jest.fn(),
   setNotificationHandler: jest.fn(),
   setNotificationCategoryAsync: jest.fn(),
+  addNotificationResponseReceivedListener: jest.fn(),
   addPushTokenListener: jest.fn(),
   AndroidImportance: { MAX: 5 },
 }));
@@ -63,8 +65,12 @@ jest.mock('@/lib/logger', () => ({
 
 // Supabase — we build chains per-test, so the factory just provides `from`
 const mockFrom = jest.fn();
+const mockInvoke = jest.fn();
 jest.mock('@/lib/supabase', () => ({
-  supabase: { from: (...args: any[]) => mockFrom(...args) },
+  supabase: {
+    from: (...args: any[]) => mockFrom(...args),
+    functions: { invoke: (...args: any[]) => mockInvoke(...args) },
+  },
 }));
 
 // ---------------------------------------------------------------------------
@@ -81,7 +87,11 @@ const mockRequestPermissionsAsync = Notifications.requestPermissionsAsync as jes
 const mockGetExpoPushTokenAsync = Notifications.getExpoPushTokenAsync as jest.Mock;
 const mockSetNotificationChannelAsync = Notifications.setNotificationChannelAsync as jest.Mock;
 const mockSetNotificationHandler = Notifications.setNotificationHandler as jest.Mock;
+const mockSetNotificationCategoryAsync = Notifications.setNotificationCategoryAsync as jest.Mock;
+const mockAddNotificationResponseReceivedListener = Notifications.addNotificationResponseReceivedListener as jest.Mock;
+const mockAddPushTokenListener = Notifications.addPushTokenListener as jest.Mock;
 const mockGetRandomBytesAsync = Crypto.getRandomBytesAsync as jest.Mock;
+const dismissedActionIdentifier = 'expo.notifications.actions.DISMISSED';
 
 // ---------------------------------------------------------------------------
 // Import the module under test AFTER all mocks are in place
@@ -89,10 +99,16 @@ const mockGetRandomBytesAsync = Crypto.getRandomBytesAsync as jest.Mock;
 
 import {
   getNotificationPermissions,
+  getNotificationRoute,
+  handleNotificationResponse,
   requestNotificationPermissions,
   registerDevicePushToken,
+  startPushTokenRefreshListener,
+  stopPushTokenRefreshListener,
+  syncPushTokenRefreshListener,
   unregisterDevicePushToken,
   loadNotificationPreferences,
+  sendCoachTipNotification,
   updateNotificationPreferences,
 } from '@/lib/services/notifications';
 
@@ -104,6 +120,9 @@ const notificationHandlerArg =
   mockSetNotificationHandler.mock.calls.length > 0
     ? mockSetNotificationHandler.mock.calls[0][0]
     : undefined;
+const initialNotificationCategoryCalls = Promise.resolve()
+  .then(() => Promise.resolve())
+  .then(() => mockSetNotificationCategoryAsync.mock.calls.map((call) => [...call]));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -114,27 +133,6 @@ function fakeBytes(len: number): Uint8Array {
   const arr = new Uint8Array(len);
   for (let i = 0; i < len; i++) arr[i] = i;
   return arr;
-}
-
-/**
- * Build a Supabase-style chainable query mock.
- * Every chaining method returns the same object so the chain resolves
- * to `{ data, error, status }` regardless of call order.
- */
-function createChain(data: any, error: any = null, status = 200) {
-  const resolved = { data, error, status };
-  const chain: Record<string, jest.Mock> = {};
-  const methods = ['select', 'eq', 'match', 'single', 'upsert', 'delete'];
-  methods.forEach((m) => {
-    chain[m] = jest.fn().mockReturnValue(chain);
-  });
-  // Make the chain thenable so `await supabase.from(...).select(...)` works
-  Object.defineProperty(chain, 'then', {
-    value: (onFulfilled: any, onRejected?: any) =>
-      Promise.resolve(resolved).then(onFulfilled, onRejected),
-    configurable: true,
-  });
-  return chain;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +151,9 @@ beforeEach(() => {
   mockGetExpoPushTokenAsync.mockResolvedValue({ data: 'ExponentPushToken[abc123]' });
   mockGetRandomBytesAsync.mockResolvedValue(fakeBytes(16));
   mockSetNotificationChannelAsync.mockResolvedValue(undefined);
+  mockSetNotificationCategoryAsync.mockResolvedValue(undefined);
+  mockAddNotificationResponseReceivedListener.mockReturnValue({ remove: jest.fn() });
+  mockAddPushTokenListener.mockReturnValue({ remove: jest.fn() });
 
   // Reset Platform.OS to ios
   (Platform as any).OS = 'ios';
@@ -308,7 +309,6 @@ describe('registerDevicePushToken', () => {
     mockGetPermissionsAsync.mockResolvedValue({ status: 'undetermined' });
     mockRequestPermissionsAsync.mockResolvedValue({ status: 'granted' });
 
-    const chain = createChain(null, null);
     mockFrom.mockReturnValue({ upsert: jest.fn().mockResolvedValue({ error: null }) });
 
     await registerDevicePushToken('user-123');
@@ -576,6 +576,9 @@ describe('loadNotificationPreferences', () => {
     comments: true,
     likes: true,
     reminders: true,
+    pr_celebrations: true,
+    streak_alerts: true,
+    rest_day_suggestions: true,
     timezone: null,
     quiet_hours: null,
   };
@@ -586,6 +589,9 @@ describe('loadNotificationPreferences', () => {
       comments: false,
       likes: true,
       reminders: false,
+      pr_celebrations: false,
+      streak_alerts: true,
+      rest_day_suggestions: false,
       timezone: 'America/New_York',
       quiet_hours: '22:00-07:00',
     };
@@ -631,8 +637,43 @@ describe('loadNotificationPreferences', () => {
         comments: true,
         likes: true,
         reminders: true,
+        pr_celebrations: true,
+        streak_alerts: true,
+        rest_day_suggestions: true,
       }),
     );
+  });
+
+  it('fills in new workout preference types for legacy rows', async () => {
+    const mockSingle = jest.fn().mockResolvedValue({
+      data: {
+        user_id: userId,
+        comments: false,
+        likes: true,
+        reminders: false,
+        timezone: null,
+        quiet_hours: null,
+      },
+      error: null,
+      status: 200,
+    });
+    const mockEq = jest.fn().mockReturnValue({ single: mockSingle });
+    const mockSelect = jest.fn().mockReturnValue({ eq: mockEq });
+    mockFrom.mockReturnValue({ select: mockSelect });
+
+    const result = await loadNotificationPreferences(userId);
+
+    expect(result).toEqual({
+      user_id: userId,
+      comments: false,
+      likes: true,
+      reminders: false,
+      pr_celebrations: true,
+      streak_alerts: true,
+      rest_day_suggestions: true,
+      timezone: null,
+      quiet_hours: null,
+    });
   });
 
   it('returns in-memory defaults when auto-create fails after 406', async () => {
@@ -692,6 +733,9 @@ describe('updateNotificationPreferences', () => {
       comments: false,
       likes: true,
       reminders: true,
+      pr_celebrations: true,
+      streak_alerts: false,
+      rest_day_suggestions: true,
       timezone: null,
       quiet_hours: null,
     };
@@ -730,6 +774,9 @@ describe('updateNotificationPreferences', () => {
         comments: true,
         likes: false,
         reminders: true,
+        pr_celebrations: true,
+        streak_alerts: true,
+        rest_day_suggestions: true,
         timezone: 'US/Pacific',
         quiet_hours: null,
       },
@@ -748,6 +795,295 @@ describe('updateNotificationPreferences', () => {
       { user_id: userId, likes: false, timezone: 'US/Pacific' },
       { onConflict: 'user_id' },
     );
+  });
+
+  it('normalizes new workout preference types in update responses', async () => {
+    const mockSingle = jest.fn().mockResolvedValue({
+      data: {
+        user_id: userId,
+        comments: true,
+        likes: true,
+        reminders: true,
+        timezone: null,
+        quiet_hours: null,
+      },
+      error: null,
+    });
+    const mockSelect = jest.fn().mockReturnValue({ single: mockSingle });
+    const mockUpsert = jest.fn().mockReturnValue({ select: mockSelect });
+    mockFrom.mockReturnValue({ upsert: mockUpsert });
+
+    const result = await updateNotificationPreferences(userId, { streak_alerts: false });
+
+    expect(result).toEqual({
+      user_id: userId,
+      comments: true,
+      likes: true,
+      reminders: true,
+      pr_celebrations: true,
+      streak_alerts: true,
+      rest_day_suggestions: true,
+      timezone: null,
+      quiet_hours: null,
+    });
+    expect(mockUpsert).toHaveBeenCalledWith(
+      { user_id: userId, streak_alerts: false },
+      { onConflict: 'user_id' },
+    );
+  });
+});
+
+// ===========================================================================
+// sendCoachTipNotification
+// ===========================================================================
+
+describe('sendCoachTipNotification', () => {
+  it('invokes notify edge function with coach tip payload', async () => {
+    mockInvoke.mockResolvedValue({ data: { delivered: 1 }, error: null });
+
+    const result = await sendCoachTipNotification('user-999', 'Take a lighter recovery day tomorrow.');
+
+    expect(mockInvoke).toHaveBeenCalledWith('notify', {
+      body: {
+        userIds: ['user-999'],
+        title: 'Coach tip',
+        body: 'Take a lighter recovery day tomorrow.',
+        data: {
+          type: 'coach_tip',
+          tip: 'Take a lighter recovery day tomorrow.',
+        },
+      },
+    });
+    expect(result).toEqual({ data: { delivered: 1 }, error: null });
+  });
+});
+
+// ===========================================================================
+// Notification routing + listeners
+// ===========================================================================
+
+describe('getNotificationRoute', () => {
+  it('routes comment notifications to the video comments modal', () => {
+    expect(getNotificationRoute({ type: 'comment', videoId: 'vid-123' })).toBe(
+      '/(modals)/video-comments?videoId=vid-123&returnTo=videos',
+    );
+  });
+
+  it('routes like notifications using postId fallback', () => {
+    expect(getNotificationRoute({ type: 'like', postId: 'vid-456' })).toBe(
+      '/(modals)/video-comments?videoId=vid-456&returnTo=videos',
+    );
+  });
+
+  it('routes follow notifications to the user-profile modal', () => {
+    expect(getNotificationRoute({ type: 'follow', userId: 'user-123' })).toBe(
+      '/(modals)/user-profile?userId=user-123',
+    );
+  });
+
+  it('routes workout notifications to the workouts tab', () => {
+    expect(getNotificationRoute({ type: 'workout' })).toBe('/(tabs)/workouts');
+  });
+
+  it('does not navigate for rest timer notifications', () => {
+    expect(getNotificationRoute({ type: 'rest_timer' })).toBeNull();
+  });
+
+  it('routes coach notifications to the coach tab', () => {
+    expect(getNotificationRoute({ type: 'coach' })).toBe('/(tabs)/coach');
+  });
+
+  it('routes workout reminders from deep links', () => {
+    expect(
+      getNotificationRoute({
+        type: 'workout_reminder',
+        deepLink: 'form-factor://scan?templateId=template-123',
+      }),
+    ).toBe('/(tabs)/scan-arkit?templateId=template-123');
+  });
+
+  it('routes social notifications to the notifications modal', () => {
+    expect(getNotificationRoute({ type: 'social' })).toBe('/(modals)/notifications');
+  });
+
+  it('returns null when no supported route exists', () => {
+    expect(getNotificationRoute({ type: 'unknown' })).toBeNull();
+  });
+});
+
+describe('handleNotificationResponse', () => {
+  it('navigates comment notifications to video comments', () => {
+    const navigate = jest.fn();
+
+    const route = handleNotificationResponse(
+      {
+        actionIdentifier: Notifications.DEFAULT_ACTION_IDENTIFIER,
+        notification: {
+          request: {
+            content: {
+              data: { type: 'comment', videoId: 'vid-123' },
+            },
+          },
+        },
+      } as any,
+      navigate,
+    );
+
+    expect(route).toBe('/(modals)/video-comments?videoId=vid-123&returnTo=videos');
+    expect(navigate).toHaveBeenCalledWith('/(modals)/video-comments?videoId=vid-123&returnTo=videos');
+  });
+
+  it('navigates follow notifications to user-profile', () => {
+    const navigate = jest.fn();
+
+    const route = handleNotificationResponse(
+      {
+        actionIdentifier: Notifications.DEFAULT_ACTION_IDENTIFIER,
+        notification: {
+          request: {
+            content: {
+              data: { type: 'follow', userId: 'user-123' },
+            },
+          },
+        },
+      } as any,
+      navigate,
+    );
+
+    expect(route).toBe('/(modals)/user-profile?userId=user-123');
+    expect(navigate).toHaveBeenCalledWith('/(modals)/user-profile?userId=user-123');
+  });
+
+  it('navigates for supported notification payloads', () => {
+    const navigate = jest.fn();
+
+    const route = handleNotificationResponse(
+      {
+        actionIdentifier: Notifications.DEFAULT_ACTION_IDENTIFIER,
+        notification: {
+          request: {
+            content: {
+              data: { type: 'coach' },
+            },
+          },
+        },
+      } as any,
+      navigate,
+    );
+
+    expect(route).toBe('/(tabs)/coach');
+    expect(navigate).toHaveBeenCalledWith('/(tabs)/coach');
+  });
+
+  it('ignores dismissed notification actions', () => {
+    const navigate = jest.fn();
+
+    const route = handleNotificationResponse(
+      {
+        actionIdentifier: dismissedActionIdentifier,
+        notification: {
+          request: {
+            content: {
+              data: { type: 'coach' },
+            },
+          },
+        },
+      } as any,
+      navigate,
+    );
+
+    expect(route).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('ignores the explicit rest timer dismiss action', () => {
+    const navigate = jest.fn();
+
+    const route = handleNotificationResponse(
+      {
+        actionIdentifier: 'dismiss',
+        notification: {
+          request: {
+            content: {
+              data: { type: 'coach' },
+            },
+          },
+        },
+      } as any,
+      navigate,
+    );
+
+    expect(route).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('push token refresh listener', () => {
+  it('re-registers refreshed device tokens and updates cache', async () => {
+    const remove = jest.fn();
+    let listener: ((token: { data: string }) => Promise<void>) | undefined;
+    mockAddPushTokenListener.mockImplementation((callback) => {
+      listener = callback;
+      return { remove };
+    });
+    const mockUpsert = jest.fn().mockResolvedValue({ error: null });
+    mockFrom.mockReturnValue({ upsert: mockUpsert });
+
+    startPushTokenRefreshListener('user-123');
+    await listener?.({ data: 'ExponentPushToken[rotated]' });
+
+    expect(mockUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: 'ExponentPushToken[rotated]',
+        user_id: 'user-123',
+      }),
+    );
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      'ff.notifications.last_token',
+      'ExponentPushToken[rotated]',
+    );
+
+    stopPushTokenRefreshListener();
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces any existing token refresh subscription before starting a new one', () => {
+    const firstRemove = jest.fn();
+    const secondRemove = jest.fn();
+    mockAddPushTokenListener
+      .mockReturnValueOnce({ remove: firstRemove })
+      .mockReturnValueOnce({ remove: secondRemove });
+
+    startPushTokenRefreshListener('user-123');
+    startPushTokenRefreshListener('user-123');
+
+    expect(firstRemove).toHaveBeenCalledTimes(1);
+
+    stopPushTokenRefreshListener();
+    expect(secondRemove).toHaveBeenCalledTimes(1);
+  });
+
+  it('sync helper starts the listener for an active user and stops it on cleanup', () => {
+    const remove = jest.fn();
+    mockAddPushTokenListener.mockReturnValue({ remove });
+
+    const cleanup = syncPushTokenRefreshListener('user-123');
+
+    expect(mockAddPushTokenListener).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('sync helper stops any existing listener when no active user remains', () => {
+    const remove = jest.fn();
+    mockAddPushTokenListener.mockReturnValue({ remove });
+
+    syncPushTokenRefreshListener('user-123');
+    syncPushTokenRefreshListener(undefined);
+
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(mockAddPushTokenListener).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -776,5 +1112,28 @@ describe('module initialization', () => {
       shouldShowList: true,
       shouldSetBadge: false,
     });
+  });
+
+  it('registers notification categories including rest timer dismiss handling', async () => {
+    const notificationCategoryCalls = await initialNotificationCategoryCalls;
+
+    expect(notificationCategoryCalls).toEqual(
+      expect.arrayContaining([
+        ['social', expect.any(Array)],
+        ['coach', expect.any(Array)],
+        [
+          'rest_timer',
+          [
+            {
+              identifier: 'dismiss',
+              buttonTitle: 'Dismiss',
+              options: { opensAppToForeground: false },
+            },
+          ],
+          { customDismissAction: true },
+        ],
+        ['workout_reminder', expect.any(Array)],
+      ]),
+    );
   });
 });
