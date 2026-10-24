@@ -3,7 +3,7 @@ import { fireEvent, render } from '@testing-library/react-native';
 import { Provider as PaperProvider } from 'react-native-paper';
 
 import { CoachRoutingPreference } from '@/features/coach/components/settings/CoachRoutingPreference';
-import type { CoachRoutingPreference as RoutingPref } from '@/lib/services/coach-dispatch';
+import type { OnDeviceRoutingPreference as RoutingPref } from '@/lib/ai/config';
 
 function Harness({
   initial = 'cloud_only',

@@ -8,6 +8,7 @@
 const mockInvoke = jest.fn();
 const mockAssertUnderWeeklyCap = jest.fn();
 const mockPreferredProvider = jest.fn();
+const mockOnDeviceRouting = jest.fn();
 const mockCreateError = jest.fn(
   (domain: string, code: string, message: string, opts?: { details?: unknown; retryable?: boolean; severity?: string }) => ({
     domain, code, message, retryable: opts?.retryable ?? false, severity: opts?.severity ?? 'error', details: opts?.details,
@@ -30,9 +31,11 @@ jest.mock('@/lib/services/coach-cost-guard', () => ({
 jest.mock('@/lib/ai/config', () => ({
   ...jest.requireActual('@/lib/ai/config'),
   getPreferredProviderId: () => mockPreferredProvider(),
+  getOnDeviceRoutingPreference: () => mockOnDeviceRouting(),
 }));
 
 import { sendCoachPrompt } from '@/lib/services/coach-service';
+import { registerOnDeviceRuntime } from '@/lib/ai/providers/on-device-provider';
 
 const ENV_KEYS = ['EXPO_PUBLIC_AI_PROVIDERS', 'EXPO_PUBLIC_COACH_PIPELINE_V2', 'EXPO_PUBLIC_COACH_MEMORY'] as const;
 const originalEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
@@ -50,6 +53,7 @@ beforeEach(() => {
   delete process.env.EXPO_PUBLIC_COACH_PIPELINE_V2;
   mockAssertUnderWeeklyCap.mockResolvedValue(undefined);
   mockPreferredProvider.mockResolvedValue(null);
+  mockOnDeviceRouting.mockResolvedValue(null);
   respond({
     coach: { data: { message: 'OpenAI reply.', model: 'gpt-5.4-mini' }, error: null },
     'coach-gemma': { data: { message: 'Gemma reply.', model: 'gemma-3-4b-it' }, error: null },
@@ -214,5 +218,59 @@ describe('pipeline-v2 task-kind policy', () => {
     process.env.EXPO_PUBLIC_AI_PROVIDERS = 'openai';
     await sendCoachPrompt(messages, undefined, { taskKind: 'rest_calc', userTier: 'pro' });
     expect(calledFunctions()).toEqual(['coach']);
+  });
+});
+
+describe('on-device routing preference', () => {
+  const localGenerate = jest.fn();
+  let unregister: () => void;
+  beforeEach(() => {
+    localGenerate.mockReset().mockResolvedValue('Local reply.');
+    unregister = registerOnDeviceRuntime({
+      id: 'on-device', label: 'Phone model', model: 'qwen3-1.7b-q4', isReady: () => true, generate: localGenerate,
+    });
+    process.env.EXPO_PUBLIC_AI_PROVIDERS = 'openai,on-device';
+  });
+  afterEach(() => unregister());
+
+  it('follows the enabled order when the user never chose', async () => {
+    await expect(sendCoachPrompt(messages)).resolves.toMatchObject({ content: 'OpenAI reply.' });
+    expect(localGenerate).not.toHaveBeenCalled();
+  });
+
+  it('prefer_local answers on device and labels the reply', async () => {
+    mockOnDeviceRouting.mockResolvedValue('prefer_local');
+    const result = await sendCoachPrompt(messages, undefined, { provider: 'openai' });
+    expect(result.content).toBe('Local reply.');
+    expect(result.provider).toBe('on-device');
+    expect(result.model).toBe('qwen3-1.7b-q4');
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('prefer_local falls back to the cloud when the local model fails', async () => {
+    mockOnDeviceRouting.mockResolvedValue('prefer_local');
+    localGenerate.mockResolvedValue('   ');
+    await expect(sendCoachPrompt(messages, undefined, { allowFailover: true })).resolves.toMatchObject({ content: 'OpenAI reply.' });
+  });
+
+  it('cloud_only never uses the on-device model, even when it leads the enabled order', async () => {
+    process.env.EXPO_PUBLIC_AI_PROVIDERS = 'on-device,openai';
+    mockOnDeviceRouting.mockResolvedValue('cloud_only');
+    await expect(sendCoachPrompt(messages)).resolves.toMatchObject({ content: 'OpenAI reply.' });
+    expect(localGenerate).not.toHaveBeenCalled();
+  });
+
+  it('local_only never calls the cloud', async () => {
+    mockOnDeviceRouting.mockResolvedValue('local_only');
+    await expect(sendCoachPrompt(messages, undefined, { provider: 'openai' })).resolves.toMatchObject({ content: 'Local reply.' });
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('local_only surfaces AI_PROVIDER_UNAVAILABLE when the local model is not ready', async () => {
+    unregister();
+    unregister = registerOnDeviceRuntime({ id: 'on-device', label: 'Phone model', model: 'm', isReady: () => false, generate: localGenerate });
+    mockOnDeviceRouting.mockResolvedValue('local_only');
+    await expect(sendCoachPrompt(messages)).rejects.toMatchObject({ code: 'AI_PROVIDER_UNAVAILABLE' });
+    expect(mockInvoke).not.toHaveBeenCalled();
   });
 });

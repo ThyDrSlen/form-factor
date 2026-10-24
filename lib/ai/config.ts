@@ -43,3 +43,28 @@ export async function setPreferredProviderId(id: string | null): Promise<void> {
   else await AsyncStorage.removeItem(PREFERRED_PROVIDER_STORAGE_KEY);
   await AsyncStorage.removeItem(LEGACY_PROVIDER_STORAGE_KEY);
 }
+
+/**
+ * How on-device providers participate, chosen in Settings → Coaching.
+ * `null` (never chosen) follows EXPO_PUBLIC_AI_PROVIDERS as-is.
+ */
+export type OnDeviceRoutingPreference = 'cloud_only' | 'prefer_local' | 'local_only';
+export const ON_DEVICE_ROUTING_STORAGE_KEY = 'coach_routing_preference';
+const ROUTING_VALUES: readonly OnDeviceRoutingPreference[] = ['cloud_only', 'prefer_local', 'local_only'];
+
+export function isOnDeviceRoutingPreference(value: unknown): value is OnDeviceRoutingPreference {
+  return typeof value === 'string' && (ROUTING_VALUES as readonly string[]).includes(value);
+}
+
+export async function getOnDeviceRoutingPreference(): Promise<OnDeviceRoutingPreference | null> {
+  try {
+    const stored = await AsyncStorage.getItem(ON_DEVICE_ROUTING_STORAGE_KEY);
+    return isOnDeviceRoutingPreference(stored) ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setOnDeviceRoutingPreference(value: OnDeviceRoutingPreference): Promise<void> {
+  await AsyncStorage.setItem(ON_DEVICE_ROUTING_STORAGE_KEY, value);
+}

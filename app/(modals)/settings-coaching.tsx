@@ -2,18 +2,18 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Text } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { CoachModelCard } from '@/features/coach/components/settings/CoachModelCard';
 import { CoachModelTierCard } from '@/features/coach/components/settings/CoachModelTierCard';
 import { CoachRoutingPreference } from '@/features/coach/components/settings/CoachRoutingPreference';
 import { CostDashboardCard } from '@/features/coach/components/settings/CostDashboardCard';
+import { useOnDeviceModelStatus } from '@/features/coach/hooks/use-on-device-model-status';
 import {
-  getStatus as getCoachModelStatus,
-  subscribe as subscribeCoachModel,
-  type CoachModelState,
-} from '@/lib/services/coach-model-manager';
-import type { CoachRoutingPreference as RoutingPref } from '@/lib/services/coach-dispatch';
+  ON_DEVICE_ROUTING_STORAGE_KEY,
+  getOnDeviceRoutingPreference,
+  setOnDeviceRoutingPreference,
+  type OnDeviceRoutingPreference as RoutingPref,
+} from '@/lib/ai/config';
 import {
   DEFAULT_COACH_MODEL_TIER,
   getModelTier,
@@ -22,36 +22,23 @@ import {
 } from '@/lib/services/coach-model-tier-preference';
 import { useSafeBack } from '@/hooks/use-safe-back';
 
-export const COACH_ROUTING_PREFERENCE_KEY = 'coach_routing_preference';
-
-const ROUTING_VALUES: RoutingPref[] = ['cloud_only', 'prefer_local', 'local_only'];
-
-function isRoutingPref(v: string | null | undefined): v is RoutingPref {
-  return !!v && (ROUTING_VALUES as string[]).includes(v);
-}
+export const COACH_ROUTING_PREFERENCE_KEY = ON_DEVICE_ROUTING_STORAGE_KEY;
 
 export default function SettingsCoachingModal() {
   const safeBack = useSafeBack(['/(tabs)/profile', '/profile'], { alwaysReplace: true });
-  const [modelState, setModelState] = useState<CoachModelState>(getCoachModelStatus());
+  const modelState = useOnDeviceModelStatus();
   const [preference, setPreference] = useState<RoutingPref>('cloud_only');
   const [tier, setTier] = useState<CoachModelTier>(DEFAULT_COACH_MODEL_TIER);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = subscribeCoachModel(setModelState);
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
     let alive = true;
     Promise.all([
-      AsyncStorage.getItem(COACH_ROUTING_PREFERENCE_KEY),
+      getOnDeviceRoutingPreference(),
       getModelTier(),
     ]).then(([storedPref, storedTier]) => {
       if (!alive) return;
-      if (isRoutingPref(storedPref)) {
+      if (storedPref) {
         setPreference(storedPref);
       }
       setTier(storedTier);
@@ -64,7 +51,7 @@ export default function SettingsCoachingModal() {
 
   const handlePreferenceChange = useCallback((next: RoutingPref) => {
     setPreference(next);
-    AsyncStorage.setItem(COACH_ROUTING_PREFERENCE_KEY, next).catch(() => {
+    setOnDeviceRoutingPreference(next).catch(() => {
       // Non-fatal — UI already reflects the choice. A future sync will
       // re-attempt on navigation.
     });

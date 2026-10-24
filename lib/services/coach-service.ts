@@ -1,6 +1,7 @@
 import { warnWithTs } from '@/lib/logger';
 import { ensureBuiltinProviders } from '@/lib/ai/providers';
-import { getPreferredProviderId } from '@/lib/ai/config';
+import { getOnDeviceRoutingPreference, getPreferredProviderId } from '@/lib/ai/config';
+import { applyOnDeviceRouting } from '@/lib/ai/on-device-routing';
 import { getProvider } from '@/lib/ai/registry';
 import { generate, shouldFallBack } from '@/lib/ai/router';
 import type { ModelResult } from '@/lib/ai/types';
@@ -288,7 +289,8 @@ function annotate(reply: CoachMessage, key: 'provider' | 'model', value: string)
  *
  * Routing: `opts.provider`, then the pipeline-v2 task-kind policy, then the
  * user's preferred provider, then `EXPO_PUBLIC_AI_PROVIDERS` order (default
- * `openai`). Only enabled providers are tried. A spend-cap rejection always
+ * `openai`), with the on-device routing preference applied on top. Only
+ * enabled providers are tried. A spend-cap rejection always
  * falls back; other retryable failures fall back only with `allowFailover`.
  */
 export async function sendCoachPrompt(
@@ -369,6 +371,10 @@ async function runCoachTurn(
     ensureBuiltinProviders();
     const prefer = [providerIdFromHint(opts?.provider), taskRoutedProviderId(opts)];
     if (!prefer.some(Boolean)) prefer.push((await getPreferredProviderId()) ?? undefined);
+    const onDeviceRouting = await getOnDeviceRoutingPreference();
+    const enabled = applyOnDeviceRouting(onDeviceRouting);
+    // prefer_local puts on-device ahead of any cloud hint or preference.
+    if (onDeviceRouting === 'prefer_local') prefer.unshift(...enabled.filter((id) => getProvider(id)?.kind === 'on-device'));
 
     const memoryClause = await resolveMemoryClause(context);
     const outgoingMessages = applyMemoryClause(messages, memoryClause);
@@ -382,6 +388,7 @@ async function runCoachTurn(
       { messages: outgoingMessages, context: requestContext, taskKind: opts?.taskKind },
       {
         prefer,
+        enabled,
         fallbackWhen: opts?.allowFailover ? isFailoverEligible : isCostCap,
         onFallback: (from, to, err) => {
           if (isCostCap(err)) warnWithTs(`[coach-service] ${from} spend cap hit, falling back to ${to}`, err);
