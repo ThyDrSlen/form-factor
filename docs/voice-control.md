@@ -13,7 +13,7 @@ acknowledgement pill over the scan camera.
 
 ```
          ┌────────────────────────────┐
-         │ expo-speech-recognition    │  (hooks/use-speech-to-text.ts)
+         │ expo-speech-recognition    │  (features/voice/hooks/use-speech-to-text.ts)
          │   raw transcript events    │
          └─────────────┬──────────────┘
                        │ raw text
@@ -239,6 +239,6 @@ flag `voiceSessionPaused` is excluded via `partialize`.
 | `lib/services/voice-privacy-policy.ts`       | Frozen privacy contract |
 | `lib/stores/session-runner.voice.ts`         | advance/pause/resume extension |
 | `lib/stores/voice-control-store.ts`          | Zustand store (persisted) |
-| `hooks/useVoiceCommandFeedback.ts`           | Display-state hook |
-| `components/form-tracking/VoiceCommandFeedback.tsx` | Overlay pill |
+| `features/voice/hooks/useVoiceCommandFeedback.ts`           | Display-state hook |
+| `features/form-tracking/components/VoiceCommandFeedback.tsx` | Overlay pill |
 | `app/(tabs)/scan-arkit.tsx`                  | 2-line additive mount (import + tag) |

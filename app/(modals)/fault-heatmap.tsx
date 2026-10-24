@@ -10,7 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FaultHeatmapThumb, type FaultCell } from '@/components/form-home/FaultHeatmapThumb';
+import { FaultHeatmapThumb, type FaultCell } from '@/features/form-tracking/components/home/FaultHeatmapThumb';
 import {
   loadFaultHeatmapData,
   type FaultHeatmapSnapshot,
@@ -20,7 +20,7 @@ import {
   type DrillFaultInput,
   type ExplainDrillResult,
 } from '@/lib/services/coach-drill-explainer';
-import { usePersistentFaultSummary } from '@/hooks/use-persistent-fault-summary';
+import { usePersistentFaultSummary } from '@/features/form-tracking/hooks/use-persistent-fault-summary';
 
 interface HeatmapDataState {
   cells: FaultCell[];

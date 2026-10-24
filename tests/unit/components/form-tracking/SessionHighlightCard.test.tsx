@@ -1,8 +1,8 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
 
-import { SessionHighlightCard } from '@/components/form-tracking/SessionHighlightCard';
-import type { RepSummary } from '@/components/form-tracking/RepBreakdownList';
+import { SessionHighlightCard } from '@/features/form-tracking/components/SessionHighlightCard';
+import type { RepSummary } from '@/features/form-tracking/components/RepBreakdownList';
 
 describe('SessionHighlightCard', () => {
   const best: RepSummary = { index: 4, fqi: 92, faults: [] };

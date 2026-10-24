@@ -3,7 +3,7 @@ jest.mock('expo-crypto', () => ({
 }));
 
 import { renderHook, act, waitFor } from '@testing-library/react-native';
-import { useSessionGenerator } from '@/hooks/use-session-generator';
+import { useSessionGenerator } from '@/features/coach/hooks/use-session-generator';
 import type { CoachMessage } from '@/lib/services/coach-service';
 
 const VALID_TEMPLATE = JSON.stringify({

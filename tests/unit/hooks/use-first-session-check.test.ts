@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   FIRST_SESSION_STORAGE_KEY,
   useFirstSessionCheck,
-} from '@/hooks/use-first-session-check';
+} from '@/features/form-tracking/hooks/use-first-session-check';
 
 describe('useFirstSessionCheck', () => {
   beforeEach(async () => {

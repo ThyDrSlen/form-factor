@@ -1,7 +1,7 @@
 import { renderHook, act } from '@testing-library/react-native';
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
-import { useWorkoutController } from '@/hooks/use-workout-controller';
-import { PULLUP_THRESHOLDS } from '@/lib/workouts/pullup';
+import { useWorkoutController } from '@/features/form-tracking/hooks/use-workout-controller';
+import { PULLUP_THRESHOLDS, pullupDefinition } from '@/lib/workouts/pullup';
 
 jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn().mockResolvedValue(undefined),
@@ -132,6 +132,8 @@ describe('pullup false-rep stability fixtures', () => {
     t = hold(t, pull);
     expect(result.current.state.phase).toBe('pull');
 
+    // The first rep must be a real-duration pull; only the second is a bounce.
+    t += pullupDefinition.repBoundary.minDurationMs;
     t = hold(t, top);
     expect(result.current.state.phase).toBe('top');
     expect(result.current.state.repCount).toBe(1);

@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
-import { HeartRatePill } from '@/components/form-tracking/HeartRatePill';
+import { HeartRatePill } from '@/features/form-tracking/components/HeartRatePill';
 
 describe('HeartRatePill', () => {
   it('renders nothing when bpm is null', () => {

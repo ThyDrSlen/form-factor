@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import type React from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -11,9 +11,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { isOnboardingReplay } from '@/lib/services/onboarding';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useUnits } from '@/contexts/UnitsContext';
 import { useToast } from '@/contexts/ToastContext';
 import { isIOS } from '@/lib/platform-utils';
@@ -33,13 +34,34 @@ export default function ProfileSetupScreen() {
   const { weightUnit, toggleWeightUnit } = useUnits();
   const { show: showToast } = useToast();
   const router = useRouter();
+  const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const replay = Boolean(user) && isOnboardingReplay(mode);
   const isiOS = isIOS();
 
   const [displayName, setDisplayName] = useState(user?.user_metadata?.full_name || '');
   const [fitnessGoal, setFitnessGoal] = useState<GoalProfile>('general');
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (!replay) return;
+    let cancelled = false;
+    AsyncStorage.getItem('@fitness_goal').then((saved) => {
+      if (!cancelled && goalOptions.some((option) => option.value === saved)) {
+        setFitnessGoal(saved as GoalProfile);
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [replay]);
+
+  const nextStep = () => router.replace(replay
+    ? '/(onboarding)/nutrition-goals?mode=replay'
+    : '/(onboarding)/nutrition-goals');
+
   const handleContinue = async () => {
+    if (replay) {
+      nextStep();
+      return;
+    }
     setSaving(true);
     try {
       if (displayName.trim()) {
@@ -52,7 +74,7 @@ export default function ProfileSetupScreen() {
       }
       await AsyncStorage.setItem('@fitness_goal', fitnessGoal);
       showToast('Profile set up!', { type: 'success' });
-      router.replace('/(onboarding)/nutrition-goals');
+      nextStep();
     } catch {
       Alert.alert('Error', 'Failed to save profile. Please try again.');
     } finally {
@@ -61,7 +83,7 @@ export default function ProfileSetupScreen() {
   };
 
   const handleSkip = () => {
-    router.replace('/(onboarding)/nutrition-goals');
+    nextStep();
   };
 
   return (
@@ -75,7 +97,16 @@ export default function ProfileSetupScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <View style={styles.backPlaceholder} />
+          {replay ? (
+            <TouchableOpacity
+              style={styles.backPlaceholder}
+              accessibilityRole="button"
+              accessibilityLabel="Back to Profile"
+              onPress={() => router.replace('/(tabs)/profile')}
+            >
+              <Ionicons name="close" size={24} color="#4C8CFF" />
+            </TouchableOpacity>
+          ) : <View style={styles.backPlaceholder} />}
           <Text style={styles.headerTitle}>Set Up Your Profile</Text>
           <View style={styles.headerSpacer} />
         </View>
@@ -87,7 +118,9 @@ export default function ProfileSetupScreen() {
 
           <Text style={styles.welcomeTitle}>Tell us about yourself</Text>
           <Text style={styles.descriptionText}>
-            Customize your experience. You can always change these later.
+            {replay
+              ? 'This walkthrough keeps your saved profile and goals. To make changes, use Edit Profile or Nutrition Goals in Profile.'
+              : 'Customize your experience. You can always change these later.'}
           </Text>
 
           {/* Display Name */}
@@ -103,7 +136,7 @@ export default function ProfileSetupScreen() {
               autoComplete="name"
               textContentType="name"
               returnKeyType="done"
-              editable={!saving}
+              editable={!saving && !replay}
             />
           </View>
 
@@ -123,6 +156,7 @@ export default function ProfileSetupScreen() {
                     fitnessGoal === option.value && styles.goalCardSelected,
                   ]}
                   onPress={() => setFitnessGoal(option.value)}
+                  disabled={replay}
                   activeOpacity={0.7}
                   accessibilityRole="radio"
                   accessibilityLabel={option.label}
@@ -149,12 +183,14 @@ export default function ProfileSetupScreen() {
               <TouchableOpacity
                 style={[styles.unitOption, weightUnit === 'lbs' && styles.unitOptionActive]}
                 onPress={() => { if (weightUnit !== 'lbs') toggleWeightUnit(); }}
+                disabled={replay}
               >
                 <Text style={[styles.unitText, weightUnit === 'lbs' && styles.unitTextActive]}>lbs</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.unitOption, weightUnit === 'kg' && styles.unitOptionActive]}
                 onPress={() => { if (weightUnit !== 'kg') toggleWeightUnit(); }}
+                disabled={replay}
               >
                 <Text style={[styles.unitText, weightUnit === 'kg' && styles.unitTextActive]}>kg</Text>
               </TouchableOpacity>

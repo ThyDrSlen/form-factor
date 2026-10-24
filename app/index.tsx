@@ -1,7 +1,8 @@
+import { theme } from '@/styles/theme';
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../features/auth/contexts/AuthContext';
 import { logWithTs } from '@/lib/logger';
 
 export default function RootRedirect() {
@@ -42,6 +43,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#050E1F',
+    backgroundColor: theme.colors.background,
   },
 });

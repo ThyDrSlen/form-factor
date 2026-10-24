@@ -5,6 +5,7 @@ module.exports = {
   content: [
     join(__dirname, '..', 'app/**/*.{js,jsx,ts,tsx}'),
     join(__dirname, '..', 'components/**/*.{js,jsx,ts,tsx}'),
+    join(__dirname, '..', 'features/**/*.{js,jsx,ts,tsx}'),
     join(__dirname, '..', 'contexts/**/*.{js,jsx,ts,tsx}'),
     join(__dirname, '..', 'lib/**/*.{js,jsx,ts,tsx}'),
   ],
@@ -34,4 +35,3 @@ module.exports = {
   },
   plugins: [],
 };
-

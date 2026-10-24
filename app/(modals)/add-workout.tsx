@@ -18,10 +18,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useWorkouts } from '../../contexts/WorkoutsContext';
+import { useWorkouts } from '../../features/workouts/contexts/WorkoutsContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useSafeBack } from '../../hooks/use-safe-back';
 import { errorWithTs, logWithTs } from '@/lib/logger';
+import { useUnits } from '@/contexts/UnitsContext';
+import { WorkoutWeightInput } from '@/features/workouts/components/WorkoutWeightInput';
 
 const COMMON_WORKOUTS = [
   'Bench Press',
@@ -48,7 +50,7 @@ const COMMON_WORKOUTS = [
 
 const SET_OPTIONS = Array.from({ length: 20 }, (_, i) => i + 1);
 const REP_OPTIONS = Array.from({ length: 41 }, (_, i) => i);
-const WEIGHT_OPTIONS = Array.from({ length: 101 }, (_, i) => i * 5);
+
 const WHEEL_ITEM_HEIGHT = 44;
 const LOOP_MULTIPLIER = 5;
 
@@ -192,6 +194,7 @@ function WheelPicker({ label, values, selectedValue, onChange, accessibilityLabe
 
 export default function AddWorkoutScreen() {
   const { addWorkout } = useWorkouts();
+  const { weightUnit } = useUnits();
   const { show: showToast } = useToast();
 
   const [exercise, setExercise] = useState<string>(COMMON_WORKOUTS[0]);
@@ -199,7 +202,8 @@ export default function AddWorkoutScreen() {
   const [exerciseSearch, setExerciseSearch] = useState('');
   const [sets, setSets] = useState<number>(SET_OPTIONS[2]);
   const [reps, setReps] = useState<number>(10);
-  const [weight, setWeight] = useState<number>(0);
+  // Keep the draft in canonical pounds so a preference switch never relabels its magnitude.
+  const [weight, setWeight] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
   const filteredExercises = useMemo(() => {
@@ -271,7 +275,7 @@ export default function AddWorkoutScreen() {
         exercise: exercise.trim(),
         sets,
         reps: reps > 0 ? reps : undefined,
-        weight: weight > 0 ? weight : undefined,
+        weight: weight ?? undefined,
         date: new Date().toISOString(),
       };
 
@@ -356,15 +360,11 @@ export default function AddWorkoutScreen() {
               min={0}
               max={40}
             />
-            <WheelPicker
-              label="Weight"
-              values={WEIGHT_OPTIONS}
-              selectedValue={weight}
-              onChange={setWeight}
-              formatValue={(value) => (value === 0 ? '—' : `${value} lb`)}
-              min={0}
-              max={500}
-            />
+            <View style={styles.wheelContainer}>
+              <Text style={styles.wheelLabel}>Weight ({weightUnit})</Text>
+              <WorkoutWeightInput value={weight} unit={weightUnit} onChange={setWeight}
+                style={styles.wheelInput} placeholder="—" selectTextOnFocus />
+            </View>
           </View>
         </LinearGradient>
 

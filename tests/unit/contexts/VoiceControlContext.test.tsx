@@ -14,7 +14,7 @@ import {
   VoiceControlProvider,
   useVoiceControl,
   type VoiceTranscriptSource,
-} from '@/contexts/VoiceControlContext';
+} from '@/features/voice/contexts/VoiceControlContext';
 import {
   createVoiceSessionManager,
   type VoiceSessionManager,

@@ -115,7 +115,8 @@ async function writeHealthDataToLocalDB(
 
   // Filter out records with no meaningful data
   const validData = dataPoints.filter(
-    (point) => point.steps != null || point.weight_kg != null
+    // History readers zero-fill missing step days; zero is not evidence of a reading.
+    (point) => (point.steps != null && point.steps > 0) || (point.weight_kg != null && point.weight_kg > 0)
   );
 
   const totalBatches = Math.ceil(validData.length / BATCH_SIZE);
@@ -135,7 +136,23 @@ async function writeHealthDataToLocalDB(
       // Write to local DB (much faster than Supabase)
       for (const point of batch) {
         try {
-          await localDB.insertHealthMetric(point);
+          // insertHealthMetric replaces every metric on conflict. Read this day
+          // immediately before writing so absent HealthKit fields are not deletions.
+          // A failed read must fail this record, never fall back to a destructive upsert.
+          const [existing] = await localDB.getHealthMetricsForRange(
+            point.user_id, point.summary_date, point.summary_date
+          );
+          const hasSteps = point.steps != null && point.steps > 0;
+          const hasWeight = point.weight_kg != null && point.weight_kg > 0;
+          await localDB.insertHealthMetric({
+            ...point,
+            id: existing?.id ?? point.id,
+            steps: hasSteps ? point.steps : existing?.steps ?? null,
+            weight_kg: hasWeight ? point.weight_kg : existing?.weight_kg ?? null,
+            weight_timestamp: hasWeight ? point.weight_timestamp : existing?.weight_timestamp ?? null,
+            heart_rate_bpm: existing?.heart_rate_bpm ?? null,
+            heart_rate_timestamp: existing?.heart_rate_timestamp ?? null,
+          });
           successCount++;
         } catch (err) {
           warnWithTs('[BulkSync] Failed to insert point', { date: point.summary_date, err });

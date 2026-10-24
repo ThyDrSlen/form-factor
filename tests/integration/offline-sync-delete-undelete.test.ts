@@ -27,13 +27,14 @@ type SupabaseCall = {
   op: 'select' | 'upsert' | 'delete' | 'update' | 'insert';
   payload?: unknown;
   filter?: { column: string; value: unknown };
+  filters?: { column: string; value: unknown }[];
 };
 
 const supabaseCalls: SupabaseCall[] = [];
 let pendingResolvedValue: { data?: unknown; error?: unknown } = { data: null, error: null };
 
 function createQueryBuilder(table: string) {
-  const state: { op?: SupabaseCall['op']; payload?: unknown; filter?: SupabaseCall['filter'] } = {};
+  const state: { op?: SupabaseCall['op']; payload?: unknown; filter?: SupabaseCall['filter']; filters: NonNullable<SupabaseCall['filters']> } = { filters: [] };
 
   const builder: Record<string, unknown> = {};
 
@@ -64,14 +65,15 @@ function createQueryBuilder(table: string) {
     return builder;
   });
   builder.eq = jest.fn((column: string, value: unknown) => {
-    state.filter = { column, value };
-    if (state.op === 'delete') {
-      supabaseCalls.push({ table, op: 'delete', filter: state.filter });
-    }
+    if (column === 'id') state.filter = { column, value };
+    state.filters.push({ column, value });
     return builder;
   });
   builder.single = jest.fn(() => builder);
-  builder.then = (resolve: (v: unknown) => void) => resolve(pendingResolvedValue);
+  builder.then = (resolve: (v: unknown) => void) => {
+    if (state.op === 'delete') supabaseCalls.push({ table, op: 'delete', filter: state.filter, filters: state.filters });
+    return resolve(pendingResolvedValue);
+  };
 
   return builder;
 }
@@ -198,6 +200,13 @@ jest.mock('@/lib/services/database/local-db', () => {
         if (existing) {
           getStore().workouts.set(id, { ...existing, synced: synced ? 1 : 0 });
         }
+      }),
+      reconcileWorkout: jest.fn(async (incoming: Record<string, unknown>, expected: Record<string, unknown>, isCurrent?: () => boolean) => {
+        const current = getStore().workouts.get(expected.id as string);
+        if ((isCurrent && !isCurrent()) || incoming.id !== expected.id || !current ||
+          !Object.entries(expected).every(([key, value]) => (current[key] ?? null) === (value ?? null))) return false;
+        getStore().workouts.set(expected.id as string, { ...current, ...incoming, synced: 1 });
+        return true;
       }),
       updateHealthMetricSyncStatus: jest.fn(async () => {}),
       updateNutritionGoalsSyncStatus: jest.fn(async () => {}),
@@ -340,9 +349,12 @@ describe('delete-then-undelete with concurrent remote update (integration)', () 
     await syncService.syncToSupabase();
 
     expect(store().queue).toHaveLength(0);
+    expect(store().workouts.get(workoutId)).toMatchObject({ deleted: 1, synced: 1, updated_at: deleteTs });
+    expect(supabaseCalls.filter(c => c.op === 'delete')).toHaveLength(1);
     const deleteCall = supabaseCalls.find((c) => c.op === 'delete');
     expect(deleteCall).toBeDefined();
     expect(deleteCall!.filter).toEqual({ column: 'id', value: workoutId });
+    expect(deleteCall!.filters).toEqual([{ column: 'id', value: workoutId }, { column: 'user_id', value: 'user-dd-1' }]);
     // Local row hard-deleted because of the DELETE sync path or left tombstoned;
     // our mock `syncToSupabase` path removes queue item only — the workout row
     // is still in the local map with deleted=1. That's fine for this scenario.
@@ -407,6 +419,7 @@ describe('delete-then-undelete with concurrent remote update (integration)', () 
     await syncService.syncToSupabase();
 
     expect(store().queue).toHaveLength(0);
+    expect(store().workouts.get(workoutId)).toMatchObject({ deleted: 0, synced: 1, updated_at: restoreTs });
     const upsertCalls = supabaseCalls.filter((c) => c.op === 'upsert');
     expect(upsertCalls).toHaveLength(1);
     const upsertPayload = upsertCalls[0].payload as unknown[];

@@ -1,13 +1,19 @@
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+
+const mockLoadSession = jest.fn().mockResolvedValue(undefined);
+const mockSessionState: any = { activeSession: null, error: null, loadActiveSession: mockLoadSession };
+jest.mock('@/lib/stores/session-runner', () => ({
+  useSessionRunner: Object.assign((selector: any) => selector(mockSessionState), { getState: () => mockSessionState }),
+}));
 
 import HomeScreen from '../../../app/(tabs)/index';
 
-jest.mock('../../../contexts/AuthContext', () => ({
+jest.mock('../../../features/auth/contexts/AuthContext', () => ({
   useAuth: () => ({ user: null }),
 }));
 
-jest.mock('../../../contexts/SocialContext', () => ({
+jest.mock('../../../features/social/contexts/SocialContext', () => ({
   useSocial: () => ({ unreadSharesCount: 0 }),
 }));
 
@@ -15,11 +21,12 @@ jest.mock('../../../contexts/ToastContext', () => ({
   useToast: () => ({ show: jest.fn() }),
 }));
 
-jest.mock('../../../contexts/SocialContext', () => ({
+jest.mock('../../../features/social/contexts/SocialContext', () => ({
   useSocial: () => ({ unreadSharesCount: 0 }),
 }));
 
 jest.mock('expo-router', () => ({
+  useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]),
   useRouter: () => ({
     push: jest.fn(),
     replace: jest.fn(),
@@ -35,7 +42,7 @@ jest.mock('@react-navigation/bottom-tabs', () => ({
   useBottomTabBarHeight: () => 0,
 }));
 
-jest.mock('@/components', () => ({
+jest.mock('@/features/health/components/DashboardHealth', () => ({
   DashboardHealth: () => null,
 }));
 
@@ -77,6 +84,26 @@ jest.mock('expo-video', () => {
 });
 
 describe('HomeScreen video feed', () => {
+  it('labels the action Resume only after the persisted active workout has loaded', async () => {
+    let finishLoad!: () => void;
+    mockLoadSession.mockImplementationOnce(() => new Promise<void>(resolve => { finishLoad = resolve; }));
+    const screen = render(<HomeScreen />);
+    expect(screen.queryByText('Start workout')).toBeNull();
+    expect(mockLoadSession).toHaveBeenCalled();
+    await act(async () => {
+      mockSessionState.activeSession = { id: 'restored' };
+      finishLoad();
+    });
+    expect(screen.getByLabelText('Resume workout')).toBeTruthy();
+    mockSessionState.activeSession = null;
+  });
+  it('keeps dashboard content in a scrollable area above navigation', () => {
+    const { getByTestId, getByText } = render(<HomeScreen />);
+    expect(getByTestId('home-dashboard-scroll')).toBeTruthy();
+    expect(getByText('Quick Actions')).toBeTruthy();
+    expect(getByText('This Week')).toBeTruthy();
+  });
+
   it('does not render Following/Trending tabs', async () => {
     const { getByText, queryByText } = render(<HomeScreen />);
 

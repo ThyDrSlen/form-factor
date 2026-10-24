@@ -2,8 +2,8 @@ import React from 'react';
 import { render } from '@testing-library/react-native';
 import {
   SymmetryComparatorCard,
-} from '@/components/form-tracking/SymmetryComparatorCard';
-import type { SymmetryDatum } from '@/hooks/use-symmetry-comparison';
+} from '@/features/form-tracking/components/SymmetryComparatorCard';
+import type { SymmetryDatum } from '@/features/form-tracking/hooks/use-symmetry-comparison';
 
 const SAMPLE_SERIES: SymmetryDatum[] = [
   { repNumber: 1, leftAngleDeg: 100, rightAngleDeg: 90, asymmetryPct: 10 },

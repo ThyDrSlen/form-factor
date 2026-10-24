@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { createRepQualityLog, type RepQualityEntry } from '@/lib/services/rep-quality-log';
-import { useCoachSessionSignals } from '@/hooks/use-coach-session-signals';
+import { useCoachSessionSignals } from '@/features/coach/hooks/use-coach-session-signals';
 
 function mkEntry(partial: Partial<RepQualityEntry> = {}): RepQualityEntry {
   return {

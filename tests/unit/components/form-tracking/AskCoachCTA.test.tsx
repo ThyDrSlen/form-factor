@@ -4,7 +4,7 @@ import { fireEvent, render } from '@testing-library/react-native';
 import {
   AskCoachCTA,
   buildCoachPrefill,
-} from '@/components/form-tracking/AskCoachCTA';
+} from '@/features/form-tracking/components/AskCoachCTA';
 
 const mockPush = jest.fn();
 const mockNetwork = { isOnline: true, isConnected: true, networkType: 'wifi' as string | null };

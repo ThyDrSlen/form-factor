@@ -38,13 +38,19 @@ export function compareJointAngles(
     modelVersion: string;
     inferenceMs?: number;
     coverageRatio?: number;
+    workoutId?: string;
   },
 ): ShadowAngleComparison {
   const deltaByJoint: Partial<Record<JointAngleKey, number>> = {};
   const shadowAngles: Partial<Record<JointAngleKey, number>> = {};
   const absDeltas: number[] = [];
 
-  for (const key of JOINT_KEYS) {
+  // Curl hip values represent gravity-relative torso inclination. The
+  // shadow provider's hip flexion uses knees, so these are not comparable.
+  const comparisonKeys = meta.workoutId === 'dumbbell_curl'
+    ? JOINT_KEYS.filter(key => key.endsWith('Elbow') || key.endsWith('Shoulder'))
+    : JOINT_KEYS;
+  for (const key of comparisonKeys) {
     const primaryValue = primary[key];
     const shadowValue = shadow[key];
     if (!Number.isFinite(primaryValue) || !Number.isFinite(shadowValue)) {
@@ -65,7 +71,9 @@ export function compareJointAngles(
     modelVersion: meta.modelVersion,
     inferenceMs: meta.inferenceMs,
     comparedJoints,
-    coverageRatio: meta.coverageRatio ?? comparedJoints / JOINT_KEYS.length,
+    coverageRatio: meta.workoutId === 'dumbbell_curl'
+      ? comparedJoints / comparisonKeys.length
+      : meta.coverageRatio ?? comparedJoints / JOINT_KEYS.length,
     meanAbsDelta,
     p95AbsDelta: percentile(absDeltas, 95),
     maxAbsDelta: comparedJoints > 0 ? Math.max(...absDeltas) : 0,

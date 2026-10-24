@@ -71,7 +71,7 @@ jest.mock('@/lib/stores/session-runner', () => ({
 // Imports after mocks
 // ---------------------------------------------------------------------------
 
-import { usePracticeSessionHook } from '@/hooks/use-practice-session';
+import { usePracticeSessionHook } from '@/features/form-tracking/hooks/use-practice-session';
 import { usePracticeSession } from '@/lib/stores/practice-session-store';
 
 function resetStore(): void {

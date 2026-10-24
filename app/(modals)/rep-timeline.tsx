@@ -11,8 +11,8 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import RepTimelineCard from '@/components/form-tracking/RepTimelineCard';
-import { useRepQualityTimeline } from '@/hooks/use-rep-quality-timeline';
+import RepTimelineCard from '@/features/form-tracking/components/RepTimelineCard';
+import { useRepQualityTimeline } from '@/features/form-tracking/hooks/use-rep-quality-timeline';
 import { summarizeTimeline } from '@/lib/services/rep-quality-timeline';
 
 export default function RepTimelineScreen() {

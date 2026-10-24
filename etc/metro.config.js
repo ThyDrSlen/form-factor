@@ -10,6 +10,14 @@ const config = (() => {
 
   cfg.resolver = {
     ...resolver,
+    // Nested checkouts must not enter this app's file map.
+    blockList: [
+      ...(Array.isArray(resolver.blockList) ? resolver.blockList : [resolver.blockList]).filter(Boolean),
+      /[\\/]\.worktrees(?:[\\/]|$)/,
+    ],
+    // A stalled Watchman daemon can leave bundle requests waiting indefinitely.
+    // Use Metro's built-in watcher; opt in only with a healthy local daemon.
+    useWatchman: process.env.METRO_USE_WATCHMAN === '1',
     sourceExts: [...resolver.sourceExts, 'mjs', 'cjs'],
     assetExts: [...resolver.assetExts, 'task'],
   };

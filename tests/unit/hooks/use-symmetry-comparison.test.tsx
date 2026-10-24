@@ -3,7 +3,7 @@ import {
   computeAsymmetryPct,
   SYMMETRY_THRESHOLD_PCT,
   useSymmetryComparison,
-} from '@/hooks/use-symmetry-comparison';
+} from '@/features/form-tracking/hooks/use-symmetry-comparison';
 
 const mockGet = jest.fn();
 jest.mock('@/lib/services/rep-analytics', () => ({

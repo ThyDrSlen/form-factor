@@ -14,7 +14,7 @@ jest.mock('@expo/vector-icons', () => ({
 }));
 
 // eslint-disable-next-line import/first
-import { CoachCloudProviderPicker } from '@/components/settings/CoachCloudProviderPicker';
+import { CoachCloudProviderPicker } from '@/features/coach/components/settings/CoachCloudProviderPicker';
 // eslint-disable-next-line import/first
 import {
   resolveCloudProvider,

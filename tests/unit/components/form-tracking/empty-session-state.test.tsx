@@ -11,7 +11,7 @@ jest.mock('@expo/vector-icons', () => ({
   Ionicons: () => null,
 }));
 
-import { EmptySessionState } from '@/components/form-tracking/EmptySessionState';
+import { EmptySessionState } from '@/features/form-tracking/components/EmptySessionState';
 
 describe('EmptySessionState', () => {
   beforeEach(() => {

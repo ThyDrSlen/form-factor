@@ -10,9 +10,9 @@ jest.mock('moti', () => {
 });
 
 // eslint-disable-next-line import/first
-import { FormQualityBadge } from '@/components/form-tracking/FormQualityBadge';
+import { FormQualityBadge } from '@/features/form-tracking/components/FormQualityBadge';
 // eslint-disable-next-line import/first
-import { getFqiColor } from '@/components/form-tracking/FqiGauge';
+import { getFqiColor } from '@/features/form-tracking/components/FqiGauge';
 
 describe('FormQualityBadge', () => {
   it('renders nothing when score is null', () => {

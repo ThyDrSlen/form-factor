@@ -1,8 +1,9 @@
 import { View, StyleSheet, ScrollView, KeyboardAvoidingView, TouchableOpacity } from 'react-native';
 import { Text, TextInput, Button } from 'react-native-paper';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { BrandMark } from '@/components/BrandMark';
+import { theme } from '@/styles/theme';
 import { useRouter } from 'expo-router';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../features/auth/contexts/AuthContext';
 import { useState } from 'react';
 import { errorWithTs } from '@/lib/logger';
 import { getPlatformValue } from '@/lib/platform-utils';
@@ -68,7 +69,7 @@ export default function SignUpScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <KeyboardAvoidingView 
         behavior={getPlatformValue({ ios: 'padding', default: 'height' })}
         style={styles.keyboardAvoidingView}
@@ -78,8 +79,12 @@ export default function SignUpScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.inner}>
-            <Text variant="headlineMedium" style={styles.title}>Create Account</Text>
-            <Text variant="bodyMedium" style={styles.subtitle}>Sign up to get started</Text>
+            <View style={styles.brandRow}>
+              <BrandMark size={44} />
+              <Text style={styles.wordmark}>FORM FACTOR</Text>
+            </View>
+            <Text variant="headlineMedium" style={styles.title}>Start strong.</Text>
+            <Text variant="bodyMedium" style={styles.subtitle}>Better movement starts with your next rep.</Text>
             
             <View style={styles.form}>
               <View style={styles.inputGroup}>
@@ -98,6 +103,9 @@ export default function SignUpScreen() {
                   returnKeyType="next"
                   style={styles.input}
                   mode="outlined"
+                  outlineStyle={{ borderRadius: theme.radius.input }}
+                  textColor={theme.colors.text}
+                  placeholderTextColor={theme.colors.muted}
                 />
               </View>
               
@@ -120,6 +128,9 @@ export default function SignUpScreen() {
                   returnKeyType="next"
                   style={styles.input}
                   mode="outlined"
+                  outlineStyle={{ borderRadius: theme.radius.input }}
+                  textColor={theme.colors.text}
+                  placeholderTextColor={theme.colors.muted}
                 />
               </View>
               
@@ -141,6 +152,9 @@ export default function SignUpScreen() {
                   returnKeyType="done"
                   style={styles.input}
                   mode="outlined"
+                  outlineStyle={{ borderRadius: theme.radius.input }}
+                  textColor={theme.colors.text}
+                  placeholderTextColor={theme.colors.muted}
                 />
               </View>
 
@@ -152,7 +166,9 @@ export default function SignUpScreen() {
               
               <Button 
                 testID="sign-up-submit-button"
-                mode="contained" 
+                mode="contained"
+                buttonColor={theme.colors.accent}
+                textColor={theme.colors.onAccent}
                 onPress={handleSignUp}
                 loading={loading}
                 disabled={loading}
@@ -175,14 +191,14 @@ export default function SignUpScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#050E1F',
+    backgroundColor: theme.colors.background,
   },
   keyboardAvoidingView: {
     flex: 1,
@@ -192,19 +208,24 @@ const styles = StyleSheet.create({
   },
   inner: {
     flex: 1,
-    padding: 20,
-    justifyContent: 'center',
+    padding: 28,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
   },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 36 },
+  wordmark: { color: theme.colors.text, fontFamily: theme.font.bold, fontSize: 13, letterSpacing: 2.2 },
   title: {
-    textAlign: 'center',
-    marginBottom: 16,
-    fontWeight: 'bold',
-    color: '#F5F7FF',
+    fontFamily: theme.font.bold,
+    fontSize: 34,
+    letterSpacing: -1.2,
+    marginBottom: 10,
+    color: theme.colors.text,
   },
   subtitle: {
-    textAlign: 'center',
-    marginBottom: 32,
-    color: '#9AACD1',
+    fontFamily: theme.font.regular,
+    marginBottom: 28,
+    color: theme.colors.secondary,
   },
   form: {
     width: '100%',
@@ -217,16 +238,17 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#9AACD1',
+    color: theme.colors.secondary,
     marginBottom: 6,
     marginLeft: 2,
   },
   input: {
-    backgroundColor: '#13263C',
+    backgroundColor: theme.colors.surface,
   },
   button: {
     marginTop: 8,
-    paddingVertical: 6,
+    paddingVertical: 8,
+    borderRadius: theme.radius.button,
   },
   errorText: {
     color: '#ff7b7b',
@@ -239,7 +261,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   link: {
-    color: '#4C8CFF',
+    color: theme.colors.accentText,
     marginVertical: 4,
   },
 });

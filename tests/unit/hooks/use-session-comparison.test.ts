@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import {
   useSessionComparison,
   useSessionComparisonQuery,
-} from '@/hooks/use-session-comparison';
+} from '@/features/form-tracking/hooks/use-session-comparison';
 import type { ExerciseSessionSummary } from '@/lib/services/session-comparison-aggregator';
 
 function makeSummary(overrides: Partial<ExerciseSessionSummary> = {}): ExerciseSessionSummary {

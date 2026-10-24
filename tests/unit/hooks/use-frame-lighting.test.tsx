@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react-native';
-import { useFrameLighting } from '@/hooks/use-frame-lighting';
+import { useFrameLighting } from '@/features/form-tracking/hooks/use-frame-lighting';
 
 describe('useFrameLighting', () => {
   beforeEach(() => {

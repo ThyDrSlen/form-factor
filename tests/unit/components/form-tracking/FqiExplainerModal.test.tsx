@@ -7,9 +7,9 @@ jest.mock('expo-router', () => ({
 }));
 
 // eslint-disable-next-line import/first
-import { FqiExplainerModal } from '@/components/form-tracking/FqiExplainerModal';
+import { FqiExplainerModal } from '@/features/form-tracking/components/FqiExplainerModal';
 // eslint-disable-next-line import/first
-import { FormQualityBadge } from '@/components/form-tracking/FormQualityBadge';
+import { FormQualityBadge } from '@/features/form-tracking/components/FormQualityBadge';
 
 beforeEach(() => {
   jest.clearAllMocks();

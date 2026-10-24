@@ -4,7 +4,7 @@ import { render } from '@testing-library/react-native';
 import {
   WorkoutCardSkeleton,
   WorkoutCardSkeletonList,
-} from '@/components/workouts/WorkoutCardSkeleton';
+} from '@/features/workouts/components/WorkoutCardSkeleton';
 
 describe('WorkoutCardSkeleton', () => {
   it('renders with the default testID', () => {

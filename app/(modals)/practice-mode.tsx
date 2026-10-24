@@ -25,8 +25,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-import PracticeSessionBadge from '@/components/form-tracking/PracticeSessionBadge';
-import { usePracticeSessionHook } from '@/hooks/use-practice-session';
+import PracticeSessionBadge from '@/features/form-tracking/components/PracticeSessionBadge';
+import { usePracticeSessionHook } from '@/features/form-tracking/hooks/use-practice-session';
 import { getWorkoutByMode, getWorkoutIds, type DetectionMode } from '@/lib/workouts';
 
 const EXERCISE_SUBSET: DetectionMode[] = ['pullup', 'pushup', 'squat', 'deadlift'];

@@ -1,7 +1,7 @@
 import { render } from '@testing-library/react-native';
 import React from 'react';
 
-import { CoachProviderBadge } from '@/components/coach/CoachProviderBadge';
+import { CoachProviderBadge } from '@/features/coach/components/CoachProviderBadge';
 import type { CoachProvider } from '@/lib/services/coach-provider-types';
 
 describe('CoachProviderBadge', () => {

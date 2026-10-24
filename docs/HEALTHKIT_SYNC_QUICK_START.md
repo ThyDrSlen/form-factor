@@ -47,7 +47,7 @@ Automatically generated insights like:
 ### Trigger a Manual Sync
 
 ```typescript
-import { useHealthKit } from '@/contexts/HealthKitContext';
+import { useHealthKit } from '@/features/health/contexts/HealthKitContext';
 
 function MyComponent() {
   const { syncAllHistoricalData, isSyncing, syncProgress } = useHealthKit();
@@ -113,7 +113,7 @@ console.log('Change %:', comparison.stepsChange); // e.g., +12.5
 ```typescript
 import React, { useEffect, useState } from 'react';
 import { View, Text } from 'react-native';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { fetchHealthTrendData, getComparisonMetrics } from '@/lib/services/healthkit';
 
 export function WeeklyStepsTrend() {
@@ -230,7 +230,7 @@ Trends Screen ← Aggregation Service ← health_metrics table
 
 - `lib/services/healthkit/health-bulk-sync.ts` - Bulk sync logic
 - `lib/services/healthkit/health-aggregation.ts` - Weekly/monthly aggregations
-- `contexts/HealthKitContext.tsx` - React context with sync state
+- `features/health/contexts/HealthKitContext.tsx` - React context with sync state
 - `app/(tabs)/health-trends.tsx` - Trends UI screen
 - `supabase/migrations/002_create_health_metrics_table.sql` - Database schema
 

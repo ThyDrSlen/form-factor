@@ -3,6 +3,8 @@ import { fireEvent, render } from '@testing-library/react-native';
 
 import FormTrackingDebriefScreen from '@/app/(modals)/form-tracking-debrief';
 
+jest.mock('@/features/auth/contexts/AuthContext', () => ({ useAuth: () => ({ user: null, isAuthStateCurrent: () => true }) }));
+
 const mockPush = jest.fn();
 const mockBack = jest.fn();
 const mockParams: { current: Record<string, string | undefined> } = { current: {} };

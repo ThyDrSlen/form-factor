@@ -1,5 +1,5 @@
 import { renderHook, act } from '@testing-library/react-native';
-import { useSpeechFeedback } from '@/hooks/use-speech-feedback';
+import { useSpeechFeedback } from '@/features/voice/hooks/use-speech-feedback';
 
 // Mock expo-speech
 const mockSpeak = jest.fn();

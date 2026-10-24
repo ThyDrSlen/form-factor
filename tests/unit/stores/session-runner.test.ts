@@ -12,6 +12,8 @@
 // ---------------------------------------------------------------------------
 
 let mockUuidCounter = 0;
+const mockGetSession = jest.fn(async () => ({ data: { session: { user: { id: 'owner-a' } } }, error: null }));
+jest.mock('@/lib/supabase', () => ({ supabase: { auth: { getSession: () => mockGetSession() } } }));
 
 jest.mock('expo-crypto', () => ({
   randomUUID: jest.fn(() => `uuid-${++mockUuidCounter}`),
@@ -154,6 +156,10 @@ afterEach(() => {
 // ===========================================================================
 
 describe('startSession', () => {
+  it('persists the cached authenticated owner at creation, without a remote lookup', async () => {
+    await state().startSession();
+    expect(mockGenericLocalUpsert).toHaveBeenCalledWith('workout_sessions', 'id', expect.objectContaining({ user_id: 'owner-a' }), 0);
+  });
   it('creates a fresh session with correct defaults', async () => {
     await state().startSession();
 
@@ -324,6 +330,8 @@ describe('addExercise', () => {
         synced: 0,
       }),
       0,
+      undefined,
+      expect.any(Function),
     );
   });
 
@@ -338,6 +346,8 @@ describe('addExercise', () => {
         session_exercise_id: seId,
       }),
       0,
+      undefined,
+      expect.any(Function),
     );
   });
 
@@ -518,6 +528,8 @@ describe('addSet', () => {
         synced: 0,
       }),
       0,
+      undefined,
+      expect.any(Function),
     );
   });
 
@@ -685,6 +697,76 @@ describe('completeSet', () => {
     expect(s.restTimer!.setId).toBe(setId);
   });
 
+  it('commits accepted planned values as actuals before deriving completion telemetry', async () => {
+    useSessionRunner.setState((prev) => ({
+      sets: {
+        ...prev.sets,
+        [exerciseId]: prev.sets[exerciseId].map((s) => ({
+          ...s, actual_reps: null, actual_weight: null,
+          planned_reps: 12, planned_weight: 95,
+        })),
+      },
+    }));
+
+    await state().completeSet(setId);
+
+    expect(state().sets[exerciseId][0]).toMatchObject({ actual_reps: 12, actual_weight: 95 });
+    expect(mockEstimateTut).toHaveBeenCalledWith(12);
+    const update = mockRunAsync.mock.calls.find((call: any[]) =>
+      call[0].includes('UPDATE workout_session_sets SET'));
+    expect(update[0]).toContain('actual_reps = ?');
+    expect(update[0]).toContain('actual_weight = ?');
+    expect(update[1]).toEqual(expect.arrayContaining([12, 95]));
+    const event = mockGenericLocalUpsert.mock.calls.find((call: any[]) =>
+      call[0] === 'workout_session_events' && call[2].type === 'set_completed');
+    expect(JSON.parse(event[2].payload)).toMatchObject({ actual_reps: 12, actual_weight: 95 });
+  });
+
+  it('preserves explicitly entered zeros instead of accepting planned values', async () => {
+    useSessionRunner.setState((prev) => ({
+      sets: {
+        ...prev.sets,
+        [exerciseId]: prev.sets[exerciseId].map((s) => ({
+          ...s, actual_reps: 0, actual_seconds: 0, actual_weight: 0,
+          planned_reps: 12, planned_seconds: 30, planned_weight: 95,
+        })),
+      },
+    }));
+    await state().completeSet(setId);
+    expect(state().sets[exerciseId][0]).toMatchObject({
+      actual_reps: 0, actual_seconds: 0, actual_weight: 0,
+    });
+    expect(mockEstimateTut).not.toHaveBeenCalled();
+    expect(mockTimedSetTut).not.toHaveBeenCalled();
+  });
+
+  it('commits accepted planned duration for timed sets', async () => {
+    useSessionRunner.setState((prev) => ({
+      exercises: prev.exercises.map((e) => ({
+        ...e, exercise: { id: 'ex-1', name: 'Plank', is_timed: true, is_compound: false } as any,
+      })),
+      sets: {
+        ...prev.sets,
+        [exerciseId]: prev.sets[exerciseId].map((s) => ({
+          ...s, actual_reps: null, actual_seconds: null, planned_seconds: 30,
+        })),
+      },
+    }));
+    await state().completeSet(setId);
+    expect(state().sets[exerciseId][0].actual_seconds).toBe(30);
+    expect(mockTimedSetTut).toHaveBeenCalledWith(30);
+    const event = mockGenericLocalUpsert.mock.calls.find((call: any[]) =>
+      call[0] === 'workout_session_events' && call[2].type === 'set_completed');
+    expect(JSON.parse(event[2].payload).actual_seconds).toBe(30);
+  });
+
+  it('does not mark a set complete in memory when persistence fails', async () => {
+    mockRunAsync.mockRejectedValueOnce(new Error('disk unavailable'));
+    await expect(state().completeSet(setId)).rejects.toThrow('disk unavailable');
+    expect(state().sets[exerciseId][0].completed_at).toBeNull();
+    expect(mockScheduleRestNotification).not.toHaveBeenCalled();
+  });
+
   it('persists completion to DB', async () => {
     await state().completeSet(setId);
 
@@ -712,6 +794,7 @@ describe('completeSet', () => {
       90,
       undefined, // exercise.name when exercise not found in metadata
       expect.any(Number),
+      expect.any(Function), // auth/session lifetime guard for native scheduling
     );
   });
 
@@ -828,6 +911,8 @@ describe('skipRest', () => {
       'id',
       expect.objectContaining({ type: 'rest_skipped' }),
       0,
+      undefined,
+      expect.any(Function),
     );
   });
 
@@ -1772,6 +1857,12 @@ describe('subscribeToEvents', () => {
 describe('rest-timer race with completeSet', () => {
   let exerciseId: string;
   let setId: string;
+
+  afterEach(async () => {
+    // These cases use real timers. Release the extended rest before the next
+    // reset drops its handle, otherwise a passing Jest run stays alive.
+    await state().skipRest();
+  });
 
   beforeEach(async () => {
     // These tests interleave real microtasks around slow-resolving notification

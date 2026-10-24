@@ -7,7 +7,7 @@ const auditedFiles = [
   'app/(auth)/sign-up.tsx',
   'app/(modals)/add-food.tsx',
   'app/(modals)/notifications.tsx',
-  'components/dashboard-health/DashboardHealth.tsx',
+  'features/health/components/DashboardHealth.tsx',
 ] as const;
 
 describe('platform-utils audit', () => {

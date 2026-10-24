@@ -2,7 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import FormTrackingSettingsModal from '../../../app/(modals)/form-tracking-settings';
-import { __clearListenersForTests } from '@/hooks/use-form-tracking-settings';
+import { __clearListenersForTests } from '@/features/form-tracking/hooks/use-form-tracking-settings';
 import {
   DEFAULT_FORM_TRACKING_SETTINGS,
   __resetForTests,

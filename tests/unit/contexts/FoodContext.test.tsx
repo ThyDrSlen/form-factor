@@ -23,8 +23,8 @@
 
 import React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react-native';
-import type * as FoodContextModule from '@/contexts/FoodContext';
-import type { FoodEntry } from '@/contexts/FoodContext';
+import type * as FoodContextModule from '@/features/nutrition/contexts/FoodContext';
+import type { FoodEntry } from '@/features/nutrition/contexts/FoodContext';
 import { ToastProvider } from '@/contexts/ToastContext';
 
 jest.mock('expo-crypto', () => ({
@@ -37,7 +37,7 @@ jest.mock('@/contexts/NetworkContext', () => ({
 }));
 
 const mockAuthValue = { user: { id: 'test-user-xyz' }, loading: false };
-jest.mock('@/contexts/AuthContext', () => ({
+jest.mock('@/features/auth/contexts/AuthContext', () => ({
   useAuth: () => mockAuthValue,
 }));
 
@@ -74,7 +74,7 @@ let FoodProvider: FoodModule['FoodProvider'];
 let useFood: FoodModule['useFood'];
 
 beforeAll(() => {
-  const mod = require('@/contexts/FoodContext') as FoodModule;
+  const mod = require('@/features/nutrition/contexts/FoodContext') as FoodModule;
   FoodProvider = mod.FoodProvider;
   useFood = mod.useFood;
 });

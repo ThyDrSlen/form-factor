@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import { TodayFqiCard } from '@/components/form-home/TodayFqiCard';
+import { TodayFqiCard } from '@/features/form-tracking/components/home/TodayFqiCard';
 
 describe('TodayFqiCard', () => {
   it('renders the empty state when no data is supplied', () => {

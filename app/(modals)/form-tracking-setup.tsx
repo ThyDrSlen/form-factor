@@ -6,30 +6,31 @@
  *   1. Intro      — explain what form tracking does and the privacy stance.
  *   2. Permission — request camera access (undetermined / denied / granted).
  *   3. Posture    — show a static framing placeholder.
- *   4. Ready      — confirm and enter the Scan tab via router.push.
+ *   4. Ready      — confirm and enter the Scan tab via router.replace.
  *
- * This route deliberately does NOT touch app/(tabs)/scan-arkit.tsx. Integration
- * (gating scan-arkit behind the wizard for first-time users) is a follow-up.
+ * This route deliberately keeps scan entry setup-aware without coupling to
+ * app/(tabs)/scan-arkit.tsx internals.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   Keyboard,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCameraPermissions } from 'expo-camera';
 
-import { useFirstSessionCheck } from '@/hooks/use-first-session-check';
+import { useFirstSessionCheck } from '@/features/form-tracking/hooks/use-first-session-check';
 import { useOptionalToast } from '@/contexts/ToastContext';
 import { openSystemSettings } from '@/lib/utils/open-external';
+import { FORM_TRACKING_ONBOARDING_DISMISSED_KEY } from '@/features/form-tracking/components/TrackingOnboardingOverlay';
 
 type WizardStep = 'intro' | 'permission' | 'posture' | 'ready';
 const STEP_ORDER: WizardStep[] = ['intro', 'permission', 'posture', 'ready'];
@@ -53,10 +54,22 @@ function toPermissionState(
 }
 
 export default function FormTrackingSetupScreen() {
+  // A native full-screen modal needs its own inset measurements, not the
+  // underlying tab/sheet's safe area. Seeded from the parent until measured.
+  return (
+    <SafeAreaProvider>
+      <FormTrackingSetupContent />
+    </SafeAreaProvider>
+  );
+}
+
+function FormTrackingSetupContent() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { show: showToast } = useOptionalToast();
   const [stepIndex, setStepIndex] = useState(0);
   const [requesting, setRequesting] = useState(false);
+  const [starting, setStarting] = useState(false);
   const { markSeen } = useFirstSessionCheck();
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -103,17 +116,37 @@ export default function FormTrackingSetupScreen() {
   }, [showToast]);
 
   const handleStart = useCallback(async () => {
+    if (starting) return;
+    setStarting(true);
     // A9: dismiss any lingering soft keyboard before we navigate — otherwise
     // on Android the keyboard can overlap the landing scan screen until the
     // user taps elsewhere.
     Keyboard.dismiss();
-    await markSeen();
-    router.push('/(tabs)/scan-arkit');
-  }, [markSeen, router]);
+    try {
+      await Promise.all([
+        markSeen(),
+        AsyncStorage.setItem(FORM_TRACKING_ONBOARDING_DISMISSED_KEY, 'true'),
+      ]);
+      router.replace('/(tabs)/scan-arkit');
+    } finally {
+      setStarting(false);
+    }
+  }, [markSeen, router, starting]);
 
   return (
-    <SafeAreaView style={styles.safeArea} testID="form-tracking-setup">
-      <View style={styles.header}>
+    <View
+      style={[
+        styles.safeArea,
+        {
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+          paddingLeft: insets.left,
+          paddingRight: insets.right,
+        },
+      ]}
+      testID="form-tracking-setup"
+    >
+      <View style={styles.header} testID="form-tracking-setup-header">
         <Pressable
           onPress={handleClose}
           accessibilityRole="button"
@@ -143,7 +176,10 @@ export default function FormTrackingSetupScreen() {
       </View>
 
       <ScrollView
+        key={step}
+        style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
+        contentInsetAdjustmentBehavior="never"
         showsVerticalScrollIndicator={false}
         testID={`form-tracking-setup-step-${step}`}
       >
@@ -163,7 +199,7 @@ export default function FormTrackingSetupScreen() {
         )}
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={styles.footer} testID="form-tracking-setup-footer">
         {stepIndex > 0 ? (
           <Pressable
             onPress={goBack}
@@ -183,10 +219,12 @@ export default function FormTrackingSetupScreen() {
             onPress={handleStart}
             accessibilityRole="button"
             accessibilityLabel="Start form tracking"
-            style={styles.primaryButton}
+            accessibilityState={{ busy: starting, disabled: starting }}
+            disabled={starting}
+            style={[styles.primaryButton, starting && styles.primaryButtonDisabled]}
             testID="form-tracking-setup-start"
           >
-            <Text style={styles.primaryButtonText}>Start</Text>
+            <Text style={styles.primaryButtonText}>{starting ? 'Starting…' : 'Start'}</Text>
             <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
           </Pressable>
         ) : step === 'permission' && permissionState !== 'granted' ? (
@@ -204,7 +242,7 @@ export default function FormTrackingSetupScreen() {
           </Pressable>
         )}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -388,6 +426,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#050E1F',
   },
   header: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -410,6 +449,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   progressRow: {
+    flexShrink: 0,
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 8,
@@ -430,13 +470,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#4C8CFF',
     opacity: 0.5,
   },
+  scroll: {
+    flex: 1,
+    minHeight: 0,
+  },
   scrollContent: {
     paddingHorizontal: 24,
     paddingBottom: 24,
     flexGrow: 1,
   },
   stepBody: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 0,
     alignItems: 'center',
     gap: 16,
   },
@@ -591,6 +636,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   footer: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

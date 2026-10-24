@@ -16,7 +16,7 @@ import { useSafeBack } from '@/hooks/use-safe-back';
 import {
   useFormTrackingSettings,
   type UseFormTrackingSettingsResult,
-} from '@/hooks/use-form-tracking-settings';
+} from '@/features/form-tracking/hooks/use-form-tracking-settings';
 import {
   FQI_THRESHOLD_MAX,
   FQI_THRESHOLD_MIN,
@@ -24,7 +24,7 @@ import {
   OVERLAY_OPACITY_MIN,
   type CueVerbosity,
 } from '@/lib/services/form-tracking-settings';
-import { FqiExplainerModal } from '@/components/form-tracking/FqiExplainerModal';
+import { FqiExplainerModal } from '@/features/form-tracking/components/FqiExplainerModal';
 
 const FQI_STEP = 0.05;
 const OPACITY_STEP = 0.05;

@@ -31,7 +31,7 @@ jest.mock('@/lib/services/coach-service', () => ({
 }));
 
 const mockUseFormMesocycle = jest.fn();
-jest.mock('@/hooks/use-form-mesocycle', () => ({
+jest.mock('@/features/form-tracking/hooks/use-form-mesocycle', () => ({
   useFormMesocycle: () => mockUseFormMesocycle(),
 }));
 

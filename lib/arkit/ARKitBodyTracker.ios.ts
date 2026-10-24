@@ -102,6 +102,7 @@ export interface MediaPipePose2D {
 
 export interface FrameSnapshot {
   frame: string;
+  timestamp?: number;
   width?: number;
   height?: number;
   orientation?: string;
@@ -277,7 +278,7 @@ export class BodyTracker {
     return path ?? null;
   }
 
-  static async getCurrentFrameSnapshot(options?: { maxWidth?: number; quality?: number }): Promise<FrameSnapshot | null> {
+  static async getCurrentFrameSnapshot(options?: { maxWidth?: number; quality?: number; viewportWidth?: number; viewportHeight?: number; overlay?: string }): Promise<FrameSnapshot | null> {
     if (!ARKitBodyTracker || typeof ARKitBodyTracker.getCurrentFrameSnapshot !== 'function') {
       return null;
     }
@@ -399,7 +400,7 @@ export class BodyTracker {
   /**
    * Helper: Calculate all major joint angles for fitness tracking
    */
-  static calculateAllAngles(pose: BodyPose): JointAngles | null {
+  static calculateAllAngles(pose: BodyPose, workoutId?: string): JointAngles | null {
     // Find all required joints
     const leftHip = this.findJoint(pose, 'left_upLeg');
     const leftKnee = this.findJoint(pose, 'left_leg');
@@ -419,6 +420,46 @@ export class BodyTracker {
 
     const spine = this.findJoint(pose, 'spine_4');
     const neck = this.findJoint(pose, 'neck');
+
+    if (workoutId === 'dumbbell_curl') {
+      const usable = (joint: Joint3D | undefined): joint is Joint3D => !!joint?.isTracked &&
+        Number.isFinite(joint.x) && Number.isFinite(joint.y) && Number.isFinite(joint.z);
+      if (!pose.isTracking || !usable(leftHip) || !usable(rightHip) ||
+          !usable(leftShoulder) || !usable(rightShoulder) ||
+          !usable(leftElbow) || !usable(rightElbow) ||
+          !usable(leftWrist) || !usable(rightWrist)) return null;
+
+      // The shoulder midpoint supplies the same medial reference when the
+      // neck is cropped; it is derived only from observed shoulder positions.
+      const shoulderReference: Joint3D = usable(neck) ? neck : {
+        name: 'shoulder_midpoint', isTracked: true,
+        x: (leftShoulder.x + rightShoulder.x) / 2,
+        y: (leftShoulder.y + rightShoulder.y) / 2,
+        z: (leftShoulder.z + rightShoulder.z) / 2,
+      };
+
+      // ARKit world Y is gravity-aligned. Curl stability measures torso
+      // inclination from the observed hip/shoulder midpoints, NOT hip flexion
+      // (spine-hip-knee), which is unavailable when the legs are off camera.
+      const dx = (leftShoulder.x + rightShoulder.x - leftHip.x - rightHip.x) / 2;
+      const dy = (leftShoulder.y + rightShoulder.y - leftHip.y - rightHip.y) / 2;
+      const dz = (leftShoulder.z + rightShoulder.z - leftHip.z - rightHip.z) / 2;
+      const torsoLength = Math.hypot(dx, dy, dz);
+      if (torsoLength < 1e-6) return null;
+      const torsoUprightAngle = 180 - Math.acos(Math.max(-1, Math.min(1, dy / torsoLength))) * 180 / Math.PI;
+      return {
+        // The angle API's unavailable sentinel remains JSON/replay-safe.
+        // These are marked invalid and never inferred or scored for curls.
+        leftKnee: 0,
+        rightKnee: 0,
+        leftElbow: this.calculateAngle(leftShoulder, leftElbow, leftWrist),
+        rightElbow: this.calculateAngle(rightShoulder, rightElbow, rightWrist),
+        leftHip: torsoUprightAngle,
+        rightHip: torsoUprightAngle,
+        leftShoulder: this.calculateAngle(shoulderReference, leftShoulder, leftElbow),
+        rightShoulder: this.calculateAngle(shoulderReference, rightShoulder, rightElbow),
+      };
+    }
 
     // Check if we have all required joints
     if (!leftHip || !leftKnee || !leftAnkle ||
@@ -494,24 +535,25 @@ export class BodyTracker {
  * React hook for ARKit body tracking
  *
  * @param fps Baseline poll frequency used when active.
- * @param options.activeFps Optional override FPS applied when tracking is
- *   "active" in the workout session sense (used by the caller to drop the
- *   native frame pull during rest/thermal throttled states). The TS layer
- *   currently just swaps the JS-side poll interval to this value — the
- *   matching native ARKit frame-rate drop is tracked as a follow-up
- *   (TODO(native): thread activeFps into ARKitBodyTrackerModule.swift so
- *   the AR session itself throttles, not just the JS poll).
+ * @param options.activeFps Optional sampling FPS, updated during a session
+ *   without restarting ARKit. This reduces native pose extraction and JS
+ *   processing; it does not change the camera's capture rate.
  */
 export function useBodyTracking(
   fps: number = 60,
   options: { activeFps?: number } = {}
 ) {
   const { activeFps } = options;
-  const [pose, setPose] = React.useState<BodyPose | null>(null);
-  const [pose2D, setPose2D] = React.useState<BodyPose2D | null>(null);
+  const [{ pose, pose2D }, setFrame] = React.useState<{
+    pose: BodyPose | null;
+    pose2D: BodyPose2D | null;
+  }>({ pose: null, pose2D: null });
   const [isSupported, setIsSupported] = React.useState(false);
   const [isTracking, setIsTracking] = React.useState(false);
   const intervalRef = React.useRef<NodeJS.Timeout | null>(null);
+  const startPromiseRef = React.useRef<Promise<void> | null>(null);
+  const startGenerationRef = React.useRef(0);
+  const pendingGenerationRef = React.useRef(0);
   const lastTimestampRef = React.useRef<number>(0);
   const poseRef = React.useRef<BodyPose | null>(null);
 
@@ -553,68 +595,101 @@ export function useBodyTracking(
     setTimeout(checkSupport, 150);
   }, []);
 
-  const startTracking = React.useCallback(async () => {
+  const effectiveFps = typeof activeFps === 'number' && Number.isFinite(activeFps) && activeFps > 0
+    ? activeFps
+    : fps;
+  const pollingFps = Number.isFinite(effectiveFps) && effectiveFps > 0 ? effectiveFps : 60;
+  const pollingFpsRef = React.useRef(pollingFps);
+  pollingFpsRef.current = pollingFps;
+
+  const installPolling = React.useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      const currentPose = BodyTracker.getCurrentPose();
+      if (!currentPose || !currentPose.isTracking) {
+        if (poseRef.current !== null) {
+          poseRef.current = null;
+          // Keep the sensor watermark: a cached frame cannot recover tracking.
+          setFrame({ pose: null, pose2D: null });
+        }
+        return;
+      }
+      if (currentPose.timestamp === lastTimestampRef.current) {
+        return;
+      }
+      lastTimestampRef.current = currentPose.timestamp;
+      poseRef.current = currentPose;
+      const projected = BodyTracker.getCurrentPose2D();
+      // Publish the sensor data together so consumers never see half an update.
+      setFrame({
+        pose: currentPose,
+        pose2D: projected && projected.isTracking && projected.joints.length > 0 ? projected : null,
+      });
+    }, 1000 / pollingFpsRef.current);
+  }, []);
+
+  // Change sampling cadence without resetting ARKit anchors or the camera.
+  React.useEffect(() => {
+    if (isTracking && intervalRef.current) installPolling();
+  }, [isTracking, pollingFps, installPolling]);
+
+  const performStart = React.useCallback(async () => {
+    const generation = startGenerationRef.current;
     try {
       // Ensure ARKit view mounts before starting the session to prefer ARView.session
       // Give it more time to ensure the view is laid out and ready
       await new Promise((r) => setTimeout(r, 300));
+      if (generation !== startGenerationRef.current) return;
       await BodyTracker.startTracking();
+      if (generation !== startGenerationRef.current) {
+        // Stop can arrive while the native promise is pending. Its delayed
+        // completion must not resurrect the camera or install a polling loop.
+        BodyTracker.stopTracking();
+        return;
+      }
       setIsTracking(true);
 
-      // Poll for poses at the effective FPS. When the caller supplies
-      // options.activeFps we honour it (e.g. drop to 30fps under thermal
-      // throttle); otherwise fall back to the baseline `fps` argument.
-      // TODO(native): propagate this value into ARKitBodyTrackerModule.swift
-      //   so the AR session's frame production itself is throttled rather
-      //   than leaving the native side at 60fps and just sampling slower
-      //   from JS.
-      if (intervalRef.current) return;
-      const effectiveFps =
-        typeof activeFps === 'number' && Number.isFinite(activeFps) && activeFps > 0
-          ? activeFps
-          : fps;
-      intervalRef.current = setInterval(() => {
-        const currentPose = BodyTracker.getCurrentPose();
-        if (!currentPose || !currentPose.isTracking) {
-          if (poseRef.current !== null) {
-            poseRef.current = null;
-            lastTimestampRef.current = 0;
-            setPose(null);
-            setPose2D(null);
-          }
-          return;
-        }
-        if (currentPose.timestamp === lastTimestampRef.current) {
-          return;
-        }
-        lastTimestampRef.current = currentPose.timestamp;
-        poseRef.current = currentPose;
-        setPose(currentPose);
-
-        const projected = BodyTracker.getCurrentPose2D();
-        if (projected && projected.isTracking && projected.joints.length > 0) {
-          setPose2D(projected);
-        } else {
-          setPose2D(null);
-        }
-      }, 1000 / effectiveFps);
+      if (!intervalRef.current) installPolling();
     } catch (error) {
       errorWithTs('Failed to start body tracking:', error);
       throw error;
     }
-  }, [fps, activeFps]);
+  }, [installPolling]);
+
+  const startTracking = React.useCallback((): Promise<void> => {
+    // Native start resets ARKit anchors/camera tracking. Check before calling
+    // it, not merely before installing the JS polling interval.
+    if (intervalRef.current) return Promise.resolve();
+    const generation = startGenerationRef.current;
+    const previous = startPromiseRef.current;
+    if (previous && pendingGenerationRef.current === generation) return previous;
+    // A fresh Start after Stop must wait for the old native request, otherwise
+    // its late cleanup could pause the new session. Only cancelled work is ignored.
+    const work = previous
+      ? previous.catch(() => undefined).then(() => {
+        if (generation === startGenerationRef.current) return performStart();
+      })
+      : performStart();
+    const pending = work.finally(() => {
+      if (startPromiseRef.current === pending) startPromiseRef.current = null;
+    });
+    pendingGenerationRef.current = generation;
+    startPromiseRef.current = pending;
+    return pending;
+  }, [performStart]);
 
   const stopTracking = React.useCallback(() => {
+    startGenerationRef.current += 1;
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
     BodyTracker.stopTracking();
     setIsTracking(false);
-    setPose(null);
-    setPose2D(null);
+    setFrame({ pose: null, pose2D: null });
     poseRef.current = null;
-    lastTimestampRef.current = 0;
+    // ARFrame timestamps use the host clock, not a per-session counter. Keep
+    // deduplicating the last frame if native still exposes it after restart.
   }, []);
 
   React.useEffect(() => {

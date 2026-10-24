@@ -23,16 +23,16 @@ import type { EventArg, NavigationAction } from '@react-navigation/native';
 import {
   RepBreakdownList,
   type RepSummary,
-} from '@/components/form-tracking/RepBreakdownList';
-import { SessionHighlightCard } from '@/components/form-tracking/SessionHighlightCard';
-import { AskCoachCTA } from '@/components/form-tracking/AskCoachCTA';
-import AutoDebriefCard from '@/components/form-tracking/AutoDebriefCard';
-import { FqiExplainerModal } from '@/components/form-tracking/FqiExplainerModal';
-import { SessionCompareToLastCard } from '@/components/form-tracking/SessionCompareToLastCard';
-import { SessionNotesSheet } from '@/components/debrief/SessionNotesSheet';
+} from '@/features/form-tracking/components/RepBreakdownList';
+import { SessionHighlightCard } from '@/features/form-tracking/components/SessionHighlightCard';
+import { AskCoachCTA } from '@/features/form-tracking/components/AskCoachCTA';
+import AutoDebriefCard from '@/features/form-tracking/components/AutoDebriefCard';
+import { FqiExplainerModal } from '@/features/form-tracking/components/FqiExplainerModal';
+import { SessionCompareToLastCard } from '@/features/form-tracking/components/SessionCompareToLastCard';
+import { SessionNotesSheet } from '@/features/form-tracking/components/debrief/SessionNotesSheet';
 import { resolveExerciseKey } from '@/lib/services/form-session-history-lookup';
-import { useAutoDebrief } from '@/hooks/use-auto-debrief';
-import { useSessionComparisonQuery } from '@/hooks/use-session-comparison';
+import { useAutoDebrief } from '@/features/form-tracking/hooks/use-auto-debrief';
+import { useSessionComparisonQuery } from '@/features/form-tracking/hooks/use-session-comparison';
 import { supabase } from '@/lib/supabase';
 import { warnWithTs } from '@/lib/logger';
 import { isCoachPipelineV2Enabled } from '@/lib/services/coach-pipeline-v2-flag';

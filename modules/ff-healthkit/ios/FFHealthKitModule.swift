@@ -356,6 +356,8 @@ public class FFHealthKitModule: Module {
       identifier = .stepCount
     case "bodyMass":
       identifier = .bodyMass
+    case "bodyFatPercentage":
+      identifier = .bodyFatPercentage
     case "height":
       identifier = .height
     case "distanceWalkingRunning":
@@ -384,6 +386,12 @@ public class FFHealthKitModule: Module {
       return HKUnit.count().unitDivided(by: HKUnit.minute())
     case "count":
       return HKUnit.count()
+    case "%", "percent":
+      return HKUnit.percent()
+    case "ml/kg/min":
+      return HKUnit.literUnit(with: .milli)
+        .unitDivided(by: HKUnit.gramUnit(with: .kilo))
+        .unitDivided(by: HKUnit.minute())
     case "meter", "m":
       return HKUnit.meter()
     case "km", "kilometer", "kilometers":

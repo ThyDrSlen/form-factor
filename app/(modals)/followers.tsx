@@ -18,7 +18,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { useToast } from '@/contexts/ToastContext';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { getFollowers, getFollowing, type FollowRelationship } from '@/lib/services/social-service';
 import { warnWithTs } from '@/lib/logger';
 

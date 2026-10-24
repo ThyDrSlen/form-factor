@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import { Provider as PaperProvider } from 'react-native-paper';
 
-import { CoachRoutingPreference } from '@/components/settings/CoachRoutingPreference';
+import { CoachRoutingPreference } from '@/features/coach/components/settings/CoachRoutingPreference';
 import type { CoachRoutingPreference as RoutingPref } from '@/lib/services/coach-dispatch';
 
 function Harness({

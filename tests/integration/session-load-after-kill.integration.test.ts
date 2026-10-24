@@ -33,6 +33,9 @@
  * `session-runner` actually consumes via `localDB.db.getAllAsync(sql, params)`.
  */
 
+import { useSessionRunner } from '@/lib/stores/session-runner';
+import { supabase } from '@/lib/supabase';
+
 // ---------------------------------------------------------------------------
 // Mocks — jest.mock is hoisted so factory functions must not reference
 // outer `const` variables. All mocks define their own fns inline.
@@ -58,6 +61,17 @@ jest.mock('@/lib/logger', () => ({
   errorWithTs: jest.fn(),
   warnWithTs: jest.fn(),
 }));
+
+// Resume scenarios belong to u1. The global signed-out auth fixture must not
+// be allowed to hydrate these rows through an owner-blind SQL mock.
+let mockAuthListener: ((event: string, session: { user: { id: string } } | null) => void) | undefined;
+jest.mock('@/lib/supabase', () => ({ supabase: { auth: {
+  getSession: jest.fn().mockResolvedValue({ data: { session: { user: { id: 'u1' } } }, error: null }),
+  onAuthStateChange: jest.fn(listener => {
+    mockAuthListener = listener;
+    return { data: { subscription: { unsubscribe: jest.fn() } } };
+  }),
+} } }));
 
 // In-memory fake DB — mirrors the `getAllAsync(sql, params)` shape that
 // `session-runner` consumes. Tests manipulate the stored rows directly.
@@ -124,7 +138,8 @@ jest.mock('@/lib/services/database/local-db', () => {
 
     const lower = sql.toLowerCase();
     if (lower.includes('from workout_sessions')) {
-      return s.sessions.filter((r: any) => r.ended_at == null && r.deleted === 0) as T[];
+      const owner = params?.[0];
+      return s.sessions.filter((r: any) => owner != null && r.user_id === owner && r.ended_at == null && r.deleted === 0) as T[];
     }
     if (lower.includes('from workout_session_exercises')) {
       const sessionId = params?.[0];
@@ -153,6 +168,8 @@ jest.mock('@/lib/services/database/local-db', () => {
 
   return {
     localDB: {
+      getExerciseHistory: jest.fn().mockResolvedValue([]),
+      getPersonalRecords: jest.fn().mockResolvedValue({ maxWeight: null, maxReps: null, maxVolume: null, maxDurationSeconds: null }),
       db: {
         getAllAsync: jest.fn(runQuery),
         runAsync: jest.fn().mockResolvedValue(undefined),
@@ -207,8 +224,6 @@ jest.mock('@/lib/services/tut-estimator', () => ({
 // Import under test
 // ---------------------------------------------------------------------------
 
-import { useSessionRunner } from '@/lib/stores/session-runner';
-
 const state = () => useSessionRunner.getState();
 
 function resetFakeDB() {
@@ -222,6 +237,21 @@ function resetFakeDB() {
   fakeDB.throwOnRead = null;
   fakeDB.readCount = 0;
 }
+
+test.each(['signed-out', 'foreign', 'unknown'] as const)('does not resume %s history from persisted fixtures', async scope => {
+  seedRoundTripSession({ sessionId: 'inaccessible', restStartedAt: null, restTargetSeconds: null });
+  if (scope === 'signed-out') {
+    jest.mocked(supabase.auth.getSession).mockResolvedValueOnce({ data: { session: null }, error: null });
+  } else {
+    fakeDB.sessions[0].user_id = scope === 'foreign' ? 'other-owner' : null;
+  }
+  await state().loadActiveSession();
+  expect(state().activeSession).toBeNull();
+  expect(state().exercises).toEqual([]);
+  expect(state().sets).toEqual({});
+  expect(state().isLoading).toBe(false);
+  expect(fakeDB.sessions).toHaveLength(1);
+});
 
 function resetStore() {
   useSessionRunner.setState({
@@ -322,11 +352,15 @@ function seedRoundTripSession(opts: {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAuthListener?.('SIGNED_IN', { user: { id: 'u1' } });
   resetFakeDB();
   resetStore();
 });
 
 afterEach(() => {
+  // Dispose restored completion/haptic timers before resetStore loses their
+  // handles. Exercise production account cleanup rather than forcing Jest out.
+  mockAuthListener?.('SIGNED_OUT', null);
   // Ensure nothing is left hanging between tests.
   fakeDB.hangForever = false;
   // Drain + cancel any outstanding polling timers from the hang scenarios.

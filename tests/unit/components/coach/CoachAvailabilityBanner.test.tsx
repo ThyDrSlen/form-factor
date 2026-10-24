@@ -1,7 +1,7 @@
 import { fireEvent, render } from '@testing-library/react-native';
 import React from 'react';
 
-import { CoachAvailabilityBanner } from '@/components/coach/CoachAvailabilityBanner';
+import { CoachAvailabilityBanner } from '@/features/coach/components/CoachAvailabilityBanner';
 
 // NetworkContext pulls `expo-network` which isn't reachable in the jest env.
 // We stub the hook so the banner can be exercised in isolation — the

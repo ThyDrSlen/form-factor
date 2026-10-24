@@ -35,7 +35,7 @@ import {
   FaultHighlight,
   resolveTriggerKey,
   selectFaultJoints,
-} from '@/components/form-tracking/FaultHighlight';
+} from '@/features/form-tracking/components/FaultHighlight';
 
 function joint(name: string, x = 0.5, y = 0.5, isTracked = true): Joint2D {
   return { name, x, y, isTracked };

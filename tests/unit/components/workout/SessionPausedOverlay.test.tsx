@@ -23,7 +23,7 @@ jest.mock('moti', () => {
 // Imports
 // ---------------------------------------------------------------------------
 
-import SessionPausedOverlay from '@/components/workout/SessionPausedOverlay';
+import SessionPausedOverlay from '@/features/workouts/components/SessionPausedOverlay';
 import { useSessionRunner } from '@/lib/stores/session-runner';
 import type { WorkoutSession } from '@/lib/types/workout-session';
 

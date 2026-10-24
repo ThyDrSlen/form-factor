@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
-import RestTimerSheet from '@/components/workout/RestTimerSheet';
+import RestTimerSheet from '@/features/workouts/components/RestTimerSheet';
 
 jest.mock('@gorhom/bottom-sheet', () => {
   const ReactActual = jest.requireActual('react');

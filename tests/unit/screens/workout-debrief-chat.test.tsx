@@ -56,7 +56,7 @@ jest.mock('react-native-paper', () => {
   };
 });
 
-jest.mock('@/hooks/use-workout-coach-context', () => ({
+jest.mock('@/features/coach/hooks/use-workout-coach-context', () => ({
   useWorkoutCoachContext: () => ({
     get enabled() {
       return mockEnabled;

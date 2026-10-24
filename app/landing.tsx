@@ -96,7 +96,7 @@ export default function LandingPage() {
       <LinearGradient colors={['#f6f9ff', '#e9f2ff'] as const} style={styles.heroSection}>
         <View style={styles.navbar}>
           <View style={styles.brandRow}>
-            <Image source={require('../assets/images/ff-logo.png')} style={styles.logo} resizeMode="contain" />
+            <Image source={require('../assets/images/ff-icon-v2.png')} style={styles.logo} resizeMode="contain" />
             <Text style={styles.brandName}>Form Factor</Text>
           </View>
           <View style={styles.navLinks}>
@@ -298,7 +298,7 @@ export default function LandingPage() {
 
       <View style={styles.footer}>
         <View style={styles.footerBrand}>
-          <Image source={require('../assets/images/ff-logo.png')} style={styles.footerLogo} resizeMode="contain" />
+          <Image source={require('../assets/images/ff-icon-v2.png')} style={styles.footerLogo} resizeMode="contain" />
           <Text style={styles.footerName}>Form Factor</Text>
         </View>
         <View style={styles.footerLinks}>

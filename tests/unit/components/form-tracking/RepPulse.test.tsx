@@ -12,7 +12,7 @@ jest.mock('moti', () => {
 });
 
 // eslint-disable-next-line import/first
-import RepPulse from '../../../../components/form-tracking/RepPulse';
+import RepPulse from '../../../../features/form-tracking/components/RepPulse';
 
 describe('RepPulse', () => {
   beforeEach(() => {

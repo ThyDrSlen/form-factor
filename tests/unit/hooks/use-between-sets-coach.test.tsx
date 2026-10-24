@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import { act, render } from '@testing-library/react-native';
-import { useBetweenSetsCoach } from '@/hooks/use-between-sets-coach';
+import { useBetweenSetsCoach } from '@/features/coach/hooks/use-between-sets-coach';
 
 const mockRestTimer = jest.fn();
 const mockExercises = jest.fn();

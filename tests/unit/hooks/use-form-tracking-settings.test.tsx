@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import {
   __clearListenersForTests,
   useFormTrackingSettings,
-} from '@/hooks/use-form-tracking-settings';
+} from '@/features/form-tracking/hooks/use-form-tracking-settings';
 import {
   DEFAULT_FORM_TRACKING_SETTINGS,
   __resetForTests,

@@ -22,7 +22,7 @@ import {
   type EventArg,
   type NavigationAction,
 } from '@react-navigation/native';
-import { useFood } from '../../contexts/FoodContext';
+import { useFood } from '../../features/nutrition/contexts/FoodContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useSafeBack } from '../../hooks/use-safe-back';
 import { errorWithTs, logWithTs } from '@/lib/logger';

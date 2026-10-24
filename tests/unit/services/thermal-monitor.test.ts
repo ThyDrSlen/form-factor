@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import {
   ThermalMonitor,
   fpsForThermalState,
@@ -5,6 +6,13 @@ import {
   snapshotFromState,
   strideForFps,
 } from '@/lib/services/thermal-monitor';
+
+const mockGetThermalState = jest.fn();
+const mockThermalModule = jest.fn();
+jest.mock('expo-modules-core', () => ({
+  requireOptionalNativeModule: (...args: unknown[]) => mockThermalModule(...args),
+}));
+
 
 describe('thermal-monitor', () => {
   it('maps thermal states to FPS buckets', () => {
@@ -27,8 +35,36 @@ describe('thermal-monitor', () => {
     expect(snapshotFromState('critical').throttled).toBe(true);
   });
 
-  it('default reader stubs to nominal', async () => {
-    await expect(readThermalState()).resolves.toBe('nominal');
+  describe('native thermal reader', () => {
+    const originalPlatform = Platform.OS;
+    beforeEach(() => {
+      Platform.OS = 'ios';
+      mockThermalModule.mockReturnValue({ getThermalState: mockGetThermalState });
+      mockGetThermalState.mockReset();
+    });
+    afterEach(() => { Platform.OS = originalPlatform; });
+
+    it.each(['nominal', 'fair', 'serious', 'critical'])('reads native %s pressure', async state => {
+      mockGetThermalState.mockReturnValue(state);
+      await expect(readThermalState()).resolves.toBe(state);
+    });
+
+    it.each([null, {}])('supports native builds without a thermal reader: %s', async module => {
+      mockThermalModule.mockReturnValue(module);
+      await expect(readThermalState()).resolves.toBe('nominal');
+    });
+
+    it('ignores unrecognized native states', async () => {
+      mockGetThermalState.mockReturnValue('unknown');
+      await expect(readThermalState()).resolves.toBe('nominal');
+    });
+
+    it('does not load the iOS module on other platforms', async () => {
+      Platform.OS = 'android';
+      mockThermalModule.mockClear();
+      await expect(readThermalState()).resolves.toBe('nominal');
+      expect(mockThermalModule).not.toHaveBeenCalled();
+    });
   });
 
   it('emits transitions to subscribers', async () => {

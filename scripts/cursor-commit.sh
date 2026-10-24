@@ -45,6 +45,15 @@ while IFS= read -r line; do
     file=$(echo "$line" | cut -c4-)
     
     case "$file" in
+        features/*/components/*|features/*/styles/*)
+            ui_files+=("$file")
+            ;;
+        features/*/contexts/*)
+            contexts_files+=("$file")
+            ;;
+        features/*/hooks/*)
+            services_files+=("$file")
+            ;;
         *.json|*.js|*.ts|*.config.*|package.json|tsconfig.json|babel.config.js|metro.config.js|tailwind.config.js|*.toml)
             config_files+=("$file")
             ;;

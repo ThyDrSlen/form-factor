@@ -17,13 +17,29 @@ Form Factor is an iOS-first fitness and health app built with Expo and Supabase.
 - Planned: Richer social/feed interactions, ML recommendations, production push campaigns, and continued coach model-routing evaluation.
 
 ## Repository layout
-- `app/`: Expo Router screens (`(auth)`, `(tabs)`, `(modals)`); ARKit scan and dashboard live here.
-- `components/`, `contexts/`, `hooks/`, `lib/`: shared UI, data, services (offline sync, healthkit, notifications, coach/video services).
-- `lib/fusion/`: **Fusion Engine** core logic (sensor fusion, degradation modes).
-- `modules/arkit-body-tracker/`: custom native module for ARKit.
-- `backstage/`: POC for a developer portal (see `backstage/README.md`).
-- `supabase/`: migrations and Edge Functions (`coach`, `notify`), plus storage bucket policies.
-- `scripts/`: env/setup helpers (e.g., `preinstall-clean.js`), native build utilities, and repair scripts (UUID fixes, `ci_local.py`).
+
+The root package is the Expo mobile app. Bun workspaces also include the Next.js web app, shared TypeScript code, and native modules.
+
+| Path | Purpose |
+|------|---------|
+| `app/` | Expo Router screens and navigation layouts |
+| `features/` | Feature-owned mobile components, hooks, providers, and styles |
+| `components/`, `contexts/`, `hooks/` | Shared UI primitives, app-wide providers, and generic hooks |
+| `lib/` | Mobile services and domain logic, including `fusion/`, `tracking-quality/`, and `workouts/` |
+| `styles/`, `types/`, `assets/` | Shared theme styles, type declarations, and bundled assets |
+| `apps/web/` | Next.js web app with its own routes, configuration, and tests |
+| `packages/shared/` | Shared TypeScript code for workspace consumers |
+| `modules/` | Native workspace packages: ARKit body tracker, HealthKit, and watch connectivity |
+| `ios/`, `android/`, `native/`, `targets/`, `plugins/` | Platform projects, native source, Apple targets, and Expo config plugins |
+| `supabase/` | Database migrations and Edge Functions |
+| `etc/` | Shared tooling and app configuration; root entry files delegate here where supported |
+| `scripts/` | Development, build, evaluation, and CI automation; CI policy helpers live in `scripts/ci/` |
+| `tests/`, `evals/` | Automated tests, fixtures, and model evaluations |
+| `docs/` | Guides, runbooks, architecture notes, and implementation plans |
+
+Keep route files in their app's routing directory. Put feature-owned UI and orchestration in `features/<feature>/`, shared UI primitives in `components/`, and reusable engines, services, and infrastructure in `lib/`. Cross-app code belongs in `packages/shared/` and native module implementations in `modules/`. Keep app-specific configuration with its workspace and shared tooling configuration in `etc/`.
+
+Feature folders cover `auth`, `coach`, `form-tracking`, `health`, `nutrition`, `onboarding`, `profile`, `social`, `voice`, and `workouts`. Import files directly through `@/features/<feature>/...`; see [the feature organization guide](docs/REPOSITORY_STRUCTURE.md) for ownership and placement rules.
 
 ## Quick Start
 

@@ -1,24 +1,28 @@
+import { theme } from '@/styles/theme';
+import { TabHeader } from '@/components/navigation/TabHeader';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
-  const styles = createStyles(insets);
+  const { width, fontScale } = useWindowDimensions();
+  const styles = createStyles(insets, width, fontScale);
   
   return (
     <View style={styles.container}>
       <Tabs
+        backBehavior="history"
         screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: '#4C8CFF',
-          tabBarInactiveTintColor: '#6781A6',
+          headerShown: true,
+          header: () => <TabHeader />,
+          tabBarActiveTintColor: theme.colors.accentText,
+          tabBarLabelPosition: 'below-icon',
+          tabBarHideOnKeyboard: true,
+          tabBarInactiveTintColor: theme.colors.muted,
           tabBarStyle: styles.tabBar,
           tabBarLabelStyle: styles.tabBarLabel,
-          headerStyle: styles.header,
-          headerTitleStyle: styles.headerTitle,
-          headerTitleContainerStyle: styles.headerTitle,
         }}
       >
         <Tabs.Screen
@@ -26,7 +30,7 @@ export default function TabsLayout() {
           options={{
             title: 'Home',
             tabBarAccessibilityLabel: 'Home',
-            tabBarIcon: ({ color, size }) => (
+            tabBarIcon: ({ color }) => (
               <Ionicons 
                 name="home-outline" 
                 size={20}
@@ -40,7 +44,7 @@ export default function TabsLayout() {
           options={{
             title: 'Workouts',
             tabBarAccessibilityLabel: 'Workouts',
-            tabBarIcon: ({ color, size }) => (
+            tabBarIcon: ({ color }) => (
               <Ionicons
                 name="barbell-outline"
                 size={20}
@@ -55,7 +59,17 @@ export default function TabsLayout() {
             title: 'Form',
             tabBarAccessibilityLabel: 'Form',
             tabBarIcon: ({ color }) => (
-              <Ionicons name="trending-up-outline" size={20} color={color} />
+              <Ionicons name="scan-outline" size={20} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="trends"
+          options={{
+            title: 'Trends',
+            tabBarAccessibilityLabel: 'Trends',
+            tabBarIcon: ({ color }) => (
+              <Ionicons name="stats-chart-outline" size={20} color={color} />
             ),
           }}
         />
@@ -64,7 +78,7 @@ export default function TabsLayout() {
           options={{
             title: 'Food',
             tabBarAccessibilityLabel: 'Food',
-            tabBarIcon: ({ color, size }) => (
+            tabBarIcon: ({ color }) => (
               <Ionicons name="nutrition-outline" size={20} color={color} />
             ),
           }}
@@ -74,10 +88,10 @@ export default function TabsLayout() {
           options={{
             title: 'Coach',
             tabBarAccessibilityLabel: 'Coach',
-            tabBarIcon: ({ color, size }) => (
+            tabBarIcon: ({ color }) => (
               <Ionicons name="sparkles-outline" size={20} color={color} />
             ),
-            href: Platform.OS === 'web' ? undefined : null,
+            href: null,
           }}
         />
         <Tabs.Screen
@@ -85,20 +99,23 @@ export default function TabsLayout() {
           options={{
             title: 'Analyze',
             tabBarAccessibilityLabel: 'Analyze',
-            tabBarIcon: ({ color, size }) => (
+            tabBarIcon: ({ color }) => (
               <Ionicons name="scan-outline" size={20} color={color} />
             ),
-            // Hide tab bar when this screen is active
+            headerShown: false,
+            // Analyze remains a full-screen child flow entered from Form.
             tabBarStyle: styles.hiddenTabBar,
-            href: Platform.OS === 'web' ? null : undefined,
+            href: null,
           }}
         />
         <Tabs.Screen
           name="profile"
           options={{
             title: 'Profile',
+            href: null,
+            header: () => <TabHeader showBack />,
             tabBarAccessibilityLabel: 'Profile',
-            tabBarIcon: ({ color, size }) => (
+            tabBarIcon: ({ color }) => (
               <Ionicons name="person-outline" size={20} color={color} />
             ),
           }}
@@ -108,40 +125,42 @@ export default function TabsLayout() {
   );
 }
 
-const createStyles = (insets: ReturnType<typeof useSafeAreaInsets>) =>
-  StyleSheet.create({
+const createStyles = (
+  insets: ReturnType<typeof useSafeAreaInsets>,
+  width: number,
+  fontScale: number,
+) => {
+  const bottomPadding = Math.max(insets.bottom, 8);
+  // Keep the touch/label area consistent independently of the home indicator.
+  const contentHeight = 56 + Math.max(0, fontScale - 1) * 14;
+  return StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: '#050E1F',
+      backgroundColor: theme.colors.background,
       paddingTop: insets.top,
     },
     tabBar: {
-      backgroundColor: '#0F2339',
-      borderTopColor: '#1B2E4A',
+      backgroundColor: theme.colors.surface,
+      borderTopColor: theme.colors.border,
       borderTopWidth: 1,
-      height: 64 + insets.bottom,
-      paddingBottom: Math.max(insets.bottom, 12),
-      paddingTop: 6,
+      height: contentHeight + bottomPadding,
+      paddingBottom: bottomPadding,
+      paddingTop: 0,
       elevation: 0,
     },
     tabBarLabel: {
-      fontSize: 11,
+      fontSize: width < 360 ? 10 : 11,
       fontWeight: '500',
       fontFamily: Platform.select({
         ios: 'System',
         web: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
         default: 'sans-serif-medium',
       }),
-      marginTop: 4,
-    },
-    header: {
-      backgroundColor: '#050E1F',
-      height: 44 + insets.top,
-    },
-    headerTitle: {
-      paddingTop: insets.top,
+      marginTop: 2,
     },
     hiddenTabBar: {
       display: 'none',
     },
   });
+
+};

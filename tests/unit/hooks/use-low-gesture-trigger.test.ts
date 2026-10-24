@@ -7,7 +7,7 @@ import {
   handsBelowHips,
   useLowGestureTrigger,
   type LowGestureJoint,
-} from '@/hooks/use-low-gesture-trigger';
+} from '@/features/form-tracking/hooks/use-low-gesture-trigger';
 
 function joint(name: string, y: number, isTracked = true): LowGestureJoint {
   return { name, y, isTracked };

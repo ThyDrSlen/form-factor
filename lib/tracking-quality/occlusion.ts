@@ -148,12 +148,12 @@ export class OcclusionHoldManager {
         continue;
       }
 
-      if (held.missingFrames >= this.holdFrames) {
-        this.holds.delete(key);
+      held.missingFrames += 1;
+      // Expire coordinates, not the missing-frame history used by telemetry.
+      if (held.missingFrames > this.holdFrames) {
         continue;
       }
 
-      held.missingFrames += 1;
       const base = typeof held.lastGood.confidence === 'number' ? clamp01(held.lastGood.confidence) : CONFIDENCE_TIER_THRESHOLDS.low;
       const decayed = this.decayConfidence(base, held.missingFrames);
       output.set(key, {
@@ -190,13 +190,16 @@ export class OcclusionHoldManager {
         continue;
       }
 
-      if (held.missingFrames >= this.holdFrames) {
-        this.holds.delete(key);
-        output[key] = null;
+      held.missingFrames += 1;
+      // A long occlusion must remain observable after the coordinate hold ends.
+      if (held.missingFrames > this.holdFrames) {
+        // Preserve the record API: emit null at expiry, then omit absent keys.
+        if (held.missingFrames === this.holdFrames + 1 || Object.prototype.hasOwnProperty.call(joints, key)) {
+          output[key] = null;
+        }
         continue;
       }
 
-      held.missingFrames += 1;
       const base = typeof held.lastGood.confidence === 'number' ? clamp01(held.lastGood.confidence) : CONFIDENCE_TIER_THRESHOLDS.low;
       const decayed = this.decayConfidence(base, held.missingFrames);
       output[key] = {

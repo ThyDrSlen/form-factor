@@ -5,7 +5,7 @@ import {
   getFqiBucket,
   RepBreakdownList,
   type RepSummary,
-} from '@/components/form-tracking/RepBreakdownList';
+} from '@/features/form-tracking/components/RepBreakdownList';
 
 describe('RepBreakdownList', () => {
   const reps: RepSummary[] = [

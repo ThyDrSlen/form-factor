@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { AppState, type AppStateStatus } from 'react-native';
 
-import { useAppStatePause } from '@/hooks/use-app-state-pause';
+import { useAppStatePause } from '@/features/form-tracking/hooks/use-app-state-pause';
 
 type Listener = (state: AppStateStatus) => void;
 

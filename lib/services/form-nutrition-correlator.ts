@@ -16,7 +16,7 @@
  * The math is standard Pearson correlation; kept inline so this file has
  * zero imports and is trivially unit-testable.
  */
-import type { FoodEntry } from '@/contexts/FoodContext';
+import type { FoodEntry } from '@/features/nutrition/contexts/FoodContext';
 
 export interface FormSession {
   /** Stable session identifier. */

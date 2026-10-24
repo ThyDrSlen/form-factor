@@ -6,7 +6,7 @@ import {
   FramingGuide,
   HINT_MESSAGES,
   computeFramingHint,
-} from '@/components/form-tracking/FramingGuide';
+} from '@/features/form-tracking/components/FramingGuide';
 
 function joint(name: string, x: number, y: number, isTracked = true): Joint2D {
   return { name, x, y, isTracked };

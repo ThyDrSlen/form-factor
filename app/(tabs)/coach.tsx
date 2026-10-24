@@ -5,21 +5,21 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Crypto from 'expo-crypto';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../features/auth/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { fetchTodaySession, fetchCoachSessionMessages } from '@/lib/services/coach-history-service';
 import { AppError, createError, logError, mapToUserMessage } from '@/lib/services/ErrorHandler';
-import { CoachProviderBadge } from '@/components/coach/CoachProviderBadge';
-import { styles } from '../../styles/tabs/_index.styles';
+import { CoachProviderBadge } from '@/features/coach/components/CoachProviderBadge';
+import { styles } from '../../features/health/styles/_index.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
 import { tabColors } from '@/styles/tabs/_tab-theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useVoiceMode } from '@/hooks/use-voice-mode';
-import { useVoiceControl } from '@/contexts/VoiceControlContext';
+import { useVoiceMode } from '@/features/voice/hooks/use-voice-mode';
+import { useVoiceControl } from '@/features/voice/contexts/VoiceControlContext';
 import { isVoiceControlPipelineEnabled } from '@/lib/services/voice-pipeline-flag';
-import { VoiceControlBanner } from '@/components/voice/VoiceControlBanner';
-import { VoiceCommandFeedback } from '@/components/form-tracking/VoiceCommandFeedback';
+import { VoiceControlBanner } from '@/features/voice/components/VoiceControlBanner';
+import { VoiceCommandFeedback } from '@/features/form-tracking/components/VoiceCommandFeedback';
 
 const COACH_WELCOME_SEEN_KEY = 'coach_welcome_seen';
 

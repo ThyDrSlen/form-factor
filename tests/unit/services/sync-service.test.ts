@@ -46,13 +46,14 @@ jest.mock('@/lib/services/database/local-db', () => {
     'removeSyncQueueItem', 'incrementSyncQueueRetry', 'cleanupSyncedDeletes',
     'clearSyncQueue', 'addToSyncQueue',
     'updateFoodSyncStatus', 'updateWorkoutSyncStatus',
+    'reconcileFood', 'reconcileWorkout',
     'updateHealthMetricSyncStatus', 'updateNutritionGoalsSyncStatus',
     'hardDeleteFood', 'hardDeleteWorkout', 'deleteHealthMetric', 'deleteNutritionGoals',
     'getAllFoodsWithDeleted', 'getAllWorkoutsWithDeleted',
     'insertFood', 'insertWorkout', 'updateFood', 'updateWorkout',
     'getFoodById', 'getWorkoutById', 'getHealthMetricById', 'getNutritionGoalsById',
     'getNutritionGoals', 'upsertNutritionGoals',
-    'insertHealthMetric', 'updateHealthMetric',
+    'insertHealthMetric', 'updateHealthMetric', 'reconcileHealthMetric',
     'withTransaction',
   ];
   const db: Record<string, jest.Mock> = {};
@@ -120,6 +121,7 @@ jest.mock('@/lib/services/ErrorHandler', () => ({
 // ---------------------------------------------------------------------------
 
 import { syncService } from '@/lib/services/database/sync-service';
+import type { LocalFood, LocalWorkout } from '@/lib/services/database/local-db';
 
 // Access the mock object created inside the factory
 const mockLocalDB = (global as any).__mockLocalDB as Record<string, jest.Mock>;
@@ -127,6 +129,24 @@ const mockLocalDB = (global as any).__mockLocalDB as Record<string, jest.Mock>;
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+const revision = '2026-04-16T12:00:00.000Z';
+function persistedFood(id: string, overrides: Partial<LocalFood> = {}): LocalFood {
+  return { id, name: 'Apple', calories: 95, date: revision, updated_at: revision, synced: 0, deleted: 0, ...overrides };
+}
+
+function persistLegacyRow(table: 'foods' | 'workouts', row: LocalFood | LocalWorkout): void {
+  const getter = table === 'foods' ? 'getFoodById' : 'getWorkoutById';
+  const reconcile = table === 'foods' ? 'reconcileFood' : 'reconcileWorkout';
+  let current = { ...row };
+  mockLocalDB[getter].mockImplementation(async (id: string) => id === current.id ? { ...current } : null);
+  mockLocalDB[reconcile].mockImplementation(async (incoming: LocalFood | LocalWorkout, expected: LocalFood | LocalWorkout, isCurrent?: () => boolean) => {
+    if ((isCurrent && !isCurrent()) || incoming.id !== expected.id || expected.id !== current.id ||
+        !Object.entries(expected).every(([key, value]) => Reflect.get(current, key) === value)) return false;
+    current = { ...incoming, synced: 1 };
+    return true;
+  });
+}
 
 function resetSyncService() {
   (syncService as any).syncPromise = null;
@@ -177,6 +197,9 @@ describe('SyncService', () => {
         mockLocalDB[m].mockResolvedValue([]);
       } else if (m.startsWith('get') || m === 'getNutritionGoals') {
         mockLocalDB[m].mockResolvedValue(null);
+      } else if (m === 'reconcileFood' || m === 'reconcileWorkout') {
+        // No persisted row is never an acknowledgement.
+        mockLocalDB[m].mockResolvedValue(false);
       } else {
         mockLocalDB[m].mockResolvedValue(undefined);
       }
@@ -301,7 +324,9 @@ describe('SyncService', () => {
   // processSyncQueue
   // -----------------------------------------------------------------------
   describe('processSyncQueue (via syncToSupabase)', () => {
-    it('removes items that hit max retries (5)', async () => {
+    it('retries old failures and removes them on success', async () => {
+      const current = persistedFood('food-1');
+      persistLegacyRow('foods', current);
       mockLocalDB.getSyncQueue.mockResolvedValue([
         {
           id: 1,
@@ -318,9 +343,14 @@ describe('SyncService', () => {
       await syncService.syncToSupabase();
 
       expect(mockLocalDB.removeSyncQueueItem).toHaveBeenCalledWith(1);
+      expect(mockFrom).toHaveBeenCalledWith('foods');
+      expect(mockLocalDB.reconcileFood).toHaveBeenCalledWith(current, current, expect.any(Function));
+      expect(await mockLocalDB.getFoodById(current.id)).toEqual({ ...current, synced: 1 });
     });
 
     it('processes upsert queue items and removes on success', async () => {
+      const current = persistedFood('food-abc', { name: 'Banana', calories: 105 });
+      persistLegacyRow('foods', current);
       mockLocalDB.getSyncQueue.mockResolvedValue([
         {
           id: 10,
@@ -337,10 +367,16 @@ describe('SyncService', () => {
       await syncService.syncToSupabase();
 
       expect(mockLocalDB.removeSyncQueueItem).toHaveBeenCalledWith(10);
-      expect(mockLocalDB.updateFoodSyncStatus).toHaveBeenCalledWith('food-abc', true);
+      expect(mockLocalDB.reconcileFood).toHaveBeenCalledWith(current, current, expect.any(Function));
+      expect(await mockLocalDB.getFoodById(current.id)).toEqual({ ...current, synced: 1 });
     });
 
     it('processes delete queue items', async () => {
+      const current: LocalWorkout = {
+        id: 'workout-xyz', exercise: 'Squat', sets: 3, reps: 10,
+        date: revision, updated_at: revision, synced: 0, deleted: 1,
+      };
+      persistLegacyRow('workouts', current);
       mockLocalDB.getSyncQueue.mockResolvedValue([
         {
           id: 20,
@@ -357,10 +393,13 @@ describe('SyncService', () => {
       await syncService.syncToSupabase();
 
       expect(mockLocalDB.removeSyncQueueItem).toHaveBeenCalledWith(20);
-      expect(mockLocalDB.updateWorkoutSyncStatus).toHaveBeenCalledWith('workout-xyz', true);
+      expect(mockLocalDB.reconcileWorkout).toHaveBeenCalledWith(current, current, expect.any(Function));
+      expect(await mockLocalDB.getWorkoutById(current.id)).toEqual({ ...current, synced: 1 });
     });
 
     it('increments retry count on queue processing failure', async () => {
+      const current = persistedFood('food-fail', { name: 'Test', calories: 50 });
+      persistLegacyRow('foods', current);
       qbResolvedValue = { data: null, error: { message: 'timeout', code: '500' } };
 
       mockLocalDB.getSyncQueue.mockResolvedValue([
@@ -382,9 +421,15 @@ describe('SyncService', () => {
         30,
         expect.any(String)
       );
+      expect(mockFrom).toHaveBeenCalledWith('foods');
+      expect(syncService.getSyncStatus().lastError).toBe('timeout');
+      expect(mockLocalDB.reconcileFood).not.toHaveBeenCalled();
+      expect(mockLocalDB.removeSyncQueueItem).not.toHaveBeenCalled();
+      expect(await mockLocalDB.getFoodById(current.id)).toEqual(current);
     });
 
     it('skips queue items whose next_retry_at is in the future', async () => {
+      persistLegacyRow('foods', persistedFood('food-wait', { name: 'Waiting', calories: 10 }));
       const futureDate = new Date(Date.now() + 60_000).toISOString();
 
       mockLocalDB.getSyncQueue.mockResolvedValue([
@@ -404,6 +449,7 @@ describe('SyncService', () => {
 
       expect(mockLocalDB.removeSyncQueueItem).not.toHaveBeenCalledWith(40);
       expect(mockLocalDB.incrementSyncQueueRetry).not.toHaveBeenCalledWith(40, expect.anything());
+      expect(mockFrom).not.toHaveBeenCalled();
     });
 
     it('handles corrupted JSON data gracefully (removes unparseable item)', async () => {
@@ -426,7 +472,9 @@ describe('SyncService', () => {
       expect(mockLocalDB.incrementSyncQueueRetry).not.toHaveBeenCalled();
     });
 
-    it('purges local record and removes queue item on RLS violation (42501)', async () => {
+    it('retains local record and queued retry on RLS violation (42501)', async () => {
+      const current = persistedFood('food-rls', { name: 'Forbidden', calories: 0 });
+      persistLegacyRow('foods', current);
       qbResolvedValue = { data: null, error: { message: 'RLS', code: '42501' } };
 
       mockLocalDB.getSyncQueue.mockResolvedValue([
@@ -444,12 +492,23 @@ describe('SyncService', () => {
 
       await syncService.syncToSupabase();
 
-      expect(mockLocalDB.hardDeleteFood).toHaveBeenCalledWith('food-rls');
-      expect(mockLocalDB.removeSyncQueueItem).toHaveBeenCalledWith(60);
+      expect(mockLocalDB.hardDeleteFood).not.toHaveBeenCalled();
+      expect(mockLocalDB.removeSyncQueueItem).not.toHaveBeenCalledWith(60);
+      expect(mockLocalDB.incrementSyncQueueRetry).toHaveBeenCalledWith(60, expect.any(String));
+      expect(mockFrom).toHaveBeenCalledWith('foods');
+      expect(syncService.getSyncStatus().lastError).toBe('RLS');
+      expect(mockLocalDB.reconcileFood).not.toHaveBeenCalled();
+      expect(await mockLocalDB.getFoodById(current.id)).toEqual(current);
     });
 
-    it('purges health metric on invalid UUID error (22P02)', async () => {
+    it('retains the owned health metric and retry on invalid UUID error (22P02)', async () => {
       qbResolvedValue = { data: null, error: { message: 'invalid UUID', code: '22P02' } };
+      mockLocalDB.getHealthMetricById.mockResolvedValue({
+        id: 'bad-uuid', user_id: 'user-123', summary_date: '2025-01-01',
+        steps: 100, heart_rate_bpm: null, heart_rate_timestamp: null,
+        weight_kg: null, weight_timestamp: null, synced: 0,
+        updated_at: '2025-01-01T12:00:00.000Z',
+      });
 
       mockLocalDB.getSyncQueue.mockResolvedValue([
         {
@@ -466,11 +525,15 @@ describe('SyncService', () => {
 
       await syncService.syncToSupabase();
 
-      expect(mockLocalDB.deleteHealthMetric).toHaveBeenCalledWith('bad-uuid');
-      expect(mockLocalDB.removeSyncQueueItem).toHaveBeenCalledWith(70);
+      expect(mockFrom).toHaveBeenCalledWith('health_metrics');
+      expect(mockLocalDB.deleteHealthMetric).not.toHaveBeenCalled();
+      expect(mockLocalDB.removeSyncQueueItem).not.toHaveBeenCalledWith(70);
+      expect(mockLocalDB.incrementSyncQueueRetry).toHaveBeenCalledWith(70, expect.any(String));
     });
 
     it('removes stale duplicate queue rows before processing the newest entry', async () => {
+      const current = persistedFood('food-dup', { name: 'Old', calories: 10, deleted: 1 });
+      persistLegacyRow('foods', current);
       mockLocalDB.getSyncQueue.mockResolvedValue([
         {
           id: 80,
@@ -499,10 +562,13 @@ describe('SyncService', () => {
       expect(mockLocalDB.removeSyncQueueItem).toHaveBeenCalledWith(80);
       expect(mockLocalDB.removeSyncQueueItem).toHaveBeenCalledWith(81);
       expect(mockFrom).toHaveBeenCalledTimes(1);
+      expect(mockLocalDB.reconcileFood).toHaveBeenCalledWith(current, current, expect.any(Function));
       expect(mockLocalDB.incrementSyncQueueRetry).not.toHaveBeenCalledWith(80, expect.any(String));
     });
 
-    it('drops wrong-user queue items instead of leaving them stuck forever', async () => {
+    it('retains unsent local data and retry when queued ownership conflicts', async () => {
+      const current = persistedFood('food-wrong-user', { name: 'Other', calories: 10 });
+      persistLegacyRow('foods', current);
       mockLocalDB.getSyncQueue.mockResolvedValue([
         {
           id: 90,
@@ -518,9 +584,12 @@ describe('SyncService', () => {
 
       await syncService.syncToSupabase();
 
-      expect(mockLocalDB.hardDeleteFood).toHaveBeenCalledWith('food-wrong-user');
-      expect(mockLocalDB.removeSyncQueueItem).toHaveBeenCalledWith(90);
-      expect(mockLocalDB.incrementSyncQueueRetry).not.toHaveBeenCalledWith(90, expect.any(String));
+      expect(mockLocalDB.hardDeleteFood).not.toHaveBeenCalled();
+      expect(mockLocalDB.removeSyncQueueItem).not.toHaveBeenCalled();
+      expect(mockLocalDB.incrementSyncQueueRetry).toHaveBeenCalledWith(90, expect.any(String));
+      expect(mockLocalDB.reconcileFood).not.toHaveBeenCalled();
+      expect(await mockLocalDB.getFoodById(current.id)).toEqual(current);
+      expect(syncService.getSyncStatus().state).toBe('error');
       expect(mockFrom).not.toHaveBeenCalled();
     });
   });
@@ -685,9 +754,15 @@ describe('SyncService', () => {
         },
       ]);
 
+      const [current] = await mockLocalDB.getUnsyncedFoods();
+      persistLegacyRow('foods', current);
       await syncService.syncToSupabase();
 
-      expect(mockLocalDB.updateFoodSyncStatus).toHaveBeenCalledWith('food-1', true);
+      // Acknowledge exactly the captured row, including its dirty/tombstone
+      // state; a later edit with the same timestamp must stay pending.
+      const [captured] = await mockLocalDB.getUnsyncedFoods.mock.results[0].value;
+      expect(mockLocalDB.reconcileFood).toHaveBeenCalledWith(captured, captured, expect.any(Function));
+      expect(await mockLocalDB.getFoodById(captured.id)).toEqual({ ...captured, synced: 1 });
     });
 
     it('handles deleted foods by calling supabase delete', async () => {
@@ -703,9 +778,13 @@ describe('SyncService', () => {
         },
       ]);
 
+      const [current] = await mockLocalDB.getUnsyncedFoods();
+      persistLegacyRow('foods', current);
       await syncService.syncToSupabase();
 
-      expect(mockLocalDB.updateFoodSyncStatus).toHaveBeenCalledWith('food-del', true);
+      const [captured] = await mockLocalDB.getUnsyncedFoods.mock.results[0].value;
+      expect(mockLocalDB.reconcileFood).toHaveBeenCalledWith(captured, captured, expect.any(Function));
+      expect(await mockLocalDB.getFoodById(captured.id)).toEqual({ ...captured, synced: 1 });
     });
 
     it('adds food to sync queue on non-RLS failure', async () => {
@@ -830,12 +909,12 @@ describe('SyncService', () => {
 
   describe('realtime health metric change error handling', () => {
     it('sets sync status to error when local DB write fails', async () => {
-      mockLocalDB.getHealthMetricById.mockRejectedValue(new Error('constraint violation'));
+      mockLocalDB.reconcileHealthMetric.mockRejectedValue(new Error('constraint violation'));
 
       const handler = (syncService as any).handleRealtimeHealthMetricChange.bind(syncService);
       await handler({
         eventType: 'INSERT',
-        new: { id: 'hm-1', user_id: 'u-1', summary_date: '2025-01-01' },
+        new: { id: 'hm-1', user_id: 'user-123', summary_date: '2025-01-01', updated_at: '2025-01-01T12:00:00.000Z' },
         old: {},
       });
 

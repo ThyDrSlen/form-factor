@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import RestActiveRecoveryPanel from '@/components/workout/RestActiveRecoveryPanel';
+import RestActiveRecoveryPanel from '@/features/workouts/components/RestActiveRecoveryPanel';
 import { buildBetweenSetsRecommendation } from '@/lib/services/between-sets-coach';
 
 describe('RestActiveRecoveryPanel', () => {

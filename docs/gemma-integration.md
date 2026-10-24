@@ -16,10 +16,10 @@ failure.
 
 | Surface | Service | Prompt | Hook |
 |---|---|---|---|
-| NL workout session | `lib/services/session-generator.ts` | `session-generator-prompt.ts` | `hooks/use-session-generator.ts` |
-| Pre-session warmup | `lib/services/warmup-generator.ts` | `warmup-generator-prompt.ts` | `hooks/use-warmup-generator.ts` |
-| Post-session cooldown | `lib/services/cooldown-generator.ts` | `cooldown-generator-prompt.ts` | `hooks/use-cooldown-generator.ts` |
-| Rest duration advisor | `lib/services/rest-advisor.ts` | (inline) | `hooks/use-rest-advisor.ts` |
+| NL workout session | `lib/services/session-generator.ts` | `session-generator-prompt.ts` | `features/coach/hooks/use-session-generator.ts` |
+| Pre-session warmup | `lib/services/warmup-generator.ts` | `warmup-generator-prompt.ts` | `features/coach/hooks/use-warmup-generator.ts` |
+| Post-session cooldown | `lib/services/cooldown-generator.ts` | `cooldown-generator-prompt.ts` | `features/coach/hooks/use-cooldown-generator.ts` |
+| Rest duration advisor | `lib/services/rest-advisor.ts` | (inline) | `features/workouts/hooks/use-rest-advisor.ts` |
 
 ### Gemma response shapes
 

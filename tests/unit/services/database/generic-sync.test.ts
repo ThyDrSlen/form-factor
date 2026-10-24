@@ -15,6 +15,11 @@ const mockGetAllAsync = jest.fn().mockResolvedValue([]);
 
 const mockDb = {
   runAsync: mockRunAsync,
+  prepareAsync: async (sql: string) => ({
+    // Preserve the fixture's unbound runAsync(sql) overload for zero binds.
+    executeAsync: async (values: unknown[]) => values.length ? mockRunAsync(sql, values) : mockRunAsync(sql),
+    finalizeAsync: async () => {},
+  }),
   getAllAsync: mockGetAllAsync,
 };
 
@@ -24,6 +29,8 @@ jest.mock('@/lib/services/database/local-db', () => ({
       return mockDb;
     },
     addToSyncQueue: jest.fn().mockResolvedValue(undefined),
+    getSyncQueue: jest.fn().mockResolvedValue([]),
+    withTransaction: jest.fn(async (fn: () => Promise<void>) => fn()),
   },
 }));
 
@@ -132,6 +139,8 @@ jest.mock('@/lib/services/ErrorHandler', () => ({
 
 import {
   genericLocalUpsert,
+  buildRemoteRow,
+  reconcileSystemExerciseIds,
   genericGetUnsynced,
   genericGetById,
   genericUpdateSyncStatus,
@@ -165,6 +174,7 @@ function makeConfig(overrides: Partial<SyncTableConfig> = {}): SyncTableConfig {
     supportsSoftDelete: true,
     appendOnly: false,
     columns: ['id', 'name', 'started_at'],
+    remoteToLocal: WORKOUT_SYNC_CONFIGS.find(config => config.localTable === 'workout_sessions')!.remoteToLocal,
     ...overrides,
   };
 }
@@ -187,8 +197,21 @@ function makeAppendOnlyConfig(overrides: Partial<SyncTableConfig> = {}): SyncTab
 // Setup / teardown
 // ---------------------------------------------------------------------------
 
+/** Only the named persisted row is owned; unrelated lookups remain unknown. */
+function mockPersistedOwner(table: 'workout_sessions' | 'workout_session_events', id: string, userId: string): void {
+  const from = table === 'workout_sessions'
+    ? 'workout_sessions ws WHERE ws.id = ?'
+    : 'workout_session_events child JOIN workout_sessions ws ON ws.id = child.session_id WHERE child.id = ?';
+  mockGetAllAsync.mockImplementation(async (sql: string, params?: string[]) =>
+    sql === `SELECT ws.user_id FROM ${from}` && params?.length === 1 && params[0] === id
+      ? [{ user_id: userId }]
+      : [],
+  );
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(localDB.getSyncQueue).mockReset().mockResolvedValue([]);
   mockRunAsync.mockResolvedValue(undefined);
   mockGetAllAsync.mockResolvedValue([]);
   supabaseChainResult = { data: null, error: null };
@@ -218,7 +241,7 @@ describe('genericLocalUpsert', () => {
 
     expect(mockRunAsync).toHaveBeenCalledTimes(1);
     const [sql, values] = mockRunAsync.mock.calls[0];
-    expect(sql).toContain('INSERT OR REPLACE INTO workout_sessions');
+    expect(sql).toContain('INSERT INTO workout_sessions');
     expect(sql).toContain('synced');
     expect(sql).toContain('updated_at');
     // synced value should be 0
@@ -527,6 +550,7 @@ describe('syncTableToSupabase', () => {
     };
     // genericGetUnsynced returns our row
     mockGetAllAsync.mockResolvedValueOnce([localRow]);
+    mockPersistedOwner('workout_sessions', localRow.id, 'user-1');
 
     // Return different results per from() call:
     // 1st call = LWW select (not found), 2nd call = upsert (success)
@@ -552,11 +576,12 @@ describe('syncTableToSupabase', () => {
     await syncTableToSupabase(makeConfig(), 'user-1');
 
     // Should call from() twice: once for LWW select, once for upsert
-    expect(mockFrom).toHaveBeenCalled();
-    // Should mark row as synced afterward
+    expect(mockFrom.mock.calls).toEqual([['workout_sessions'], ['workout_sessions']]);
+    // Acknowledge only the full captured content, not just its timestamp.
+    expect(mockRunAsync).toHaveBeenCalledTimes(1);
     expect(mockRunAsync).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE workout_sessions SET synced = ?'),
-      [1, 'ws-1'],
+      'UPDATE workout_sessions SET synced = ? WHERE id = ? AND "id" IS ? AND "name" IS ? AND "started_at" IS ? AND "synced" IS ? AND "deleted" IS ? AND "updated_at" IS ?',
+      [1, 'ws-1', 'ws-1', 'Push day', '2025-01-01T10:00:00Z', 0, 0, localRow.updated_at],
     );
   });
 
@@ -569,18 +594,22 @@ describe('syncTableToSupabase', () => {
       updated_at: '2025-01-01T10:00:00Z',
     };
     mockGetAllAsync.mockResolvedValueOnce([localRow]);
+    mockPersistedOwner('workout_sessions', localRow.id, 'user-1');
     // Server has a newer timestamp
     supabaseChainResult = {
-      data: { updated_at: '2025-06-15T10:00:00Z' },
+      data: { id: 'ws-1', user_id: 'user-1', name: 'Server newer', updated_at: '2025-06-15T10:00:00Z' },
       error: null,
     };
 
     await syncTableToSupabase(makeConfig(), 'user-1');
 
-    // The local row should be marked synced (server wins, we accept)
+    // Apply winning content only to the observed local version; never insert.
+    expect(mockFrom).toHaveBeenCalledTimes(1);
+    expect(lastUpsertArgs).toEqual([]);
+    expect(mockRunAsync).toHaveBeenCalledTimes(1);
     expect(mockRunAsync).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE workout_sessions SET synced = ?'),
-      [1, 'ws-1'],
+      'UPDATE workout_sessions SET id = ?, user_id = ?, name = ?, updated_at = ?, synced = ? WHERE id = ? AND updated_at = ?',
+      ['ws-1', 'user-1', 'Server newer', '2025-06-15T10:00:00Z', 1, 'ws-1', localRow.updated_at],
     );
   });
 
@@ -594,9 +623,10 @@ describe('syncTableToSupabase', () => {
       updated_at: '2025-06-20T10:00:00Z',
     };
     mockGetAllAsync.mockResolvedValueOnce([localRow]);
+    mockPersistedOwner('workout_sessions', localRow.id, 'user-1');
     // Server has older timestamp
     supabaseChainResult = {
-      data: { updated_at: '2025-06-15T10:00:00Z' },
+      data: { id: 'ws-1', user_id: 'user-1', updated_at: '2025-06-15T10:00:00Z' },
       error: null,
     };
 
@@ -616,20 +646,23 @@ describe('syncTableToSupabase', () => {
       updated_at: '2025-06-01T12:00:00Z',
     };
     mockGetAllAsync.mockResolvedValueOnce([deletedRow]);
+    mockPersistedOwner('workout_sessions', deletedRow.id, 'user-1');
     supabaseChainResult = { data: null, error: null };
 
     await syncTableToSupabase(makeConfig(), 'user-1');
 
     // Should call from() for delete
     expect(mockFrom).toHaveBeenCalledWith('workout_sessions');
-    // Should mark synced after delete
+    expect(chainDeleteCalled).toBe(true);
+    // Acknowledge the captured tombstone, not a subsequently restored row.
+    expect(mockRunAsync).toHaveBeenCalledTimes(1);
     expect(mockRunAsync).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE workout_sessions SET synced = ?'),
-      [1, 'ws-del'],
+      'UPDATE workout_sessions SET synced = ? WHERE id = ? AND "id" IS ? AND "name" IS ? AND "synced" IS ? AND "deleted" IS ? AND "updated_at" IS ?',
+      [1, 'ws-del', 'ws-del', 'Deleted session', 0, 1, deletedRow.updated_at],
     );
   });
 
-  it('purges local row on RLS violation (42501)', async () => {
+  it('retains local row and queues retry on RLS violation (42501)', async () => {
     const row = {
       id: 'ws-rls',
       name: 'Forbidden',
@@ -638,6 +671,7 @@ describe('syncTableToSupabase', () => {
       updated_at: '2025-06-01T12:00:00Z',
     };
     mockGetAllAsync.mockResolvedValueOnce([row]);
+    mockPersistedOwner('workout_sessions', row.id, 'user-1');
 
     // 1st from() = LWW select (not found), 2nd from() = upsert (RLS error)
     const results = [
@@ -658,13 +692,11 @@ describe('syncTableToSupabase', () => {
 
     await syncTableToSupabase(makeConfig(), 'user-1');
 
-    // Should hard delete locally
-    expect(mockRunAsync).toHaveBeenCalledWith(
-      'DELETE FROM workout_sessions WHERE id = ?',
-      ['ws-rls'],
+    expect(mockRunAsync).not.toHaveBeenCalledWith(
+      'DELETE FROM workout_sessions WHERE id = ?', ['ws-rls'],
     );
-    expect(warnWithTs).toHaveBeenCalledWith(
-      expect.stringContaining('rejected by RLS'),
+    expect(localDB.addToSyncQueue).toHaveBeenCalledWith(
+      'workout_sessions', 'upsert', 'ws-rls', expect.objectContaining({ name: 'Forbidden' }),
     );
   });
 
@@ -677,6 +709,7 @@ describe('syncTableToSupabase', () => {
       updated_at: '2025-06-01T12:00:00Z',
     };
     mockGetAllAsync.mockResolvedValueOnce([row]);
+    mockPersistedOwner('workout_sessions', row.id, 'user-1');
 
     // 1st from() = LWW select (not found), 2nd from() = upsert (server error)
     const results = [
@@ -710,15 +743,19 @@ describe('syncTableToSupabase', () => {
   });
 
   it('append-only mode skips LWW timestamp check', async () => {
+    // Match the production event schema: created_at, nullable references, no updated_at.
     const eventRow = {
       id: 'evt-1',
       session_id: 'ws-1',
+      created_at: '2025-06-01T12:00:00Z',
       type: 'rep_complete',
+      session_exercise_id: null,
+      session_set_id: null,
       payload: '{}',
       synced: 0,
-      updated_at: '2025-06-01T12:00:00Z',
     };
     mockGetAllAsync.mockResolvedValueOnce([eventRow]);
+    mockPersistedOwner('workout_session_events', eventRow.id, 'user-1');
     supabaseChainResult = { data: null, error: null };
 
     await syncTableToSupabase(makeAppendOnlyConfig(), 'user-1');
@@ -726,10 +763,16 @@ describe('syncTableToSupabase', () => {
     // Should only call from() once (for the upsert), NOT for an LWW select
     // because append-only skips the timestamp check
     expect(mockFrom).toHaveBeenCalledTimes(1);
-    // Should mark synced
+    expect(chainSelectArg).toBeNull();
+    expect(lastUpsertArgs).toEqual([
+      [{ id: 'evt-1', session_id: 'ws-1', type: 'rep_complete', payload: '{}' }],
+      { onConflict: 'id', ignoreDuplicates: true },
+    ]);
+    // Even without updated_at, acknowledgement compares every captured field.
+    expect(mockRunAsync).toHaveBeenCalledTimes(1);
     expect(mockRunAsync).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE workout_session_events SET synced = ?'),
-      [1, 'evt-1'],
+      'UPDATE workout_session_events SET synced = ? WHERE id = ? AND "id" IS ? AND "session_id" IS ? AND "created_at" IS ? AND "type" IS ? AND "session_exercise_id" IS ? AND "session_set_id" IS ? AND "payload" IS ? AND "synced" IS ?',
+      [1, 'evt-1', 'evt-1', 'ws-1', eventRow.created_at, 'rep_complete', null, null, '{}', 0],
     );
   });
 
@@ -743,6 +786,7 @@ describe('syncTableToSupabase', () => {
       updated_at: '2025-06-20T10:00:00Z',
     };
     mockGetAllAsync.mockResolvedValueOnce([row]);
+    mockPersistedOwner('workout_sessions', row.id, 'user-1');
     // No existing server row
     supabaseChainResult = { data: null, error: { code: 'PGRST116', message: 'not found' } };
 
@@ -764,6 +808,7 @@ describe('syncTableToSupabase', () => {
       updated_at: '2025-06-20T10:00:00Z',
     };
     mockGetAllAsync.mockResolvedValueOnce([row]);
+    mockPersistedOwner('workout_sessions', row.id, 'user-1');
     supabaseChainResult = { data: null, error: { code: 'PGRST116', message: 'not found' } };
 
     const localToRemote = jest.fn().mockReturnValue({ id: 'ws-tr', custom_field: 'yes' });
@@ -783,6 +828,7 @@ describe('syncTableToSupabase', () => {
       updated_at: '2025-06-20T10:00:00Z',
     };
     mockGetAllAsync.mockResolvedValueOnce([row]);
+    mockPersistedOwner('workout_sessions', row.id, 'user-1');
     supabaseChainResult = { data: null, error: { code: 'PGRST116', message: 'not found' } };
 
     // Spy on the upsert args via the proxy
@@ -805,13 +851,13 @@ describe('syncTableToSupabase', () => {
       return new Proxy({}, handler);
     });
 
+    mockPersistedOwner('workout_sessions', row.id, 'user-42');
     await syncTableToSupabase(makeConfig({ userScoped: true }), 'user-42');
 
     // Check the upsert was called with user_id in the row
-    if (capturedUpsertData.length > 0) {
-      const upsertRows = capturedUpsertData[0] as Record<string, unknown>[];
-      expect(upsertRows[0]).toHaveProperty('user_id', 'user-42');
-    }
+    expect(capturedUpsertData).toHaveLength(2);
+    const upsertRows = capturedUpsertData[0] as Record<string, unknown>[];
+    expect(upsertRows[0]).toHaveProperty('user_id', 'user-42');
   });
 
   it('adds soft-deleted row to sync queue as delete operation on failure', async () => {
@@ -823,6 +869,7 @@ describe('syncTableToSupabase', () => {
       updated_at: '2025-06-01T12:00:00Z',
     };
     mockGetAllAsync.mockResolvedValueOnce([row]);
+    mockPersistedOwner('workout_sessions', row.id, 'user-1');
     // DELETE fails with generic error
     supabaseChainResult = {
       data: null,
@@ -862,7 +909,7 @@ describe('downloadTableFromSupabase', () => {
     // Should call genericLocalUpsert (via runAsync)
     expect(mockRunAsync).toHaveBeenCalled();
     const insertCall = mockRunAsync.mock.calls.find(
-      ([sql]: [string]) => sql.includes('INSERT OR REPLACE'),
+      ([sql]: [string]) => sql.includes('INSERT'),
     );
     expect(insertCall).toBeDefined();
   });
@@ -885,7 +932,7 @@ describe('downloadTableFromSupabase', () => {
 
     // Should NOT insert/update because local is newer
     const insertCalls = mockRunAsync.mock.calls.filter(
-      ([sql]: [string]) => sql.includes('INSERT OR REPLACE'),
+      ([sql]: [string]) => sql.includes('INSERT'),
     );
     expect(insertCalls).toHaveLength(0);
   });
@@ -908,12 +955,12 @@ describe('downloadTableFromSupabase', () => {
 
     // Should NOT overwrite the local pending delete
     const insertCalls = mockRunAsync.mock.calls.filter(
-      ([sql]: [string]) => sql.includes('INSERT OR REPLACE'),
+      ([sql]: [string]) => sql.includes('INSERT'),
     );
     expect(insertCalls).toHaveLength(0);
   });
 
-  it('hard-deletes local synced rows absent from server', async () => {
+  it('retains local synced rows absent from a remote listing', async () => {
     // Server returns empty
     supabaseChainResult = { data: [], error: null };
     // Local has a synced, non-deleted row
@@ -923,7 +970,7 @@ describe('downloadTableFromSupabase', () => {
 
     await downloadTableFromSupabase(makeConfig(), 'user-1');
 
-    expect(mockRunAsync).toHaveBeenCalledWith(
+    expect(mockRunAsync).not.toHaveBeenCalledWith(
       'DELETE FROM workout_sessions WHERE id = ?',
       ['ws-gone'],
     );
@@ -962,6 +1009,7 @@ describe('downloadTableFromSupabase', () => {
     const remoteRow = {
       id: 'ws-transform',
       name: 'Raw remote',
+      user_id: 'user-1',
       updated_at: '2025-06-01T12:00:00Z',
       created_at: '2025-06-01T10:00:00Z',
     };
@@ -979,25 +1027,26 @@ describe('downloadTableFromSupabase', () => {
     expect(remoteToLocal).toHaveBeenCalledWith(remoteRow);
   });
 
-  it('silently returns when supabase table does not exist', async () => {
+  it('reports missing required remote schema instead of successful recovery', async () => {
     supabaseChainResult = {
       data: null,
       error: { message: 'relation "workout_sessions" does not exist', code: '42P01' },
     };
 
-    // Should not throw
+    // No table was downloaded; the coordinator must not report success.
     await expect(
       downloadTableFromSupabase(makeConfig(), 'user-1'),
-    ).resolves.toBeUndefined();
+    ).rejects.toEqual(supabaseChainResult.error);
   });
 
-  it('logs error for non-missing-table supabase errors', async () => {
+  it('logs and propagates non-missing-table supabase errors', async () => {
     supabaseChainResult = {
       data: null,
       error: { message: 'permission denied', code: '42501' },
     };
 
-    await downloadTableFromSupabase(makeConfig(), 'user-1');
+    await expect(downloadTableFromSupabase(makeConfig(), 'user-1'))
+      .rejects.toEqual(supabaseChainResult.error);
 
     expect(errorWithTs).toHaveBeenCalledWith(
       expect.stringContaining('Error downloading'),
@@ -1005,7 +1054,7 @@ describe('downloadTableFromSupabase', () => {
     );
   });
 
-  it('strips created_at and user_id from remote rows (default transform)', async () => {
+  it('preserves creation time and persisted session ownership in local rows', async () => {
     const remoteRow = {
       id: 'ws-strip',
       name: 'Strip test',
@@ -1018,15 +1067,16 @@ describe('downloadTableFromSupabase', () => {
 
     await downloadTableFromSupabase(makeConfig({ userScoped: true }), 'user-1');
 
-    // The INSERT should not contain created_at or user_id
+    // Sessions retain their verified server owner alongside creation time.
     const insertCall = mockRunAsync.mock.calls.find(
-      ([sql]: [string]) => sql.includes('INSERT OR REPLACE'),
+      ([sql]: [string]) => sql.includes('INSERT'),
     );
     expect(insertCall).toBeDefined();
-    // The row data sent to INSERT should not have created_at
-    // (since stripRemoteOnlyFields removes it)
     const [sql, values] = insertCall!;
-    expect(sql).not.toContain('created_at');
+    expect(sql).toContain('created_at');
+    expect(sql).toContain('user_id');
+    expect(values).toContain('user-1');
+    expect(values).toContain(remoteRow.created_at);
   });
 
   it('scopes query by user_id for user-scoped tables', async () => {
@@ -1057,7 +1107,7 @@ describe('handleGenericRealtimeChange', () => {
   it('INSERT: upserts remote row locally and notifies', async () => {
     const payload = {
       eventType: 'INSERT' as const,
-      new: { id: 'ws-rt1', name: 'Realtime insert', updated_at: '2025-06-01T12:00:00Z' },
+      new: { id: 'ws-rt1', user_id: 'user-1', name: 'Realtime insert', updated_at: '2025-06-01T12:00:00Z' },
       old: {},
       schema: 'public',
       table: 'workout_sessions',
@@ -1071,7 +1121,7 @@ describe('handleGenericRealtimeChange', () => {
 
     // Should insert locally
     expect(mockRunAsync).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT OR REPLACE INTO workout_sessions'),
+      expect.stringContaining('INSERT INTO workout_sessions'),
       expect.any(Array),
     );
     expect(notifyCb).toHaveBeenCalledTimes(1);
@@ -1080,7 +1130,7 @@ describe('handleGenericRealtimeChange', () => {
   it('UPDATE: local unsynced wins over server update', async () => {
     const payload = {
       eventType: 'UPDATE' as const,
-      new: { id: 'ws-conflict', name: 'Server update', updated_at: '2025-06-15T12:00:00Z' },
+      new: { id: 'ws-conflict', user_id: 'user-1', name: 'Server update', updated_at: '2025-06-15T12:00:00Z' },
       old: {},
       schema: 'public',
       table: 'workout_sessions',
@@ -1099,7 +1149,7 @@ describe('handleGenericRealtimeChange', () => {
     expect(conflictCb).toHaveBeenCalledWith('workout_sessions:ws-conflict');
     // Should not have inserted
     const insertCalls = mockRunAsync.mock.calls.filter(
-      ([sql]: [string]) => sql.includes('INSERT OR REPLACE'),
+      ([sql]: [string]) => sql.includes('INSERT'),
     );
     expect(insertCalls).toHaveLength(0);
   });
@@ -1107,7 +1157,7 @@ describe('handleGenericRealtimeChange', () => {
   it('UPDATE: overwrites local synced row with server version', async () => {
     const payload = {
       eventType: 'UPDATE' as const,
-      new: { id: 'ws-synced', name: 'Server newer', updated_at: '2025-06-20T12:00:00Z' },
+      new: { id: 'ws-synced', user_id: 'user-1', name: 'Server newer', updated_at: '2025-06-20T12:00:00Z' },
       old: {},
       schema: 'public',
       table: 'workout_sessions',
@@ -1123,10 +1173,16 @@ describe('handleGenericRealtimeChange', () => {
 
     expect(notifyCb).toHaveBeenCalledTimes(1);
     expect(conflictCb).not.toHaveBeenCalled();
-    expect(mockRunAsync).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT OR REPLACE'),
-      expect.any(Array),
-    );
+    expect(mockRunAsync.mock.calls).toEqual([
+      [
+        'UPDATE workout_sessions SET user_id = ? WHERE id = ? AND user_id IS NULL',
+        ['user-1', 'ws-synced'],
+      ],
+      [
+        'UPDATE workout_sessions SET id = ?, user_id = ?, name = ?, updated_at = ?, synced = ? WHERE id = ? AND updated_at = ?',
+        ['ws-synced', 'user-1', 'Server newer', '2025-06-20T12:00:00Z', 1, 'ws-synced', '2025-06-15T12:00:00Z'],
+      ],
+    ]);
   });
 
   it('DELETE: hard-deletes local row and notifies', async () => {
@@ -1186,7 +1242,7 @@ describe('handleGenericRealtimeChange', () => {
   it('uses remoteToLocal transform when configured', async () => {
     const payload = {
       eventType: 'INSERT' as const,
-      new: { id: 'ws-xform', name: 'Raw', updated_at: '2025-06-01T12:00:00Z' },
+      new: { id: 'ws-xform', user_id: 'user-1', name: 'Raw', updated_at: '2025-06-01T12:00:00Z' },
       old: {},
       schema: 'public',
       table: 'workout_sessions',
@@ -1253,7 +1309,7 @@ describe('syncAllWorkoutTablesToSupabase', () => {
     await syncAllWorkoutTablesToSupabase('user-1');
 
     // genericGetUnsynced is called once per config via getAllAsync
-    expect(mockGetAllAsync).toHaveBeenCalledTimes(WORKOUT_SYNC_CONFIGS.length);
+    expect(mockGetAllAsync).toHaveBeenCalledTimes(WORKOUT_SYNC_CONFIGS.length + 1);
   });
 
   it('continues syncing remaining tables even if one has rows', async () => {
@@ -1261,7 +1317,7 @@ describe('syncAllWorkoutTablesToSupabase', () => {
     let callCount = 0;
     mockGetAllAsync.mockImplementation(() => {
       callCount++;
-      if (callCount === 1) {
+      if (callCount === 2) {
         return Promise.resolve([
           { id: 'row-1', synced: 0, deleted: 0, updated_at: '2025-06-01T12:00:00Z' },
         ]);
@@ -1439,4 +1495,89 @@ describe('WORKOUT_SYNC_CONFIGS', () => {
     });
     expect(result.payload).toBe('already-a-string');
   });
+});
+
+
+describe('workout model integrity', () => {
+  it('stores events without an updated_at column and uses non-destructive upserts', async () => {
+    await genericLocalUpsert('workout_session_events', 'id', {
+      id: 'event-1', session_id: 'session-1', type: 'session_started',
+      created_at: '2026-09-18T00:00:00Z', payload: '{}',
+    });
+    const [sql] = mockRunAsync.mock.calls[0];
+    expect(sql).not.toContain('updated_at');
+    expect(sql).toContain('ON CONFLICT(id) DO UPDATE');
+    expect(sql).not.toContain('REPLACE');
+  });
+
+  it('remaps offline catalog IDs and both parent references in one transaction', async () => {
+    mockGetAllAsync.mockResolvedValueOnce([{ id: 'seed-pull-up', name: 'Pull-Up', category: 'pull' }]);
+    supabaseChainResult = { data: [{ id: 'server-uuid', name: 'Pull-Up', category: 'pull', is_system: true }], error: null };
+    await reconcileSystemExerciseIds();
+    expect(localDB.withTransaction).toHaveBeenCalledTimes(1);
+    for (const table of ['workout_template_exercises', 'workout_session_exercises']) {
+      expect(mockRunAsync).toHaveBeenCalledWith(
+        `UPDATE ${table} SET exercise_id = ?, synced = 0 WHERE exercise_id = ?`, ['server-uuid', 'seed-pull-up'],
+      );
+    }
+    expect(mockRunAsync).toHaveBeenCalledWith("DELETE FROM sync_queue WHERE table_name = 'exercises' AND record_id = ?", ['seed-pull-up']);
+  });
+
+  it('leaves offline workouts intact if the server catalog is missing a match', async () => {
+    mockGetAllAsync.mockResolvedValueOnce([{ id: 'seed-pull-up', name: 'Pull-Up', category: 'pull' }]);
+    supabaseChainResult = { data: [], error: null };
+    await expect(reconcileSystemExerciseIds()).rejects.toThrow('Cannot resolve system exercise');
+    expect(mockRunAsync).not.toHaveBeenCalled();
+  });
+
+  it('downloads all pages before merging and does not infer deletes from a listing', async () => {
+    const firstPage = Array.from({ length: 500 }, (_, i) => ({ id: `row-${i}`, user_id: 'user-1', name: 'Session' }));
+    const range = jest.fn().mockResolvedValueOnce({ data: firstPage, error: null })
+      .mockResolvedValueOnce({ data: [{ id: 'last-row', user_id: 'user-1', name: 'Last session' }], error: null });
+    const query = { select: () => query, eq: () => query, order: () => query, range };
+    mockFrom.mockReturnValue(query);
+    mockGetAllAsync.mockResolvedValueOnce([{ id: 'not-visible', synced: 1, deleted: 0 }]);
+    await downloadTableFromSupabase(makeConfig(), 'user-1');
+    expect(range.mock.calls).toEqual([[0, 499], [500, 999]]);
+    expect(mockRunAsync.mock.calls.filter(([sql]) => sql.startsWith('INSERT'))).toHaveLength(501);
+    expect(mockRunAsync.mock.calls.filter(([sql]) => sql.startsWith('UPDATE workout_sessions SET user_id'))).toHaveLength(501);
+    expect(mockRunAsync.mock.calls.some(([sql]) => sql.startsWith('DELETE'))).toBe(false);
+  });
+});
+
+
+test('converts SQLite boolean flags to remote booleans', () => {
+  const config = WORKOUT_SYNC_CONFIGS.find(config => config.localTable === 'exercises')!;
+  expect(buildRemoteRow(config, { id: 'exercise-1', is_compound: 1, is_timed: 0, is_system: 0 }, 'user-1')).toEqual({
+    id: 'exercise-1', is_compound: true, is_timed: false, is_system: false,
+  });
+});
+
+
+test('remote payload columns agree with the checked-in Postgres migrations', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const sql = ['026_create_exercises_table.sql', '027_create_workout_templates.sql', '028_create_workout_sessions.sql']
+    .map(file => fs.readFileSync(path.join(process.cwd(), 'supabase/migrations', file), 'utf8')).join('\n');
+  for (const config of WORKOUT_SYNC_CONFIGS) {
+    const definition = sql.split(`CREATE TABLE IF NOT EXISTS ${config.supabaseTable} (`)[1].split('\n);')[0];
+    const columns = new Set(Array.from(definition.matchAll(/^  ([a-z_]+)\s+(?:uuid|text|int|numeric|boolean|timestamptz|jsonb)\b/gm), match => (match as RegExpMatchArray)[1]));
+    const row = Object.fromEntries(config.columns.map(column => [column, column === 'payload' ? '{}' : null]));
+    row.id = 'row-1';
+    row.created_at = '2026-09-18T00:00:00Z';
+    if (!config.appendOnly) row.updated_at = row.created_at;
+    for (const column of Object.keys(buildRemoteRow(config, row, 'user-1'))) {
+      expect({ table: config.supabaseTable, column, exists: columns.has(column) }).toEqual({ table: config.supabaseTable, column, exists: true });
+    }
+    expect(columns.has('user_id')).toBe(config.userScoped);
+  }
+});
+
+test('remote merges condition updates on the local version that was read', async () => {
+  await genericLocalUpsert('workout_sessions', 'id', { id: 'session-1', name: 'Remote', updated_at: 'remote-version' }, 1, 'original-local-version');
+  expect(mockRunAsync).toHaveBeenCalledTimes(1);
+  expect(mockRunAsync).toHaveBeenCalledWith(
+    'UPDATE workout_sessions SET id = ?, name = ?, updated_at = ?, synced = ? WHERE id = ? AND updated_at = ?',
+    ['session-1', 'Remote', 'remote-version', 1, 'session-1', 'original-local-version'],
+  );
 });

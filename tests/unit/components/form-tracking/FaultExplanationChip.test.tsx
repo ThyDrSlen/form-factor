@@ -13,7 +13,7 @@
 
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import FaultExplanationChip from '@/components/form-tracking/FaultExplanationChip';
+import FaultExplanationChip from '@/features/form-tracking/components/FaultExplanationChip';
 import type { RepContext } from '@/lib/types/workout-definitions';
 import type { FaultExplanation } from '@/lib/services/fault-explainability';
 
@@ -24,7 +24,7 @@ jest.mock('@expo/vector-icons', () => ({
 // The chip falls back to `useFaultExplanations()` when no override is given.
 // Short-circuit the hook so the test doesn't have to bring in the full
 // fault-explainability ruleset.
-jest.mock('@/hooks/use-fault-explanations', () => ({
+jest.mock('@/features/form-tracking/hooks/use-fault-explanations', () => ({
   useFaultExplanations: () => ({
     getExplanation: () => ({
       faultId: 'hips_rise_first',

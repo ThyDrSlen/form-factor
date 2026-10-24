@@ -1,6 +1,6 @@
 import React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react-native';
-import type * as NutritionGoalsContextModule from '@/contexts/NutritionGoalsContext';
+import type * as NutritionGoalsContextModule from '@/features/nutrition/contexts/NutritionGoalsContext';
 
 // Mock expo-crypto
 jest.mock('expo-crypto', () => ({
@@ -18,7 +18,7 @@ const mockAuthValue: { user: { id: string } | null; loading: boolean } = {
   user: { id: 'test-user-123' },
   loading: false,
 };
-jest.mock('@/contexts/AuthContext', () => ({
+jest.mock('@/features/auth/contexts/AuthContext', () => ({
   useAuth: () => mockAuthValue,
 }));
 
@@ -56,7 +56,7 @@ let NutritionGoalsProvider: NutritionGoalsModule['NutritionGoalsProvider'];
 let useNutritionGoals: NutritionGoalsModule['useNutritionGoals'];
 
 beforeAll(() => {
-  const mod = require('@/contexts/NutritionGoalsContext') as NutritionGoalsModule;
+  const mod = require('@/features/nutrition/contexts/NutritionGoalsContext') as NutritionGoalsModule;
   NutritionGoalsProvider = mod.NutritionGoalsProvider;
   useNutritionGoals = mod.useNutritionGoals;
 });

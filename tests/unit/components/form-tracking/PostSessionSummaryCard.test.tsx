@@ -11,7 +11,7 @@ jest.mock('moti', () => {
 });
 
 // eslint-disable-next-line import/first
-import PostSessionSummaryCard from '../../../../components/form-tracking/PostSessionSummaryCard';
+import PostSessionSummaryCard from '../../../../features/form-tracking/components/PostSessionSummaryCard';
 
 const BASE_METRICS = [
   { label: 'DURATION', value: '45m' },

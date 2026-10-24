@@ -12,7 +12,7 @@ Form Factor is an iOS-first fitness tracking app built with Expo 54 + React Nati
 |------|---------|
 | Start dev server | `bun run start` |
 | Run iOS (debug) | `bun run ios` |
-| Run web | `bun run web` |
+| Run web | `bun run web:dev` |
 | Lint | `bun run lint` |
 | Type check | `bun run check:types` |
 | Lint + types | `bun run ci:local` |
@@ -34,8 +34,13 @@ Form Factor is an iOS-first fitness tracking app built with Expo 54 + React Nati
 - `app/` — All screens. Grouped folders `(auth)`, `(tabs)`, `(modals)`, `(onboarding)` control navigation layout, not URL paths.
 - `app/_layout.tsx` — Root layout that nests all providers and handles auth-based routing (redirect to sign-in, onboarding, or tabs).
 
+### Feature organization
+- `features/<feature>/` — Feature-owned components, hooks, providers, and styles. Import concrete modules directly.
+- `components/`, `contexts/`, `hooks/`, `styles/` — Shared primitives, app-wide providers, generic hooks, and theme styles.
+- `lib/` — Reusable engines, services, stores, and infrastructure.
+
 ### State Management
-- **React Context** for domain state: `contexts/AuthContext.tsx`, `WorkoutsContext.tsx`, `HealthKitContext.tsx`, `FoodContext.tsx`, `SocialContext.tsx`, `NutritionGoalsContext.tsx`, `UnitsContext.tsx`, `NetworkContext.tsx`, `ToastContext.tsx`.
+- **React Context** for domain state: providers live in `features/<feature>/contexts/` (auth, workouts, health, nutrition, social, voice). App-wide units, network, toast, and haptic preferences remain in `contexts/`. See `docs/REPOSITORY_STRUCTURE.md` for feature ownership.
 - **Zustand** for workout session state: `lib/stores/session-runner.ts` — manages active session, exercises, sets, rest timer via `useSessionRunner()`.
 
 ### Provider nesting order (app/_layout.tsx)
@@ -65,7 +70,7 @@ Form Factor is an iOS-first fitness tracking app built with Expo 54 + React Nati
 - `lib/tracking-quality/` — Rep detection filters, occlusion handling, confidence scoring
 - `lib/workouts/` — Per-exercise form models (pullup, pushup, squat, deadlift, benchpress, etc.)
 - `lib/arkit/` — Platform-specific ARKit wrappers (`.ios.ts`, `.android.ts`, `.web.ts`)
-- `hooks/use-workout-controller.ts` — Unified controller combining pose tracking, rep counting, FQI scoring
+- `features/form-tracking/hooks/use-workout-controller.ts` — Unified controller combining pose tracking, rep counting, FQI scoring
 
 ### Native Modules (workspace packages in `modules/`)
 - `arkit-body-tracker` — Custom ARKit body tracking native module
@@ -91,8 +96,8 @@ Form Factor is an iOS-first fitness tracking app built with Expo 54 + React Nati
 
 ## Testing
 
-- **Unit/integration tests**: `tests/unit/`, `tests/integration/`, and co-located `lib/**/*.test.ts`
-- **E2E tests**: `tests/e2e/*.spec.ts` (Playwright on Expo web)
+- **Unit/integration tests**: `tests/unit/`, `tests/integration/`, and co-located `lib/**/*.test.ts` / `features/**/*.test.ts(x)`
+- **E2E tests**: `tests/e2e/*.spec.ts` (Playwright on the Next.js web app)
 - **Test setup**: `tests/setup.ts` — mocks for expo-constants, AsyncStorage, expo-sqlite, Supabase
 - **Jest config**: `etc/jest.config.js` (preset: `jest-expo`)
 - **Naming**: Unit/integration use `*.test.ts(x)`, E2E use `*.spec.ts`

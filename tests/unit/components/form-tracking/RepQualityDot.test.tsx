@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
-import RepQualityDot, { colorForFqi } from '@/components/form-tracking/RepQualityDot';
+import RepQualityDot, { colorForFqi } from '@/features/form-tracking/components/RepQualityDot';
 
 describe('colorForFqi', () => {
   it('returns teal for high scores', () => {

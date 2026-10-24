@@ -23,7 +23,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import {
   getExerciseHistorySummary,
@@ -36,7 +36,7 @@ import {
 } from '@/lib/services/progression-planner';
 import { suggestWeight, type WeightSuggestion } from '@/lib/services/weight-suggester';
 import type { PrResult } from '@/lib/services/pr-detector-overload';
-import { ProgressionPlanView } from '@/components/ProgressionPlanView';
+import { ProgressionPlanView } from '@/features/form-tracking/components/ProgressionPlanView';
 
 const BG = '#050E1F';
 const PANEL = '#0E1A2E';

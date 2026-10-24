@@ -1,5 +1,5 @@
 import { renderHook } from '@testing-library/react-native';
-import { useFaultGlossary } from '@/hooks/use-fault-glossary';
+import { useFaultGlossary } from '@/features/form-tracking/hooks/use-fault-glossary';
 
 describe('useFaultGlossary', () => {
   it('returns null when faultId is null', () => {

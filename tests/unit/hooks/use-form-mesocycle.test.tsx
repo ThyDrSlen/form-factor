@@ -32,7 +32,7 @@ function makeQueryBuilder(response: { data?: unknown; error?: unknown } = {}): Q
   return builder;
 }
 
-import { useFormMesocycle } from '@/hooks/use-form-mesocycle';
+import { useFormMesocycle } from '@/features/form-tracking/hooks/use-form-mesocycle';
 
 beforeEach(() => {
   mockEnsureUserId.mockReset();

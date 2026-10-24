@@ -9,6 +9,16 @@ import {
   type FormTargets,
 } from '@/lib/services/form-target-resolver';
 import * as ErrorHandler from '@/lib/services/ErrorHandler';
+import {
+  BARBELL_ROW_THRESHOLDS,
+  BULGARIAN_SPLIT_SQUAT_THRESHOLDS,
+  DUMBBELL_CURL_THRESHOLDS,
+  HIP_THRUST_THRESHOLDS,
+  LAT_PULLDOWN_THRESHOLDS,
+  LUNGE_THRESHOLDS,
+  OVERHEAD_PRESS_THRESHOLDS,
+  getWorkoutIds,
+} from '@/lib/workouts';
 import type { WorkoutTemplate, WorkoutTemplateExercise } from '@/lib/types/workout-session';
 
 function mkExercise(overrides: Partial<WorkoutTemplateExercise> & Pick<WorkoutTemplateExercise, 'exercise_id'>): WorkoutTemplateExercise {
@@ -182,6 +192,53 @@ describe('form-target-resolver', () => {
 
     afterEach(() => {
       logErrorSpy.mockRestore();
+    });
+
+    it('resolves registered dumbbell curl to elbow phase endpoints without a fallback warning', () => {
+      const result = resolveFormTargetsWithFlag('dumbbell_curl');
+      expect(result).toEqual({
+        targets: {
+          fqiMin: 80,
+          romMin: DUMBBELL_CURL_THRESHOLDS.topElbow,
+          romMax: DUMBBELL_CURL_THRESHOLDS.bottomElbow,
+        },
+        usingGenericTargets: false,
+      });
+      expect(hasFormTargetDefaults('dumbbell_curl')).toBe(true);
+      expect(logErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['barbell_row', BARBELL_ROW_THRESHOLDS.topElbow, BARBELL_ROW_THRESHOLDS.bottomElbow],
+      ['bulgarian_split_squat', BULGARIAN_SPLIT_SQUAT_THRESHOLDS.parallel, BULGARIAN_SPLIT_SQUAT_THRESHOLDS.standing],
+      ['hip_thrust', HIP_THRUST_THRESHOLDS.bottomHip, HIP_THRUST_THRESHOLDS.lockoutHip],
+      ['lat_pulldown', LAT_PULLDOWN_THRESHOLDS.bottomElbow, LAT_PULLDOWN_THRESHOLDS.topElbow],
+      ['lunge', LUNGE_THRESHOLDS.parallel, LUNGE_THRESHOLDS.standing],
+      ['overhead_press', OVERHEAD_PRESS_THRESHOLDS.rackElbow, OVERHEAD_PRESS_THRESHOLDS.lockoutElbow],
+    ] as const)('resolves sibling %s to its own phase endpoints in degrees', (id, romMin, romMax) => {
+      expect(resolveFormTargetsWithFlag(id)).toEqual({
+        targets: { fqiMin: 80, romMin, romMax },
+        usingGenericTargets: false,
+      });
+      expect(logErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it.each(getWorkoutIds())('covers selectable registry mode %s, including normalized lookup and partial overrides', (id) => {
+      const normalizedId = ` ${id.toUpperCase()} `;
+      const baseline = getDefaultsForExerciseWithFlag(id);
+      expect(baseline.usingGenericTargets).toBe(false);
+      expect(hasFormTargetDefaults(normalizedId)).toBe(true);
+      expect(getDefaultsForExerciseWithFlag(normalizedId)).toEqual(baseline);
+      expect(baseline.targets.romMax).toBeGreaterThan(baseline.targets.romMin);
+      expect(baseline.targets.romMin).toBeGreaterThanOrEqual(0);
+      expect(baseline.targets.romMax).toBeLessThanOrEqual(180);
+      expect(resolveFormTargetsWithFlag(id, mkTemplate([
+        mkExercise({ exercise_id: id, target_fqi_min: 90 }),
+      ]))).toEqual({
+        targets: { ...baseline.targets, fqiMin: 90 },
+        usingGenericTargets: false,
+      });
+      expect(logErrorSpy).not.toHaveBeenCalled();
     });
 
     it('returns usingGenericTargets=false for a known exercise', () => {

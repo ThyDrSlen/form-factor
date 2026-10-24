@@ -18,7 +18,7 @@ jest.mock('@/lib/services/coach-drill-explainer', () => ({
   explainDrill: (...args: unknown[]) => mockExplainDrill(...args),
 }));
 
-import { useFormQualityRecovery } from '@/hooks/use-form-quality-recovery';
+import { useFormQualityRecovery } from '@/features/form-tracking/hooks/use-form-quality-recovery';
 
 const SAMPLE_PRESCRIPTIONS = [
   {

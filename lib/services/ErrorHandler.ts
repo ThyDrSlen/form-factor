@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
-import { errorWithTs } from '@/lib/logger';
+import { errorWithTs, infoWithTs, warnWithTs } from '@/lib/logger';
 
 export interface AppError {
   domain:
@@ -114,8 +114,14 @@ export function logError(err: AppError, ctx?: ErrorContext): void {
   const safeDetails = sanitizeDetails(err.details);
   // Structured console logging for now; can be routed to Sentry later
   // Keep logs lightweight and consistent
-   
-  errorWithTs('[Error]', {
+  const write = err.severity === 'warning'
+    ? warnWithTs
+    : err.severity === 'info'
+      ? infoWithTs
+      : errorWithTs;
+  const tag = err.severity === 'warning' ? '[Warning]' : err.severity === 'info' ? '[Info]' : '[Error]';
+
+  write(tag, {
     domain: err.domain,
     code: err.code,
     message: err.message,

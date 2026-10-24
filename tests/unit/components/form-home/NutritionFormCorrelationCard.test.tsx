@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import { NutritionFormCorrelationCard } from '@/components/form-home/NutritionFormCorrelationCard';
+import { NutritionFormCorrelationCard } from '@/features/form-tracking/components/home/NutritionFormCorrelationCard';
 import type { NutritionFormCorrelation } from '@/lib/services/form-nutrition-correlator';
 
 function mkMetric(significance: 'low' | 'medium' | 'high', r = 0.6) {

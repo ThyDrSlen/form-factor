@@ -337,7 +337,7 @@ export const dumbbellCurlDefinition: WorkoutDefinition<DumbbellCurlPhase, Dumbbe
   ui: {
     iconName: 'fitness-outline',
     primaryMetric: { key: 'avgElbowDeg', label: 'Avg Elbow', format: 'deg' },
-    secondaryMetric: { key: 'avgHipDeg', label: 'Avg Hip', format: 'deg' },
+    secondaryMetric: { key: 'avgHipDeg', label: 'Torso Upright', format: 'deg' },
     buildUploadMetrics: (metrics) => ({
       avgElbowDeg: metrics?.avgElbow ?? null,
       avgShoulderDeg: metrics?.avgShoulder ?? null,

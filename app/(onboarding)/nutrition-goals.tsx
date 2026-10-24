@@ -11,11 +11,13 @@ import {
   View,
 } from 'react-native';
 import { useSafeBack } from '@/hooks/use-safe-back';
-import { useNutritionGoals } from '@/contexts/NutritionGoalsContext';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
+import { useNutritionGoals } from '@/features/nutrition/contexts/NutritionGoalsContext';
 import { useToast } from '@/contexts/ToastContext';
 import { isIOS } from '@/lib/platform-utils';
-import { OnboardingProgress } from '@/components/onboarding/OnboardingProgress';
-import { markOnboardingCompleted } from '@/lib/services/onboarding';
+import { OnboardingProgress } from '@/features/onboarding/components/OnboardingProgress';
+import { isOnboardingReplay, markOnboardingCompleted } from '@/lib/services/onboarding';
 import { trackOnboardingEvent } from '@/lib/services/onboarding-analytics';
 
 export default function NutritionGoalsScreen() {
@@ -23,6 +25,11 @@ export default function NutritionGoalsScreen() {
   const { show: showToast } = useToast();
   const isiOS = isIOS();
   const safeBack = useSafeBack('/(tabs)');
+  const router = useRouter();
+  const { user } = useAuth();
+  const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const replay = Boolean(user) && isOnboardingReplay(mode);
+  const closeReplay = () => router.replace('/(tabs)/profile');
 
   useEffect(() => {
     trackOnboardingEvent('step_view', 'nutrition-goals');
@@ -111,6 +118,10 @@ export default function NutritionGoalsScreen() {
   }
 
   const handleSave = async () => {
+    if (replay) {
+      closeReplay();
+      return;
+    }
     if (!validateForm()) {
       const firstError =
         getFieldError('calories', calories)
@@ -145,6 +156,10 @@ export default function NutritionGoalsScreen() {
   };
 
   const handleSkip = async () => {
+    if (replay) {
+      closeReplay();
+      return;
+    }
     trackOnboardingEvent('step_skip', 'nutrition-goals');
     if (goals) {
       await markOnboardingCompleted();
@@ -191,7 +206,12 @@ export default function NutritionGoalsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={safeBack} style={styles.backButton}>
+          <TouchableOpacity
+            onPress={replay ? closeReplay : safeBack}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel={replay ? 'Back to Profile' : 'Back'}
+          >
             <Ionicons name="arrow-back" size={24} color="#007AFF" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Set Nutrition Goals</Text>
@@ -210,7 +230,9 @@ export default function NutritionGoalsScreen() {
           </Text>
 
           <Text style={styles.descriptionText}>
-            Set your daily targets to track your progress. You can always update these later in your profile settings.
+            {replay
+              ? 'Your saved goals stay unchanged during this walkthrough. Update them anytime from Nutrition Goals in Profile.'
+              : 'Set your daily targets to track your progress. You can always update these later in your profile settings.'}
           </Text>
 
           <Text style={styles.contextText}>
@@ -229,7 +251,7 @@ export default function NutritionGoalsScreen() {
               keyboardType="decimal-pad"
               placeholder="e.g., 2000"
               placeholderTextColor="#8CA5C6"
-              editable={!isSyncing}
+              editable={!isSyncing && !replay}
               accessibilityLabel="Daily calorie target in kilocalories"
               returnKeyType="next"
               onSubmitEditing={() => proteinRef.current?.focus()}
@@ -250,7 +272,7 @@ export default function NutritionGoalsScreen() {
                 keyboardType="decimal-pad"
                 placeholder="Optional"
                 placeholderTextColor="#8CA5C6"
-                editable={!isSyncing}
+                editable={!isSyncing && !replay}
                 accessibilityLabel="Daily protein target in grams"
                 returnKeyType="next"
                 onSubmitEditing={() => carbsRef.current?.focus()}
@@ -270,7 +292,7 @@ export default function NutritionGoalsScreen() {
                 keyboardType="decimal-pad"
                 placeholder="Optional"
                 placeholderTextColor="#8CA5C6"
-                editable={!isSyncing}
+                editable={!isSyncing && !replay}
                 accessibilityLabel="Daily carbohydrate target in grams"
                 returnKeyType="next"
                 onSubmitEditing={() => fatRef.current?.focus()}
@@ -290,7 +312,7 @@ export default function NutritionGoalsScreen() {
                 keyboardType="decimal-pad"
                 placeholder="Optional"
                 placeholderTextColor="#8CA5C6"
-                editable={!isSyncing}
+                editable={!isSyncing && !replay}
                 accessibilityLabel="Daily fat target in grams"
                 returnKeyType="done"
               />
@@ -301,10 +323,10 @@ export default function NutritionGoalsScreen() {
           <TouchableOpacity
             style={[
               styles.saveButton,
-              (!calories.trim() || isSyncing) && styles.saveButtonDisabled,
+              !replay && (!calories.trim() || isSyncing) && styles.saveButtonDisabled,
             ]}
             onPress={handleSave}
-            disabled={!calories.trim() || isSyncing}
+            disabled={!replay && (!calories.trim() || isSyncing)}
           >
             {isSyncing ? (
               <Ionicons name="hourglass" size={20} color="#fff" />
@@ -312,11 +334,11 @@ export default function NutritionGoalsScreen() {
               <Ionicons name="checkmark-circle" size={20} color="#fff" />
             )}
             <Text style={styles.saveButtonText}>
-              {isSyncing ? 'Saving...' : 'Save Goals'}
+              {replay ? 'Finish walkthrough' : isSyncing ? 'Saving...' : 'Save Goals'}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={handleSkip} style={styles.skipButton} disabled={isSyncing}>
+          <TouchableOpacity onPress={handleSkip} style={styles.skipButton} disabled={!replay && isSyncing}>
             <Text style={styles.skipButtonText}>Skip for now</Text>
           </TouchableOpacity>
         </View>

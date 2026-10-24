@@ -7,7 +7,7 @@ jest.mock('@/lib/services/coach-streaming', () => ({
 }));
 
 import { renderHook, act } from '@testing-library/react-native';
-import { useStreamCoach } from '@/hooks/use-stream-coach';
+import { useStreamCoach } from '@/features/coach/hooks/use-stream-coach';
 import {
   getCoachTelemetrySnapshot,
   resetCoachTelemetry,

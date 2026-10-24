@@ -21,7 +21,7 @@ jest.mock('@/lib/services/exercise-history-service', () => ({
     mockGetExerciseHistorySummary(...args),
 }));
 
-import { OverloadAnalyticsCard } from '../../../components/workouts/OverloadAnalyticsCard';
+import { OverloadAnalyticsCard } from '../../../features/workouts/components/OverloadAnalyticsCard';
 
 function sampleSummary(
   overrides: Partial<

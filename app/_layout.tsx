@@ -1,5 +1,6 @@
+import { theme } from '@/styles/theme';
 import './global.css';
-import { Slot, usePathname, useRouter, useSegments } from 'expo-router';
+import { Slot, useGlobalSearchParams, usePathname, useRouter, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 import React, { Component, useEffect, useRef, useState } from 'react';
@@ -7,28 +8,28 @@ import { ActivityIndicator, Pressable, View, Text as RNText, StyleSheet, Platfor
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import 'react-native-url-polyfill/auto';
-import { AuthProvider, useAuth } from '../contexts/AuthContext';
-import { FoodProvider } from '../contexts/FoodContext';
-import { NutritionGoalsProvider, useNutritionGoals } from '../contexts/NutritionGoalsContext';
-import { WorkoutsProvider } from '../contexts/WorkoutsContext';
-import { HealthKitProvider } from '../contexts/HealthKitContext';
+import { AuthProvider, useAuth } from '../features/auth/contexts/AuthContext';
+import { FoodProvider } from '../features/nutrition/contexts/FoodContext';
+import { NutritionGoalsProvider, useNutritionGoals } from '../features/nutrition/contexts/NutritionGoalsContext';
+import { WorkoutsProvider } from '../features/workouts/contexts/WorkoutsContext';
+import { HealthKitProvider } from '../features/health/contexts/HealthKitContext';
 import { UnitsProvider } from '../contexts/UnitsContext';
 import { NetworkProvider } from '../contexts/NetworkContext';
-import { SocialProvider } from '../contexts/SocialContext';
+import { SocialProvider } from '../features/social/contexts/SocialContext';
 import { useFonts, Lexend_400Regular, Lexend_500Medium, Lexend_700Bold } from '@expo-google-fonts/lexend';
 import { ToastProvider } from '../contexts/ToastContext';
 import { HapticPreferencesProvider } from '../contexts/HapticPreferencesContext';
-import { VoiceControlProvider } from '../contexts/VoiceControlContext';
+import { VoiceControlProvider } from '../features/voice/contexts/VoiceControlContext';
 import { isVoiceControlPipelineEnabled } from '@/lib/services/voice-pipeline-flag';
 import { logWithTs, warnWithTs } from '@/lib/logger';
-import { isOnboardingCompleted } from '@/lib/services/onboarding';
+import { isOnboardingCompleted, isOnboardingReplay } from '@/lib/services/onboarding';
 import {
   handleNotificationResponse,
   syncPushTokenRefreshListener,
 } from '@/lib/services/notifications';
 import { hasSeenWelcome } from '@/app/(onboarding)/welcome';
-import { MilestoneToastBridge } from '@/components/MilestoneToastBridge';
-import { SessionTelemetryBinder } from '@/components/telemetry/SessionTelemetryBinder';
+import { MilestoneToastBridge } from '@/features/form-tracking/components/MilestoneToastBridge';
+import { SessionTelemetryBinder } from '@/features/form-tracking/components/SessionTelemetryBinder';
 import { parseTemplateIdFromUrl } from '@/lib/services/workout-scheduler';
 import '@/lib/services/fault-explainer-bootstrap';
 
@@ -161,6 +162,8 @@ function InitialLayout() {
   const inAuthGroup = segments[0] === '(auth)';
   const inTabsGroup = segments[0] === '(tabs)';
   const inOnboardingGroup = segments[0] === '(onboarding)';
+  const { mode } = useGlobalSearchParams<{ mode?: string }>();
+  const replayOnboarding = inOnboardingGroup && isOnboardingReplay(mode);
   const { user, loading } = useAuth();
   const { goals, loading: goalsLoading } = useNutritionGoals();
   const router = useRouter();
@@ -267,7 +270,7 @@ function InitialLayout() {
       return;
     }
 
-    if (user && (onboardingDone || goals) && inOnboardingGroup) {
+    if (user && (onboardingDone || goals) && inOnboardingGroup && !replayOnboarding) {
       logWithTs('[Layout] Onboarding done, redirecting to tabs');
       router.replace('/(tabs)');
       return;
@@ -302,7 +305,7 @@ function InitialLayout() {
     }
 
     logWithTs('[Layout] No redirect needed');
-  }, [user, loading, goalsLoading, goals, onboardingDone, welcomeSeen, segments, inAuthGroup, inTabsGroup, inOnboardingGroup, inModalsGroup, isPublicRoute, isWebRootLanding, pathname, router]);
+  }, [user, loading, goalsLoading, goals, onboardingDone, welcomeSeen, segments, inAuthGroup, inTabsGroup, inOnboardingGroup, replayOnboarding, inModalsGroup, isPublicRoute, isWebRootLanding, pathname, router]);
 
   if (loading) {
     return (
@@ -325,7 +328,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#050E1F',
+    backgroundColor: theme.colors.background,
   },
   authLoading: {
     flex: 1,
@@ -336,7 +339,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#050E1F',
+    backgroundColor: theme.colors.background,
     padding: 24,
   },
   errorTitle: {

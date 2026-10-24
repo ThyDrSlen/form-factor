@@ -11,7 +11,7 @@ jest.mock('moti', () => {
 });
 
 // eslint-disable-next-line import/first
-import CalibrationProgressModal from '../../../../components/form-tracking/CalibrationProgressModal';
+import CalibrationProgressModal from '../../../../features/form-tracking/components/CalibrationProgressModal';
 
 describe('CalibrationProgressModal', () => {
   it('renders nothing when not visible', () => {

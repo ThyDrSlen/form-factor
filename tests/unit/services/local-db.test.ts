@@ -14,6 +14,12 @@ jest.mock('expo-sqlite', () => ({
 describe('LocalDatabase', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Initialization inspects the persisted session schema before migration.
+    mockGetAllAsync.mockImplementation(async (sql: string) =>
+      sql === 'PRAGMA table_info(workout_sessions)'
+        ? [{ name: 'id' }, { name: 'user_id' }]
+        : [],
+    );
     // Reset the singleton state
     (localDB as any).db = null;
     (localDB as any).initPromise = null;
@@ -288,9 +294,11 @@ describe('LocalDatabase', () => {
       expect(mockWithTransactionAsync).toHaveBeenCalledTimes(1);
       expect(mockRunAsync).toHaveBeenCalledTimes(2);
       const secondCall = mockRunAsync.mock.calls[1];
-      expect(secondCall[1]).toEqual(
-        expect.arrayContaining(['health_metrics', 'upsert', 'hm1']),
-      );
+      // The natural-key upsert may retain an existing local ID. Queue that
+      // persisted ID rather than the caller's potentially different metric.id.
+      expect(secondCall[0]).toContain("SELECT 'health_metrics', 'upsert', id");
+      expect(secondCall[0]).toContain('WHERE user_id = ? AND summary_date = ?');
+      expect(secondCall[1]).toEqual(['{}', expect.any(String), expect.any(String), 'u1', '2024-01-01']);
     });
 
     it('upsertNutritionGoalsAndQueue should call runAsync twice inside a transaction', async () => {

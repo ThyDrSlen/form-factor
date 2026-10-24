@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
-import { SessionComparisonCard } from '@/components/form-journey/SessionComparisonCard';
+import { SessionComparisonCard } from '@/features/form-tracking/components/journey/SessionComparisonCard';
 import {
   buildSessionComparison,
   type ExerciseSessionSummary,

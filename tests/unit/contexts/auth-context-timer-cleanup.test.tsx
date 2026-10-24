@@ -84,7 +84,7 @@ jest.mock('@/lib/services/ErrorHandler', () => ({
 
 // -------------------------------------------------------------------------
 
-import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { AuthProvider, useAuth } from '@/features/auth/contexts/AuthContext';
 
 jest.useFakeTimers();
 

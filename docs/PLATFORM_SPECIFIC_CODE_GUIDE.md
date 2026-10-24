@@ -127,7 +127,7 @@ Use `Platform.OS` for conditional rendering or logic within a single file.
 
 ```typescript
 import { Platform } from 'react-native';
-import { useHealthKit } from '@/contexts/HealthKitContext';
+import { useHealthKit } from '@/features/health/contexts/HealthKitContext';
 
 export function DashboardHealth() {
   const { status, isLoading } = useHealthKit();
@@ -407,7 +407,7 @@ export function MyComponent() {
 ### HealthKit
 - **Files**: `lib/services/healthkit/*.ts`
 - **Pattern**: Runtime checks + context
-- **Usage**: `contexts/HealthKitContext.tsx`, `components/dashboard-health/`
+- **Usage**: `features/health/contexts/HealthKitContext.tsx`, `components/dashboard-health/`
 - **Status**: Already handles web properly
 
 ### AsyncStorage

@@ -476,7 +476,7 @@ def run_job_security() -> List[StepResult]:
             print(output.rstrip())
 
     # audit-ci config check
-    audit_config = ROOT / "config" / "audit-ci.json"
+    audit_config = ROOT / "etc" / "audit-ci.json"
     lockfiles = [
         ROOT / "package-lock.json",
         ROOT / "yarn.lock",

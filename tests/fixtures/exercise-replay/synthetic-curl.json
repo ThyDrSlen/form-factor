@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "source": "synthetic",
+  "stage": "controller-input",
+  "workoutId": "dumbbell_curl",
+  "expectedRepCount": 1,
+  "frames": [
+    {
+      "timestampMs": 0,
+      "angles": {
+        "leftElbow": 170,
+        "rightElbow": 170,
+        "leftShoulder": 90,
+        "rightShoulder": 90,
+        "leftHip": 175,
+        "rightHip": 175,
+        "leftKnee": 175,
+        "rightKnee": 175
+      }
+    },
+    {
+      "timestampMs": 50,
+      "angles": {
+        "leftElbow": 170,
+        "rightElbow": 170,
+        "leftShoulder": 90,
+        "rightShoulder": 90,
+        "leftHip": 175,
+        "rightHip": 175,
+        "leftKnee": 175,
+        "rightKnee": 175
+      }
+    },
+    {
+      "timestampMs": 100,
+      "angles": {
+        "leftElbow": 130,
+        "rightElbow": 130,
+        "leftShoulder": 90,
+        "rightShoulder": 90,
+        "leftHip": 175,
+        "rightHip": 175,
+        "leftKnee": 175,
+        "rightKnee": 175
+      }
+    },
+    {
+      "timestampMs": 150,
+      "angles": {
+        "leftElbow": 130,
+        "rightElbow": 130,
+        "leftShoulder": 90,
+        "rightShoulder": 90,
+        "leftHip": 175,
+        "rightHip": 175,
+        "leftKnee": 175,
+        "rightKnee": 175
+      }
+    },
+    {
+      "timestampMs": 200,
+      "angles": {
+        "leftElbow": 60,
+        "rightElbow": 60,
+        "leftShoulder": 90,
+        "rightShoulder": 90,
+        "leftHip": 175,
+        "rightHip": 175,
+        "leftKnee": 175,
+        "rightKnee": 175
+      }
+    },
+    {
+      "timestampMs": 250,
+      "angles": {
+        "leftElbow": 60,
+        "rightElbow": 60,
+        "leftShoulder": 90,
+        "rightShoulder": 90,
+        "leftHip": 175,
+        "rightHip": 175,
+        "leftKnee": 175,
+        "rightKnee": 175
+      }
+    },
+    {
+      "timestampMs": 900,
+      "angles": {
+        "leftElbow": 110,
+        "rightElbow": 110,
+        "leftShoulder": 90,
+        "rightShoulder": 90,
+        "leftHip": 175,
+        "rightHip": 175,
+        "leftKnee": 175,
+        "rightKnee": 175
+      }
+    },
+    {
+      "timestampMs": 950,
+      "angles": {
+        "leftElbow": 110,
+        "rightElbow": 110,
+        "leftShoulder": 90,
+        "rightShoulder": 90,
+        "leftHip": 175,
+        "rightHip": 175,
+        "leftKnee": 175,
+        "rightKnee": 175
+      }
+    },
+    {
+      "timestampMs": 1000,
+      "angles": {
+        "leftElbow": 170,
+        "rightElbow": 170,
+        "leftShoulder": 90,
+        "rightShoulder": 90,
+        "leftHip": 175,
+        "rightHip": 175,
+        "leftKnee": 175,
+        "rightKnee": 175
+      }
+    },
+    {
+      "timestampMs": 1050,
+      "angles": {
+        "leftElbow": 170,
+        "rightElbow": 170,
+        "leftShoulder": 90,
+        "rightShoulder": 90,
+        "leftHip": 175,
+        "rightHip": 175,
+        "leftKnee": 175,
+        "rightKnee": 175
+      }
+    }
+  ]
+}

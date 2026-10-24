@@ -29,7 +29,7 @@ import { render } from '@testing-library/react-native';
 import {
   VoiceControlProvider,
   useVoiceControl,
-} from '@/contexts/VoiceControlContext';
+} from '@/features/voice/contexts/VoiceControlContext';
 // eslint-disable-next-line import/first
 import {
   VOICE_CONTROL_PIPELINE_ENV_VAR,
@@ -38,9 +38,9 @@ import {
 // eslint-disable-next-line import/first
 import { createVoiceSessionManager } from '@/lib/services/voice-session-manager';
 // eslint-disable-next-line import/first
-import { VoiceControlBanner } from '@/components/voice/VoiceControlBanner';
+import { VoiceControlBanner } from '@/features/voice/components/VoiceControlBanner';
 // eslint-disable-next-line import/first
-import { VoiceCommandFeedback } from '@/components/form-tracking/VoiceCommandFeedback';
+import { VoiceCommandFeedback } from '@/features/form-tracking/components/VoiceCommandFeedback';
 // eslint-disable-next-line import/first
 import {
   useVoiceControlStore,

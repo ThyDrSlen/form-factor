@@ -14,7 +14,7 @@ jest.mock('@/lib/services/exercise-history', () => {
   };
 });
 
-import { useExerciseHistory, resetExerciseHistoryCache } from '@/hooks/use-exercise-history';
+import { useExerciseHistory, resetExerciseHistoryCache } from '@/features/form-tracking/hooks/use-exercise-history';
 import { EMPTY_EXERCISE_HISTORY } from '@/lib/services/exercise-history';
 
 const sampleSummary = {

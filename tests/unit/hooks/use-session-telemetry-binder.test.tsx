@@ -94,7 +94,7 @@ jest.mock('@/lib/stores/session-runner', () => {
 });
 
 import { useSessionRunner } from '@/lib/stores/session-runner';
-import { useSessionTelemetryBinder } from '@/hooks/use-session-telemetry-binder';
+import { useSessionTelemetryBinder } from '@/features/form-tracking/hooks/use-session-telemetry-binder';
 
 type MockStoreState = {
   completeSet: (id: string) => void;

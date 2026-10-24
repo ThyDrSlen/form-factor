@@ -4,8 +4,8 @@
  * Acceptance criterion from issue #479:
  *   "Camera guide SVG renders correctly for all 14 exercises"
  *
- * This test file proves the underlying data contract — each of the 14
- * exercises has a complete, well-formed guide. The SVG renderer has its
+ * This test file proves the underlying data contract — the original exercises
+ * plus dumbbell curls have complete, well-formed guides. The SVG renderer has its
  * own component-level tests.
  */
 
@@ -20,6 +20,7 @@ import {
 } from '@/lib/services/camera-placement-guide';
 
 const EXPECTED_EXERCISE_KEYS: PlacementGuideExerciseKey[] = [
+  'dumbbell_curl',
   'pullup',
   'pushup',
   'squat',
@@ -37,15 +38,15 @@ const EXPECTED_EXERCISE_KEYS: PlacementGuideExerciseKey[] = [
 ];
 
 describe('camera-placement-guide — coverage', () => {
-  it('contains exactly the 14 expected exercises', () => {
+  it('contains exactly the expected exercises, including dumbbell curls', () => {
     const keys = getPlacementGuideKeys();
-    expect(keys).toHaveLength(14);
+    expect(keys).toHaveLength(EXPECTED_EXERCISE_KEYS.length);
     expect(new Set(keys)).toEqual(new Set(EXPECTED_EXERCISE_KEYS));
   });
 
   it('getAllPlacementGuides returns one guide per exercise', () => {
     const guides = getAllPlacementGuides();
-    expect(guides).toHaveLength(14);
+    expect(guides).toHaveLength(EXPECTED_EXERCISE_KEYS.length);
     const keysFromArray = guides.map((g) => g.key);
     expect(new Set(keysFromArray)).toEqual(new Set(EXPECTED_EXERCISE_KEYS));
   });

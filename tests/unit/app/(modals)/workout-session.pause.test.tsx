@@ -27,13 +27,15 @@ jest.mock('expo-haptics', () => ({
   NotificationFeedbackType: { Success: 'success' },
 }));
 
+const mockReplace = jest.fn();
+const mockToast = jest.fn();
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ back: jest.fn(), push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ back: jest.fn(), push: jest.fn(), replace: mockReplace }),
   useLocalSearchParams: () => ({}),
 }));
 
 jest.mock('@/contexts/ToastContext', () => ({
-  useToast: () => ({ show: jest.fn() }),
+  useToast: () => ({ show: mockToast }),
 }));
 
 jest.mock('react-native-safe-area-context', () => {
@@ -63,14 +65,14 @@ jest.mock('moti', () => {
 });
 
 // Swap the sub-components for stubs so we only render the chrome we care about.
-jest.mock('@/components/workout/ExerciseCard', () => () => null);
-jest.mock('@/components/workout/TimerPill', () => () => null);
-jest.mock('@/components/workout/SessionMetaCard', () => () => null);
-jest.mock('@/components/workout/SetActionSheet', () => () => null);
-jest.mock('@/components/workout/ExerciseActionSheet', () => () => null);
-jest.mock('@/components/workout/RestTimerSheet', () => () => null);
-jest.mock('@/components/workout/ExercisePicker', () => () => null);
-jest.mock('@/components/workout/SetNotesModal', () => () => null);
+jest.mock('@/features/workouts/components/ExerciseCard', () => () => null);
+jest.mock('@/features/workouts/components/TimerPill', () => () => null);
+jest.mock('@/features/workouts/components/SessionMetaCard', () => () => null);
+jest.mock('@/features/workouts/components/SetActionSheet', () => () => null);
+jest.mock('@/features/workouts/components/ExerciseActionSheet', () => () => null);
+jest.mock('@/features/workouts/components/RestTimerSheet', () => () => null);
+jest.mock('@/features/workouts/components/ExercisePicker', () => () => null);
+jest.mock('@/features/workouts/components/SetNotesModal', () => () => null);
 
 // ---------------------------------------------------------------------------
 // Imports (post-mock)
@@ -84,6 +86,7 @@ const realPauseSession = useSessionRunner.getState().pauseSession;
 const realResumeSession = useSessionRunner.getState().resumeSession;
 const realLoadActiveSession = useSessionRunner.getState().loadActiveSession;
 const realStartSession = useSessionRunner.getState().startSession;
+const realFinishSession = useSessionRunner.getState().finishSession;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -118,6 +121,7 @@ function seedActiveSession(overrides: Partial<WorkoutSession> = {}) {
     pausedRestTimer: null,
     restTimer: null,
     isLoading: false,
+    error: null,
     // No-op lifecycle actions so useEffect doesn't try to persist via the DB.
     loadActiveSession: jest.fn().mockResolvedValue(undefined),
     startSession: jest.fn().mockResolvedValue(undefined),
@@ -136,10 +140,12 @@ function resetStore() {
     pausedRestTimer: null,
     restTimer: null,
     isLoading: false,
+    error: null,
     pauseSession: realPauseSession,
     resumeSession: realResumeSession,
     loadActiveSession: realLoadActiveSession,
     startSession: realStartSession,
+    finishSession: realFinishSession,
   });
 }
 
@@ -157,6 +163,100 @@ afterEach(() => {
 // ===========================================================================
 // Tests
 // ===========================================================================
+
+describe('WorkoutSessionScreen finish integration', () => {
+  it.each(['rejected', 'not-saved'])('keeps the session open after %s finish and permits retry', async (failure) => {
+    seedActiveSession();
+    const finish = jest.fn().mockImplementationOnce(async () => {
+      if (failure === 'rejected') throw new Error('Disk unavailable');
+    }).mockImplementationOnce(async () => {
+      useSessionRunner.setState({ activeSession: null });
+    });
+    useSessionRunner.setState({ finishSession: finish });
+    const alert = jest.spyOn(require('react-native').Alert, 'alert').mockImplementation(() => {});
+    try {
+      const screen = render(<WorkoutSessionScreen />);
+      await act(async () => {});
+      for (let attempt = 0; attempt < 2; attempt++) {
+        fireEvent.press(screen.getByLabelText('Finish workout'));
+        const buttons = alert.mock.calls[attempt][2] as { text: string; onPress: () => Promise<void> }[];
+        await act(async () => { await buttons.find(button => button.text === 'Finish')!.onPress(); });
+        if (attempt === 0) {
+          expect(useSessionRunner.getState().activeSession?.id).toBe('sess-screen');
+          expect(mockReplace).not.toHaveBeenCalled();
+          expect(mockToast).toHaveBeenCalledWith(expect.stringContaining('retry'), { type: 'error' });
+        }
+      }
+      expect(finish).toHaveBeenCalledTimes(2);
+      expect(mockReplace).toHaveBeenCalledTimes(1);
+      expect(mockReplace).toHaveBeenCalledWith('/(modals)/session-history?sessionId=sess-screen');
+    } finally { alert.mockRestore(); }
+  });
+
+  it('does not finish a different session through a stale confirmation', async () => {
+    seedActiveSession();
+    const finish = jest.fn().mockResolvedValue(undefined);
+    useSessionRunner.setState({ finishSession: finish });
+    const alert = jest.spyOn(require('react-native').Alert, 'alert').mockImplementation(() => {});
+    try {
+      const screen = render(<WorkoutSessionScreen />);
+      await act(async () => {});
+      fireEvent.press(screen.getByLabelText('Finish workout'));
+      const buttons = alert.mock.calls[0][2] as { text: string; onPress: () => Promise<void> }[];
+      await act(async () => { seedActiveSession({ id: 'another-session' }); });
+      await act(async () => { await buttons.find(button => button.text === 'Finish')!.onPress(); });
+      expect(finish).not.toHaveBeenCalled();
+      expect(mockReplace).not.toHaveBeenCalled();
+      expect(useSessionRunner.getState().activeSession?.id).toBe('another-session');
+    } finally { alert.mockRestore(); }
+  });
+  it('guards repeated confirmation and reviews the saved session after store reset', async () => {
+    seedActiveSession();
+    let complete!: () => void;
+    const finish = jest.fn(() => new Promise<void>((resolve) => { complete = resolve; }));
+    useSessionRunner.setState({ finishSession: finish });
+    const alert = jest.spyOn(require('react-native').Alert, 'alert').mockImplementation(() => {});
+    const screen = render(<WorkoutSessionScreen />);
+    await act(async () => {});
+    fireEvent.press(screen.getByLabelText('Finish workout'));
+    const confirm = (alert.mock.calls[0][2] as { text: string; onPress: () => Promise<void> }[]).find(b => b.text === 'Finish')!;
+    let first!: Promise<void>;
+    await act(async () => {
+      first = confirm.onPress();
+      void confirm.onPress();
+    });
+    expect(finish).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      useSessionRunner.setState({ activeSession: null });
+      complete();
+      await first;
+    });
+    expect(mockReplace).toHaveBeenCalledWith('/(modals)/session-history?sessionId=sess-screen');
+    alert.mockRestore();
+  });
+});
+
+describe('WorkoutSessionScreen initialization', () => {
+  it('does not start a new workout after hydration fails and offers retry', async () => {
+    seedActiveSession();
+    const start = jest.fn().mockResolvedValue(undefined);
+    const load = jest.fn(async () => {
+      useSessionRunner.setState({ error: 'Storage unavailable' });
+    });
+    useSessionRunner.setState({ activeSession: null, loadActiveSession: load, startSession: start, error: null });
+    const screen = render(<WorkoutSessionScreen />);
+    await act(async () => {});
+    expect(start).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Retry opening workout')).toBeTruthy();
+    load.mockImplementation(async () => {
+      useSessionRunner.setState({ error: null });
+      seedActiveSession();
+    });
+    fireEvent.press(screen.getByLabelText('Retry opening workout'));
+    await act(async () => {});
+    expect(screen.getByLabelText('Finish workout')).toBeTruthy();
+  });
+});
 
 describe('WorkoutSessionScreen pause integration', () => {
   it('renders the SessionPauseButton in the header when a session is active', async () => {

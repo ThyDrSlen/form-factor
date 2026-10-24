@@ -14,7 +14,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { useToast } from '@/contexts/ToastContext';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
 import {
   getShareThread,
   markShareRead,

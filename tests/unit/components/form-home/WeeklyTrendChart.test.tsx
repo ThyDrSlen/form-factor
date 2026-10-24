@@ -10,7 +10,7 @@ jest.mock('react-native-chart-kit', () => {
   };
 });
 
-import { WeeklyTrendChart } from '@/components/form-home/WeeklyTrendChart';
+import { WeeklyTrendChart } from '@/features/form-tracking/components/home/WeeklyTrendChart';
 
 describe('WeeklyTrendChart', () => {
   it('renders an empty state when all points are null', () => {

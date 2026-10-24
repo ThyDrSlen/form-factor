@@ -4,10 +4,10 @@ import { Text } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { CoachModelCard } from '@/components/settings/CoachModelCard';
-import { CoachModelTierCard } from '@/components/settings/CoachModelTierCard';
-import { CoachRoutingPreference } from '@/components/settings/CoachRoutingPreference';
-import { CostDashboardCard } from '@/components/settings/CostDashboardCard';
+import { CoachModelCard } from '@/features/coach/components/settings/CoachModelCard';
+import { CoachModelTierCard } from '@/features/coach/components/settings/CoachModelTierCard';
+import { CoachRoutingPreference } from '@/features/coach/components/settings/CoachRoutingPreference';
+import { CostDashboardCard } from '@/features/coach/components/settings/CostDashboardCard';
 import {
   getStatus as getCoachModelStatus,
   subscribe as subscribeCoachModel,

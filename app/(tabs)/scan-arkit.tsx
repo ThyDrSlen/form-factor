@@ -21,7 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { Svg, Circle, Line, Rect } from 'react-native-svg';
-import { VideoView, useVideoPlayer } from 'expo-video';
+import { RecordingReview } from '@/features/form-tracking/components/RecordingReview';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
@@ -36,19 +36,27 @@ import {
   getReachability,
 } from '@/lib/watch-connectivity';
 import { buildWatchTrackingPayload } from '@/lib/watch-connectivity/tracking-payload';
+import { createWatchMirrorPublisher } from '@/lib/watch-connectivity/mirror-publisher';
+import { captureWatchMirrorOverlay } from '@/lib/watch-connectivity/mirror-overlay';
+import { planWatchTrackingPublication, type WatchTrackingPublicationState } from '@/lib/watch-connectivity/tracking-publication';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 
 // Import ARKit module - Metro auto-resolves to .ios.ts or .web.ts
 import { BodyTracker, useBodyTracking, type JointAngles, type Joint2D, type MediaPipePose2D } from '@/lib/arkit/ARKitBodyTracker';
-import { usePremiumCueAudio } from '@/hooks/use-premium-cue-audio';
-import { useFormTrackingSettings } from '@/hooks/use-form-tracking-settings';
+import { usePremiumCueAudio } from '@/features/voice/hooks/use-premium-cue-audio';
+import { useFormTrackingSettings } from '@/features/form-tracking/hooks/use-form-tracking-settings';
+import { SkeletonOverlay } from '@/features/form-tracking/components/SkeletonOverlay';
 import { audioSessionManager } from '@/lib/services/audio-session-manager';
 import { useToast } from '@/contexts/ToastContext';
 import { CrashBoundary } from '@/components/CrashBoundary';
-import { ARKitUnsupportedPlaceholder } from '@/components/form-tracking/ARKitUnsupportedPlaceholder';
-import { ExitMidSessionSheet } from '@/components/form-tracking/ExitMidSessionSheet';
-import { PreSetPreviewCard } from '@/components/form-tracking/PreSetPreviewCard';
-import { usePreSetPreview } from '@/hooks/use-pre-set-preview';
+import { ARKitUnsupportedPlaceholder } from '@/features/form-tracking/components/ARKitUnsupportedPlaceholder';
+import ExerciseCameraGuide from '@/features/form-tracking/components/ExerciseCameraGuide';
+import { ExitMidSessionSheet } from '@/features/form-tracking/components/ExitMidSessionSheet';
+import { PreSetPreviewCard } from '@/features/form-tracking/components/PreSetPreviewCard';
+import FqiGauge from '@/features/form-tracking/components/FqiGauge';
+import CueCard, { classifyCue } from '@/features/form-tracking/components/CueCard';
+import TrackingLossBanner from '@/features/form-tracking/components/TrackingLossBanner';
+import { usePreSetPreview } from '@/features/form-tracking/hooks/use-pre-set-preview';
 import { generateSessionId, logCueEvent, upsertSessionMetrics } from '@/lib/services/cue-logger';
 import { logPoseSample, flushPoseBuffer, resetFrameCounter } from '@/lib/services/pose-logger';
 import {
@@ -89,6 +97,7 @@ import {
   type ShadowProvider,
 } from '@/lib/pose/shadow-provider';
 import { createRealtimeFormEngineState, processRealtimeAngles } from '@/lib/pose/realtime-form-engine';
+import { jointsForWorkout } from '@/lib/pose/workout-joint-scope';
 import {
   createTrackingQualityPipelineState,
   HIDE_N_FRAMES,
@@ -99,11 +108,11 @@ import {
   type PullupScoringResult,
 } from '@/lib/tracking-quality';
 import { CueHysteresisController } from '@/lib/tracking-quality/cue-hysteresis';
-import { useWorkoutController, isPendingRepsAtStopSignal } from '@/hooks/use-workout-controller';
-import { usePRDetection } from '@/hooks/use-pr-detection';
-import { PRCelebrationBadge } from '@/components/form-tracking/PRCelebrationBadge';
-import { ProgressionSuggestionBadge } from '@/components/form-tracking/ProgressionSuggestionBadge';
-import { useProgressionSuggestion } from '@/hooks/use-progression-suggestion';
+import { useWorkoutController, isPendingRepsAtStopSignal } from '@/features/form-tracking/hooks/use-workout-controller';
+import { usePRDetection } from '@/features/form-tracking/hooks/use-pr-detection';
+import { PRCelebrationBadge } from '@/features/form-tracking/components/PRCelebrationBadge';
+import { ProgressionSuggestionBadge } from '@/features/form-tracking/components/ProgressionSuggestionBadge';
+import { useProgressionSuggestion } from '@/features/form-tracking/hooks/use-progression-suggestion';
 import { emitFormMilestone, useSessionRunner } from '@/lib/stores/session-runner';
 import type { FormTargets } from '@/lib/services/form-target-resolver';
 import { getDefaultsForExerciseWithFlag } from '@/lib/services/form-target-resolver';
@@ -117,30 +126,30 @@ import {
 import type { WorkoutMetrics } from '@/lib/types/workout-definitions';
 import { uploadWorkoutVideo } from '@/lib/services/video-service';
 import { buildVideoMetricsForClip, type RecordingQuality } from '@/lib/services/video-metrics';
-import { shouldUploadVideo } from '@/lib/services/consent-service';
 import type { PullupFixtureFrame } from '@/lib/debug/pullup-fixture-corpus';
+import { exerciseRecordingStore } from '@/lib/debug/exercise-recording-store';
+import type { ExerciseReplayFrame } from '@/lib/debug/exercise-replay';
 import cameraFacingFixture from '@/tests/fixtures/pullup-tracking/camera-facing.json';
 import backTurnedFixture from '@/tests/fixtures/pullup-tracking/back-turned.json';
 import occlusionBriefFixture from '@/tests/fixtures/pullup-tracking/occlusion-brief.json';
 import occlusionLongFixture from '@/tests/fixtures/pullup-tracking/occlusion-long.json';
 import bounceNoiseFixture from '@/tests/fixtures/pullup-tracking/bounce-noise.json';
-import { styles } from '../../styles/tabs/_scan-arkit.styles';
-import { spacing } from '../../styles/tabs/_theme-constants';
-import { VoiceCommandFeedback } from '@/components/form-tracking/VoiceCommandFeedback';
-import { CameraPermissionBanner } from '@/components/form-tracking/CameraPermissionBanner';
+import { styles } from '../../features/form-tracking/styles/_scan-arkit.styles';
+import { VoiceCommandFeedback } from '@/features/form-tracking/components/VoiceCommandFeedback';
+import { CameraPermissionBanner } from '@/features/form-tracking/components/CameraPermissionBanner';
 // W3-A resilience (#445) — hooks + services.
 import { isAROverlaysV2Enabled } from '@/lib/services/ar-overlays-v2-flag';
-import { useSubjectIdentity } from '@/hooks/use-subject-identity';
-import { useCameraPermissionGuard } from '@/hooks/use-camera-permission-guard';
-import { useAppStatePause } from '@/hooks/use-app-state-pause';
-import { useAdaptiveFps } from '@/hooks/use-adaptive-fps';
+import { useSubjectIdentity } from '@/features/form-tracking/hooks/use-subject-identity';
+import { useCameraPermissionGuard } from '@/features/form-tracking/hooks/use-camera-permission-guard';
+import { useAppStatePause } from '@/features/form-tracking/hooks/use-app-state-pause';
+import { useAdaptiveFps } from '@/features/form-tracking/hooks/use-adaptive-fps';
 import { OcclusionHoldManager, type SustainedOcclusionEvent } from '@/lib/tracking-quality/occlusion';
 // W3-D AR overlays (#445) — SVG overlays gated by the same feature flag.
-import { FramingGuide } from '@/components/form-tracking/FramingGuide';
-import { JointArcOverlay } from '@/components/form-tracking/JointArcOverlay';
-import { CueArrowOverlay, type CueSeverity } from '@/components/form-tracking/CueArrowOverlay';
-import { ROMProgressBar } from '@/components/form-tracking/ROMProgressBar';
-import { FaultHighlight } from '@/components/form-tracking/FaultHighlight';
+import { FramingGuide } from '@/features/form-tracking/components/FramingGuide';
+import { JointArcOverlay } from '@/features/form-tracking/components/JointArcOverlay';
+import { CueArrowOverlay, type CueSeverity } from '@/features/form-tracking/components/CueArrowOverlay';
+import { ROMProgressBar } from '@/features/form-tracking/components/ROMProgressBar';
+import { FaultHighlight } from '@/features/form-tracking/components/FaultHighlight';
 
 // Phase and detection mode types are now imported from lib/workouts
 type BaseUploadMetrics = Record<string, unknown> & {
@@ -179,7 +188,7 @@ export const POSE2D_CACHE_MAX_ENTRIES = 30;
 // at up to 60Hz; publishing state + debug logs on every frame wastes both
 // render work and log bandwidth when only the smoothed average is useful.
 export const FPS_PUBLISH_INTERVAL_MS = 500;
-const WATCH_MIRROR_INTERVAL_MS = 750;
+const WATCH_MIRROR_INTERVAL_MS = 100;
 const WATCH_MIRROR_AR_QUALITY = 0.25;
 const WATCH_MIRROR_MAX_WIDTH = 320;
 const MEDIAPIPE_SHADOW_POLL_INTERVAL_MS = 100;
@@ -201,6 +210,13 @@ const QUALITY_LABELS: Record<RecordingQuality, string> = {
   low: 'Low',
   medium: 'Med',
   high: 'High',
+};
+
+const toIoniconName = (name: string | undefined): keyof typeof Ionicons.glyphMap => {
+  if (name && Object.prototype.hasOwnProperty.call(Ionicons.glyphMap, name)) {
+    return name as keyof typeof Ionicons.glyphMap;
+  }
+  return 'barbell-outline';
 };
 
 type BaselineLatencyBucket = 'lt4' | 'lt8' | 'lt16' | 'gte16';
@@ -250,39 +266,6 @@ const nowMs = (): number => {
 
 // Metrics types are now imported from workout definitions (PullUpMetrics, PushUpMetrics)
 
-// Explicit alias map for skeleton overlay joint lookup.
-// Keys are lowercased display names used in drawLine(); values are ordered
-// fallback aliases (also lowercased) matching native ARKit joint names.
-const SKELETON_JOINT_ALIASES: Record<string, string[]> = {
-  root: ['root', 'hips_joint'],
-  hips_joint: ['hips_joint', 'root'],
-  spine_1_joint: ['spine_1_joint'],
-  spine_2_joint: ['spine_2_joint'],
-  spine_3_joint: ['spine_3_joint'],
-  spine_4_joint: ['spine_4_joint', 'spine_3_joint'],
-  spine_5_joint: ['spine_5_joint'],
-  spine_6_joint: ['spine_6_joint'],
-  spine_7_joint: ['spine_7_joint'],
-  neck_1_joint: ['neck_1_joint', 'neck_2_joint', 'neck_3_joint', 'neck_4_joint'],
-  neck_2_joint: ['neck_2_joint', 'neck_1_joint'],
-  neck_3_joint: ['neck_3_joint'],
-  neck_4_joint: ['neck_4_joint'],
-  head_joint: ['head_joint'],
-  left_shoulder_1_joint: ['left_shoulder_1_joint'],
-  left_arm_joint: ['left_arm_joint'],
-  left_forearm_joint: ['left_forearm_joint'],
-  left_hand_joint: ['left_hand_joint'],
-  right_shoulder_1_joint: ['right_shoulder_1_joint'],
-  right_arm_joint: ['right_arm_joint'],
-  right_forearm_joint: ['right_forearm_joint'],
-  right_hand_joint: ['right_hand_joint'],
-  left_upleg_joint: ['left_upleg_joint'],
-  left_leg_joint: ['left_leg_joint'],
-  left_foot_joint: ['left_foot_joint'],
-  right_upleg_joint: ['right_upleg_joint'],
-  right_leg_joint: ['right_leg_joint'],
-  right_foot_joint: ['right_foot_joint'],
-};
 
 let ARKitView: any = View;
 if (Platform.OS === 'ios') {
@@ -321,32 +304,6 @@ const formatDuration = (startIso: string | null | undefined, endIso: string | nu
   const min = Math.floor(totalSec / 60);
   const sec = totalSec % 60;
   return `${min}m ${sec.toString().padStart(2, '0')}s`;
-};
-
-const PreviewPlayer = ({ uri }: { uri: string }) => {
-  const player = useVideoPlayer(uri, (instance) => {
-    instance.loop = false;
-    instance.play();
-  });
-
-  useEffect(() => {
-    return () => {
-      try {
-        player.release();
-      } catch {
-        // Player may already be released
-      }
-    };
-  }, [player]);
-
-  return (
-    <VideoView
-      player={player}
-      style={styles.previewVideo}
-      contentFit="cover"
-      nativeControls
-    />
-  );
 };
 
 export default function ScanARKitScreen() {
@@ -411,6 +368,7 @@ export default function ScanARKitScreen() {
     }
   }, []);
   
+  const adaptiveFps = useAdaptiveFps();
   const {
     pose,
     pose2D,
@@ -418,7 +376,7 @@ export default function ScanARKitScreen() {
     isTracking,
     startTracking: startNativeTracking,
     stopTracking: stopNativeTracking,
-  } = useBodyTracking(60);
+  } = useBodyTracking(60, { activeFps: adaptiveFps.fps });
   const [supportStatus, setSupportStatus] = useState<'unknown' | 'supported' | 'unsupported'>('unknown');
   const [jointAngles, setJointAngles] = useState<JointAngles | null>(null);
   const [fps, setFps] = useState(0);
@@ -504,11 +462,14 @@ export default function ScanARKitScreen() {
   // cheaply skip heavy work while the user is between reps.
   const restPhaseRef = React.useRef<string>(getWorkoutByMode(DEFAULT_DETECTION_MODE).initialPhase);
   const [activeMetrics, setActiveMetrics] = useState<WorkoutMetrics | null>(null);
+  const lastMetricsPublishRef = React.useRef<number | null>(null);
+  const [latestFqiScore, setLatestFqiScore] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isFinalizingRecording, setIsFinalizingRecording] = useState(false);
   const [recordPreview, setRecordPreview] = useState<RecordedPreview | null>(null);
   const [recordingQuality, setRecordingQuality] = useState<RecordingQuality>('medium');
+  const [recordingStartStatus, setRecordingStartStatus] = useState<'idle' | 'starting-camera' | 'waiting-for-skeleton'>('idle');
   const [subjectLockEnabled, setSubjectLockEnabled] = useState(true);
   const [gestureRecordingEnabled, setGestureRecordingEnabled] = useState(true);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
@@ -537,13 +498,19 @@ export default function ScanARKitScreen() {
   const [livePullupPartialStatus, setLivePullupPartialStatus] = useState<
     Pick<PullupScoringResult, 'visibility_badge' | 'missing_components'> | null
   >(null);
+  const partialWarningVisibleRef = React.useRef(false);
   const lastLivePartialBadgeRef = React.useRef<PullupScoringResult['visibility_badge'] | null>(null);
   const [showPartialTrackingBadge, setShowPartialTrackingBadge] = useState(false);
+  const [partialTrackingBannerDismissedUntilMs, setPartialTrackingBannerDismissedUntilMs] = useState(0);
+  const [trackingRecoveredPulseId, setTrackingRecoveredPulseId] = useState<number | null>(null);
   const baselineDebugEnabled = DEV && showDebugStats;
   const baselineDebugEnabledRef = React.useRef(baselineDebugEnabled);
   const baselineDebugMetricsRef = React.useRef<BaselineDebugMetrics>(createBaselineDebugMetrics());
   const [savingRecording, setSavingRecording] = useState(false);
   const recordingStopInFlightRef = React.useRef(false);
+  const pendingRecordAfterTrackingRef = React.useRef(false);
+  const resumeTrackingAfterPermissionGrantRef = React.useRef(false);
+  const stopTrackingRef = React.useRef<(() => Promise<void>) | null>(null);
   const [smoothedPose2DJoints, setSmoothedPose2DJoints] = useState<Joint2D[] | null>(null);
   const smoothedPose2DRef = React.useRef<Joint2D[] | null>(null);
   // LRU cache keyed by lowercased joint name. Map preserves insertion order,
@@ -564,6 +531,7 @@ export default function ScanARKitScreen() {
   const overlayLayout = React.useRef<{ width: number; height: number } | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [preSetPreviewVisible, setPreSetPreviewVisible] = useState(false);
+  const [showCameraGuide, setShowCameraGuide] = useState(true);
   const preSetPreview = usePreSetPreview();
   const isScreenFocused = useIsFocused();
   const sessionIdRef = React.useRef(generateSessionId());
@@ -583,7 +551,6 @@ export default function ScanARKitScreen() {
   const subjectIdentity = useSubjectIdentity({ enabled: arOverlaysV2 && isTracking });
   const cameraPermission = useCameraPermissionGuard();
   const appStatePause = useAppStatePause({ enabled: arOverlaysV2 && isTracking });
-  const adaptiveFps = useAdaptiveFps({ enabled: arOverlaysV2 });
   const [sustainedOcclusionHint, setSustainedOcclusionHint] =
     useState<SustainedOcclusionEvent | null>(null);
   const sustainedOcclusionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -614,9 +581,9 @@ export default function ScanARKitScreen() {
   const [watchInstalled, setWatchInstalled] = useState(false);
   const [watchReachable, setWatchReachable] = useState(false);
   const watchMirrorTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
-  const watchMirrorInFlightRef = React.useRef(false);
-  const watchTrackingPublishAtRef = React.useRef(0);
-  const watchTrackingSignatureRef = React.useRef<string | null>(null);
+  const watchMirrorPublisher = React.useRef(createWatchMirrorPublisher()).current;
+  const watchMirrorSvgRef = React.useRef<Svg | null>(null);
+  const watchTrackingPublicationRef = React.useRef<WatchTrackingPublicationState>({ lastSubmission: null, timestamp: 0 });
   const lastTrackingQualityRef = React.useRef<number | null>(null);
   // Tracks the previous confidence tier so mid-set degradation warnings fire
   // once on the high → low transition edge rather than on every frame. See
@@ -651,6 +618,7 @@ export default function ScanARKitScreen() {
   const mediaPipePollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const mediaPipePollInFlightRef = React.useRef(false);
   const partialTrackingHideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const trackingRecoveredTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const partialTrackingVisibleUntilMsRef = React.useRef(0);
   const trackingDebugEnabledRef = React.useRef(trackingDebugEnabled);
 
@@ -677,7 +645,7 @@ export default function ScanARKitScreen() {
     visibilityBadge: PullupScoringResult['visibility_badge'],
     source: 'frame-live' | 'onPullupScoring-rep-complete' | 'unknown' = 'unknown'
   ) => {
-    if (partialTrackingHideTimerRef.current) {
+    if (visibilityBadge === 'partial' && partialTrackingHideTimerRef.current) {
       clearTimeout(partialTrackingHideTimerRef.current);
       partialTrackingHideTimerRef.current = null;
     }
@@ -693,23 +661,48 @@ export default function ScanARKitScreen() {
     });
 
     if (visibilityBadge === 'partial') {
+      if (trackingRecoveredTimerRef.current) {
+        clearTimeout(trackingRecoveredTimerRef.current);
+        trackingRecoveredTimerRef.current = null;
+      }
+      setTrackingRecoveredPulseId(null);
       partialTrackingVisibleUntilMsRef.current = now + PARTIAL_TRACKING_BADGE_MIN_VISIBLE_MS;
-      setShowPartialTrackingBadge(true);
+      if (now >= partialTrackingBannerDismissedUntilMs) {
+        partialWarningVisibleRef.current = true;
+        setShowPartialTrackingBadge(true);
+      }
       return;
     }
+
+    // Keep the first recovery deadline; continuous healthy frames must not
+    // postpone it indefinitely. A partial frame above cancels the deadline.
+    if (partialTrackingHideTimerRef.current || !partialWarningVisibleRef.current) return;
 
     const hideInMs = Math.max(0, partialTrackingVisibleUntilMsRef.current - now) + PARTIAL_TRACKING_BADGE_HIDE_DELAY_MS;
     partialTrackingHideTimerRef.current = setTimeout(() => {
       setShowPartialTrackingBadge(false);
       partialTrackingHideTimerRef.current = null;
+      if (partialWarningVisibleRef.current) {
+        partialWarningVisibleRef.current = false;
+        if (trackingRecoveredTimerRef.current) clearTimeout(trackingRecoveredTimerRef.current);
+        setTrackingRecoveredPulseId(Date.now());
+        trackingRecoveredTimerRef.current = setTimeout(() => {
+          setTrackingRecoveredPulseId(null);
+          trackingRecoveredTimerRef.current = null;
+        }, 1800);
+      }
     }, hideInMs);
-  }, [fixturePlaybackEnabled, logTrackingDebug, repCount]);
+  }, [fixturePlaybackEnabled, logTrackingDebug, partialTrackingBannerDismissedUntilMs, repCount]);
 
   useEffect(() => {
     return () => {
       if (partialTrackingHideTimerRef.current) {
         clearTimeout(partialTrackingHideTimerRef.current);
         partialTrackingHideTimerRef.current = null;
+      }
+      if (trackingRecoveredTimerRef.current) {
+        clearTimeout(trackingRecoveredTimerRef.current);
+        trackingRecoveredTimerRef.current = null;
       }
     };
   }, []);
@@ -1176,6 +1169,7 @@ export default function ScanARKitScreen() {
       repStartTsRef.current = 0;
       if (Number.isFinite(fqi)) {
         sessionFqiScoresRef.current.push(fqi);
+        setLatestFqiScore(fqi);
       }
       if (recordingActiveRef.current && Date.now() >= recordingStartEpochMsRef.current) {
         recordingFqiScoresRef.current.push(fqi);
@@ -1234,10 +1228,26 @@ export default function ScanARKitScreen() {
     },
   }), [activeWorkoutDef, repCount, showToast, transitionPhase, updatePartialTrackingBadgeVisibility]);
 
+  const onExerciseRecordingFrame = useCallback((frame: ExerciseReplayFrame) => {
+    if (__DEV__ && !fixturePlaybackEnabled) exerciseRecordingStore.append(frame);
+  }, [fixturePlaybackEnabled]);
+
+  const onExerciseRecordingReset = useCallback((options?: { preserveRepCount?: boolean }) => {
+    if (__DEV__ && !fixturePlaybackEnabled) exerciseRecordingStore.reset(options);
+  }, [fixturePlaybackEnabled]);
+
+  useEffect(() => {
+    // A capture must never span exercise definitions or fixture/live sources.
+    // Unrelated render/callback changes deliberately do not restart this effect.
+    return () => { if (__DEV__) exerciseRecordingStore.abort(); };
+  }, [detectionMode, fixturePlaybackEnabled]);
+
   const workoutController = useWorkoutController(detectionMode, {
     sessionId: sessionIdRef.current,
     callbacks: workoutControllerCallbacks,
     enableHaptics: true,
+    onFrame: __DEV__ ? onExerciseRecordingFrame : undefined,
+    onReset: __DEV__ ? onExerciseRecordingReset : undefined,
   });
 
   const {
@@ -1255,6 +1265,7 @@ export default function ScanARKitScreen() {
     setActivePhase(nextInitialPhase);
     setRepCount(0);
     repCountRef.current = 0;
+    lastMetricsPublishRef.current = null;
     setActiveMetrics(null);
     setLivePullupPartialStatus(null);
     lastLivePartialBadgeRef.current = null;
@@ -1265,6 +1276,9 @@ export default function ScanARKitScreen() {
     mediaPipePoseRef.current = null;
     realtimeFormEngineRef.current = createRealtimeEngineState();
     lastShadowMeanAbsDeltaRef.current = null;
+    // Previously held lower-body occlusions must not leak into a curl set.
+    occlusionManagerRef.current?.reset();
+    setSustainedOcclusionHint(null);
     // Clear session-wide FQI accumulator BEFORE swapping the workout
     // controller so the first rep of the new exercise can't briefly land in
     // the previous exercise's score array (#575 item #4). Without this the
@@ -1287,6 +1301,8 @@ export default function ScanARKitScreen() {
   }, [createRealtimeEngineState, detectionMode, resetBaselineDebugMetrics, resetCueHysteresis, setWorkoutController, stopSpeech]);
 
   useEffect(() => {
+    let unsupportedTimer: ReturnType<typeof setTimeout> | null = null;
+
     if (DEV) {
       logWithTs('[ScanARKit] Component mounted - Platform:', Platform.OS);
       logWithTs('[ScanARKit] nativeSupported value:', nativeSupported);
@@ -1309,14 +1325,26 @@ export default function ScanARKitScreen() {
       if (DEV) logWithTs('[ScanARKit] Device is supported!');
       setSupportStatus('supported');
     } else {
-      if (DEV) logWithTs('[ScanARKit] Device NOT supported');
-      setSupportStatus('unsupported');
+      if (DEV) logWithTs('[ScanARKit] Waiting for native support probe before showing unsupported state');
+      setSupportStatus((current) => (current === 'supported' ? current : 'unknown'));
+      unsupportedTimer = setTimeout(() => {
+        if (DEV) logWithTs('[ScanARKit] Device NOT supported after readiness probe');
+        setSupportStatus((current) => (current === 'supported' ? current : 'unsupported'));
+      }, 900);
     }
+
+    return () => {
+      if (unsupportedTimer) {
+        clearTimeout(unsupportedTimer);
+      }
+    };
   }, [nativeSupported, fixturePlaybackRequested, fixturePlaybackEnabled, fixtureName, DEV]);
 
   useEffect(() => {
     setLatestPullupScoring(null);
+    partialWarningVisibleRef.current = false;
     setShowPartialTrackingBadge(false);
+    setShowCameraGuide(true);
     partialTrackingVisibleUntilMsRef.current = 0;
     if (partialTrackingHideTimerRef.current) {
       clearTimeout(partialTrackingHideTimerRef.current);
@@ -1324,27 +1352,18 @@ export default function ScanARKitScreen() {
     }
   }, [detectionMode]);
 
-  // Auto-start tracking when supported
+  // Keep camera readiness under user control. Tracking starts from the main
+  // button or a good stance check so the user can frame their full body first.
   useEffect(() => {
     if (DEV) {
-      logWithTs('[ScanARKit] Auto-start check:', {
+      logWithTs('[ScanARKit] Readiness check:', {
         supportStatus,
         isTracking,
         cameraPosition,
-        willStart: supportStatus === 'supported' && !isTracking && cameraPosition === 'back'
+        ready: supportStatus === 'supported' && cameraPosition === 'back'
       });
     }
-    
-    if (fixturePlaybackEnabled) {
-      return;
-    }
-
-    if (supportStatus === 'supported' && !isTracking && cameraPosition === 'back') {
-      if (DEV) logWithTs('[ScanARKit] ✅ Auto-starting tracking...');
-      startTracking();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supportStatus, isTracking, cameraPosition, fixturePlaybackEnabled]);
+  }, [supportStatus, isTracking, cameraPosition, DEV]);
 
   useEffect(() => {
     if (!fixturePlaybackEnabled || !fixtureFrames || fixtureFrames.length === 0) {
@@ -1364,7 +1383,9 @@ export default function ScanARKitScreen() {
     resetWorkoutController();
     setRepCount(0);
     repCountRef.current = 0;
+    lastMetricsPublishRef.current = null;
     setActiveMetrics(null);
+    setLatestFqiScore(null);
     setFps(30);
     setFixturePlaybackFramesProcessed(0);
     setJointAngles(firstFrame?.angles ?? null);
@@ -1403,6 +1424,7 @@ export default function ScanARKitScreen() {
       const metrics = getWorkoutByMode('pullup').calculateMetrics(frame.angles, joints) as WorkoutMetrics;
       setActiveMetrics(metrics);
       processWorkoutFrame(frame.angles, joints, {
+        metrics,
         trackingQuality: 1,
         shadowMeanAbsDelta: 0,
       });
@@ -1462,6 +1484,7 @@ export default function ScanARKitScreen() {
       smoothedPose2DRef.current = null;
       pose2DCacheRef.current.clear();
       pose2DCacheKeysRef.current = null;
+      lastMetricsPublishRef.current = null;
       setActiveMetrics(null);
       setLivePullupPartialStatus(null);
       lastLivePartialBadgeRef.current = null;
@@ -1489,7 +1512,7 @@ export default function ScanARKitScreen() {
     }
 
     try {
-      const angles = BodyTracker.calculateAllAngles(pose);
+      const angles = BodyTracker.calculateAllAngles(pose, detectionMode);
       const jointLookupDebug: Record<string, unknown> = {};
       const get = (n: string) => {
         const selected = BodyTracker.findJoint(pose, n);
@@ -1532,14 +1555,22 @@ export default function ScanARKitScreen() {
       const spine = get('spine_4');
       const neck = get('neck');
       const valid = {
-        leftKnee: !!(lh?.isTracked && lk?.isTracked && la?.isTracked),
-        rightKnee: !!(rh?.isTracked && rk?.isTracked && ra?.isTracked),
+        leftKnee: detectionMode !== 'dumbbell_curl' && !!(lh?.isTracked && lk?.isTracked && la?.isTracked),
+        rightKnee: detectionMode !== 'dumbbell_curl' && !!(rh?.isTracked && rk?.isTracked && ra?.isTracked),
         leftElbow: !!(ls?.isTracked && le?.isTracked && lw?.isTracked),
         rightElbow: !!(rs?.isTracked && re?.isTracked && rw?.isTracked),
-        leftHip: !!(spine?.isTracked && lh?.isTracked && lk?.isTracked),
-        rightHip: !!(spine?.isTracked && rh?.isTracked && rk?.isTracked),
-        leftShoulder: !!(neck?.isTracked && ls?.isTracked && le?.isTracked),
-        rightShoulder: !!(neck?.isTracked && rs?.isTracked && re?.isTracked),
+        leftHip: detectionMode === 'dumbbell_curl'
+          ? !!angles && Number.isFinite(angles.leftHip)
+          : !!(spine?.isTracked && lh?.isTracked && lk?.isTracked),
+        rightHip: detectionMode === 'dumbbell_curl'
+          ? !!angles && Number.isFinite(angles.rightHip)
+          : !!(spine?.isTracked && rh?.isTracked && rk?.isTracked),
+        leftShoulder: detectionMode === 'dumbbell_curl'
+          ? !!angles && Number.isFinite(angles.leftShoulder)
+          : !!(neck?.isTracked && ls?.isTracked && le?.isTracked),
+        rightShoulder: detectionMode === 'dumbbell_curl'
+          ? !!angles && Number.isFinite(angles.rightShoulder)
+          : !!(neck?.isTracked && rs?.isTracked && re?.isTracked),
       } as const;
       if (trackingDebugEnabledRef.current) {
         logTrackingDebug('joint-lookup-and-visibility', {
@@ -1567,9 +1598,14 @@ export default function ScanARKitScreen() {
               valid,
               timestampSec: pose.timestamp,
               shadowMeanAbsDelta: lastShadowMeanAbsDeltaRef.current,
+              workoutId: detectionMode,
             })
           : null;
-      const next: JointAngles | null = smoothingResult?.angles ?? realtimeFormEngineRef.current.smoothed;
+      // Never keep counting curls from a stale angle snapshot if arms/hips
+      // disappear. Missing knees, however, no longer invalidate this frame.
+      const next: JointAngles | null = smoothingResult?.angles ?? (
+        detectionMode === 'dumbbell_curl' ? null : realtimeFormEngineRef.current.smoothed
+      );
 
       if (shouldLog && next && baselineDebugEnabledRef.current) {
         logWithTs('[ScanARKit] 📐 Joint angles:', {
@@ -1654,6 +1690,7 @@ export default function ScanARKitScreen() {
               modelVersion: shadowFrame.modelVersion,
               inferenceMs: shadowFrame.inferenceMs,
               coverageRatio: shadowFrame.coverageRatio,
+              workoutId: detectionMode,
             })
           : null;
 
@@ -1697,7 +1734,11 @@ export default function ScanARKitScreen() {
         }
 
         const metrics = activeWorkoutDef.calculateMetrics(next, jointsMap) as WorkoutMetrics;
-        setActiveMetrics(metrics);
+        const now = Date.now();
+        if (lastMetricsPublishRef.current === null || now - lastMetricsPublishRef.current >= 100) {
+          lastMetricsPublishRef.current = now;
+          setActiveMetrics(metrics);
+        }
 
         const shouldComputeLivePartial = detectionMode === 'pullup' && (isTracking || fixturePlaybackEnabled);
         if (shouldComputeLivePartial) {
@@ -1738,12 +1779,19 @@ export default function ScanARKitScreen() {
             joints: canonicalFrame.joints,
           });
 
-          setLivePullupPartialStatus({
-            visibility_badge: livePartialScoring.visibility_badge,
-            missing_components: livePartialScoring.missing_components,
+          setLivePullupPartialStatus((previous) => {
+            const badge = livePartialScoring.visibility_badge;
+            const missing = livePartialScoring.missing_components;
+            if (previous?.visibility_badge === badge &&
+                previous.missing_components.length === missing.length &&
+                previous.missing_components.every((component, index) => component === missing[index])) {
+              return previous;
+            }
+            return { visibility_badge: badge, missing_components: missing };
           });
 
-          if (lastLivePartialBadgeRef.current !== livePartialScoring.visibility_badge) {
+          const previousPartialBadge = lastLivePartialBadgeRef.current;
+          if (previousPartialBadge !== livePartialScoring.visibility_badge) {
             lastLivePartialBadgeRef.current = livePartialScoring.visibility_badge;
             updatePartialTrackingBadgeVisibility(livePartialScoring.visibility_badge, 'frame-live');
           }
@@ -1753,6 +1801,7 @@ export default function ScanARKitScreen() {
         }
 
         processWorkoutFrame(next, jointsMap, {
+          metrics,
           trackingQuality: smoothingResult?.trackingQuality,
           shadowMeanAbsDelta: shadowComparison?.meanAbsDelta,
         });
@@ -1793,6 +1842,7 @@ export default function ScanARKitScreen() {
         lastConfidenceTierRef.current = null;
         repIndexTrackerRef.current.reset();
         resetWorkoutController({ preserveRepCount: true });
+        lastMetricsPublishRef.current = null;
         setActiveMetrics(null);
         setLivePullupPartialStatus(null);
         lastLivePartialBadgeRef.current = null;
@@ -1874,7 +1924,7 @@ export default function ScanARKitScreen() {
 
     const alpha = 0.55;
     const cache = pose2DCacheRef.current;
-    const joints = pose2D.joints;
+    const joints = jointsForWorkout(pose2D.joints, detectionMode);
     const seenKeys = new Set<string>();
     const nextJoints = joints.map((joint) => {
       if (!joint.isTracked) {
@@ -1958,15 +2008,17 @@ export default function ScanARKitScreen() {
     // Intentionally keep dep list tight: adding subjectIdentity/arOverlaysV2
     // here would churn this frame-driven effect every snapshot change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pose2D]);
+  }, [pose2D, detectionMode]);
 
   // Start tracking
-  const startTracking = useCallback(async () => {
+  const startTracking = useCallback(async (): Promise<boolean> => {
     if (DEV) logWithTs('[ScanARKit] Starting tracking...');
+    resumeTrackingAfterPermissionGrantRef.current = true;
     if (cameraPosition !== 'back') {
       if (DEV) warnWithTs('[ScanARKit] Skipping tracking start: ARKit requires back camera');
       Alert.alert('Back camera required', 'ARKit body tracking only works with the back camera.');
-      return;
+      resumeTrackingAfterPermissionGrantRef.current = false;
+      return false;
     }
     try {
       const nextInitialPhase = getWorkoutByMode(detectionMode).initialPhase;
@@ -1976,7 +2028,9 @@ export default function ScanARKitScreen() {
       resetWorkoutController();
       setRepCount(0);
       repCountRef.current = 0;
+      lastMetricsPublishRef.current = null;
       setActiveMetrics(null);
+      setLatestFqiScore(null);
       resetBaselineDebugMetrics();
       resetCueHysteresis();
       repCountdownFiredRef.current = false;
@@ -1990,8 +2044,10 @@ export default function ScanARKitScreen() {
       mediaPipePoseRef.current = null;
       realtimeFormEngineRef.current = createRealtimeEngineState();
       lastShadowMeanAbsDeltaRef.current = null;
+      if (__DEV__) exerciseRecordingStore.begin(detectionMode, fixturePlaybackEnabled);
       await startNativeTracking();
       const elapsed = Date.now() - startTime;
+      resumeTrackingAfterPermissionGrantRef.current = false;
 
       if (DEV) logWithTs('[ScanARKit] Tracking started successfully in', elapsed, 'ms');
 
@@ -2010,7 +2066,9 @@ export default function ScanARKitScreen() {
           if (DEV) warnWithTs('[ScanARKit] rep countdown failed', error);
         });
       }
+      return true;
     } catch (error) {
+      if (__DEV__) exerciseRecordingStore.abort('Capture discarded: tracking failed to start.');
       // Native start can throw AFTER `useBodyTracking` has already flipped
       // its internal isTracking to true (see ARKitBodyTracker.ios.ts
       // startTracking — setIsTracking(true) runs before the async body can
@@ -2025,6 +2083,9 @@ export default function ScanARKitScreen() {
         if (DEV) warnWithTs('[ScanARKit] stopNativeTracking after failed start also threw', stopError);
       }
       repCountdownFiredRef.current = false;
+      resumeTrackingAfterPermissionGrantRef.current = false;
+      pendingRecordAfterTrackingRef.current = false;
+      setRecordingStartStatus('idle');
       errorWithTs('[ScanARKit] ❌ Failed to start tracking:', error);
       if (DEV) {
         errorWithTs('[ScanARKit] Error details:', {
@@ -2032,6 +2093,7 @@ export default function ScanARKitScreen() {
           stack: error instanceof Error ? error.stack : undefined
         });
       }
+      return false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -2041,6 +2103,7 @@ export default function ScanARKitScreen() {
     cameraPosition,
     logWithTs,
     detectionMode,
+    fixturePlaybackEnabled,
     resetWorkoutController,
     resetBaselineDebugMetrics,
     resetCueHysteresis,
@@ -2071,7 +2134,11 @@ export default function ScanARKitScreen() {
 
   // Stop tracking
   const stopTracking = useCallback(async () => {
+    if (__DEV__) void exerciseRecordingStore.finish();
+    watchMirrorPublisher.setActive(false);
     if (DEV) logWithTs('[ScanARKit] Stopping tracking...');
+    pendingRecordAfterTrackingRef.current = false;
+    setRecordingStartStatus('idle');
 
     // Snapshot the session data before the cleanup below wipes the refs.
     // Used for post-session milestone detection (#494).
@@ -2110,7 +2177,9 @@ export default function ScanARKitScreen() {
       frameStatsRef.current = { lastTimestamp: 0, frameCount: 0 };
       lastFpsPublishMsRef.current = 0;
       setJointAngles(null);
+      lastMetricsPublishRef.current = null;
       setActiveMetrics(null);
+      setLatestFqiScore(null);
       const nextInitialPhase = getWorkoutByMode(detectionMode).initialPhase;
       activePhaseRef.current = nextInitialPhase;
       transitionPhase(nextInitialPhase);
@@ -2223,12 +2292,16 @@ export default function ScanARKitScreen() {
     flushPendingRepsOnStop,
   ]);
 
+  useEffect(() => {
+    stopTrackingRef.current = stopTracking;
+  }, [stopTracking]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      stopTracking();
+      void stopTrackingRef.current?.();
     };
-  }, [stopTracking]);
+  }, []);
 
   // ---------------------------------------------------------------------
   // Mid-session exit flow (#494)
@@ -2257,7 +2330,7 @@ export default function ScanARKitScreen() {
       setIsExitMidSessionSheetVisible(true);
       return;
     }
-    router.back();
+    router.replace('/(tabs)/form');
   }, [isMidSession, router]);
 
   const handleExitDiscard = useCallback(async () => {
@@ -2267,7 +2340,7 @@ export default function ScanARKitScreen() {
     } catch (error) {
       if (DEV) warnWithTs('[ScanARKit] stopTracking during discard failed', error);
     }
-    router.back();
+    router.replace('/(tabs)/form');
   }, [stopTracking, router, DEV]);
 
   const handleExitSaveSnapshot = useCallback(async () => {
@@ -2289,7 +2362,7 @@ export default function ScanARKitScreen() {
     } catch (error) {
       if (DEV) warnWithTs('[ScanARKit] stopTracking during save failed', error);
     }
-    router.back();
+    router.replace('/(tabs)/form');
   }, [computeAverageFqi, detectionMode, repCount, stopTracking, router, DEV]);
 
   const handleExitCancel = useCallback(() => {
@@ -2430,7 +2503,7 @@ export default function ScanARKitScreen() {
   }, [primaryCue]);
 
     // The watch-mirror timer polls BodyTracker.getCurrentFrameSnapshot()
-    // ~1Hz while tracking. Previously it only checked `isTracking`, so when
+    // up to 10Hz while tracking. Previously it only checked `isTracking`, so when
     // useAppStatePause flipped `isPaused=true` on background/inactive (phone
     // lock, Control Center, incoming call) the poll kept firing, burning
     // battery AND keeping the ARKit session half-alive. Gate the whole
@@ -2455,90 +2528,41 @@ export default function ScanARKitScreen() {
           Alert.alert('Watch not ready', 'Pair your Apple Watch and install the watch app first.');
           return;
         }
+        if (!value) watchMirrorPublisher.setActive(false);
         setWatchMirrorEnabled(value);
       },
-      [watchReady]
+      [watchReady, watchMirrorPublisher]
     );
 
     const captureAndSendWatchMirror = useCallback(async () => {
-      if (watchMirrorInFlightRef.current) {
-        return;
-      }
-
-      watchMirrorInFlightRef.current = true;
-
-      // INVARIANT: every exit path below (success, early return, any
-      // synchronous throw from BodyTracker.getCurrentFrameSnapshot or
-      // sendMessage, and any rejection from the awaited native promise)
-      // MUST fall through to the outer finally so the in-flight flag is
-      // reset — otherwise a single failed snapshot wedges the watch-mirror
-      // timer forever. If this function is ever refactored to split the
-      // snapshot call into a helper, wrap that helper in its own
-      // try-finally as well.
       try {
-        let base64: string | null = null;
-        let width: number | undefined;
-        let height: number | undefined;
-        let orientation: string | undefined;
-        let mirrored: boolean | undefined;
-
-        if (!canMirrorFromArkit) {
-          logTrackingDebug('watch-mirror-branch', {
-            ts: Date.now(),
-            canMirrorFromArkit: false,
-            cameraPosition,
+        await watchMirrorPublisher.publish(async () => {
+          if (!canMirrorFromArkit) return null;
+          const viewport = overlayLayout.current;
+          if (!viewport || viewport.width <= 0 || viewport.height <= 0) return null;
+          const overlay = await captureWatchMirrorOverlay(watchMirrorSvgRef.current, viewport, WATCH_MIRROR_MAX_WIDTH);
+          const snapshot = await BodyTracker.getCurrentFrameSnapshot({
+            maxWidth: WATCH_MIRROR_MAX_WIDTH,
+            quality: WATCH_MIRROR_AR_QUALITY,
+            viewportWidth: viewport.width,
+            viewportHeight: viewport.height,
+            overlay,
           });
-          return;
-        }
-
-        const arkitSnapshot = await BodyTracker.getCurrentFrameSnapshot({
-          maxWidth: WATCH_MIRROR_MAX_WIDTH,
-          quality: WATCH_MIRROR_AR_QUALITY,
-        });
-        if (!arkitSnapshot?.frame) {
-          return;
-        }
-        base64 = arkitSnapshot.frame;
-        width = arkitSnapshot.width;
-        height = arkitSnapshot.height;
-        orientation = arkitSnapshot.orientation;
-        mirrored = arkitSnapshot.mirrored;
-
-        if (!base64) {
-          logTrackingDebug('watch-mirror-branch', {
+          if (!snapshot?.frame) return null;
+          logTrackingDebug('watch-mirror-orientation', {
             ts: Date.now(),
             canMirrorFromArkit: true,
-            hasFrame: false,
+            hasFrame: true,
+            orientation: snapshot.orientation ?? null,
+            mirrored: snapshot.mirrored ?? null,
             cameraPosition,
           });
-          return;
-        }
-
-        logTrackingDebug('watch-mirror-orientation', {
-          ts: Date.now(),
-          canMirrorFromArkit: true,
-          hasFrame: true,
-          orientation: orientation ?? null,
-          mirrored: mirrored ?? null,
-          cameraPosition,
-        });
-
-        sendMessage({
-          type: 'mirror',
-          frame: base64,
-          width,
-          height,
-          orientation,
-          mirrored,
-          cameraPosition,
-          ts: Date.now(),
-        });
+          return { ...snapshot, cameraPosition };
+        }, sendMessage);
       } catch (error) {
         if (DEV) warnWithTs('[ScanARKit] Watch mirror snapshot failed', error);
-      } finally {
-        watchMirrorInFlightRef.current = false;
       }
-    }, [cameraPosition, canMirrorFromArkit, DEV, logTrackingDebug]);
+    }, [cameraPosition, canMirrorFromArkit, DEV, logTrackingDebug, watchMirrorPublisher]);
 
     useEffect(() => {
       if (Platform.OS !== 'ios') {
@@ -2583,7 +2607,9 @@ export default function ScanARKitScreen() {
       };
     }, [DEV]);
 
-    useEffect(() => {
+    // Exercise changes invalidate captures of the previous exercise's overlay.
+    React.useLayoutEffect(() => {
+      watchMirrorPublisher.setActive(watchMirrorActive);
       if (!watchMirrorActive) {
         if (watchMirrorTimerRef.current) {
           clearInterval(watchMirrorTimerRef.current);
@@ -2593,12 +2619,7 @@ export default function ScanARKitScreen() {
       }
 
       const tick = () => {
-        // Skip the mirror snapshot while the user is resting between reps —
-        // the watch already shows the last frame, and capturing another is
-        // pure battery waste during idle/setup phases.
-        if (activePhaseRef.current === restPhaseRef.current) {
-          return;
-        }
+        // Setup/rest is when the user checks framing from the Watch.
         captureAndSendWatchMirror();
       };
 
@@ -2606,12 +2627,13 @@ export default function ScanARKitScreen() {
       watchMirrorTimerRef.current = setInterval(tick, WATCH_MIRROR_INTERVAL_MS);
 
       return () => {
+        watchMirrorPublisher.setActive(false);
         if (watchMirrorTimerRef.current) {
           clearInterval(watchMirrorTimerRef.current);
           watchMirrorTimerRef.current = null;
         }
       };
-    }, [watchMirrorActive, captureAndSendWatchMirror]);
+    }, [watchMirrorActive, captureAndSendWatchMirror, watchMirrorPublisher, detectionMode]);
 
     // Watch Connectivity: Listen for commands
     //
@@ -2655,33 +2677,39 @@ export default function ScanARKitScreen() {
 
     // Watch Connectivity: Sync state
     useEffect(() => {
-      if (Platform.OS !== 'ios') {
+      // Scope invalidation: do not dedupe a newly focused/available scan or
+      // exercise against the previous one. Keep timestamp ordering across
+      // scopes. No retained snapshot or trailing callback survives cleanup.
+      return () => {
+        watchTrackingPublicationRef.current = { ...watchTrackingPublicationRef.current, lastSubmission: null };
+      };
+    }, [detectionMode, isScreenFocused, watchInstalled, watchPaired]);
+
+    useEffect(() => {
+      if (Platform.OS !== 'ios' || !isScreenFocused) {
         return;
       }
       if (!watchPaired || !watchInstalled) {
         return;
       }
 
-	      const now = Date.now();
-	      if (now - watchTrackingPublishAtRef.current < 250) {
-	        return;
-	      }
+      const now = Date.now();
 
-	      const reps = repCount;
-	      const phase = activePhase;
-	      const metrics = activeWorkoutDef.ui?.buildWatchMetrics(activeMetrics as never) ?? {};
-	      const confidence = lastTrackingQualityRef.current;
-	      const partialBadge = livePullupPartialStatus?.visibility_badge;
-	      const isDegraded = partialBadge != null && partialBadge !== 'full';
-	      const quality =
-	        typeof confidence === 'number'
-	          ? { trackingConfidence: confidence, isDegraded, degradationReason: isDegraded ? partialBadge : undefined }
-	          : undefined;
+      const reps = repCount;
+      const phase = activePhase;
+      const metrics = activeWorkoutDef.ui?.buildWatchMetrics(activeMetrics as never) ?? {};
+      const confidence = lastTrackingQualityRef.current;
+      const partialBadge = livePullupPartialStatus?.visibility_badge;
+      const isDegraded = partialBadge != null && partialBadge !== 'full';
+      const quality =
+        typeof confidence === 'number'
+          ? { trackingConfidence: confidence, isDegraded, degradationReason: isDegraded ? partialBadge : undefined }
+          : undefined;
 
-	      const payload = buildWatchTrackingPayload({
-	        now,
-	        isTracking: !!isTracking,
-	        mode: detectionMode,
+      const snapshot = buildWatchTrackingPayload({
+        now,
+        isTracking: !!isTracking,
+        mode: detectionMode,
         phase,
         reps,
         primaryCue: primaryCue ?? null,
@@ -2689,14 +2717,12 @@ export default function ScanARKitScreen() {
         quality,
       });
 
-      const signature = JSON.stringify(payload.tracking);
-      if (signature === watchTrackingSignatureRef.current) {
-        return;
-      }
+      const { state, payload } = planWatchTrackingPublication(watchTrackingPublicationRef.current, snapshot);
+      watchTrackingPublicationRef.current = state;
+      if (!payload) return;
 
-      watchTrackingSignatureRef.current = signature;
-      watchTrackingPublishAtRef.current = now;
-
+      // Local submissions only, not delivery acknowledgements. In particular,
+      // application context must still be submitted when the Watch is unreachable.
       sendMessage(payload);
       updateWatchContext(payload);
 	    }, [
@@ -2704,6 +2730,7 @@ export default function ScanARKitScreen() {
 	      activeMetrics,
 	      activeWorkoutDef,
 	      detectionMode,
+          isScreenFocused,
 	      isTracking,
 	      livePullupPartialStatus,
 	      primaryCue,
@@ -2781,48 +2808,6 @@ export default function ScanARKitScreen() {
       setUploadRetryPayload(null);
     }, []);
 
-    const autoUploadAnalysisVideo = useCallback(async (payload: { uri: string; exercise: string; metrics: ClipUploadMetrics }) => {
-      try {
-        const uploadAllowed = await shouldUploadVideo();
-        if (!uploadAllowed) {
-          warnWithTs('[ScanARKit] Auto upload skipped: video consent disabled', {
-            exercise: payload.exercise,
-            uri: payload.uri,
-          });
-          return;
-        }
-
-        const info = await FileSystem.getInfoAsync(payload.uri);
-        if (!info.exists) {
-          warnWithTs('[ScanARKit] Auto upload skipped: recording file missing', { uri: payload.uri });
-          return;
-        }
-        if (info.size && info.size > MAX_UPLOAD_BYTES) {
-          warnWithTs('[ScanARKit] Auto upload skipped: file exceeds max size', {
-            size: info.size,
-            max: MAX_UPLOAD_BYTES,
-          });
-          return;
-        }
-
-        logWithTs('[ScanARKit] Auto analysis upload starting', {
-          exercise: payload.exercise,
-          sizeBytes: info.size ?? null,
-        });
-
-        await uploadWorkoutVideo({
-          fileUri: payload.uri,
-          exercise: payload.exercise,
-          metrics: payload.metrics,
-          analysisOnly: true,
-        });
-
-        logWithTs('[ScanARKit] Auto analysis upload succeeded', { exercise: payload.exercise });
-      } catch (error) {
-        warnWithTs('[ScanARKit] Auto analysis upload failed', error);
-      }
-    }, []);
-
     const saveRecordingToCameraRoll = useCallback(async (uri: string) => {
       if (Platform.OS === 'web') return false;
       const hasAccess = await ensureMediaLibraryPermission();
@@ -2870,6 +2855,9 @@ export default function ScanARKitScreen() {
       }
       try {
         if (DEV) logWithTs('[ScanARKit] Starting recording...');
+        pendingRecordAfterTrackingRef.current = false;
+        setRecordingStartStatus('idle');
+        setShowCameraGuide(false);
         setPreviewError(null);
         recordingActiveRef.current = true;
         recordingStartAtRef.current = new Date().toISOString();
@@ -2886,6 +2874,32 @@ export default function ScanARKitScreen() {
         Alert.alert('Recording error', error instanceof Error ? error.message : 'Could not start recording.');
       }
     }, [DEV, fixturePlaybackEnabled, isRecording, isFinalizingRecording, isTracking, recordPreview, recordingQuality, repCount]);
+
+  useEffect(() => {
+    if (!pendingRecordAfterTrackingRef.current) {
+      return;
+    }
+    if (isRecording || isFinalizingRecording) {
+      pendingRecordAfterTrackingRef.current = false;
+      setRecordingStartStatus('idle');
+      return;
+    }
+    if (recordPreview) {
+      pendingRecordAfterTrackingRef.current = false;
+      setRecordingStartStatus('idle');
+      return;
+    }
+    if (!isTracking) {
+      return;
+    }
+    if (!jointAngles) {
+      setRecordingStartStatus('waiting-for-skeleton');
+      return;
+    }
+    pendingRecordAfterTrackingRef.current = false;
+    setRecordingStartStatus('idle');
+    void startRecordingVideo();
+  }, [isFinalizingRecording, isRecording, isTracking, jointAngles, recordPreview, startRecordingVideo]);
 
   const stopRecordingVideo = useCallback(async () => {
     if (!isRecording || recordingStopInFlightRef.current) return;
@@ -2918,11 +2932,6 @@ export default function ScanARKitScreen() {
           });
           setPreviewError(null);
           setIsPreviewVisible(true);
-          void autoUploadAnalysisVideo({
-            uri,
-            exercise: activeWorkoutDef.displayName,
-            metrics: metricsSnapshot,
-          });
         } else {
           Alert.alert('Recording', 'No video file was generated.');
         }
@@ -2941,8 +2950,71 @@ export default function ScanARKitScreen() {
     recordingQuality,
     repCount,
     activeWorkoutDef.displayName,
-    autoUploadAnalysisVideo,
   ]);
+
+  const handleRecordSetPress = useCallback(async () => {
+    if (isFinalizingRecording) return;
+    if (isRecording) {
+      await stopRecordingVideo();
+      return;
+    }
+    if (recordPreview || fixturePlaybackEnabled || Platform.OS !== 'ios') {
+      await startRecordingVideo();
+      return;
+    }
+    setShowCameraGuide(false);
+    if (!isTracking) {
+      pendingRecordAfterTrackingRef.current = true;
+      setRecordingStartStatus('starting-camera');
+      showToast('Starting camera — recording will begin when your skeleton appears.', {
+        type: 'info',
+      });
+      const started = await startTracking();
+      if (!started) {
+        pendingRecordAfterTrackingRef.current = true;
+        resumeTrackingAfterPermissionGrantRef.current = true;
+        setRecordingStartStatus('starting-camera');
+        showToast('Camera needs permission. Grant access and we’ll keep starting your set.', {
+          type: 'error',
+        });
+        return;
+      }
+      if (!jointAngles) {
+        setRecordingStartStatus('waiting-for-skeleton');
+      }
+      return;
+    }
+    if (!jointAngles) {
+      pendingRecordAfterTrackingRef.current = true;
+      setRecordingStartStatus('waiting-for-skeleton');
+      showToast('Step fully into frame — recording will start as soon as we see your skeleton.', {
+        type: 'info',
+      });
+      return;
+    }
+    await startRecordingVideo();
+  }, [
+    fixturePlaybackEnabled,
+    isFinalizingRecording,
+    isRecording,
+    isTracking,
+    jointAngles,
+    recordPreview,
+    showToast,
+    startRecordingVideo,
+    startTracking,
+    stopRecordingVideo,
+  ]);
+
+  const handleCameraPermissionResume = useCallback(() => {
+    if (!resumeTrackingAfterPermissionGrantRef.current) {
+      return;
+    }
+    if (pendingRecordAfterTrackingRef.current) {
+      setRecordingStartStatus('starting-camera');
+    }
+    void startTracking();
+  }, [startTracking]);
 
   useEffect(() => {
     if (!gestureRecordingEnabled || isRecording || isFinalizingRecording) {
@@ -3008,16 +3080,81 @@ export default function ScanARKitScreen() {
   ]);
 
   const handlePreSetPreviewCheck = useCallback(async () => {
+    if (!isTracking) {
+      showToast(detectionMode === 'dumbbell_curl'
+        ? 'Starting camera — keep your arms and hips in frame, then check your stance.'
+        : 'Starting camera — step fully into frame, then run stance check again.', {
+        type: 'info',
+      });
+      await startTracking();
+      return;
+    }
+
+    if (!jointAngles) {
+      showToast(detectionMode === 'dumbbell_curl'
+        ? 'Keep your shoulders, elbows, hands, and hips in frame. Knees are not needed for curls.'
+        : 'Step fully into frame so we can see your joints first.', {
+        type: 'info',
+      });
+      return;
+    }
+
+    preSetPreview.reset();
     setPreSetPreviewVisible(true);
     const snapshot = await BodyTracker.getCurrentFrameSnapshot({
       maxWidth: WATCH_MIRROR_MAX_WIDTH,
       quality: WATCH_MIRROR_AR_QUALITY,
     });
-    if (!snapshot || !jointAngles) {
+    if (!snapshot) {
+      setPreSetPreviewVisible(false);
+      showToast('Could not grab a camera frame yet — keep the phone steady and try again.', {
+        type: 'error',
+      });
       return;
     }
     await preSetPreview.check(snapshot, activeWorkoutDef.displayName, jointAngles);
-  }, [activeWorkoutDef.displayName, jointAngles, preSetPreview]);
+  }, [activeWorkoutDef.displayName, detectionMode, isTracking, jointAngles, preSetPreview, showToast, startTracking]);
+
+  const handleStartSetFromPreview = useCallback(async () => {
+    setPreSetPreviewVisible(false);
+    preSetPreview.reset();
+    if (!isTracking) {
+      pendingRecordAfterTrackingRef.current = true;
+      setRecordingStartStatus('starting-camera');
+      showToast('Camera starting — recording will begin when your skeleton appears.', {
+        type: 'info',
+      });
+      await startTracking();
+      return;
+    }
+    if (!jointAngles) {
+      pendingRecordAfterTrackingRef.current = true;
+      setRecordingStartStatus('waiting-for-skeleton');
+      showToast(detectionMode === 'dumbbell_curl'
+        ? 'Keep your arms and hips in frame — recording will begin when they are tracked.'
+        : 'Step fully into frame — recording will begin as soon as we see your skeleton.', {
+        type: 'info',
+      });
+      return;
+    }
+    await startRecordingVideo();
+  }, [detectionMode, isTracking, jointAngles, preSetPreview, showToast, startRecordingVideo, startTracking]);
+
+  const handleCheckLighting = useCallback(() => {
+    setShowCameraGuide(true);
+    Alert.alert(
+      'Improve tracking signal',
+      detectionMode === 'dumbbell_curl'
+        ? 'Keep your shoulders, elbows, hands, and hips in frame. Knees and feet can stay outside the frame. Face the strongest light source.'
+        : 'Put the phone 6–8 feet back at hip height, keep your full body in frame, and face the strongest light source before the next set.',
+    );
+  }, [detectionMode]);
+
+  const handleDismissPartialTrackingBanner = useCallback(() => {
+    setPartialTrackingBannerDismissedUntilMs(Date.now() + 5000);
+    partialWarningVisibleRef.current = false;
+    setShowPartialTrackingBadge(false);
+  }, []);
 
   const handleDiscardRecording = useCallback(async () => {
     if (uploading || savingRecording) return;
@@ -3026,10 +3163,20 @@ export default function ScanARKitScreen() {
       return;
     }
     await cleanupLocalRecording(recordPreview.uri);
+    setUploadRetryPayload(null);
+    lastUploadPayloadRef.current = null;
     setRecordPreview(null);
     setPreviewError(null);
     setIsPreviewVisible(false);
   }, [recordPreview, cleanupLocalRecording, uploading, savingRecording]);
+
+  const confirmDiscardRecording = useCallback(() => {
+    if (uploading || savingRecording) return;
+    Alert.alert('Delete local recording?', 'This removes the video from this device without publishing it.', [
+      { text: 'Keep reviewing', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => { void handleDiscardRecording(); } },
+    ]);
+  }, [handleDiscardRecording, uploading, savingRecording]);
 
   const handleReacquireSubject = useCallback(() => {
     BodyTracker.resetSubjectLock();
@@ -3061,6 +3208,8 @@ export default function ScanARKitScreen() {
         Alert.alert('Saved', message);
       }
       await cleanupLocalRecording(recordPreview.uri);
+      setUploadRetryPayload(null);
+      lastUploadPayloadRef.current = null;
       setRecordPreview(null);
       setPreviewError(null);
       setIsPreviewVisible(false);
@@ -3093,6 +3242,8 @@ export default function ScanARKitScreen() {
           Alert.alert('Published', message);
         }
         await cleanupLocalRecording(recordPreview.uri);
+        setUploadRetryPayload(null);
+        lastUploadPayloadRef.current = null;
         setRecordPreview(null);
         setPreviewError(null);
         setIsPreviewVisible(false);
@@ -3237,13 +3388,16 @@ export default function ScanARKitScreen() {
   const shouldShowPartialTrackingBadge =
     detectionMode === 'pullup' &&
     (isTracking || fixturePlaybackEnabled) &&
-    showPartialTrackingBadge &&
-    effectivePartialStatus?.visibility_badge === 'partial';
+    showPartialTrackingBadge;
+  const shouldShowTrackingLossBanner = arOverlaysV2 && shouldShowPartialTrackingBadge;
+  const shouldShowLegacyPartialTrackingBadge = !arOverlaysV2 && shouldShowPartialTrackingBadge;
   const missingComponentSet = new Set(effectivePartialStatus?.missing_components ?? []);
   const partialTrackingComponents = PULLUP_COMPONENT_INDICATORS.map((item) => ({
     ...item,
     missing: missingComponentSet.has(item.key),
   }));
+  const liveCue = primaryCue ? classifyCue(primaryCue) : null;
+  const showReadinessGuide = !isTracking;
   const baselineMetricsSnapshot = baselineDebugMetricsRef.current;
   const debugCueFlipRate =
     baselineMetricsSnapshot.cueSamples > 0
@@ -3266,7 +3420,7 @@ export default function ScanARKitScreen() {
             style={styles.topBarButton}
             onPress={handleCloseScan}
             accessibilityRole="button"
-            accessibilityLabel="Close scan"
+            accessibilityLabel="Close analysis and return to Form"
           >
             <Ionicons name="close" size={24} color="#F5F7FF" />
           </TouchableOpacity>
@@ -3279,7 +3433,7 @@ export default function ScanARKitScreen() {
                 onPress={() => setIsDropdownOpen(!isDropdownOpen)}
               >
                 <Ionicons
-                  name={(activeWorkoutDef.ui?.iconName ?? 'barbell-outline') as any}
+                  name={toIoniconName(activeWorkoutDef.ui?.iconName)}
                   size={16}
                   color="#F5F7FF"
                 />
@@ -3358,7 +3512,10 @@ export default function ScanARKitScreen() {
           zIndex: 130,
         }}
       >
-        <CameraPermissionBanner testID="scan-arkit-camera-permission-banner" />
+        <CameraPermissionBanner
+          onResume={handleCameraPermissionResume}
+          testID="scan-arkit-camera-permission-banner"
+        />
       </View>
 
       {/* Tracking view */}
@@ -3379,7 +3536,7 @@ export default function ScanARKitScreen() {
         <View
           style={[styles.overlay, { zIndex: 100 }]}
           pointerEvents={isTracking ? 'none' : 'auto'}
-          onStartShouldSetResponder={() => !isTracking}
+          onStartShouldSetResponder={() => false}
           onLayout={handleOverlayLayout}
         >
 
@@ -3414,10 +3571,10 @@ export default function ScanARKitScreen() {
           {!showTelemetry && (
             <Animated.View style={[styles.topGuide, { top: topBarBottom + 16, opacity: textOpacity }]}>
               <Text style={styles.guideText}>
-                {isTracking ? 'Tracking Active' : 'Press Start to Begin'}
+                {isTracking ? 'Tracking Active' : 'Ready when you are'}
               </Text>
               <Text style={styles.guideSubtext}>
-                Real-world 3D joint tracking • {fps} FPS
+                Tap Record Set once — we’ll start the camera, wait for your skeleton, then record.
               </Text>
               {pose && (
                 <View style={styles.qualityIndicator}>
@@ -3427,116 +3584,43 @@ export default function ScanARKitScreen() {
             </Animated.View>
           )}
 
+          {showReadinessGuide ? (
+            <View style={[styles.onboardingSlot, { top: topBarBottom + 92 }]}>
+              {showCameraGuide ? (
+                <ExerciseCameraGuide
+                  exerciseKey={detectionMode}
+                  style={styles.cameraGuideCard}
+                  onDismiss={() => setShowCameraGuide(false)}
+                />
+              ) : null}
+              <View style={styles.readinessCard}>
+                <Text style={styles.readinessEyebrow}>Before you record</Text>
+                <Text style={styles.readinessTitle}>Record handles camera startup.</Text>
+                <Text style={styles.readinessBody}>
+                  Tap Record Set once. We’ll bring the camera online, wait for your skeleton, then begin recording without making you tap Start Camera first.
+                </Text>
+                <TouchableOpacity
+                  style={styles.readinessAction}
+                  onPress={handlePreSetPreviewCheck}
+                  accessibilityRole="button"
+                  accessibilityLabel="Check stance"
+                >
+                  <Ionicons name="sparkles-outline" size={14} color="#0B1F3A" />
+                  <Text style={styles.readinessActionText}>Check stance</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
+
           {/* Skeleton Overlay (2D projected) */}
-        {isTracking && cameraPosition === 'back' && smoothedPose2DJoints && smoothedPose2DJoints.length > 0 && (
-            <Svg
-              style={styles.fullFill}
-              viewBox="0 0 1 1"
-            preserveAspectRatio="none"
-            pointerEvents="none"
-            >
-              {(() => {
-                // Pull joints from the ref so per-frame pose updates paint
-                // the skeleton without needing a state bump. The outer gate
-                // above only flips when badge visibility changes.
-                const liveJoints = smoothedPose2DRef.current ?? smoothedPose2DJoints;
-                const jointsByName = new Map<string, Joint2D>();
-                liveJoints.forEach((joint) => {
-                  jointsByName.set(joint.name.toLowerCase(), joint);
-                });
-
-                const findJoint2D = (name: string) => {
-                  const lower = name.toLowerCase();
-                  const direct = jointsByName.get(lower);
-                  if (direct?.isTracked) return direct;
-
-                  // Strict alias fallback -- no substring matching
-                  const aliases = SKELETON_JOINT_ALIASES[lower];
-                  if (aliases) {
-                    for (const alias of aliases) {
-                      const j = jointsByName.get(alias);
-                      if (j?.isTracked) return j;
-                    }
-                  }
-                  return undefined;
-                };
-
-                const drawLine = (from: string, to: string, color: string = '#4C8CFF') => {
-                  const j1 = findJoint2D(from);
-                  const j2 = findJoint2D(to);
-                  if (j1 && j2 && j1.isTracked && j2.isTracked) {
-                    const x1 = j1.x;
-                    const y1 = j1.y;
-                    const x2 = j2.x;
-                    const y2 = j2.y;
-
-                    return (
-                      <Line
-                        key={`${from}-${to}`}
-                        x1={x1}
-                        y1={y1}
-                        x2={x2}
-                        y2={y2}
-                        stroke={color}
-                        strokeWidth="0.004"
-                        strokeLinecap="round"
-                        strokeOpacity={0.9}
-                      />
-                    );
-                  }
-                  return null;
-                };
-
-                return (
-                  <>
-                    {/* Spine */}
-                    {drawLine('hips_joint', 'spine_4_joint')}
-                    {drawLine('spine_4_joint', 'neck_1_joint')}
-                    {drawLine('neck_1_joint', 'head_joint')}
-
-                    {/* Left arm */}
-                    {drawLine('neck_1_joint', 'left_shoulder_1_joint', '#3CC8A9')}
-                    {drawLine('left_shoulder_1_joint', 'left_arm_joint', '#3CC8A9')}
-                    {drawLine('left_arm_joint', 'left_forearm_joint', '#3CC8A9')}
-                    {drawLine('left_forearm_joint', 'left_hand_joint', '#3CC8A9')}
-
-                    {/* Right arm */}
-                    {drawLine('neck_1_joint', 'right_shoulder_1_joint', '#3CC8A9')}
-                    {drawLine('right_shoulder_1_joint', 'right_arm_joint', '#3CC8A9')}
-                    {drawLine('right_arm_joint', 'right_forearm_joint', '#3CC8A9')}
-                    {drawLine('right_forearm_joint', 'right_hand_joint', '#3CC8A9')}
-
-                    {/* Left leg */}
-                    {drawLine('hips_joint', 'left_upLeg_joint', '#9B7EDE')}
-                    {drawLine('left_upLeg_joint', 'left_leg_joint', '#9B7EDE')}
-                    {drawLine('left_leg_joint', 'left_foot_joint', '#9B7EDE')}
-
-                    {/* Right leg */}
-                    {drawLine('hips_joint', 'right_upLeg_joint', '#9B7EDE')}
-                    {drawLine('right_upLeg_joint', 'right_leg_joint', '#9B7EDE')}
-                    {drawLine('right_leg_joint', 'right_foot_joint', '#9B7EDE')}
-                  </>
-                );
-              })()}
-
-              {/* Draw joints — read from the same ref for consistency */}
-              {(smoothedPose2DRef.current ?? smoothedPose2DJoints).map(
-                (joint: Joint2D, index: number) => {
-                  if (!joint.isTracked) return null;
-                  return (
-                      <Circle
-                        key={`joint-${index}-${joint.name}`}
-                        cx={joint.x}
-                        cy={joint.y}
-                        r="0.006"
-                        fill="#FFFFFF"
-                        opacity={0.9}
-                      />
-                  );
-                }
-              )}
-            </Svg>
-          )}
+          <SkeletonOverlay
+            ref={watchMirrorSvgRef}
+            pose={pose2D}
+            enabled={isTracking && cameraPosition === 'back'}
+            mode={detectionMode}
+            missingComponents={effectivePartialStatus?.missing_components}
+            style={styles.fullFill}
+          />
 
           {/*
            * =============================================================
@@ -3698,6 +3782,16 @@ export default function ScanARKitScreen() {
                   +{sustainedOcclusionHint.jointNames.length - 3} more
                 </Text>
               ) : null}
+              <TouchableOpacity
+                onPress={dismissSustainedOcclusion}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss occlusion warning"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={scanArV2Styles.bannerDismiss}
+                testID="scan-arkit-sustained-occlusion-dismiss"
+              >
+                <Ionicons name="close" size={14} color="#F5F7FF" />
+              </TouchableOpacity>
             </View>
           ) : null}
 
@@ -3736,62 +3830,115 @@ export default function ScanARKitScreen() {
 	          </View>
 	        )}
 
-        {/* Form feedback */}
-        {feedback && (
-          <View style={styles.feedbackContainer}>
-            {feedback.map((msg, idx) => (
-              <Text key={idx} style={styles.feedbackText}>
-                {msg}
-              </Text>
-            ))}
-          </View>
-        )}
+        {isTracking ? (
+          <>
+            <View style={[styles.fqiGaugeSlot, { top: topBarBottom + 8 }]}>
+              <FqiGauge
+                score={latestFqiScore}
+                size="sm"
+                accessibilityLabel={latestFqiScore === null ? 'Live form quality not measured yet' : `Live form quality ${Math.round(latestFqiScore)} out of 100`}
+                testID="scan-live-fqi-gauge"
+              />
+            </View>
+            <View style={[styles.trackingLossSlot, { top: topBarBottom + 82 }]}>
+              <TrackingLossBanner
+                visible={shouldShowTrackingLossBanner}
+                lostForMs={null}
+                title="Partial tracking"
+                subtitle="Step fully into frame so the next rep scores cleanly."
+                onDismiss={handleDismissPartialTrackingBanner}
+                onRecalibrate={handleReacquireSubject}
+                onCheckLighting={handleCheckLighting}
+              />
+            </View>
+            {trackingRecoveredPulseId !== null ? (
+              <View
+                key={`tracking-recovered-${trackingRecoveredPulseId}`}
+                style={[scanArV2Styles.recoveredPulse, { top: topBarBottom + 138 }]}
+                accessibilityRole="alert"
+                accessibilityLabel="Tracking recovered"
+              >
+                <Ionicons name="checkmark-circle" size={16} color="#0B1F3A" />
+                <Text style={scanArV2Styles.recoveredPulseText}>Tracking recovered</Text>
+              </View>
+            ) : null}
+            <View style={styles.feedbackContainer}>
+              <CueCard cue={liveCue} testID="scan-live-cue-card" />
+            </View>
+          </>
+        ) : null}
       </View>
 
       {/* Controls */}
       <View style={[styles.controls, { bottom: insets.bottom + 24 }]}>
-        {isTracking && (
-          <TouchableOpacity
-            style={[
-              styles.controlButton,
-              styles.recordButton,
-              isRecording && styles.recordButtonActive,
-              isFinalizingRecording && styles.recordButtonDisabled
-            ]}
-            onPress={() => {
-              if (isFinalizingRecording) return;
-              if (isRecording) {
-                stopRecordingVideo();
-              } else {
-                startRecordingVideo();
-              }
-            }}
-            disabled={isFinalizingRecording}
-          >
-            {isFinalizingRecording ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Ionicons
-                name={isRecording ? 'stop-circle' : 'radio-button-on'}
-                size={isRecording ? 22 : 20}
-                color="#FFFFFF"
-              />
-            )}
-            <Text style={styles.controlButtonText}>
-              {isFinalizingRecording ? 'Finalizing...' : isRecording ? 'Stop Recording' : 'Record Set'}
+        <View style={styles.recordingQualityDock}>
+          <View style={styles.recordingQualityHeader}>
+            <Text style={styles.recordingQualityLabel}>Recording quality</Text>
+            <Text style={styles.recordingQualityHint}>
+              {recordingQuality === 'high'
+                ? 'High detail · larger clips'
+                : recordingQuality === 'low'
+                  ? 'Small clips · less detail'
+                  : 'Balanced detail + size'}
             </Text>
-          </TouchableOpacity>
-        )}
-
-        {!isTracking && (
-           <TouchableOpacity
-             style={styles.controlButton}
-             onPress={startTracking}
-           >
-             <Ionicons name="play" size={24} color="#FFFFFF" />
-             <Text style={styles.controlButtonText}>Start Tracking</Text>
-           </TouchableOpacity>
-        )}
+          </View>
+          <View style={styles.qualityButtons}>
+            {(['low', 'medium', 'high'] as RecordingQuality[]).map((quality) => (
+              <TouchableOpacity
+                key={quality}
+                style={[
+                  styles.qualityButton,
+                  recordingQuality === quality && styles.qualityButtonActive,
+                  (isRecording || isFinalizingRecording) && styles.qualityButtonDisabled,
+                ]}
+                onPress={() => updateRecordingQuality(quality)}
+                disabled={isRecording || isFinalizingRecording}
+                accessibilityRole="button"
+                accessibilityLabel={`Set recording quality to ${QUALITY_LABELS[quality]}`}
+              >
+                <Text style={[
+                  styles.qualityButtonText,
+                  recordingQuality === quality && styles.qualityButtonTextActive,
+                ]}>
+                  {QUALITY_LABELS[quality]}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+        <TouchableOpacity
+          style={[
+            styles.controlButton,
+            styles.recordButton,
+            isRecording && styles.recordButtonActive,
+            isFinalizingRecording && styles.recordButtonDisabled,
+          ]}
+          onPress={handleRecordSetPress}
+          disabled={isFinalizingRecording}
+          accessibilityRole="button"
+          accessibilityLabel={isRecording ? 'Stop recording' : 'Record set'}
+        >
+          {isFinalizingRecording || recordingStartStatus !== 'idle' ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Ionicons
+              name={isRecording ? 'stop-circle' : 'radio-button-on'}
+              size={isRecording ? 22 : 20}
+              color="#FFFFFF"
+            />
+          )}
+          <Text style={styles.controlButtonText}>
+            {isFinalizingRecording
+              ? 'Finalizing...'
+              : isRecording
+                ? 'Stop Recording'
+                : recordingStartStatus === 'starting-camera'
+                  ? 'Starting Camera...'
+                  : recordingStartStatus === 'waiting-for-skeleton'
+                    ? 'Step Into Frame...'
+                    : 'Record Set'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Status badge */}
@@ -3816,7 +3963,7 @@ export default function ScanARKitScreen() {
         </View>
       )}
 
-      {shouldShowPartialTrackingBadge && (
+      {shouldShowLegacyPartialTrackingBadge && (
         <View style={[styles.partialTrackingBadge, { top: topBarBottom + 8 }]}> 
           <Text style={styles.partialTrackingBadgeText}>Partial tracking</Text>
           <View style={styles.partialTrackingComponentRow}>
@@ -3971,6 +4118,19 @@ export default function ScanARKitScreen() {
                 <Text style={styles.settingsLabel}>Debug stats</Text>
                 <Switch value={showDebugStats} onValueChange={setShowDebugStats} />
               </View>
+              {__DEV__ && (
+                <TouchableOpacity
+                  style={styles.settingsButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Exercise replay lab"
+                  onPress={() => {
+                    setIsSettingsVisible(false);
+                    router.push('/exercise-replay');
+                  }}
+                >
+                  <Text style={styles.settingsButtonText}>Exercise replay lab (local only)</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
@@ -3978,114 +4138,45 @@ export default function ScanARKitScreen() {
 
       <Modal
         visible={isPreviewVisible}
-        animationType="slide"
-        onRequestClose={handleDiscardRecording}
+        animationType="fade"
+        onRequestClose={confirmDiscardRecording}
         statusBarTranslucent
       >
-        <SafeAreaView style={styles.previewOverlay}>
-          <View style={styles.previewContent}>
-            <View style={styles.previewVideoWrap}>
-              {recordPreview?.uri ? (
-                <PreviewPlayer uri={recordPreview.uri} />
-              ) : (
-                <View style={styles.previewVideoPlaceholder}>
-                  <ActivityIndicator color="#FFFFFF" />
-                </View>
-              )}
-              <TouchableOpacity
-                style={[styles.previewCloseButton, { top: insets.top + spacing.sm }]}
-                onPress={handleDiscardRecording}
-                disabled={uploading || savingRecording}
-              >
-                <Ionicons name="close" size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.previewHeader}>
-              <Text style={styles.previewTitle}>Review</Text>
-              <View style={styles.previewExerciseBadge}>
-                <Text style={styles.previewExerciseBadgeText}>{recordPreview?.exercise ?? '--'}</Text>
-              </View>
-            </View>
-
-            <View style={styles.previewMetricsGrid}>
-              <View style={styles.previewMetricCard}>
-                <Text style={styles.previewMetaLabel}>Reps</Text>
-                <Text style={styles.previewMetaValue}>{previewReps}</Text>
-              </View>
-              <View style={styles.previewMetricCard}>
-                <Text style={styles.previewMetaLabel}>Form Score</Text>
-                <Text style={styles.previewMetaValue}>{previewFormScore}</Text>
-              </View>
-              <View style={styles.previewMetricCard}>
-                <Text style={styles.previewMetaLabel}>Duration</Text>
-                <Text style={styles.previewMetaValue}>{previewDuration}</Text>
-              </View>
-              <View style={styles.previewMetricCard}>
-                <Text style={styles.previewMetaLabel}>{previewPrimaryLabel}</Text>
-                <Text style={styles.previewMetaValue}>{previewPrimaryDisplay}</Text>
-              </View>
-              {previewSecondary.label !== '--' && (
-                <View style={styles.previewMetricCard}>
-                  <Text style={styles.previewMetaLabel}>{previewSecondary.label}</Text>
-                  <Text style={styles.previewMetaValue}>{previewSecondary.display}</Text>
-                </View>
-              )}
-              <View style={styles.previewMetricCard}>
-                <Text style={styles.previewMetaLabel}>Quality</Text>
-                <Text style={styles.previewMetaValue}>{previewQuality}</Text>
-              </View>
-              <View style={styles.previewMetricCard}>
-                <Text style={styles.previewMetaLabel}>Size</Text>
-                <Text style={styles.previewMetaValue}>{formatBytes(recordPreview?.sizeBytes)}</Text>
-              </View>
-            </View>
-
-            {previewError ? (
-              <Text style={styles.previewErrorText}>{previewError}</Text>
-            ) : null}
-
-            <View style={[styles.previewActions, { paddingBottom: insets.bottom + spacing.md }]}>
-              <TouchableOpacity
-                style={[styles.previewButton, styles.previewButtonPrimary]}
-                onPress={handlePublishRecording}
-                disabled={uploading || savingRecording}
-              >
-                {uploading || savingRecording ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={[styles.previewButtonText, styles.previewButtonTextPrimary]}>
-                    Publish + Save
-                  </Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.previewButton, styles.previewButtonSecondary]}
-                onPress={handleSaveOnlyRecording}
-                disabled={uploading || savingRecording}
-              >
-                {savingRecording && !uploading ? (
-                  <ActivityIndicator color="#0B1F3A" />
-                ) : (
-                  <Text style={[styles.previewButtonText, styles.previewButtonTextSecondary]}>
-                    Save only
-                  </Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.previewButton, styles.previewButtonGhost]}
-                onPress={handleDiscardRecording}
-                disabled={uploading || savingRecording}
-              >
-                <Text style={[styles.previewButtonText, styles.previewButtonTextGhost]}>
-                  Discard
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </SafeAreaView>
+        {isPreviewVisible && recordPreview?.uri ? (
+          <RecordingReview
+            uri={recordPreview.uri}
+            exercise={recordPreview.exercise}
+            reps={previewReps}
+            score={previewFormScore}
+            duration={previewDuration}
+            primaryLabel={previewPrimaryLabel}
+            primaryValue={previewPrimaryDisplay}
+            secondaryLabel={previewSecondary.label}
+            secondaryValue={previewSecondary.display}
+            quality={previewQuality}
+            size={formatBytes(recordPreview.sizeBytes)}
+            error={previewError}
+            uploading={uploading}
+            saving={savingRecording}
+            onPublish={handlePublishRecording}
+            onSave={handleSaveOnlyRecording}
+            onDiscard={confirmDiscardRecording}
+          />
+        ) : null}
       </Modal>
-      <PreSetPreviewCard visible={preSetPreviewVisible} isChecking={preSetPreview.isChecking} verdict={preSetPreview.verdict} error={preSetPreview.error} exerciseName={activeWorkoutDef.displayName} onRetry={handlePreSetPreviewCheck} onDismiss={() => { setPreSetPreviewVisible(false); preSetPreview.reset(); }} />
+      <PreSetPreviewCard
+        visible={preSetPreviewVisible}
+        isChecking={preSetPreview.isChecking}
+        verdict={preSetPreview.verdict}
+        error={preSetPreview.error}
+        exerciseName={activeWorkoutDef.displayName}
+        onStartSet={handleStartSetFromPreview}
+        onRetry={handlePreSetPreviewCheck}
+        onDismiss={() => {
+          setPreSetPreviewVisible(false);
+          preSetPreview.reset();
+        }}
+      />
       <ExitMidSessionSheet
         visible={isExitMidSessionSheetVisible}
         exerciseDisplayName={activeWorkoutDef.displayName}
@@ -4278,6 +4369,31 @@ const scanArV2Styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.16)',
     marginLeft: 6,
+  },
+  recoveredPulse: {
+    position: 'absolute',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(190, 242, 100, 0.8)',
+    backgroundColor: 'rgba(190, 242, 100, 0.92)',
+    shadowColor: '#000',
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+    zIndex: 170,
+  },
+  recoveredPulseText: {
+    color: '#0B1F3A',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   microToast: {
     position: 'absolute',

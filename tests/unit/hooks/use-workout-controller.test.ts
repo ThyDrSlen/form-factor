@@ -112,7 +112,7 @@ jest.mock('@/lib/workouts', () => ({
 }));
 
 // Import the hook AFTER all mocks are declared
-import { useWorkoutController } from '@/hooks/use-workout-controller';
+import { useWorkoutController } from '@/features/form-tracking/hooks/use-workout-controller';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -201,6 +201,15 @@ describe('useWorkoutController', () => {
   // =========================================================================
 
   describe('processFrame without phase change', () => {
+    it('uses supplied frame metrics for phase detection without recalculating', () => {
+      const { result } = renderHook(() => useWorkoutController('pullup' as any, defaultOptions()));
+      const angles = makeAngles(120);
+      const metrics = { ...fakeMetrics, avgElbow: 105 };
+      act(() => { result.current.processFrame(angles, undefined, { metrics }); });
+      expect(fakeWorkoutDef.calculateMetrics).not.toHaveBeenCalled();
+      expect(fakeWorkoutDef.getNextPhase).toHaveBeenCalledWith('idle', angles, metrics);
+    });
+
     it('calls calculateMetrics and getNextPhase but state remains stable', () => {
       const { result } = renderHook(() =>
         useWorkoutController('pullup' as any, defaultOptions())
@@ -1081,8 +1090,8 @@ describe('useWorkoutController', () => {
 
     it('isPendingRepsAtStopSignal discriminates the sentinel', () => {
       const { isPendingRepsAtStopSignal } = jest.requireActual<
-        typeof import('@/hooks/use-workout-controller')
-      >('@/hooks/use-workout-controller');
+        typeof import('@/features/form-tracking/hooks/use-workout-controller')
+      >('@/features/form-tracking/hooks/use-workout-controller');
       expect(isPendingRepsAtStopSignal({ code: 'PENDING_REPS_AT_STOP', count: 3 })).toBe(true);
       expect(isPendingRepsAtStopSignal(new Error('other'))).toBe(false);
       expect(isPendingRepsAtStopSignal(null)).toBe(false);

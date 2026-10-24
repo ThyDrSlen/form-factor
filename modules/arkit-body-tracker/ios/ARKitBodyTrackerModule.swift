@@ -114,6 +114,15 @@ fileprivate func recordingPreset(for quality: String?) -> RecordingPreset {
   }
 }
 
+// ARFrame.timestamp and CACurrentMediaTime use the host monotonic clock.
+enum WatchMirrorFrameFreshness {
+  static func accepts(timestamp: TimeInterval, now: TimeInterval) -> Bool {
+    guard timestamp.isFinite, now.isFinite, timestamp > 0 else { return false }
+    let age = now - timestamp
+    return age >= 0 && age < 1.5
+  }
+}
+
 public class ARKitBodyTrackerModule: Module {
   private var arSession: ARSession?
   fileprivate(set) var currentBodyAnchor: ARBodyAnchor?
@@ -217,11 +226,19 @@ public class ARKitBodyTrackerModule: Module {
     }
   }
 
-  private func makeSnapshotPayload(maxWidth: CGFloat, quality: CGFloat) -> [String: Any]? {
+  private func makeSnapshotPayload(maxWidth: CGFloat, quality: CGFloat, viewport: CGSize?, overlay: String?) -> [String: Any]? {
     let activeSession = self.arSession ?? ARKitBodyTrackerModule.sharedARView?.session
     guard let frame = activeSession?.currentFrame else {
       return nil
     }
+
+    // Only composited Watch snapshots have a viewport. Leave the raw
+    // pre-set camera-check path unchanged, including its acceptance policy.
+    let isFresh = {
+      viewport == nil || WatchMirrorFrameFreshness.accepts(
+        timestamp: frame.timestamp, now: CACurrentMediaTime())
+    }
+    guard isFresh() else { return nil }
 
     let ciImage = CIImage(cvPixelBuffer: frame.capturedImage)
     let oriented = ciImage.oriented(imageOrientation(for: ARKitBodyTrackerModule.sharedARView))
@@ -237,15 +254,43 @@ public class ARKitBodyTrackerModule: Module {
     }
 
     let clampedQuality = max(0.05, min(1.0, quality))
-    let image = UIImage(cgImage: cgImage)
+    var image = UIImage(cgImage: cgImage)
+    if let viewport = viewport, viewport.width > 0, viewport.height > 0 {
+      // Same aspect-fill crop as the ARView. The PNG is the rendered phone
+      // SVG, not a second skeleton inferred from raw/unsmoothed joints.
+      let size = CGSize(width: scaledImage.extent.width,
+                        height: scaledImage.extent.width * viewport.height / viewport.width)
+      let bounds = CGRect(origin: .zero, size: size)
+      let format = UIGraphicsImageRendererFormat()
+      format.scale = 1
+      format.opaque = true
+      var overlayImage: UIImage?
+      if let overlay = overlay {
+        guard let data = Data(base64Encoded: overlay), let decoded = UIImage(data: data) else { return nil }
+        overlayImage = decoded
+      }
+      let cameraImage = image
+      image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+        let scale = max(size.width / cameraImage.size.width, size.height / cameraImage.size.height)
+        let cameraSize = CGSize(width: cameraImage.size.width * scale, height: cameraImage.size.height * scale)
+        cameraImage.draw(in: CGRect(x: (size.width - cameraSize.width) / 2,
+                                    y: (size.height - cameraSize.height) / 2,
+                                    width: cameraSize.width, height: cameraSize.height))
+        if let overlayImage = overlayImage {
+          overlayImage.draw(in: bounds)
+        }
+      }
+    }
     guard let data = image.jpegData(compressionQuality: clampedQuality) else {
       return nil
     }
+    guard isFresh() else { return nil }
 
     return [
       "frame": data.base64EncodedString(),
-      "width": Int(scaledImage.extent.width),
-      "height": Int(scaledImage.extent.height),
+      "width": Int(image.size.width),
+      "height": Int(image.size.height),
+      "timestamp": frame.timestamp,
       "orientation": "up",
       "mirrored": false
     ]
@@ -549,6 +594,16 @@ public class ARKitBodyTrackerModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ARKitBodyTracker")
     
+    Function("getThermalState") { () -> String in
+      switch ProcessInfo.processInfo.thermalState {
+      case .nominal: return "nominal"
+      case .fair: return "fair"
+      case .serious: return "serious"
+      case .critical: return "critical"
+      @unknown default: return "nominal"
+      }
+    }
+
     // Check if ARBodyTrackingConfiguration is supported on this device
     Function("isSupported") { () -> Bool in
       let prefix = "[ARKit][isSupported]"
@@ -943,9 +998,16 @@ public class ARKitBodyTrackerModule: Module {
     AsyncFunction("getCurrentFrameSnapshot") { (options: [String: Any]?) -> [String: Any]? in
       let maxWidth = (options?["maxWidth"] as? Double) ?? 0
       let quality = (options?["quality"] as? Double) ?? 0.25
+      var viewport: CGSize?
+      if let width = options?["viewportWidth"] as? Double,
+         let height = options?["viewportHeight"] as? Double,
+         width.isFinite, height.isFinite, width > 0, height > 0 {
+        viewport = CGSize(width: width, height: height)
+      }
+      let overlay = options?["overlay"] as? String
 
       let snapshotBlock = {
-        self.makeSnapshotPayload(maxWidth: CGFloat(maxWidth), quality: CGFloat(quality))
+        self.makeSnapshotPayload(maxWidth: CGFloat(maxWidth), quality: CGFloat(quality), viewport: viewport, overlay: overlay)
       }
 
       if Thread.isMainThread {

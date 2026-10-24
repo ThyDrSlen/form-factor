@@ -21,24 +21,21 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import BottomSheet from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 
-import { sessionStyles as styles, colors } from '@/styles/workout-session.styles';
+import { sessionStyles as styles, colors } from '@/features/workouts/styles/workout-session.styles';
 import { useToast } from '@/contexts/ToastContext';
 import { useSessionRunner } from '@/lib/stores/session-runner';
 import type { GoalProfile, WorkoutSession, WorkoutSessionSet, SetType } from '@/lib/types/workout-session';
 
-import ExerciseCard from '@/components/workout/ExerciseCard';
-import TimerPill from '@/components/workout/TimerPill';
-import SessionMetaCard from '@/components/workout/SessionMetaCard';
-import SetActionSheet from '@/components/workout/SetActionSheet';
-import ExerciseActionSheet from '@/components/workout/ExerciseActionSheet';
-import RestTimerSheet from '@/components/workout/RestTimerSheet';
-import ExercisePicker from '@/components/workout/ExercisePicker';
-import SetNotesModal from '@/components/workout/SetNotesModal';
-import PostSessionSummaryCard, {
-  type PostSessionMetric,
-} from '@/components/form-tracking/PostSessionSummaryCard';
-import SessionPauseButton from '@/components/workout/SessionPauseButton';
-import SessionPausedOverlay from '@/components/workout/SessionPausedOverlay';
+import ExerciseCard from '@/features/workouts/components/ExerciseCard';
+import TimerPill from '@/features/workouts/components/TimerPill';
+import SessionMetaCard from '@/features/workouts/components/SessionMetaCard';
+import SetActionSheet from '@/features/workouts/components/SetActionSheet';
+import ExerciseActionSheet from '@/features/workouts/components/ExerciseActionSheet';
+import RestTimerSheet from '@/features/workouts/components/RestTimerSheet';
+import ExercisePicker from '@/features/workouts/components/ExercisePicker';
+import SetNotesModal from '@/features/workouts/components/SetNotesModal';
+import SessionPauseButton from '@/features/workouts/components/SessionPauseButton';
+import SessionPausedOverlay from '@/features/workouts/components/SessionPausedOverlay';
 
 const GOAL_PROFILES: GoalProfile[] = ['hypertrophy', 'strength', 'power', 'endurance', 'mixed'];
 
@@ -80,15 +77,29 @@ export default function WorkoutSessionScreen() {
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
   const [notesModalSetId, setNotesModalSetId] = useState<string | null>(null);
 
+  const initializingRef = useRef(false);
+  const initializedRef = useRef(false);
+  const [initializationError, setInitializationError] = useState(false);
   const initializeSession = useCallback(async () => {
-    await loadActiveSession();
-
-    const current = useSessionRunner.getState().activeSession;
-    if (!current) {
-      await startSession({
-        templateId: params.templateId,
-        goalProfile: parseGoalProfile(params.goalProfile),
-      });
+    if (initializingRef.current || initializedRef.current) return;
+    initializingRef.current = true;
+    setInitializationError(false);
+    try {
+      await loadActiveSession();
+      const current = useSessionRunner.getState();
+      if (current.error) throw new Error(current.error);
+      if (!current.activeSession) {
+        await startSession({
+          templateId: params.templateId,
+          goalProfile: parseGoalProfile(params.goalProfile),
+        });
+      }
+      if (!useSessionRunner.getState().activeSession) throw new Error('No active session');
+      initializedRef.current = true;
+    } catch {
+      setInitializationError(true);
+    } finally {
+      initializingRef.current = false;
     }
   }, [loadActiveSession, params.goalProfile, params.templateId, startSession]);
 
@@ -125,21 +136,45 @@ export default function WorkoutSessionScreen() {
     [activeSession],
   );
 
+  const finishingRef = useRef(false);
+  const confirmingRef = useRef(false);
+  const [isFinishing, setIsFinishing] = useState(false);
   const handleFinish = useCallback(() => {
-    Alert.alert('Finish Workout', 'Are you sure you want to finish this workout?', [
-      { text: 'Cancel', style: 'cancel' },
+    if (finishingRef.current || confirmingRef.current || !activeSession) return;
+    confirmingRef.current = true;
+    const sessionId = activeSession.id;
+    Alert.alert('Finish Workout', 'Save this workout and review your completed sets?', [
+      { text: 'Cancel', style: 'cancel', onPress: () => { confirmingRef.current = false; } },
       {
         text: 'Finish',
         style: 'default',
         onPress: async () => {
-          await finishSession();
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          showToast('Workout saved! 💪', { type: 'success' });
-          router.back();
+          confirmingRef.current = false;
+          if (finishingRef.current) return;
+          if (useSessionRunner.getState().activeSession?.id !== sessionId) {
+            showToast('The active workout changed. Reopen Finish for the current workout.', { type: 'error' });
+            return;
+          }
+          finishingRef.current = true;
+          setIsFinishing(true);
+          try {
+            await finishSession();
+            if (useSessionRunner.getState().activeSession?.id === sessionId) {
+              throw new Error('Session was not saved');
+            }
+          } catch {
+            finishingRef.current = false;
+            setIsFinishing(false);
+            showToast('Could not save workout. Your session is still open — tap Finish to retry.', { type: 'error' });
+            return;
+          }
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          showToast('Workout saved!', { type: 'success' });
+          router.replace(`/(modals)/session-history?sessionId=${encodeURIComponent(sessionId)}`);
         },
       },
-    ]);
-  }, [finishSession, router, showToast]);
+    ], { onDismiss: () => { confirmingRef.current = false; } });
+  }, [activeSession, finishSession, router, showToast]);
 
   const handleAddExercise = useCallback(() => {
     exercisePickerRef.current?.expand();
@@ -219,65 +254,28 @@ export default function WorkoutSessionScreen() {
     : '';
 
   // =========================================================================
-  // Post-session summary metrics (rendered once the session has ended)
-  // =========================================================================
-  const summaryData = React.useMemo(() => {
-    if (!activeSession?.ended_at) return null;
-
-    const allSets = Object.values(sets).flat();
-    const completedSets = allSets.filter((s) => s.completed_at);
-    const totalReps = completedSets.reduce(
-      (acc, s) => acc + (s.actual_reps ?? 0),
-      0,
-    );
-    const totalVolume = completedSets.reduce(
-      (acc, s) => acc + (s.actual_reps ?? 0) * (s.actual_weight ?? 0),
-      0,
-    );
-
-    const startedAtMs = new Date(activeSession.started_at).getTime();
-    const endedAtMs = new Date(activeSession.ended_at).getTime();
-    const durationMinutes = Math.max(0, Math.round((endedAtMs - startedAtMs) / 60000));
-    const durationLabel =
-      durationMinutes >= 60
-        ? `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`
-        : `${durationMinutes}m`;
-
-    const metrics: PostSessionMetric[] = [
-      { label: 'DURATION', value: durationLabel },
-      { label: 'SETS', value: String(completedSets.length) },
-      { label: 'REPS', value: String(totalReps) },
-      {
-        label: 'VOLUME',
-        value: totalVolume > 0 ? Math.round(totalVolume).toLocaleString() : '0',
-        hint: 'lb',
-      },
-    ];
-
-    return {
-      durationLabel,
-      metrics,
-      // FQI aggregation happens on the insights screen; leave null here
-      // until a session-level FQI stream is wired in.
-      averageFqi: null as number | null,
-    };
-  }, [activeSession, sets]);
-
-  const handleViewFullAnalysis = useCallback(() => {
-    router.push('/workout-insights');
-  }, [router]);
-
-  // =========================================================================
   // Render
   // =========================================================================
 
-  if (isLoading || !activeSession) {
+  if (isLoading || !activeSession || initializationError || isFinishing) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: colors.textSecondary, fontFamily: 'Lexend_400Regular' }}>
-            Starting your workout…
+          <Text accessibilityLiveRegion="polite" style={{ color: colors.textSecondary, fontFamily: 'Lexend_400Regular' }}>
+            {initializationError ? 'Could not open your workout. Please retry.' : isFinishing ? 'Saving workout…' : 'Opening your workout…'}
           </Text>
+          {initializationError ? (
+            <TouchableOpacity style={styles.addExerciseBtn} onPress={() => void initializeSession()}
+              accessibilityRole="button" accessibilityLabel="Retry opening workout">
+              <Text style={styles.addExerciseText}>Retry</Text>
+            </TouchableOpacity>
+          ) : null}
+          {!isFinishing ? (
+            <TouchableOpacity style={styles.addExerciseBtn} onPress={() => router.back()}
+              accessibilityRole="button" accessibilityLabel="Close workout">
+              <Text style={styles.addExerciseText}>Close</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </SafeAreaView>
     );
@@ -292,7 +290,9 @@ export default function WorkoutSessionScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <TouchableOpacity style={styles.finishButton} onPress={handleFinish}>
+            <TouchableOpacity style={styles.finishButton} onPress={handleFinish}
+              accessibilityRole="button" accessibilityLabel="Finish workout"
+              accessibilityState={{ disabled: isFinishing, busy: isFinishing }} disabled={isFinishing}>
               <Ionicons name="checkmark" size={24} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -320,18 +320,6 @@ export default function WorkoutSessionScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Post-session summary (only after session ends) */}
-          {summaryData ? (
-            <PostSessionSummaryCard
-              style={{ marginBottom: 16 }}
-              title={activeSession.name ?? 'Workout complete'}
-              durationLabel={summaryData.durationLabel}
-              averageFqi={summaryData.averageFqi}
-              metrics={summaryData.metrics}
-              onAnalyze={handleViewFullAnalysis}
-            />
-          ) : null}
-
           {/* Session Meta Card */}
           <SessionMetaCard
             session={activeSession}

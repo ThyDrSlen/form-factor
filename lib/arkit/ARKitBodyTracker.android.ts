@@ -57,6 +57,7 @@ export interface MediaPipePose2D {
 
 export interface FrameSnapshot {
   frame: string;
+  timestamp?: number;
   width?: number;
   height?: number;
   orientation?: string;
@@ -129,7 +130,7 @@ export class BodyTracker {
     return null;
   }
 
-  static async getCurrentFrameSnapshot(_options?: { maxWidth?: number; quality?: number }): Promise<FrameSnapshot | null> {
+  static async getCurrentFrameSnapshot(_options?: { maxWidth?: number; quality?: number; viewportWidth?: number; viewportHeight?: number; overlay?: string }): Promise<FrameSnapshot | null> {
     return null;
   }
 
@@ -161,7 +162,7 @@ export class BodyTracker {
     return undefined;
   }
 
-  static calculateAllAngles(_pose: BodyPose): JointAngles | null {
+  static calculateAllAngles(_pose: BodyPose, _workoutId?: string): JointAngles | null {
     return null;
   }
 

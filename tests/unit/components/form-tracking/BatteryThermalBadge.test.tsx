@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
-import { BatteryThermalBadge } from '@/components/form-tracking/BatteryThermalBadge';
+import { BatteryThermalBadge } from '@/features/form-tracking/components/BatteryThermalBadge';
 
 describe('<BatteryThermalBadge />', () => {
   it('renders nothing on normal badgeLevel', () => {

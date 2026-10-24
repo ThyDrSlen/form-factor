@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
-import { RecoveryFormCorrelationCard } from '@/components/form-home/RecoveryFormCorrelationCard';
+import { RecoveryFormCorrelationCard } from '@/features/form-tracking/components/home/RecoveryFormCorrelationCard';
 import type { RecoveryFormCorrelation } from '@/lib/services/form-recovery-correlator';
 
 function mkMetric(significance: 'low' | 'medium' | 'high', r = 0.5) {

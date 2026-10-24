@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import { ExerciseSwapSheet } from '@/components/form-tracking/ExerciseSwapSheet';
+import { ExerciseSwapSheet } from '@/features/form-tracking/components/ExerciseSwapSheet';
 
 describe('ExerciseSwapSheet', () => {
   it('shows the target name and both action buttons', () => {

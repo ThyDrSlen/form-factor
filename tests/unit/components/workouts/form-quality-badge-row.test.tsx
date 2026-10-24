@@ -20,7 +20,7 @@ jest.mock('moti', () => {
 });
 
 // eslint-disable-next-line import/first
-import { FormQualityBadgeRow } from '@/components/workouts/FormQualityBadgeRow';
+import { FormQualityBadgeRow } from '@/features/workouts/components/FormQualityBadgeRow';
 
 describe('FormQualityBadgeRow', () => {
   beforeEach(() => {

@@ -8,7 +8,6 @@
  *   - "Don't show again" suppresses globally
  */
 
-import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -16,8 +15,8 @@ jest.mock('@expo/vector-icons', () => ({
   Ionicons: () => null,
 }));
 
-import ExerciseCameraGuide from '@/components/form-tracking/ExerciseCameraGuide';
-import { useExerciseCameraGuide } from '@/hooks/use-exercise-camera-guide';
+import ExerciseCameraGuide from '@/features/form-tracking/components/ExerciseCameraGuide';
+import { useExerciseCameraGuide } from '@/features/form-tracking/hooks/use-exercise-camera-guide';
 import { renderHook } from '@testing-library/react-native';
 import {
   getAllPlacementGuides,
@@ -94,6 +93,25 @@ describe('useExerciseCameraGuide — dismiss round-trip', () => {
     const squat = renderHook(() => useExerciseCameraGuide('squat'));
     await waitFor(() => expect(squat.result.current.ready).toBe(true));
     expect(squat.result.current.visible).toBe(true);
+  });
+
+  it('hydrates again and stays hidden while prefs load when the exercise key changes', async () => {
+    await AsyncStorage.setItem('ff.cameraGuide.dismissed.squat', '1');
+    type HookProps = { exerciseKey: string };
+    const { result, rerender } = renderHook<ReturnType<typeof useExerciseCameraGuide>, HookProps>(
+      ({ exerciseKey }) => useExerciseCameraGuide(exerciseKey),
+      { initialProps: { exerciseKey: 'pullup' } },
+    );
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.visible).toBe(true);
+
+    rerender({ exerciseKey: 'squat' });
+
+    expect(result.current.ready).toBe(false);
+    expect(result.current.visible).toBe(false);
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.visible).toBe(false);
   });
 
   it('reset() clears the per-exercise dismiss and guide becomes visible again', async () => {

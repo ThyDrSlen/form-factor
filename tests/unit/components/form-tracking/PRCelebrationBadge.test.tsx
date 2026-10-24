@@ -14,7 +14,7 @@ import React from 'react';
 import { Platform } from 'react-native';
 import { act, render } from '@testing-library/react-native';
 import * as Haptics from 'expo-haptics';
-import PRCelebrationBadge from '@/components/form-tracking/PRCelebrationBadge';
+import PRCelebrationBadge from '@/features/form-tracking/components/PRCelebrationBadge';
 import type { PRResult } from '@/lib/services/pr-detector';
 
 jest.mock('expo-haptics', () => ({

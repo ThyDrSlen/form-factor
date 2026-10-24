@@ -2,7 +2,7 @@ import React from 'react';
 import { render } from '@testing-library/react-native';
 import LiveJointConfidenceBadge, {
   tierForConfidence,
-} from '@/components/form-tracking/LiveJointConfidenceBadge';
+} from '@/features/form-tracking/components/LiveJointConfidenceBadge';
 
 describe('tierForConfidence', () => {
   it('returns unknown for null or NaN confidence', () => {

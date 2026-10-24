@@ -10,7 +10,7 @@ jest.mock('moti', () => {
 });
 
 // eslint-disable-next-line import/first
-import CueCard, { classifyCue } from '../../../../components/form-tracking/CueCard';
+import CueCard, { classifyCue } from '../../../../features/form-tracking/components/CueCard';
 
 describe('CueCard', () => {
   it('renders nothing when no cue is supplied', () => {

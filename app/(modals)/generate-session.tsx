@@ -26,11 +26,11 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
 import { tabColors } from '@/styles/tabs/_tab-theme';
-import { sessionStyles } from '@/styles/workout-session.styles';
-import { useAuth } from '@/contexts/AuthContext';
+import { sessionStyles } from '@/features/workouts/styles/workout-session.styles';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { CrashBoundary } from '@/components/CrashBoundary';
-import { useSessionGenerator } from '@/hooks/use-session-generator';
+import { useSessionGenerator } from '@/features/coach/hooks/use-session-generator';
 import {
   getSessionFallback,
   withFallback,

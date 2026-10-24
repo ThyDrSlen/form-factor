@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 
-import { SessionCompareToLastCard } from '@/components/form-tracking/SessionCompareToLastCard';
+import { SessionCompareToLastCard } from '@/features/form-tracking/components/SessionCompareToLastCard';
 import type {
   ExerciseSessionSummary,
   SessionComparison,

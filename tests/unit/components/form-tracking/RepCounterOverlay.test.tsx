@@ -1,7 +1,7 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
 import Svg from 'react-native-svg';
-import { RepCounterOverlay, RepCounterAnnouncer } from '@/components/form-tracking/RepCounterOverlay';
+import { RepCounterOverlay, RepCounterAnnouncer } from '@/features/form-tracking/components/RepCounterOverlay';
 
 const renderInSvg = (ui: React.ReactElement) =>
   render(<Svg viewBox="0 0 1 1">{ui}</Svg>);

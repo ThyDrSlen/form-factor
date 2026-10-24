@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import ProgressionSuggestionBadge from '@/components/form-tracking/ProgressionSuggestionBadge';
+import ProgressionSuggestionBadge from '@/features/form-tracking/components/ProgressionSuggestionBadge';
 import type { Suggestion } from '@/lib/services/progression-suggester';
 
 function suggestion(overrides: Partial<Suggestion> = {}): Suggestion {
