@@ -1,9 +1,4 @@
-import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
-import type { RealtimeFormEngineOutput, RealtimeFormEngineState } from '@/lib/pose/realtime-form-engine';
-
 export type TrackingConfidenceTier = 'low' | 'medium' | 'high';
-
-export type TrackingPipelineMode = 'legacy' | 'new';
 
 export interface TrackingConfidenceThresholds {
   low: number;
@@ -30,21 +25,4 @@ export interface TrackingQualityConfig {
   N_CONSEC_FRAMES: number;
   REP_DETECTOR_THRESHOLDS: RepDetectorThresholds;
   CONFIDENCE_TIER_THRESHOLDS: TrackingConfidenceThresholds;
-}
-
-export interface TrackingPipelineFlags {
-  useNewTrackingPipeline: boolean;
-  mode: TrackingPipelineMode;
-}
-
-export interface TrackingQualityPipeline {
-  mode: TrackingPipelineMode;
-  createState: () => RealtimeFormEngineState;
-  processAngles: (input: {
-    state: RealtimeFormEngineState;
-    angles: JointAngles;
-    valid: Record<keyof JointAngles, boolean>;
-    timestampSec: number;
-    shadowMeanAbsDelta?: number | null;
-  }) => RealtimeFormEngineOutput;
 }

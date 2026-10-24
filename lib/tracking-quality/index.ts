@@ -1,10 +1,4 @@
 import {
-  createRealtimeFormEngineState,
-  processRealtimeAngles,
-  type RealtimeFormEngineOutput,
-  type RealtimeFormEngineState,
-} from '@/lib/pose/realtime-form-engine';
-import {
   CONFIDENCE_TIER_THRESHOLDS,
   EMA_ALPHA_ANGLE,
   EMA_ALPHA_COORD,
@@ -25,7 +19,6 @@ import {
   SubjectIdentityTracker,
   type SubjectIdentityOptions,
 } from './subject-identity';
-import type { TrackingPipelineFlags, TrackingPipelineMode, TrackingQualityPipeline } from './types';
 
 function parseBooleanFlag(value: string | undefined): boolean | null {
   if (value === undefined) {
@@ -41,41 +34,6 @@ function parseBooleanFlag(value: string | undefined): boolean | null {
   }
 
   return null;
-}
-
-function getDefaultUseNewTrackingPipeline(): boolean {
-  if (process.env.NODE_ENV === 'test') {
-    return true;
-  }
-
-  if (typeof __DEV__ === 'boolean') {
-    return __DEV__;
-  }
-
-  return false;
-}
-
-export function readUseNewTrackingPipelineFlag(): boolean {
-  const explicitValue =
-    process.env.EXPO_PUBLIC_USE_NEW_TRACKING_PIPELINE ?? process.env.USE_NEW_TRACKING_PIPELINE;
-  const parsed = parseBooleanFlag(explicitValue);
-  if (parsed !== null) {
-    return parsed;
-  }
-
-  return getDefaultUseNewTrackingPipeline();
-}
-
-export function resolveTrackingPipelineMode(): TrackingPipelineMode {
-  return readUseNewTrackingPipelineFlag() ? 'new' : 'legacy';
-}
-
-export function getTrackingPipelineFlags(): TrackingPipelineFlags {
-  const useNewTrackingPipeline = readUseNewTrackingPipelineFlag();
-  return {
-    useNewTrackingPipeline,
-    mode: useNewTrackingPipeline ? 'new' : 'legacy',
-  };
 }
 
 /**
@@ -105,8 +63,8 @@ export function readTrackingGuardsFlag(): boolean {
  * work entirely. Safe to call on every pipeline init.
  *
  * TODO(#451): wire these instances directly into the joint-processing
- * path. The current `processTrackingQualityAngles` entry point receives
- * derived angles rather than raw joints, so integration must happen at
+ * path. `processRealtimeAngles` receives derived angles rather than raw
+ * joints, so integration must happen at
  * the ARKit frame boundary (scan-arkit.tsx / use-workout-controller.ts)
  * where the joint map is still available. Until that integration lands,
  * call sites should instantiate via `createTrackingGuards()` themselves.
@@ -129,29 +87,6 @@ export function createTrackingGuards(options?: {
     enabled: true,
     human: new HumanValidationGuard(options?.human),
     subject: new SubjectIdentityTracker(options?.subject),
-  };
-}
-
-export function createTrackingQualityPipelineState(): RealtimeFormEngineState {
-  return createRealtimeFormEngineState();
-}
-
-export function processTrackingQualityAngles(input: {
-  state: RealtimeFormEngineState;
-  angles: Parameters<typeof processRealtimeAngles>[0]['angles'];
-  valid: Parameters<typeof processRealtimeAngles>[0]['valid'];
-  timestampSec: number;
-  shadowMeanAbsDelta?: number | null;
-  workoutId?: string;
-}): RealtimeFormEngineOutput {
-  return processRealtimeAngles(input);
-}
-
-export function getTrackingQualityPipeline(mode = resolveTrackingPipelineMode()): TrackingQualityPipeline {
-  return {
-    mode,
-    createState: createTrackingQualityPipelineState,
-    processAngles: processTrackingQualityAngles,
   };
 }
 
@@ -203,8 +138,5 @@ export type {
   RepDetectorThresholds,
   TrackingConfidenceThresholds,
   TrackingConfidenceTier,
-  TrackingPipelineFlags,
-  TrackingPipelineMode,
   TrackingQualityConfig,
-  TrackingQualityPipeline,
 } from './types';

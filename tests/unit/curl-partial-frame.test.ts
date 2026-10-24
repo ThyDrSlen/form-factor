@@ -1,6 +1,5 @@
 import { BodyTracker, type BodyPose, type Joint3D } from '@/lib/arkit/ARKitBodyTracker.ios';
 import { createRealtimeFormEngineState, processRealtimeAngles } from '@/lib/pose/realtime-form-engine';
-import { processTrackingQualityAngles } from '@/lib/tracking-quality';
 import { compareJointAngles } from '@/lib/pose/shadow-metrics';
 import { dumbbellCurlDefinition } from '@/lib/workouts/dumbbell-curl';
 import { jointsForWorkout } from '@/lib/pose/workout-joint-scope';
@@ -98,7 +97,7 @@ describe('curl tracking with legs outside the camera frame', () => {
     expect(BodyTracker.calculateAllAngles(upperBody())).toBeNull();
   });
 
-  test.each([processRealtimeAngles, processTrackingQualityAngles])(
+  test.each([processRealtimeAngles])(
     'quality pipeline %# ignores only irrelevant curl knee angles', (process) => {
       const input = { state: createRealtimeFormEngineState(), angles: sampleAngles,
         valid: upperBodyValidity, timestampSec: 1, workoutId: 'dumbbell_curl' };

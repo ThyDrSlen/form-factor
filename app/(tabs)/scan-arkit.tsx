@@ -99,10 +99,7 @@ import {
 import { createRealtimeFormEngineState, processRealtimeAngles } from '@/lib/pose/realtime-form-engine';
 import { jointsForWorkout } from '@/lib/pose/workout-joint-scope';
 import {
-  createTrackingQualityPipelineState,
   HIDE_N_FRAMES,
-  processTrackingQualityAngles,
-  readUseNewTrackingPipelineFlag,
   scorePullupWithComponentAvailability,
   SHOW_N_FRAMES,
   type PullupScoringResult,
@@ -382,16 +379,7 @@ export default function ScanARKitScreen() {
   const [fps, setFps] = useState(0);
   const textOpacity = React.useRef(new Animated.Value(1)).current;
   const frameStatsRef = React.useRef({ lastTimestamp: 0, frameCount: 0 });
-  const useNewTrackingPipeline = useMemo(() => readUseNewTrackingPipelineFlag(), []);
-  const createRealtimeEngineState = useMemo(
-    () => (useNewTrackingPipeline ? createTrackingQualityPipelineState : createRealtimeFormEngineState),
-    [useNewTrackingPipeline]
-  );
-  const processRealtimeEngineAngles = useMemo(
-    () => (useNewTrackingPipeline ? processTrackingQualityAngles : processRealtimeAngles),
-    [useNewTrackingPipeline]
-  );
-  const realtimeFormEngineRef = React.useRef(createRealtimeEngineState());
+  const realtimeFormEngineRef = React.useRef(createRealtimeFormEngineState());
   const jointAnglesStateRef = React.useRef<JointAngles | null>(null);
   const [repCount, setRepCount] = useState(0);
   const [detectionMode, setDetectionMode] = useState<DetectionMode>(DEFAULT_DETECTION_MODE);
@@ -1066,10 +1054,10 @@ export default function ScanARKitScreen() {
     shadowStatsPerRepRef.current = createShadowStatsAccumulator();
     shadowProviderCountsRef.current = createShadowProviderCounts();
     mediaPipePoseRef.current = null;
-    realtimeFormEngineRef.current = createRealtimeEngineState();
+    realtimeFormEngineRef.current = createRealtimeFormEngineState();
     lastShadowMeanAbsDeltaRef.current = null;
     resetBaselineDebugMetrics();
-  }, [createRealtimeEngineState, resetBaselineDebugMetrics, showToast]);
+  }, [resetBaselineDebugMetrics, showToast]);
 
   useEffect(() => {
     const countersRef = cueCountersRef;
@@ -1274,7 +1262,7 @@ export default function ScanARKitScreen() {
     shadowStatsPerRepRef.current = createShadowStatsAccumulator();
     shadowProviderCountsRef.current = createShadowProviderCounts();
     mediaPipePoseRef.current = null;
-    realtimeFormEngineRef.current = createRealtimeEngineState();
+    realtimeFormEngineRef.current = createRealtimeFormEngineState();
     lastShadowMeanAbsDeltaRef.current = null;
     // Previously held lower-body occlusions must not leak into a curl set.
     occlusionManagerRef.current?.reset();
@@ -1298,7 +1286,7 @@ export default function ScanARKitScreen() {
     stopSpeech();
     resetBaselineDebugMetrics();
     setWorkoutController(detectionMode);
-  }, [createRealtimeEngineState, detectionMode, resetBaselineDebugMetrics, resetCueHysteresis, setWorkoutController, stopSpeech]);
+  }, [detectionMode, resetBaselineDebugMetrics, resetCueHysteresis, setWorkoutController, stopSpeech]);
 
   useEffect(() => {
     let unsupportedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1477,7 +1465,7 @@ export default function ScanARKitScreen() {
       lastFpsPublishMsRef.current = 0;
       setJointAngles(null);
       jointAnglesStateRef.current = null;
-      realtimeFormEngineRef.current = createRealtimeEngineState();
+      realtimeFormEngineRef.current = createRealtimeFormEngineState();
       lastShadowMeanAbsDeltaRef.current = null;
       setFps(0);
       setSmoothedPose2DJoints(null);
@@ -1592,7 +1580,7 @@ export default function ScanARKitScreen() {
       }
       const smoothingResult =
         angles
-          ? processRealtimeEngineAngles({
+          ? processRealtimeAngles({
               state: realtimeFormEngineRef.current,
               angles,
               valid,
@@ -2042,7 +2030,7 @@ export default function ScanARKitScreen() {
       shadowStatsRef.current = createShadowStatsAccumulator();
       shadowProviderCountsRef.current = createShadowProviderCounts();
       mediaPipePoseRef.current = null;
-      realtimeFormEngineRef.current = createRealtimeEngineState();
+      realtimeFormEngineRef.current = createRealtimeFormEngineState();
       lastShadowMeanAbsDeltaRef.current = null;
       if (__DEV__) exerciseRecordingStore.begin(detectionMode, fixturePlaybackEnabled);
       await startNativeTracking();
@@ -2188,7 +2176,7 @@ export default function ScanARKitScreen() {
       setRepCount(0);
       repCountRef.current = 0;
       setFps(0);
-      realtimeFormEngineRef.current = createRealtimeEngineState();
+      realtimeFormEngineRef.current = createRealtimeFormEngineState();
       lastShadowMeanAbsDeltaRef.current = null;
       shadowStatsRef.current = createShadowStatsAccumulator();
       shadowProviderCountsRef.current = createShadowProviderCounts();
