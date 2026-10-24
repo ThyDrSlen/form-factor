@@ -142,6 +142,7 @@ export function processTrackingQualityAngles(input: {
   valid: Parameters<typeof processRealtimeAngles>[0]['valid'];
   timestampSec: number;
   shadowMeanAbsDelta?: number | null;
+  workoutId?: string;
 }): RealtimeFormEngineOutput {
   return processRealtimeAngles(input);
 }

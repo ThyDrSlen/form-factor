@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -93,15 +92,17 @@ export function PreSetPreviewCard({
             >
               <Text style={styles.actionSecondaryText}>Dismiss</Text>
             </TouchableOpacity>
-            {!isChecking && verdict?.isFormGood && onStartSet && (
+            {!isChecking && verdict && onStartSet && (
               <TouchableOpacity
                 style={[styles.actionButton, styles.actionPrimary]}
                 onPress={onStartSet}
                 accessibilityRole="button"
-                accessibilityLabel="Start set"
+                accessibilityLabel={verdict.isFormGood ? 'Start set' : 'Adjusted, start set'}
                 testID="pre-set-preview-start-set"
               >
-                <Text style={styles.actionPrimaryText}>Start Set</Text>
+                <Text style={styles.actionPrimaryText}>
+                  {verdict.isFormGood ? 'Start Set' : 'Adjusted, Start'}
+                </Text>
               </TouchableOpacity>
             )}
           </View>

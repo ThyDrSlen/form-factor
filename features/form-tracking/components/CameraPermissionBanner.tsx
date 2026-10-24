@@ -27,7 +27,7 @@ import { useCameraPermissions } from 'expo-camera';
 import {
   useCameraPermissionGuard,
   type UseCameraPermissionGuardOptions,
-} from '@/hooks/use-camera-permission-guard';
+} from '@/features/form-tracking/hooks/use-camera-permission-guard';
 
 export interface CameraPermissionBannerProps {
   /**
@@ -100,7 +100,11 @@ export function CameraPermissionBanner({
         </View>
         <Pressable
           onPress={() => {
-            void requestPermission();
+            void requestPermission().then((nextPermission) => {
+              if (nextPermission.granted) {
+                onResume?.();
+              }
+            });
           }}
           style={({ pressed }) => [styles.allowButton, pressed && styles.pressed]}
           accessibilityRole="button"

@@ -6,10 +6,8 @@
  * screen can feed the stride into its frame loop to skip work when the
  * device is under thermal pressure.
  *
- * Today the thermal reader always returns 'nominal' (see thermal-monitor.ts),
- * so this hook is a stable 60fps by default. The plumbing lets a future
- * real thermal source throttle the pipeline without code changes at
- * call-sites.
+ * iOS reads ProcessInfo.thermalState through the native tracking module.
+ * Other platforms and older native builds fall back to nominal.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 

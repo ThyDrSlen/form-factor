@@ -21,6 +21,7 @@ import type {
   WorkoutTemplateExercise,
 } from '@/lib/types/workout-session';
 import { createError, logError } from '@/lib/services/ErrorHandler';
+import type { DetectionMode } from '@/lib/workouts';
 
 // =============================================================================
 // Types
@@ -32,9 +33,9 @@ import { createError, logError } from '@/lib/services/ErrorHandler';
 export interface FormTargets {
   /** Minimum average FQI (0-100) to count as a "green" rep/set. */
   fqiMin: number;
-  /** Minimum range-of-motion angle (degrees) — exercise dependent. */
+  /** Lower absolute joint-angle endpoint (degrees), not angular excursion or a ROM score. */
   romMin: number;
-  /** Maximum range-of-motion angle (degrees) — exercise dependent. */
+  /** Upper absolute joint-angle endpoint (degrees), for the same exercise-specific joint. */
   romMax: number;
 }
 
@@ -64,8 +65,14 @@ export interface FormTargetsResolution {
  * zero dependency on the ARKit/fusion runtime and can run in any test harness.
  *
  * FQI minimums are sourced from product spec (90 = excellent, 80 = good,
- * 75 = acceptable). ROM ranges mirror the `top`/`hang` (or equivalent)
- * phase thresholds in each workout file.
+ * 75 = acceptable). New dynamic exercises use the existing 80 = good policy,
+ * not a newly calibrated exercise-specific FQI cutoff. ROM ranges mirror the
+ * `top`/`hang` (or equivalent) phase thresholds in each workout file. They are
+ * absolute joint-angle endpoints for the overlay, not the excursion used by
+ * `calculateFqi`, which independently consumes angleRanges/scoringMetrics.
+ * Tests compare the new entries to their source thresholds and enumerate the
+ * selectable registry; the type-only DetectionMode import enforces coverage
+ * without pulling workout implementations into the runtime dependency graph.
  */
 const EXERCISE_DEFAULTS: Readonly<Record<string, FormTargets>> = {
   // Pull-up — elbow angle at full hang (hang) to top (chin over bar).
@@ -80,11 +87,25 @@ const EXERCISE_DEFAULTS: Readonly<Record<string, FormTargets>> = {
   rdl: { fqiMin: 78, romMin: 110, romMax: 170 },
   // Bench press — elbow angle at top (lockout) to bottom (bar to chest).
   benchpress: { fqiMin: 80, romMin: 70, romMax: 170 },
+  // Dumbbell curl — elbow phase endpoints: topElbow to bottomElbow.
+  dumbbell_curl: { fqiMin: 80, romMin: 60, romMax: 160 },
+  // Barbell row — elbow: topElbow to bottomElbow.
+  barbell_row: { fqiMin: 80, romMin: 80, romMax: 155 },
+  // Lat pulldown — elbow: bottomElbow to topElbow (opposite phase naming to curls).
+  lat_pulldown: { fqiMin: 80, romMin: 90, romMax: 160 },
+  // Overhead press — elbow: rackElbow to lockoutElbow.
+  overhead_press: { fqiMin: 80, romMin: 100, romMax: 165 },
+  // Hip thrust — hip: bottomHip to lockoutHip; not the near-static knee range.
+  hip_thrust: { fqiMin: 80, romMin: 100, romMax: 165 },
+  // Lunge — front knee: parallel to standing, not the bottom-only angleRanges window.
+  lunge: { fqiMin: 80, romMin: 80, romMax: 160 },
+  // Bulgarian split squat — front knee: parallel to standing.
+  bulgarian_split_squat: { fqiMin: 80, romMin: 95, romMax: 160 },
   // Dead hang — primarily a timed hold; ROM window is "stay extended".
   dead_hang: { fqiMin: 75, romMin: 150, romMax: 175 },
   // Farmer's walk — gait carry; ROM reflects upright posture window.
   farmers_walk: { fqiMin: 75, romMin: 160, romMax: 180 },
-};
+} satisfies Record<DetectionMode, FormTargets>;
 
 /**
  * Conservative fallback when we don't recognise the exerciseId.

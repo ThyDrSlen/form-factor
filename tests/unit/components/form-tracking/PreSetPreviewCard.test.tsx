@@ -1,6 +1,5 @@
-import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
-import { PreSetPreviewCard } from '@/components/form-tracking/PreSetPreviewCard';
+import { PreSetPreviewCard } from '@/features/form-tracking/components/PreSetPreviewCard';
 import type { PreSetPreviewResult } from '@/lib/services/pre-set-preview';
 
 const goodVerdict: PreSetPreviewResult = {
@@ -65,9 +64,9 @@ describe('PreSetPreviewCard', () => {
     expect(onStartSet).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the warning verdict and omits Start Set', () => {
+  it('renders the warning verdict and still allows starting after adjusting', () => {
     const onStartSet = jest.fn();
-    const { getByText, queryByTestId } = render(
+    const { getByTestId, getByText } = render(
       <PreSetPreviewCard
         {...baseProps}
         verdict={warnVerdict}
@@ -75,8 +74,9 @@ describe('PreSetPreviewCard', () => {
       />
     );
     expect(getByText('⚠ Elbows should be straighter')).toBeTruthy();
-    expect(queryByTestId('pre-set-preview-start-set')).toBeNull();
-    expect(onStartSet).not.toHaveBeenCalled();
+    expect(getByText('Adjusted, Start')).toBeTruthy();
+    fireEvent.press(getByTestId('pre-set-preview-start-set'));
+    expect(onStartSet).toHaveBeenCalledTimes(1);
     expect(getByText('via OpenAI')).toBeTruthy();
   });
 

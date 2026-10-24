@@ -32,6 +32,10 @@ export interface TrackingLossBannerProps {
   visible: boolean;
   /** Optional number of milliseconds the tracking has been lost. Rendered as "Nxs". */
   lostForMs?: number | null;
+  /** Optional title override for softer partial-tracking states. */
+  title?: string;
+  /** Optional guidance override for softer partial-tracking states. */
+  subtitle?: string;
   /**
    * Optional legacy close handler. Still supported for callers that only
    * want a soft dismiss; newer callers should prefer `onRecalibrate`.
@@ -64,6 +68,8 @@ function formatLostForMs(ms: number | null | undefined): string | null {
 export default function TrackingLossBanner({
   visible,
   lostForMs,
+  title,
+  subtitle,
   onDismiss,
   onRecalibrate,
   onCheckLighting,
@@ -71,6 +77,11 @@ export default function TrackingLossBanner({
   testID,
 }: TrackingLossBannerProps) {
   const duration = formatLostForMs(lostForMs ?? null);
+  const bannerTitle = title ?? 'Tracking signal lost';
+  const bannerSubtitle = subtitle ?? 'Step fully into frame and check lighting.';
+  const accessibilityMessage = duration
+    ? `${bannerTitle} for ${duration}. ${bannerSubtitle}`
+    : `${bannerTitle}. ${bannerSubtitle}`;
 
   return (
     <AnimatePresence>
@@ -85,11 +96,7 @@ export default function TrackingLossBanner({
           accessible
           accessibilityRole="alert"
           accessibilityLiveRegion="assertive"
-          accessibilityLabel={
-            duration
-              ? `Tracking signal lost for ${duration}. Check lighting and step fully into the camera frame.`
-              : 'Tracking signal lost. Check lighting and step fully into the camera frame.'
-          }
+          accessibilityLabel={accessibilityMessage}
           testID={testID ?? 'tracking-loss-banner'}
         >
           <View style={styles.row}>
@@ -98,11 +105,11 @@ export default function TrackingLossBanner({
             </View>
             <View style={styles.body}>
               <Text style={styles.title} accessibilityElementsHidden>
-                Tracking signal lost
+                {bannerTitle}
                 {duration ? `  \u00B7  ${duration}` : ''}
               </Text>
               <Text style={styles.subtitle} accessibilityElementsHidden>
-                Step fully into frame and check lighting.
+                {bannerSubtitle}
               </Text>
             </View>
             {onRecalibrate ? (

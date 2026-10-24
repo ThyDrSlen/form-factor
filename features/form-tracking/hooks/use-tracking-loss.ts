@@ -34,6 +34,8 @@ export function useTrackingLoss(
   options: UseTrackingLossOptions = {},
 ): UseTrackingLossResult {
   const { threshold = 0.3, debounceMs = 500 } = options;
+  // Changes within the low-confidence range must not cancel the loss clock.
+  const isBelowThreshold = confidence != null && confidence < threshold;
 
   const [isLost, setIsLost] = useState(false);
   const [lostForMs, setLostForMs] = useState<number | null>(null);
@@ -53,16 +55,7 @@ export function useTrackingLoss(
       }
     };
 
-    // Null confidence == tracking not active. Reset to not-lost.
-    if (confidence == null) {
-      droppedAtRef.current = null;
-      clear();
-      setIsLost(false);
-      setLostForMs(null);
-      return () => clear();
-    }
-
-    if (confidence < threshold) {
+    if (isBelowThreshold) {
       if (droppedAtRef.current == null) {
         const startedAt = Date.now();
         droppedAtRef.current = startedAt;
@@ -76,6 +69,7 @@ export function useTrackingLoss(
         }, debounceMs);
       }
     } else {
+      // Healthy confidence or tracking off ends the current loss period.
       droppedAtRef.current = null;
       clear();
       setIsLost(false);
@@ -83,7 +77,7 @@ export function useTrackingLoss(
     }
 
     return () => clear();
-  }, [confidence, threshold, debounceMs]);
+  }, [isBelowThreshold, debounceMs]);
 
   return { isLost, lostForMs };
 }

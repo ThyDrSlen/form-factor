@@ -1,6 +1,6 @@
 import { Platform, StyleSheet } from 'react-native';
-import { spacing, borderRadius, MIN_FONT_SIZE } from './_theme-constants';
-import { tabColors } from './_tab-theme';
+import { spacing, borderRadius, MIN_FONT_SIZE } from '../../../styles/tabs/_theme-constants';
+import { tabColors } from '../../../styles/tabs/_tab-theme';
 import { scaled } from '@/lib/a11y/typography';
 
 /**
@@ -201,6 +201,36 @@ export const styles = StyleSheet.create({
   qualityButtonTextActive: {
     color: scanPalette.textPrimary,
   },
+  recordingQualityDock: {
+    width: '90%',
+    maxWidth: 380,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: scanPalette.border,
+    backgroundColor: scanPalette.overlay,
+    gap: spacing.xs,
+  },
+  recordingQualityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  recordingQualityLabel: {
+    fontSize: scaled(12),
+    fontWeight: '700',
+    color: scanPalette.textPrimary,
+  },
+  recordingQualityHint: {
+    flex: 1,
+    textAlign: 'right',
+    fontSize: scaledMin(10),
+    fontWeight: '600',
+    color: scanPalette.textSecondary,
+  },
   controls: {
     position: 'absolute',
     bottom: 60,
@@ -208,7 +238,7 @@ export const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 10,
+    zIndex: 180,
   },
   recordButton: {
     backgroundColor: scanPalette.error,
@@ -447,136 +477,6 @@ export const styles = StyleSheet.create({
     color: scanPalette.textPrimary,
     fontSize: scaled(20),
     fontWeight: '700',
-  },
-  previewOverlay: {
-    flex: 1,
-    backgroundColor: scanPalette.background,
-  },
-  previewContent: {
-    flex: 1,
-  },
-  previewVideoWrap: {
-    width: '100%',
-    aspectRatio: 9 / 16,
-    maxHeight: '50%',
-    backgroundColor: '#000',
-    overflow: 'hidden',
-  },
-  previewVideo: {
-    width: '100%',
-    height: '100%',
-  },
-  previewVideoPlaceholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  previewCloseButton: {
-    position: 'absolute',
-    top: spacing.sm,
-    left: spacing.md,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
-  previewHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  previewTitle: {
-    fontSize: scaled(20),
-    fontWeight: '700',
-    color: scanPalette.textPrimary,
-  },
-  previewExerciseBadge: {
-    backgroundColor: scanPalette.accent,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  previewExerciseBadgeText: {
-    fontSize: scaled(13),
-    fontWeight: '600',
-    color: scanPalette.textPrimary,
-  },
-  previewMetricsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: spacing.lg,
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  previewMetricCard: {
-    width: '47%',
-    backgroundColor: scanPalette.overlay,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: scanPalette.border,
-    paddingVertical: spacing.sm + 2,
-    paddingHorizontal: spacing.md,
-  },
-  previewMetaLabel: {
-    fontSize: scaled(11),
-    color: scanPalette.textSecondary,
-    marginBottom: 2,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  previewMetaValue: {
-    fontSize: scaled(18),
-    fontWeight: '700',
-    color: scanPalette.textPrimary,
-  },
-  previewErrorText: {
-    fontSize: scaled(12),
-    color: scanPalette.error,
-    marginTop: spacing.xs,
-    paddingHorizontal: spacing.lg,
-  },
-  previewActions: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    gap: spacing.sm,
-  },
-  previewButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  previewButtonPrimary: {
-    backgroundColor: scanPalette.accent,
-    borderColor: scanPalette.accent,
-  },
-  previewButtonSecondary: {
-    backgroundColor: scanPalette.textPrimary,
-    borderColor: scanPalette.textPrimary,
-  },
-  previewButtonGhost: {
-    backgroundColor: 'transparent',
-    borderColor: scanPalette.border,
-  },
-  previewButtonText: {
-    fontSize: scaled(14),
-    fontWeight: '700',
-  },
-  previewButtonTextPrimary: {
-    color: scanPalette.textPrimary,
-  },
-  previewButtonTextSecondary: {
-    color: '#0B1F3A',
-  },
-  previewButtonTextGhost: {
-    color: scanPalette.textSecondary,
   },
   statusBadge: {
     position: 'absolute',
@@ -882,6 +782,51 @@ export const styles = StyleSheet.create({
     left: spacing.md,
     right: spacing.md,
     zIndex: 160,
+    gap: spacing.sm,
+  },
+  cameraGuideCard: {
+    maxHeight: 330,
+  },
+  readinessCard: {
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: scanPalette.accentBorder,
+    backgroundColor: scanPalette.overlay,
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  readinessEyebrow: {
+    fontSize: scaledMin(10),
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    color: scanPalette.accentAlt,
+  },
+  readinessTitle: {
+    fontSize: scaled(16),
+    fontWeight: '800',
+    color: scanPalette.textPrimary,
+  },
+  readinessBody: {
+    fontSize: scaled(12),
+    lineHeight: 18,
+    color: scanPalette.textSecondary,
+  },
+  readinessAction: {
+    marginTop: spacing.xs,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderRadius: 16,
+    backgroundColor: scanPalette.accentAlt,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  readinessActionText: {
+    fontSize: scaled(12),
+    fontWeight: '800',
+    color: '#0B1F3A',
   },
   feedbackText: {
     fontSize: scaled(14),

@@ -55,7 +55,7 @@ export function useSpeechFeedback({
       }),
       {
         feature: 'app',
-        location: 'hooks/use-speech-feedback',
+        location: 'features/voice/hooks/use-speech-feedback',
       }
     );
   }, []);

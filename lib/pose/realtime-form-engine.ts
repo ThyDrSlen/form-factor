@@ -59,10 +59,14 @@ export function processRealtimeAngles(input: {
   valid: JointValidity;
   timestampSec: number;
   shadowMeanAbsDelta?: number | null;
+  workoutId?: string;
 }): RealtimeFormEngineOutput {
   const shadowScore = scoreFromShadowDelta(input.shadowMeanAbsDelta);
-  const trackedCount = JOINT_KEYS.reduce((count, key) => count + (input.valid[key] ? 1 : 0), 0);
-  const trackedScore = trackedCount / JOINT_KEYS.length;
+  const qualityKeys = input.workoutId === 'dumbbell_curl'
+    ? JOINT_KEYS.filter(key => key !== 'leftKnee' && key !== 'rightKnee')
+    : JOINT_KEYS;
+  const trackedCount = qualityKeys.reduce((count, key) => count + (input.valid[key] && Number.isFinite(input.angles[key]) ? 1 : 0), 0);
+  const trackedScore = trackedCount / qualityKeys.length;
   const trackingQuality = clamp(trackedScore * 0.65 + shadowScore * 0.35, 0, 1);
   const alpha = computeAlpha(shadowScore);
 
@@ -81,6 +85,13 @@ export function processRealtimeAngles(input: {
     const incoming = input.angles[key];
     if (!input.valid[key] || !Number.isFinite(incoming)) {
       next[key] = previous[key];
+      continue;
+    }
+
+    // There is no usable baseline to smooth against after an unavailable
+    // initial sample. Seed only this joint from its first tracked finite value.
+    if (!Number.isFinite(previous[key])) {
+      next[key] = incoming;
       continue;
     }
 

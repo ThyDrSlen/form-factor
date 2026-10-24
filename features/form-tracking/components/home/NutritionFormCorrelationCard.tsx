@@ -1,3 +1,4 @@
+import { theme } from '@/styles/theme';
 import React, { useMemo, useState } from 'react';
 import {
   Modal,
@@ -21,7 +22,7 @@ function significanceChipStyle(significance: 'low' | 'medium' | 'high') {
     case 'medium':
       return { background: 'rgba(255, 184, 76, 0.18)', color: '#FFB84C' };
     default:
-      return { background: 'rgba(154, 172, 209, 0.18)', color: '#97A3C2' };
+      return { background: 'rgba(154, 172, 209, 0.18)', color: theme.colors.secondary };
   }
 }
 
@@ -134,11 +135,11 @@ export function NutritionFormCorrelationCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#0F2339',
+    backgroundColor: theme.colors.surface,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#1B2E4A',
+    borderColor: theme.colors.border,
   },
   headerRow: {
     flexDirection: 'row',
@@ -147,7 +148,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   title: {
-    color: '#F5F7FF',
+    color: theme.colors.text,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -162,19 +163,19 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   insightTitle: {
-    color: '#F5F7FF',
+    color: theme.colors.text,
     fontSize: 14,
     fontWeight: '600',
     marginTop: 6,
   },
   body: {
-    color: '#97A3C2',
+    color: theme.colors.secondary,
     fontSize: 13,
     lineHeight: 18,
     marginTop: 4,
   },
   meta: {
-    color: '#6781A6',
+    color: theme.colors.muted,
     fontSize: 11,
     marginTop: 6,
   },
@@ -200,7 +201,7 @@ const styles = StyleSheet.create({
     maxHeight: '80%',
   },
   modalTitle: {
-    color: '#F5F7FF',
+    color: theme.colors.text,
     fontSize: 18,
     fontWeight: '700',
     marginBottom: 12,
@@ -212,18 +213,18 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalRowTitle: {
-    color: '#F5F7FF',
+    color: theme.colors.text,
     fontSize: 14,
     fontWeight: '600',
   },
   modalRowBody: {
-    color: '#97A3C2',
+    color: theme.colors.secondary,
     fontSize: 13,
     lineHeight: 18,
     marginTop: 4,
   },
   modalRowMeta: {
-    color: '#6781A6',
+    color: theme.colors.muted,
     fontSize: 11,
     marginTop: 4,
   },
@@ -235,7 +236,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalCloseText: {
-    color: '#F5F7FF',
+    color: theme.colors.text,
     fontSize: 14,
     fontWeight: '500',
   },

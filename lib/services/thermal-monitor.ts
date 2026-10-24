@@ -1,18 +1,6 @@
-/**
- * thermal-monitor — platform thermal-state reader with adaptive stride.
- *
- * NOTE: `expo-device-info` is NOT currently installed in this project.
- * Rather than pulling a new dependency, this module ships as a stub that
- * always reports 'normal'. The adaptive-FPS machinery below is still
- * wired correctly so a real thermal source can be slotted in later
- * without changing call-sites.
- *
- * When a native bridge for ProcessInfo.thermalState (iOS) or
- * PowerManager.getCurrentThermalStatus (Android) becomes available,
- * replace `readThermalState()` with a real implementation. The rest of
- * the pipeline — ThermalMonitor, FPS buckets, subscriber fan-out — will
- * just start reacting automatically.
- */
+/** Reads iOS thermal pressure through the existing tracking module. */
+import { Platform } from 'react-native';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 
 export type ThermalState = 'nominal' | 'normal' | 'fair' | 'serious' | 'critical';
 
@@ -74,13 +62,20 @@ export function snapshotFromState(state: ThermalState): ThermalSnapshot {
   };
 }
 
-/**
- * Default thermal reader. Always returns 'nominal' because
- * `expo-device-info` is not installed. Replace when a real thermal API
- * becomes available without adding a new dependency.
- */
+/** Older native builds and platforms without a thermal reader use nominal. */
 export async function readThermalState(): Promise<ThermalState> {
-  return 'nominal';
+  if (Platform.OS !== 'ios') return 'nominal';
+  const module = requireOptionalNativeModule<{ getThermalState?: () => string }>('ARKitBodyTracker');
+  const state = module?.getThermalState?.();
+  switch (state) {
+    case 'nominal':
+    case 'fair':
+    case 'serious':
+    case 'critical':
+      return state;
+    default:
+      return 'nominal';
+  }
 }
 
 export class ThermalMonitor {

@@ -66,6 +66,7 @@ export function useExerciseCameraGuide(exerciseKey: string): UseExerciseCameraGu
   // Load prefs on mount / when the active exercise changes.
   useEffect(() => {
     let cancelled = false;
+    setReady(false);
 
     (async () => {
       try {
@@ -132,7 +133,7 @@ export function useExerciseCameraGuide(exerciseKey: string): UseExerciseCameraGu
     }
   }, []);
 
-  const visible = Boolean(guide) && !dismissed && !suppressAll;
+  const visible = ready && Boolean(guide) && !dismissed && !suppressAll;
 
   return {
     guide,

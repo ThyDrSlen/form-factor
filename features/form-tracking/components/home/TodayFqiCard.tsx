@@ -1,3 +1,4 @@
+import { theme } from '@/styles/theme';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -21,7 +22,7 @@ export interface TodayFqiCardProps {
 }
 
 function colorForFqi(value: number | null): string {
-  if (value === null) return '#6781A6';
+  if (value === null) return theme.colors.muted;
   if (value >= 85) return '#3CC8A9';
   if (value >= 75) return '#FFB84C';
   return '#FF5C5C';
@@ -95,11 +96,11 @@ export function TodayFqiCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#0F2339',
+    backgroundColor: theme.colors.surface,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#1B2E4A',
+    borderColor: theme.colors.border,
   },
   headerRow: {
     flexDirection: 'row',
@@ -108,7 +109,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   title: {
-    color: '#F5F7FF',
+    color: theme.colors.text,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -121,14 +122,14 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   valueLabel: {
-    color: '#97A3C2',
+    color: theme.colors.secondary,
     fontSize: 11,
     marginBottom: 2,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
   valueNumber: {
-    color: '#F5F7FF',
+    color: theme.colors.text,
     fontSize: 26,
     fontWeight: '700',
   },
@@ -138,7 +139,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   empty: {
-    color: '#97A3C2',
+    color: theme.colors.secondary,
     fontSize: 13,
     marginBottom: 8,
   },

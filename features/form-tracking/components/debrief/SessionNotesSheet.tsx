@@ -10,7 +10,7 @@
  * State is persisted locally via `localDB.saveDebriefNotes` so the debrief
  * can be re-opened without losing context.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Keyboard,
   Platform,
@@ -24,6 +24,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { localDB } from '@/lib/services/database/local-db';
 import { warnWithTs } from '@/lib/logger';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
 
 export interface SessionNotesSheetTopFault {
   id: string;
@@ -38,57 +40,127 @@ export interface SessionNotesSheetProps {
   testID?: string;
 }
 
-export function SessionNotesSheet({
+export function SessionNotesSheet(props: SessionNotesSheetProps) {
+  const { user, isAuthStateCurrent } = useAuth();
+  const providerOwner = user?.id ?? null;
+  const [scope, setScope] = useState<{ userId: string | null; generation: number } | null>(null);
+  const scopeRef = useRef(scope);
+  const pendingEventOwner = useRef<{ userId: string | null } | null>(null);
+  const applyOwner = useCallback((userId: string | null) => {
+    if (scopeRef.current?.userId === userId) return;
+    const next = { userId, generation: (scopeRef.current?.generation ?? 0) + 1 };
+    // Invalidate before React commits, including batched A→B→A events.
+    scopeRef.current = next;
+    setScope(next);
+  }, []);
+  useLayoutEffect(() => {
+    let active = true;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!active || (!session && event !== 'SIGNED_OUT')) return;
+      const userId = session?.user.id ?? null;
+      // A same-owner refresh is not a pending account transition. In particular,
+      // it must not block a later provider-owned revocation without an SDK event.
+      if (event !== 'SIGNED_OUT' && scopeRef.current?.userId === userId) return;
+      pendingEventOwner.current = { userId };
+      applyOwner(userId);
+    });
+    return () => {
+      active = false;
+      scopeRef.current = null;
+      subscription.unsubscribe();
+    };
+  }, [applyOwner]);
+  useLayoutEffect(() => {
+    // AuthContext owns offline recovery. SDK null INITIAL_SESSION is not logout.
+    // Its deferred provider publication must not undo a newer synchronous event.
+    if (!isAuthStateCurrent()) return;
+    if (pendingEventOwner.current && pendingEventOwner.current.userId !== providerOwner) return;
+    // Matching IDs alone cannot acknowledge B→A→B: the first B may be stale.
+    pendingEventOwner.current = null;
+    applyOwner(providerOwner);
+  }, [providerOwner, isAuthStateCurrent, applyOwner]);
+  const isAccountCurrent = useCallback(() => scope !== null && scopeRef.current === scope, [scope]);
+  return scope?.userId?.trim() ? (
+    <OwnedSessionNotesSheet
+      key={JSON.stringify([scope.generation, props.sessionId])}
+      {...props}
+      userId={scope.userId}
+      isAccountCurrent={isAccountCurrent}
+    />
+  ) : null;
+}
+
+function OwnedSessionNotesSheet({
+  userId,
+  isAccountCurrent,
   sessionId,
   topFaults = [],
   testID = 'session-notes-sheet',
-}: SessionNotesSheetProps) {
+}: SessionNotesSheetProps & { userId: string; isAccountCurrent: () => boolean }) {
   const [notes, setNotes] = useState('');
   const [starredIds, setStarredIds] = useState<string[]>([]);
   const [saveCues, setSaveCues] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const saveRequestRef = useRef(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeRef = useRef(false);
+  const isCurrent = useCallback(() => activeRef.current && isAccountCurrent(), [isAccountCurrent]);
 
   // Limit to the first two top faults per spec.
   const faults = topFaults.slice(0, 2);
 
   // Hydrate once on mount.
   useEffect(() => {
+    activeRef.current = true;
     let cancelled = false;
     void (async () => {
       try {
-        const existing = await localDB.getDebriefNotes(sessionId);
-        if (cancelled) return;
+        const existing = await localDB.getDebriefNotes(userId, sessionId, isCurrent);
+        if (cancelled || !isCurrent()) return;
         if (existing) {
           setNotes(existing.notes);
           setStarredIds(existing.starredFaultIds);
           setSaveCues(existing.savedCues);
         }
+        setHydrated(true);
       } catch (err) {
-        warnWithTs('[SessionNotesSheet] hydrate failed', err);
-      } finally {
-        if (!cancelled) setHydrated(true);
+        if (!cancelled && isCurrent()) {
+          setLoadFailed(true);
+          warnWithTs('[SessionNotesSheet] hydrate failed', err);
+        }
       }
     })();
     return () => {
       cancelled = true;
+      activeRef.current = false;
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [sessionId]);
+  }, [userId, sessionId, isCurrent]);
 
   const persist = useCallback(
     (nextNotes: string, nextStarred: string[], nextSaveCues: boolean) => {
-      if (!hydrated) return;
+      if (!hydrated || !isCurrent()) return;
+      const request = ++saveRequestRef.current;
+      const isSaveCurrent = () => isCurrent() && saveRequestRef.current === request;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
+        if (!isSaveCurrent()) return;
         void localDB
-          .saveDebriefNotes(sessionId, nextNotes, nextStarred, nextSaveCues)
+          .saveDebriefNotes(userId, sessionId, nextNotes, nextStarred, nextSaveCues, isSaveCurrent)
+          .then((applied) => {
+            if (isSaveCurrent()) setSaveFailed(!applied);
+          })
           .catch((err) => {
-            warnWithTs('[SessionNotesSheet] saveDebriefNotes failed', err);
+            if (isSaveCurrent()) {
+              setSaveFailed(true);
+              warnWithTs('[SessionNotesSheet] saveDebriefNotes failed', err);
+            }
           });
       }, 350);
     },
-    [hydrated, sessionId],
+    [hydrated, userId, sessionId, isCurrent],
   );
 
   const handleNotesChange = useCallback(
@@ -128,8 +200,11 @@ export function SessionNotesSheet({
   return (
     <View style={styles.sheet} testID={testID}>
       <Text style={styles.heading}>Quick notes</Text>
+      {loadFailed ? <Text style={styles.cueSublabel}>Notes could not be loaded. Reopen this session to retry.</Text> : null}
+      {saveFailed ? <Text style={styles.cueSublabel}>Notes were not saved. Edit your notes to retry.</Text> : null}
 
       <TextInput
+        editable={hydrated}
         value={notes}
         onChangeText={handleNotesChange}
         placeholder="What felt strong? What needs work?"
@@ -152,7 +227,8 @@ export function SessionNotesSheet({
                 <Pressable
                   key={fault.id}
                   accessibilityRole="button"
-                  accessibilityState={{ selected: starred }}
+                  accessibilityState={{ selected: starred, disabled: !hydrated }}
+                  disabled={!hydrated}
                   accessibilityLabel={
                     starred ? `Unstar ${fault.label}` : `Star ${fault.label}`
                   }
@@ -192,6 +268,7 @@ export function SessionNotesSheet({
           </Text>
         </View>
         <Switch
+          disabled={!hydrated}
           value={saveCues}
           onValueChange={handleSaveCuesToggle}
           trackColor={{ false: '#2A3A54', true: '#4C8CFF' }}

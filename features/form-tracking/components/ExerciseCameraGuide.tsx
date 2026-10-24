@@ -12,7 +12,6 @@
 
 import React from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -26,7 +25,7 @@ import {
   describeLighting,
   type CameraPlacementGuide,
 } from '@/lib/services/camera-placement-guide';
-import { useExerciseCameraGuide } from '@/hooks/use-exercise-camera-guide';
+import { useExerciseCameraGuide } from '@/features/form-tracking/hooks/use-exercise-camera-guide';
 
 export interface ExerciseCameraGuideProps {
   /** The exercise key to render a guide for. */
@@ -56,11 +55,7 @@ export default function ExerciseCameraGuide({
   const visible = guideOverride !== undefined ? guide !== null : hook.visible;
 
   if (!hook.ready && guideOverride === undefined) {
-    return (
-      <View style={[styles.loading, style]}>
-        <ActivityIndicator size="small" color="#8693A8" />
-      </View>
-    );
+    return null;
   }
 
   if (!visible || !guide) return null;
@@ -152,11 +147,6 @@ export default function ExerciseCameraGuide({
 }
 
 const styles = StyleSheet.create({
-  loading: {
-    padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   card: {
     backgroundColor: 'rgba(5, 14, 31, 0.94)',
     borderRadius: 14,

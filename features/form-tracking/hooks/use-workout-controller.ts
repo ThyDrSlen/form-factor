@@ -25,6 +25,12 @@ import {
   type PullupScoringResult,
 } from '@/lib/tracking-quality/scoring';
 
+// Match ARKitBodyTrackerModule.subjectLockTimeout (4s): after this silence
+// native tracking can reacquire another anchor, so unfinished motion cannot
+// safely span the gap. This tolerates brief frame drops without imposing a
+// maximum rep duration on slow movements that keep delivering frames.
+const FRAME_CONTINUITY_TIMEOUT_MS = 4000;
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -121,6 +127,17 @@ function buildSingleFrameRepAngles(angles: JointAngles): PullupScoringInput['rep
 }
 
 export interface UseWorkoutControllerOptions {
+  /** Replay uses supplied frame timestamps rather than the wall clock. */
+  executionMode?: 'live' | 'replay';
+  /** Explicit live resets, in input order; excludes replay and workout changes. */
+  onReset?: (options: ResetWorkoutOptions) => void;
+  /** Snapshot of each accepted live frame; never invoked during replay. */
+  onFrame?: (frame: {
+    timestampMs: number;
+    angles: JointAngles;
+    joints?: Record<string, { x: number; y: number; isTracked: boolean; confidence?: number }>;
+    context?: { trackingQuality?: number; shadowMeanAbsDelta?: number | null };
+  }) => void;
   /** Session ID for logging */
   sessionId: string;
   /** Callbacks for workout events */
@@ -170,7 +187,7 @@ export interface UseWorkoutControllerReturn<TPhase extends string = string> {
   processFrame: (
     angles: JointAngles,
     joints?: Map<string, { x: number; y: number; isTracked: boolean; confidence?: number }>,
-    context?: { trackingQuality?: number; shadowMeanAbsDelta?: number | null }
+    context?: { trackingQuality?: number; shadowMeanAbsDelta?: number | null; timestampMs?: number; metrics?: WorkoutMetrics }
   ) => void;
   /** Reset the workout state */
   reset: (options?: ResetWorkoutOptions) => void;
@@ -213,7 +230,7 @@ export function useWorkoutController<TPhase extends string = string>(
   initialWorkoutId: DetectionMode,
   options: UseWorkoutControllerOptions
 ): UseWorkoutControllerReturn<TPhase> {
-  const { sessionId, callbacks, enableHaptics = true, pauseTracking = false } = options;
+  const { sessionId, callbacks, enableHaptics = true, pauseTracking = false, executionMode = 'live', onFrame, onReset } = options;
   // Mirror the prop into a ref so the per-frame closure can read the latest
   // value without re-binding `processFrame` on every change.
   const pauseRef = useRef<boolean>(pauseTracking);
@@ -245,6 +262,8 @@ export function useWorkoutController<TPhase extends string = string>(
   useEffect(() => { repCountRef.current = state.repCount; }, [state.repCount]);
 
   const lastRepTimestampRef = useRef<number>(0);
+  const lastReplayTimestampRef = useRef<number>(0);
+  const lastFrameTimestampRef = useRef<number | null>(null);
   const recentRepDurationsRef = useRef<number[]>([]);
   const pendingPhaseRef = useRef<TPhase | null>(null);
   const pendingPhaseSinceRef = useRef<number>(0);
@@ -287,9 +306,9 @@ export function useWorkoutController<TPhase extends string = string>(
   // Rep Tracking Helpers
   // =============================================================================
 
-  const startRepTracking = useCallback((angles: JointAngles) => {
+  const startRepTracking = useCallback((angles: JointAngles, now: number) => {
     repTrackingRef.current = {
-      startTs: Date.now(),
+      startTs: now,
       startAngles: { ...angles },
       minAngles: { ...angles },
       maxAngles: { ...angles },
@@ -330,7 +349,7 @@ export function useWorkoutController<TPhase extends string = string>(
   }, []);
 
   const completeRepTracking = useCallback(
-    async (exercise: string, repNumber: number, endAngles: JointAngles) => {
+    async (exercise: string, repNumber: number, endAngles: JointAngles, endTs: number) => {
       const tracking = repTrackingRef.current;
       if (
         tracking.startTs === 0 ||
@@ -347,7 +366,6 @@ export function useWorkoutController<TPhase extends string = string>(
         return;
       }
 
-      const endTs = Date.now();
       const durationMs = endTs - tracking.startTs;
 
       const repAngles: RepAngles = {
@@ -417,6 +435,9 @@ export function useWorkoutController<TPhase extends string = string>(
         recentRepDurationsRef.current.shift();
       }
 
+      // Replays still score and adapt, but never persist or touch retry queues.
+      if (executionMode === 'replay') return;
+
       // Build the rep event now so retries can re-use the exact payload.
       const repEvent: RepEvent = {
         sessionId,
@@ -485,7 +506,7 @@ export function useWorkoutController<TPhase extends string = string>(
       // steps above.
       syncPendingRepCount();
     },
-    [sessionId, callbacks, syncPendingRepCount]
+    [sessionId, callbacks, executionMode, syncPendingRepCount]
   );
 
   const emitFramePullupScoring = useCallback(
@@ -522,7 +543,7 @@ export function useWorkoutController<TPhase extends string = string>(
     (
       angles: JointAngles,
       joints?: Map<string, { x: number; y: number; isTracked: boolean; confidence?: number }>,
-      context?: { trackingQuality?: number; shadowMeanAbsDelta?: number | null }
+      context?: { trackingQuality?: number; shadowMeanAbsDelta?: number | null; timestampMs?: number; metrics?: WorkoutMetrics }
     ) => {
       if (transitioningRef.current) return;
       // Auto-pause from the battery+thermal hook — bail before any phase
@@ -532,8 +553,64 @@ export function useWorkoutController<TPhase extends string = string>(
       const workoutDef = workoutDefRef.current;
       if (!workoutDef) return;
 
+      let now: number;
+      if (executionMode === 'replay') {
+        const timestampMs = context?.timestampMs;
+        if (
+          typeof timestampMs !== 'number' ||
+          !Number.isFinite(timestampMs) ||
+          timestampMs <= 0 ||
+          timestampMs < lastReplayTimestampRef.current
+        ) {
+          throw new Error('Replay timestampMs must be finite, positive, and nondecreasing');
+        }
+        now = timestampMs;
+        lastReplayTimestampRef.current = now;
+      } else {
+        now = Date.now();
+        onFrame?.({
+          timestampMs: now,
+          angles: { ...angles },
+          joints: joints ? Object.fromEntries(Array.from(joints, ([name, joint]) => [name, { ...joint }])) : undefined,
+          context: context ? {
+            trackingQuality: context.trackingQuality,
+            shadowMeanAbsDelta: context.shadowMeanAbsDelta,
+          } : undefined,
+        });
+      }
+
+      const previousFrameTimestamp = lastFrameTimestampRef.current;
+      lastFrameTimestampRef.current = now;
+      // A backwards live clock also breaks elapsed-time continuity. Equal
+      // timestamps remain valid: multiple poses can arrive in one millisecond.
+      if (previousFrameTimestamp !== null && (
+        now < previousFrameTimestamp || now - previousFrameTimestamp >= FRAME_CONTINUITY_TIMEOUT_MS
+      )) {
+        const previousPhase = phaseRef.current;
+        const initialPhase = workoutDef.initialPhase as TPhase;
+        phaseRef.current = initialPhase;
+        pendingPhaseRef.current = null;
+        pendingPhaseSinceRef.current = 0;
+        isInActiveRepRef.current = false;
+        repTrackingRef.current = {
+          startTs: 0,
+          startAngles: null,
+          minAngles: null,
+          maxAngles: null,
+          cues: [],
+          lastJoints: null,
+        };
+        // Not a session reset: retain completed reps, adaptive history and
+        // pending writes. Replay derives the same expiry from frame times,
+        // so do not emit an explicit onReset capture event here.
+        setState((prev) => ({ ...prev, phase: initialPhase, metrics: null, isActive: false }));
+        if (previousPhase !== initialPhase) {
+          callbacks?.onPhaseChange?.(initialPhase, previousPhase);
+        }
+      }
+
       // Calculate metrics using the workout's calculator
-      const metrics = workoutDef.calculateMetrics(angles, joints);
+      const metrics = context?.metrics ?? workoutDef.calculateMetrics(angles, joints);
 
       if (workoutDef.id === 'pullup') {
         emitFramePullupScoring(repCountRef.current, angles, joints);
@@ -543,10 +620,14 @@ export function useWorkoutController<TPhase extends string = string>(
         repTrackingRef.current.lastJoints = joints ? new Map(joints) : repTrackingRef.current.lastJoints;
       }
 
+      // Every accepted frame belongs to the active rep, including the frame
+      // that changes phase or completes it. Otherwise peak ROM and faults
+      // occurring at a phase boundary are omitted from scoring/telemetry.
+      updateRepAngles(angles);
+
       // Get next phase using the workout's state machine
       const currentPhase = phaseRef.current as string;
       const candidatePhase = workoutDef.getNextPhase(currentPhase, angles, metrics) as TPhase;
-      const now = Date.now();
 
       const shadowSelection = (context as any)?.shadowProviderSelection;
       if (
@@ -587,6 +668,7 @@ export function useWorkoutController<TPhase extends string = string>(
       // Check for phase transition
       if (nextPhase !== currentPhase) {
         const prevPhase = currentPhase;
+        const wasInActiveRep = isInActiveRepRef.current;
         phaseRef.current = nextPhase;
 
         // Notify callback
@@ -595,7 +677,7 @@ export function useWorkoutController<TPhase extends string = string>(
         // Check if this transition starts a rep
         if (nextPhase === workoutDef.repBoundary.startPhase) {
           isInActiveRepRef.current = true;
-          startRepTracking(angles);
+          startRepTracking(angles, now);
         }
 
         if (nextPhase === workoutDef.initialPhase && prevPhase !== workoutDef.initialPhase) {
@@ -604,14 +686,17 @@ export function useWorkoutController<TPhase extends string = string>(
 
         // Check if this transition completes a rep
         if (nextPhase === workoutDef.repBoundary.endPhase && prevPhase !== workoutDef.initialPhase) {
-          const now = Date.now();
           const minDuration = computeAdaptiveRepDurationMs({
             baseMinDurationMs: workoutDef.repBoundary.minDurationMs,
             recentRepDurationsMs: recentRepDurationsRef.current,
             trackingQuality: combineTrackingQuality(context?.trackingQuality, context?.shadowMeanAbsDelta),
           });
 
-          if (now - lastRepTimestampRef.current > minDuration) {
+          // Rest before a rep cannot make a sub-minimum movement count.
+          // Capture active state before an end phase also resets to initial.
+          const activeDurationMs = now - repTrackingRef.current.startTs;
+          isInActiveRepRef.current = false;
+          if (wasInActiveRep && activeDurationMs >= minDuration && now - lastRepTimestampRef.current > minDuration) {
             lastRepTimestampRef.current = now;
             repCountRef.current += 1;
             const newRepCount = repCountRef.current;
@@ -620,12 +705,12 @@ export function useWorkoutController<TPhase extends string = string>(
 
             // Cross-platform haptic feedback via the shared bus so Android
             // and iOS both get a rep-complete cue (issue #428).
-            if (enableHaptics) {
+            if (executionMode === 'live' && enableHaptics) {
               hapticBus.emit('rep.complete');
             }
 
             // Complete and log the rep
-            completeRepTracking(workoutDef.id, newRepCount, angles);
+            completeRepTracking(workoutDef.id, newRepCount, angles, now);
 
             // Update state
             setState((prev) => ({
@@ -646,15 +731,9 @@ export function useWorkoutController<TPhase extends string = string>(
           metrics,
           isActive: true,
         }));
-      } else {
-        // No phase change, just update metrics and track angles
-        updateRepAngles(angles);
-
-        // Throttle state updates for metrics (every ~80ms)
-        // This is handled by the component using this hook
       }
     },
-    [callbacks, enableHaptics, startRepTracking, updateRepAngles, completeRepTracking, emitFramePullupScoring]
+    [callbacks, enableHaptics, executionMode, onFrame, startRepTracking, updateRepAngles, completeRepTracking, emitFramePullupScoring]
   );
 
   // =============================================================================
@@ -672,6 +751,8 @@ export function useWorkoutController<TPhase extends string = string>(
     pendingPhaseRef.current = null;
     pendingPhaseSinceRef.current = 0;
     recentRepDurationsRef.current = [];
+    lastReplayTimestampRef.current = 0;
+    lastFrameTimestampRef.current = null;
     isInActiveRepRef.current = false;
     if (!preserveRepCount) {
       lastRepTimestampRef.current = 0;
@@ -697,7 +778,10 @@ export function useWorkoutController<TPhase extends string = string>(
       metrics: null,
       isActive: false,
     });
-  }, []);
+    if (executionMode === 'live' && !transitioningRef.current) {
+      onReset?.({ preserveRepCount });
+    }
+  }, [executionMode, onReset]);
 
   const setWorkout = useCallback((workoutId: DetectionMode) => {
     transitioningRef.current = true;
@@ -715,10 +799,10 @@ export function useWorkoutController<TPhase extends string = string>(
     if (repTrackingRef.current.startTs > 0) {
       repTrackingRef.current.cues.push({
         type: cueType,
-        ts: new Date().toISOString(),
+        ts: new Date(executionMode === 'replay' ? lastReplayTimestampRef.current : Date.now()).toISOString(),
       });
     }
-  }, []);
+  }, [executionMode]);
 
   const getPendingRepCount = useCallback((): number => {
     return pendingRepWritesRef.current.length;

@@ -1,3 +1,4 @@
+import { theme } from '@/styles/theme';
 /**
  * FormHomeSkeleton (wave-30 A6).
  *
@@ -89,11 +90,11 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   card: {
-    backgroundColor: '#0F2339',
+    backgroundColor: theme.colors.surface,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#1B2E4A',
+    borderColor: theme.colors.border,
     gap: 12,
   },
   todayCard: {
@@ -116,7 +117,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   shimmer: {
-    backgroundColor: '#1B2E4A',
+    backgroundColor: theme.colors.border,
     borderRadius: 6,
   },
 });

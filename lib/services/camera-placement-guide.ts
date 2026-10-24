@@ -11,14 +11,14 @@
  * This is a pure TypeScript service (no I/O) so it can be consumed from
  * components, hooks, tests, and analytics without any setup cost.
  *
- * Exercise coverage (14):
- *   - Core 8 (aligned with lib/workouts/): pullup, pushup, squat,
- *     deadlift, benchpress, dead_hang, rdl, farmers_walk
+ * Exercise coverage (15):
+ *   - Core 9 (aligned with lib/workouts/): pullup, pushup, squat,
+ *     deadlift, benchpress, dead_hang, rdl, farmers_walk, dumbbell_curl
  *   - Extended catalog (UX surface only, no workout definition yet):
  *     ohp, lunge, hip_thrust, bss, barbell_row, lat_pulldown
  *
  * The exercise key uses the same `DetectionMode` string shape as
- * `lib/workouts/` for the first 8 entries. The extended 6 use the same
+ * `lib/workouts/` for the core 9 entries. The extended 6 use the same
  * `snake_case` convention and live as a superset here until each gets a
  * workout definition.
  */
@@ -45,6 +45,7 @@ export type PlacementGuideExerciseKey =
   | 'dead_hang'
   | 'rdl'
   | 'farmers_walk'
+  | 'dumbbell_curl'
   // Extended catalog (UX surface only until workout defs land)
   | 'ohp'
   | 'lunge'
@@ -84,9 +85,25 @@ export interface CameraPlacementGuide {
  *
  * Values are derived from internal form-tracking usability sessions and
  * ARKit sample frame requirements (roughly full-body in frame with ~10%
- * headroom; side angle preferred for compound lifts).
+ * headroom; side angle preferred for compound lifts). Curl framing is
+ * limited to hips and arms, with room for wrists throughout the movement.
  */
 const GUIDES: Record<PlacementGuideExerciseKey, CameraPlacementGuide> = {
+  dumbbell_curl: {
+    key: 'dumbbell_curl',
+    displayName: 'Dumbbell curl',
+    orientation: 'portrait',
+    distanceM: 1.8,
+    heightM: 1.1,
+    tiltDeg: 0,
+    lightingHint: 'even_ambient',
+    commonPitfalls: [
+      'Cropping above your hips hides torso sway — keep both hips visible',
+      'Wrists leave the frame at the bottom — leave room for fully extended arms',
+      'An arm hidden behind your torso loses elbow tracking — adjust the camera angle',
+    ],
+    summary: 'Portrait, lens near chest height: frame shoulders, elbows, wrists and hips. Knees and feet can stay out of frame.',
+  },
   pullup: {
     key: 'pullup',
     displayName: 'Pull-up',

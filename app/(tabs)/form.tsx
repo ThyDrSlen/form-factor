@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import {
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -8,16 +9,18 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { TodayFqiCard } from '@/components/form-home/TodayFqiCard';
-import { WeeklyTrendChart } from '@/components/form-home/WeeklyTrendChart';
-import { FaultHeatmapThumb } from '@/components/form-home/FaultHeatmapThumb';
-import { StartSessionCta } from '@/components/form-home/StartSessionCta';
-import { NutritionFormCorrelationCard } from '@/components/form-home/NutritionFormCorrelationCard';
-import { RecoveryFormCorrelationCard } from '@/components/form-home/RecoveryFormCorrelationCard';
-import { FormHomeSkeleton } from '@/components/form-home/FormHomeSkeleton';
-import { useFormHomeData } from '@/hooks/use-form-home-data';
-import { useNutritionFormInsights } from '@/hooks/use-nutrition-form-insights';
+import { TodayFqiCard } from '@/features/form-tracking/components/home/TodayFqiCard';
+import { WeeklyTrendChart } from '@/features/form-tracking/components/home/WeeklyTrendChart';
+import { FaultHeatmapThumb } from '@/features/form-tracking/components/home/FaultHeatmapThumb';
+import { StartSessionCta } from '@/features/form-tracking/components/home/StartSessionCta';
+import { NutritionFormCorrelationCard } from '@/features/form-tracking/components/home/NutritionFormCorrelationCard';
+import { RecoveryFormCorrelationCard } from '@/features/form-tracking/components/home/RecoveryFormCorrelationCard';
+import { FormHomeSkeleton } from '@/features/form-tracking/components/home/FormHomeSkeleton';
+import { useFormHomeData } from '@/features/form-tracking/hooks/use-form-home-data';
+import { theme } from '@/styles/theme';
+import { useNutritionFormInsights } from '@/features/form-tracking/hooks/use-nutrition-form-insights';
 
 /**
  * Form home tab (issue #470).
@@ -32,11 +35,9 @@ export default function FormHomeScreen() {
   const formHome = useFormHomeData();
   const insights = useNutritionFormInsights();
 
-  const handleTodayPress = useCallback(() => {
+  const handleReviewPress = useCallback(() => {
     if (formHome.data.lastSessionId) {
-      router.push(
-        `/(modals)/workout-insights?sessionId=${formHome.data.lastSessionId}`,
-      );
+      router.push(`/(modals)/workout-insights?sessionId=${encodeURIComponent(formHome.data.lastSessionId)}`);
     }
   }, [router, formHome.data.lastSessionId]);
 
@@ -66,6 +67,7 @@ export default function FormHomeScreen() {
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -74,10 +76,12 @@ export default function FormHomeScreen() {
           />
         }
       >
-        <Text style={styles.heading}>Form</Text>
-        <Text style={styles.subheading}>
-          Your daily form quality, weekly trend, and nutrition/recovery correlations.
-        </Text>
+        <View style={styles.header}>
+          <Text style={styles.heading} accessibilityRole="header">Form</Text>
+          <Text style={styles.subheading}>Analyze your technique and review your progress.</Text>
+        </View>
+
+        <StartSessionCta />
 
         {formHome.error ? (
           <View style={styles.errorBanner} testID="form-home-error">
@@ -103,12 +107,33 @@ export default function FormHomeScreen() {
           <FormHomeSkeleton />
         ) : (
           <>
+            {formHome.data.lastSessionId ? (
+              <Pressable
+                onPress={handleReviewPress}
+                accessibilityRole="button"
+                accessibilityLabel="Review latest analysis"
+                accessibilityHint="Opens form insights for your most recent session"
+                style={styles.reviewRow}
+                testID="form-home-review-latest"
+              >
+                <Ionicons name="analytics-outline" size={24} color={theme.colors.accentText} />
+                <View style={styles.reviewCopy}>
+                  <Text style={styles.reviewTitle}>Latest analysis</Text>
+                  <Text style={styles.reviewSubtitle}>Review your form insights</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={theme.colors.secondary} />
+              </Pressable>
+            ) : !formHome.loading && !formHome.error ? (
+              <Text style={styles.emptyReview}>Your latest analysis will appear here when available.</Text>
+            ) : null}
+
+            <Text style={styles.sectionLabel} accessibilityRole="header">TECHNIQUE PROGRESS</Text>
             <TodayFqiCard
               bestFqi={formHome.data.todayBestFqi}
               avgFqi={formHome.data.todayAvgFqi}
               setCount={formHome.data.todaySetCount}
               loading={formHome.loading}
-              onPress={formHome.data.lastSessionId ? handleTodayPress : undefined}
+              onPress={formHome.data.lastSessionId ? handleReviewPress : undefined}
             />
 
             <WeeklyTrendChart
@@ -122,8 +147,6 @@ export default function FormHomeScreen() {
               days={formHome.data.faultDays.length > 0 ? formHome.data.faultDays : ['-', '-', '-', '-', '-', '-', '-']}
               onPress={handleFaultHeatmapPress}
             />
-
-            <StartSessionCta />
 
             <NutritionFormCorrelationCard
               data={insights.nutrition}
@@ -144,22 +167,31 @@ export default function FormHomeScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#050E1F',
+    backgroundColor: theme.colors.background,
   },
   scrollContent: {
+    padding: 24,
+    gap: 18,
+  },
+  header: { gap: 6 },
+  heading: { color: theme.colors.text, fontFamily: theme.font.bold, fontSize: 30, lineHeight: 38, letterSpacing: -0.8 },
+  subheading: { color: theme.colors.secondary, fontFamily: theme.font.regular, fontSize: 14, lineHeight: 22 },
+  sectionLabel: { color: theme.colors.secondary, fontFamily: theme.font.medium, fontSize: 11, letterSpacing: 1.8, marginTop: 8 },
+  reviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     padding: 16,
-    gap: 14,
+    minHeight: 72,
+    borderRadius: theme.radius.card,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
-  heading: {
-    color: '#F5F7FF',
-    fontSize: 26,
-    fontWeight: '700',
-  },
-  subheading: {
-    color: '#97A3C2',
-    fontSize: 14,
-    marginBottom: 4,
-  },
+  reviewCopy: { flex: 1, gap: 4 },
+  reviewTitle: { color: theme.colors.text, fontFamily: theme.font.medium, fontSize: 15 },
+  reviewSubtitle: { color: theme.colors.secondary, fontFamily: theme.font.regular, fontSize: 12, lineHeight: 18 },
+  emptyReview: { color: theme.colors.secondary, fontFamily: theme.font.regular, fontSize: 13, lineHeight: 20 },
   errorBanner: {
     backgroundColor: 'rgba(255, 92, 92, 0.18)',
     borderColor: '#FF5C5C',

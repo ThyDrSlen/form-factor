@@ -1,3 +1,4 @@
+import { theme } from '@/styles/theme';
 import React, { useMemo } from 'react';
 import {
   StyleSheet,
@@ -124,11 +125,11 @@ export function FaultHeatmapThumb({ cells, days, onPress }: FaultHeatmapThumbPro
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#0F2339',
+    backgroundColor: theme.colors.surface,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#1B2E4A',
+    borderColor: theme.colors.border,
   },
   headerRow: {
     flexDirection: 'row',
@@ -137,7 +138,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   title: {
-    color: '#F5F7FF',
+    color: theme.colors.text,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -158,12 +159,12 @@ const styles = StyleSheet.create({
     width: 84,
   },
   rowLabel: {
-    color: '#97A3C2',
+    color: theme.colors.secondary,
     fontSize: 11,
     width: 84,
   },
   dayLabel: {
-    color: '#6781A6',
+    color: theme.colors.muted,
     fontSize: 10,
     flexGrow: 1,
     textAlign: 'center',
@@ -181,7 +182,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 92, 92, 0.08)',
   },
   emptyText: {
-    color: '#97A3C2',
+    color: theme.colors.secondary,
     fontSize: 13,
   },
 });
