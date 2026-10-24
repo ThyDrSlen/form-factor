@@ -44,6 +44,17 @@
       },
       "android": { "buildType": "app-bundle" }
     },
+    "remote-device": {
+      "extends": "production",
+      "distribution": "internal",
+      "developmentClient": false,
+      "environment": "production",
+      "ios": {
+        "simulator": false,
+        "buildConfiguration": "Release",
+        "credentialsSource": "remote"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "distribution": "store",
