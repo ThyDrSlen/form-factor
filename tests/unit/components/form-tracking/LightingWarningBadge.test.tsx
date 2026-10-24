@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
-import { LightingWarningBadge } from '@/components/form-tracking/LightingWarningBadge';
+import { LightingWarningBadge } from '@/features/form-tracking/components/LightingWarningBadge';
 
 describe('<LightingWarningBadge />', () => {
   it('renders nothing when bucket is "good"', () => {

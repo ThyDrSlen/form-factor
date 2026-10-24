@@ -14,7 +14,7 @@ jest.mock('expo-haptics', () => ({
 import React from 'react';
 import { act, render, fireEvent } from '@testing-library/react-native';
 import * as Haptics from 'expo-haptics';
-import { VoiceCommandFeedback } from '@/components/form-tracking/VoiceCommandFeedback';
+import { VoiceCommandFeedback } from '@/features/form-tracking/components/VoiceCommandFeedback';
 import {
   useVoiceControlStore,
   __resetVoiceControlStoreForTests,

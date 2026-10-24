@@ -26,7 +26,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { TextInput } from 'react-native-paper';
 
-import { useWorkoutCoachContext } from '@/hooks/use-workout-coach-context';
+import { useWorkoutCoachContext } from '@/features/coach/hooks/use-workout-coach-context';
 import type { CoachMessage } from '@/lib/services/coach-service';
 
 interface ChatBubble {

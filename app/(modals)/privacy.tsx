@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Alert, BackHandler, View, Text, StyleSheet, TouchableOpacity, Switch, Linking, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { warnWithTs } from '@/lib/logger';

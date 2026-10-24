@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { createRepQualityLog, type RepQualityEntry } from '@/lib/services/rep-quality-log';
-import { useRepQualityTimeline } from '@/hooks/use-rep-quality-timeline';
+import { useRepQualityTimeline } from '@/features/form-tracking/hooks/use-rep-quality-timeline';
 
 function mkEntry(partial: Partial<RepQualityEntry> = {}): RepQualityEntry {
   return {

@@ -35,7 +35,7 @@ jest.mock('@/lib/stores/session-runner', () => ({
   },
 }));
 
-import { useAutoDebrief } from '@/hooks/use-auto-debrief';
+import { useAutoDebrief } from '@/features/form-tracking/hooks/use-auto-debrief';
 
 const FLAG = 'EXPO_PUBLIC_COACH_PIPELINE_V2';
 const originalFlag = process.env[FLAG];

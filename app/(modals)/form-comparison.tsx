@@ -18,9 +18,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useAuth } from '@/contexts/AuthContext';
-import { useSessionComparisonQuery } from '@/hooks/use-session-comparison';
-import { SessionComparisonCard } from '@/components/form-journey/SessionComparisonCard';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
+import { useSessionComparisonQuery } from '@/features/form-tracking/hooks/use-session-comparison';
+import { SessionComparisonCard } from '@/features/form-tracking/components/journey/SessionComparisonCard';
 
 export default function FormComparisonModal() {
   const router = useRouter();

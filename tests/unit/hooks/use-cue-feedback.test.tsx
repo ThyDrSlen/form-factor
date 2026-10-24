@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import {
   __clearListenersForTests,
   useCueFeedback,
-} from '@/hooks/use-cue-feedback';
+} from '@/features/form-tracking/hooks/use-cue-feedback';
 import {
   __resetForTests,
   recordFeedback,

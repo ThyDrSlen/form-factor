@@ -11,7 +11,7 @@ jest.mock('expo-router', () => ({
 
 const mockRefresh = jest.fn(async () => {});
 const mockUseFormMesocycle = jest.fn();
-jest.mock('@/hooks/use-form-mesocycle', () => ({
+jest.mock('@/features/form-tracking/hooks/use-form-mesocycle', () => ({
   useFormMesocycle: () => mockUseFormMesocycle(),
 }));
 

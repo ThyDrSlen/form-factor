@@ -2,7 +2,7 @@ import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { CameraView } from 'expo-camera';
 
-import { SnapForFeedbackButton } from '@/components/form-tracking/SnapForFeedbackButton';
+import { SnapForFeedbackButton } from '@/features/form-tracking/components/SnapForFeedbackButton';
 
 type MinimalCamera = Pick<CameraView, 'takePictureAsync'>;
 

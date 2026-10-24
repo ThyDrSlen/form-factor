@@ -3,7 +3,7 @@ import { fireEvent, render } from '@testing-library/react-native';
 import {
   FaultHeatmapThumb,
   type FaultCell,
-} from '@/components/form-home/FaultHeatmapThumb';
+} from '@/features/form-tracking/components/home/FaultHeatmapThumb';
 
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 

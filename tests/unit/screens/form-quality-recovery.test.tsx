@@ -10,7 +10,7 @@ jest.mock('expo-router', () => ({
 }));
 
 const mockUseRecovery = jest.fn();
-jest.mock('@/hooks/use-form-quality-recovery', () => ({
+jest.mock('@/features/form-tracking/hooks/use-form-quality-recovery', () => ({
   useFormQualityRecovery: (...args: unknown[]) => mockUseRecovery(...args),
 }));
 

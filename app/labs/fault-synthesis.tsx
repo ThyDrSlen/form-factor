@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { Stack } from 'expo-router';
-import { FaultGlossaryChip } from '@/components/form-tracking/FaultGlossaryChip';
-import { FaultSynthesisChip } from '@/components/form-tracking/FaultSynthesisChip';
+import { FaultGlossaryChip } from '@/features/form-tracking/components/FaultGlossaryChip';
+import { FaultSynthesisChip } from '@/features/form-tracking/components/FaultSynthesisChip';
 import type { FaultFrequencyHint } from '@/lib/services/fault-explainer';
 import {
   clearGlobalSynthesisCache,

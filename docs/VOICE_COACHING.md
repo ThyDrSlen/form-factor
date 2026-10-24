@@ -79,10 +79,10 @@ MP3 files are gitignored (build artifact). The manifest is tracked.
 |------|-------------|
 | `lib/services/elevenlabs-service.ts` | ElevenLabs API client (single-shot TTS, streaming, file generation) |
 | `lib/services/audio-session-manager.ts` | Centralized audio session mode manager (singleton) |
-| `hooks/use-premium-cue-audio.ts` | Premium cue playback with MP3 → cloud → system TTS fallback |
-| `hooks/use-speech-to-text.ts` | On-device speech recognition via expo-speech-recognition |
-| `hooks/use-streaming-tts.ts` | Sentence-chunked streaming TTS via ElevenLabs + expo-av |
-| `hooks/use-voice-mode.ts` | Voice mode orchestrator combining STT + TTS + audio session |
+| `features/voice/hooks/use-premium-cue-audio.ts` | Premium cue playback with MP3 → cloud → system TTS fallback |
+| `features/voice/hooks/use-speech-to-text.ts` | On-device speech recognition via expo-speech-recognition |
+| `features/voice/hooks/use-streaming-tts.ts` | Sentence-chunked streaming TTS via ElevenLabs + expo-av |
+| `features/voice/hooks/use-voice-mode.ts` | Voice mode orchestrator combining STT + TTS + audio session |
 | `scripts/generate-cue-audio.ts` | Build script to pre-generate cue MP3s from workout definitions |
 | `assets/audio/cues/cue-manifest.json` | Cue text → MP3 filename mapping |
 

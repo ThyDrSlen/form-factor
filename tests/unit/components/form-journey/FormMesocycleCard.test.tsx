@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import { FormMesocycleCard } from '@/components/form-journey/FormMesocycleCard';
+import { FormMesocycleCard } from '@/features/form-tracking/components/journey/FormMesocycleCard';
 import type { MesocycleInsights } from '@/lib/services/form-mesocycle-aggregator';
 
 function insights(overrides: Partial<MesocycleInsights> = {}): MesocycleInsights {

@@ -74,12 +74,13 @@ For testing ARKit (which requires a real camera) or Watch connectivity:
 ### Web
 For UI work that doesn't require native modules:
 ```bash
-bun run web
+bun run web:dev
 ```
 
 ## 4. Project Architecture
 
 - **`app/`**: Expo Router screens. This is the entry point for UI.
+- **`features/`**: Mobile UI, hooks, providers, and styles organized by feature. See [Repository structure](REPOSITORY_STRUCTURE.md).
 - **`lib/fusion/`**: **The Fusion Engine**. This is the core logic that combines camera data (ARKit), watch sensors, and other inputs to track form.
 - **`lib/workouts/`**: Definitions for specific exercises (Pull-ups, Push-ups, etc.).
 - **`supabase/`**: Backend logic, migrations, and Edge Functions (`coach`, `notify`).

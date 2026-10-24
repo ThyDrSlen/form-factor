@@ -14,7 +14,7 @@ jest.mock('@/lib/services/coach-history-service', () => ({
   fetchCoachSessionMessages: jest.fn().mockResolvedValue(null),
 }));
 
-jest.mock('../../../contexts/AuthContext', () => ({
+jest.mock('../../../features/auth/contexts/AuthContext', () => ({
   useAuth: () => ({ user: { id: 'u-1', email: 'u@example.com' } }),
 }));
 
@@ -53,7 +53,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   setItem: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('@/hooks/use-voice-mode', () => ({
+jest.mock('@/features/voice/hooks/use-voice-mode', () => ({
   useVoiceMode: () => ({
     isListening: false,
     transcript: '',

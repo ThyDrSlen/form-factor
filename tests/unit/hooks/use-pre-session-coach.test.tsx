@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 
-import { usePreSessionCoach } from '@/hooks/use-pre-session-coach';
+import { usePreSessionCoach } from '@/features/coach/hooks/use-pre-session-coach';
 import { WARMUP_COACH_FLAG_ENV_VAR } from '@/lib/services/warmup-coach-flag';
 import type { WarmupPlan } from '@/lib/services/coach-warmup-provider';
 

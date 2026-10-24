@@ -11,8 +11,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { FormQualityRecoveryCard } from '@/components/form-tracking/FormQualityRecoveryCard';
-import { useFormQualityRecovery } from '@/hooks/use-form-quality-recovery';
+import { FormQualityRecoveryCard } from '@/features/form-tracking/components/FormQualityRecoveryCard';
+import { useFormQualityRecovery } from '@/features/form-tracking/hooks/use-form-quality-recovery';
 import type { Drill, DrillPrescription } from '@/lib/services/form-quality-recovery';
 import { tabColors } from '@/styles/tabs/_tab-theme';
 

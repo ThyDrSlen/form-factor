@@ -19,11 +19,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { FqiTrendChart } from '@/components/insights/FqiTrendChart';
-import { FaultHeatmap } from '@/components/insights/FaultHeatmap';
-import { RomProgressionCard } from '@/components/insights/RomProgressionCard';
-import { SymmetryCard } from '@/components/insights/SymmetryCard';
-import { RepRewindCarousel } from '@/components/insights/RepRewindCarousel';
+import { FqiTrendChart } from '@/features/form-tracking/components/insights/FqiTrendChart';
+import { FaultHeatmap } from '@/features/form-tracking/components/insights/FaultHeatmap';
+import { RomProgressionCard } from '@/features/form-tracking/components/insights/RomProgressionCard';
+import { SymmetryCard } from '@/features/form-tracking/components/insights/SymmetryCard';
+import { RepRewindCarousel } from '@/features/form-tracking/components/insights/RepRewindCarousel';
 import { shareRepData } from '@/lib/services/rep-export';
 import {
   FormTrackingErrorCode,

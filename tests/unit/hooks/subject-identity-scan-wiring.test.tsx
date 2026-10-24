@@ -10,7 +10,7 @@
 import { act, renderHook } from '@testing-library/react-native';
 
 import type { Joint2D } from '@/lib/arkit/ARKitBodyTracker';
-import { useSubjectIdentity } from '@/hooks/use-subject-identity';
+import { useSubjectIdentity } from '@/features/form-tracking/hooks/use-subject-identity';
 import { OcclusionHoldManager, type SustainedOcclusionEvent } from '@/lib/tracking-quality/occlusion';
 
 function jointAt(name: string, x: number, y: number): Joint2D {

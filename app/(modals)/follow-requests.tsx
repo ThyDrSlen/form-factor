@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { useToast } from '@/contexts/ToastContext';
-import { useSocial } from '@/contexts/SocialContext';
+import { useSocial } from '@/features/social/contexts/SocialContext';
 import { getPendingRequests, type FollowRelationship } from '@/lib/services/social-service';
 import { warnWithTs } from '@/lib/logger';
 

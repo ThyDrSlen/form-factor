@@ -125,7 +125,7 @@ jest.mock('@/lib/workouts', () => ({
   getWorkoutById: (...args: unknown[]) => mockGetWorkoutById(...args),
 }));
 
-import { useWorkoutController } from '@/hooks/use-workout-controller';
+import { useWorkoutController } from '@/features/form-tracking/hooks/use-workout-controller';
 
 // ---------------------------------------------------------------------------
 // Helpers

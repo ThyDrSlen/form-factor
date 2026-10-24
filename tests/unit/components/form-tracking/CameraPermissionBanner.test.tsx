@@ -11,11 +11,11 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 
-import { CameraPermissionBanner } from '@/components/form-tracking/CameraPermissionBanner';
+import { CameraPermissionBanner } from '@/features/form-tracking/components/CameraPermissionBanner';
 import type {
   CameraPermissionStatus,
   UseCameraPermissionGuardResult,
-} from '@/hooks/use-camera-permission-guard';
+} from '@/features/form-tracking/hooks/use-camera-permission-guard';
 
 const mockOpenSettings = jest.fn(() => Promise.resolve());
 const mockRefresh = jest.fn(() => Promise.resolve());
@@ -27,7 +27,7 @@ const mockUseCameraPermissionGuard = jest.fn<
   [unknown]
 >();
 
-jest.mock('@/hooks/use-camera-permission-guard', () => ({
+jest.mock('@/features/form-tracking/hooks/use-camera-permission-guard', () => ({
   useCameraPermissionGuard: (opts: unknown) => mockUseCameraPermissionGuard(opts),
 }));
 

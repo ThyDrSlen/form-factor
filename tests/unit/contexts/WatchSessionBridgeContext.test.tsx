@@ -38,7 +38,7 @@ import React from 'react';
 import { Text } from 'react-native';
 import { render } from '@testing-library/react-native';
 import type { WorkoutSessionEvent } from '@/lib/types/workout-session';
-import { WatchSessionBridgeProvider } from '@/contexts/WatchSessionBridgeContext';
+import { WatchSessionBridgeProvider } from '@/features/workouts/contexts/WatchSessionBridgeContext';
 
 type Listener = (event: WorkoutSessionEvent) => void;
 

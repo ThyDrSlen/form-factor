@@ -15,7 +15,7 @@ import {
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { warnWithTs } from '@/lib/logger';
@@ -30,7 +30,7 @@ import {
 } from '@/lib/services/video-service';
 import { emitCommentEvent } from '@/lib/video-comments-events';
 import { formatRelativeTime, getFormLabel, getFormScore } from '@/lib/video-feed';
-import { styles } from '../../styles/modals/_video-comments.styles';
+import { styles } from '../../features/social/styles/_video-comments.styles';
 
 export default function VideoCommentsModal() {
   const { videoId, returnTo } = useLocalSearchParams<{ videoId?: string; returnTo?: string }>();

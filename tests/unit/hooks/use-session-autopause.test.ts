@@ -46,7 +46,7 @@ jest.mock('react-native', () => ({
   },
 }));
 
-import { useSessionAutopause } from '@/hooks/use-session-autopause';
+import { useSessionAutopause } from '@/features/workouts/hooks/use-session-autopause';
 
 beforeEach(() => {
   jest.clearAllMocks();

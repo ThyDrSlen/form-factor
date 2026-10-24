@@ -1,5 +1,5 @@
 import { renderHook, waitFor } from '@testing-library/react-native';
-import { useFaultSynthesis } from '@/hooks/use-fault-synthesis';
+import { useFaultSynthesis } from '@/features/form-tracking/hooks/use-fault-synthesis';
 import {
   setFaultExplainerRunner,
   __resetFaultExplainerForTests,

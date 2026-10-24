@@ -2,7 +2,7 @@ import {
   correlateNutritionWithForm,
   type FormSession,
 } from '@/lib/services/form-nutrition-correlator';
-import type { FoodEntry } from '@/contexts/FoodContext';
+import type { FoodEntry } from '@/features/nutrition/contexts/FoodContext';
 
 function ts(dayOffset: number, hour = 9): string {
   const d = new Date('2026-01-01T00:00:00.000Z');

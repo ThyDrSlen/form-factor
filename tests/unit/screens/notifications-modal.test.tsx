@@ -2,14 +2,14 @@ import { render, waitFor, fireEvent } from '@testing-library/react-native';
 import { PermissionStatus } from 'expo-modules-core';
 
 import NotificationSettingsModal from '../../../app/(modals)/notifications';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import {
   getNotificationPermissions,
   loadNotificationPreferences,
 } from '@/lib/services/notifications';
 
-jest.mock('@/contexts/AuthContext', () => ({
+jest.mock('@/features/auth/contexts/AuthContext', () => ({
   useAuth: jest.fn(),
 }));
 

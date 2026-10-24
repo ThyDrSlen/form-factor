@@ -22,11 +22,11 @@ import { render } from '@testing-library/react-native';
 import {
   VoiceControlProvider,
   type VoiceTranscriptSource,
-} from '@/contexts/VoiceControlContext';
+} from '@/features/voice/contexts/VoiceControlContext';
 // eslint-disable-next-line import/first
 import { createVoiceSessionManager } from '@/lib/services/voice-session-manager';
 // eslint-disable-next-line import/first
-import { VoiceControlBanner } from '@/components/voice/VoiceControlBanner';
+import { VoiceControlBanner } from '@/features/voice/components/VoiceControlBanner';
 // eslint-disable-next-line import/first
 import type { ExecutableRunner } from '@/lib/services/voice-command-executor';
 

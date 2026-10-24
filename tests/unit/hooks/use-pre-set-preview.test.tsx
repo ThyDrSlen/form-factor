@@ -8,7 +8,7 @@ jest.mock('@/lib/arkit/ARKitBodyTracker', () => ({}));
 
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { FrameSnapshot, JointAngles } from '@/lib/arkit/ARKitBodyTracker';
-import { usePreSetPreview } from '@/hooks/use-pre-set-preview';
+import { usePreSetPreview } from '@/features/form-tracking/hooks/use-pre-set-preview';
 
 const snapshot: FrameSnapshot = { frame: 'data:image/jpeg;base64,AAAA' };
 const angles: JointAngles = {

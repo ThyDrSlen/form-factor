@@ -28,7 +28,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
   PRE_CALIBRATION_CONSTANTS,
   usePreCalibrationStatus,
-} from '@/hooks/use-pre-calibration-status';
+} from '@/features/form-tracking/hooks/use-pre-calibration-status';
 
 type Step = 'check' | 'preview';
 

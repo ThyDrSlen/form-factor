@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import MobilityDrillCard from '@/components/workout/MobilityDrillCard';
+import MobilityDrillCard from '@/features/workouts/components/MobilityDrillCard';
 import { getMobilityDrill } from '@/lib/services/mobility-drills';
 
 describe('MobilityDrillCard', () => {

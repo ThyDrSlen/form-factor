@@ -2,7 +2,7 @@ import React from 'react';
 import { act, render, waitFor } from '@testing-library/react-native';
 import { Provider as PaperProvider } from 'react-native-paper';
 
-import { CostDashboardCard, WEEKLY_TOKEN_BUDGET } from '@/components/settings/CostDashboardCard';
+import { CostDashboardCard, WEEKLY_TOKEN_BUDGET } from '@/features/coach/components/settings/CostDashboardCard';
 import type { WeeklyAggregate } from '@/lib/services/coach-cost-tracker';
 
 function renderWithProvider(ui: React.ReactElement) {

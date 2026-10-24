@@ -24,10 +24,10 @@ can step on the other.
 
 | Surface                              | Source                                                    |
 | ------------------------------------ | --------------------------------------------------------- |
-| today FQI / trend / faults           | `hooks/use-form-home-data.ts`                             |
-| nutrition / recovery correlations    | `hooks/use-nutrition-form-insights.ts`                    |
-| food entries                         | `contexts/FoodContext.tsx`                                |
-| health metrics series                | `contexts/HealthKitContext.tsx`                           |
+| today FQI / trend / faults           | `features/form-tracking/hooks/use-form-home-data.ts`                             |
+| nutrition / recovery correlations    | `features/form-tracking/hooks/use-nutrition-form-insights.ts`                    |
+| food entries                         | `features/nutrition/contexts/FoodContext.tsx`                                |
+| health metrics series                | `features/health/contexts/HealthKitContext.tsx`                           |
 | session FQI averages                 | Supabase `session_metrics` + `reps` tables                |
 
 Both hooks keep their results in a module-level cache (60s for form-home

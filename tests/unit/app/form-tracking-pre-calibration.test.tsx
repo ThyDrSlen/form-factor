@@ -16,7 +16,7 @@ jest.mock('expo-haptics', () => ({
 }));
 
 import FormTrackingPreCalibrationModal from '@/app/(modals)/form-tracking-pre-calibration';
-import { PRE_CALIBRATION_CONSTANTS } from '@/hooks/use-pre-calibration-status';
+import { PRE_CALIBRATION_CONSTANTS } from '@/features/form-tracking/hooks/use-pre-calibration-status';
 
 describe('<FormTrackingPreCalibrationModal />', () => {
   beforeEach(async () => {

@@ -16,7 +16,7 @@ jest.mock('@expo/vector-icons', () => ({
   },
 }));
 
-import { CueShapeBadge } from '@/components/form-tracking-ext/CueShapeBadge';
+import { CueShapeBadge } from '@/features/form-tracking/components/CueShapeBadge';
 
 describe('CueShapeBadge', () => {
   it('renders info severity with the information-circle icon', () => {

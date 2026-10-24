@@ -6,6 +6,7 @@ Welcome to the Form Factor internal documentation.
 
 | Resource | Description |
 |----------|-------------|
+| [Repository structure](REPOSITORY_STRUCTURE.md) | Feature ownership and file placement |
 | [PRD](PRD.md) | Product Requirements Document |
 | [CI/CD](CI-CD.md) | Pipeline documentation |
 | [ARKit Guide](ARKIT_BODY_TRACKING_GUIDE.md) | Body tracking implementation |

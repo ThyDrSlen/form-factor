@@ -6,11 +6,11 @@ jest.mock('@/lib/supabase', () => ({
   },
 }));
 
-jest.mock('@/contexts/FoodContext', () => ({
+jest.mock('@/features/nutrition/contexts/FoodContext', () => ({
   useFood: jest.fn(),
 }));
 
-jest.mock('@/contexts/HealthKitContext', () => ({
+jest.mock('@/features/health/contexts/HealthKitContext', () => ({
   useHealthKit: jest.fn(),
 }));
 
@@ -18,9 +18,9 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import {
   __resetNutritionFormInsightsCacheForTests,
   useNutritionFormInsights,
-} from '@/hooks/use-nutrition-form-insights';
-import { useFood } from '@/contexts/FoodContext';
-import { useHealthKit } from '@/contexts/HealthKitContext';
+} from '@/features/form-tracking/hooks/use-nutrition-form-insights';
+import { useFood } from '@/features/nutrition/contexts/FoodContext';
+import { useHealthKit } from '@/features/health/contexts/HealthKitContext';
 
 const mockUseFood = useFood as jest.MockedFunction<typeof useFood>;
 const mockUseHealthKit = useHealthKit as jest.MockedFunction<typeof useHealthKit>;

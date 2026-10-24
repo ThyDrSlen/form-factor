@@ -1,5 +1,5 @@
 import { renderHook, waitFor } from '@testing-library/react-native';
-import { usePersonalizedCue } from '@/hooks/use-personalized-cue';
+import { usePersonalizedCue } from '@/features/form-tracking/hooks/use-personalized-cue';
 import {
   setPersonalizedCueRunner,
   __resetPersonalizedCueForTests,

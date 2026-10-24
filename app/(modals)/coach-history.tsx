@@ -17,14 +17,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useRelativeTime } from '@/hooks/use-relative-time';
 import {
   fetchCoachSessions,
   type CoachSessionSummary,
 } from '@/lib/services/coach-history-service';
 import { tabColors } from '@/styles/tabs/_tab-theme';
-import { styles } from '@/styles/tabs/_coach-history.styles';
+import { styles } from '@/features/coach/styles/_coach-history.styles';
 
 /** Format: "Mon, Mar 24" */
 function formatDate(iso: string): string {

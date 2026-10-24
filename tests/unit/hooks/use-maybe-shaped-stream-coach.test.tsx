@@ -8,7 +8,7 @@ jest.mock('@/lib/services/coach-streaming', () => ({
 }));
 
 import { renderHook, act } from '@testing-library/react-native';
-import { useMaybeShapedStreamCoach } from '@/hooks/use-maybe-shaped-stream-coach';
+import { useMaybeShapedStreamCoach } from '@/features/coach/hooks/use-maybe-shaped-stream-coach';
 import { resetCoachTelemetry } from '@/lib/services/coach-telemetry';
 
 const FLAG_ENV_VAR = 'EXPO_PUBLIC_COACH_PIPELINE_V2';

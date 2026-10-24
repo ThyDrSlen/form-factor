@@ -1,13 +1,13 @@
 import React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react-native';
-import type * as SocialContextModule from '@/contexts/SocialContext';
+import type * as SocialContextModule from '@/features/social/contexts/SocialContext';
 
 // AuthContext mock — toggled per-test via this object
 const mockAuthValue: { user: { id: string } | null; loading: boolean } = {
   user: { id: 'user-abc' },
   loading: false,
 };
-jest.mock('@/contexts/AuthContext', () => ({
+jest.mock('@/features/auth/contexts/AuthContext', () => ({
   useAuth: () => mockAuthValue,
 }));
 
@@ -65,7 +65,7 @@ let SocialProvider: SocialModule['SocialProvider'];
 let useSocial: SocialModule['useSocial'];
 
 beforeAll(() => {
-  const mod = require('@/contexts/SocialContext') as SocialModule;
+  const mod = require('@/features/social/contexts/SocialContext') as SocialModule;
   SocialProvider = mod.SocialProvider;
   useSocial = mod.useSocial;
 });

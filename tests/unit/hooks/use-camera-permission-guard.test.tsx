@@ -14,7 +14,7 @@ jest.mock('expo-camera', () => ({
   ],
 }));
 
-import { useCameraPermissionGuard } from '@/hooks/use-camera-permission-guard';
+import { useCameraPermissionGuard } from '@/features/form-tracking/hooks/use-camera-permission-guard';
 
 type Listener = (state: AppStateStatus) => void;
 

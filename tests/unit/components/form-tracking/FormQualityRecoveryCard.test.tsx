@@ -1,7 +1,7 @@
 import { fireEvent, render } from '@testing-library/react-native';
 import React from 'react';
 
-import { FormQualityRecoveryCard } from '@/components/form-tracking/FormQualityRecoveryCard';
+import { FormQualityRecoveryCard } from '@/features/form-tracking/components/FormQualityRecoveryCard';
 import type { DrillPrescription } from '@/lib/services/form-quality-recovery';
 
 const PRESCRIPTION: DrillPrescription = {

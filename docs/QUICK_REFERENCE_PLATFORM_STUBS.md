@@ -191,7 +191,7 @@ runOnPlatform('ios', () => {
 ### HealthKit
 - **Pattern**: Runtime checks with `Platform.OS`
 - **Files**: `lib/services/healthkit/*.ts`
-- **Context**: `contexts/HealthKitContext.tsx`
+- **Context**: `features/health/contexts/HealthKitContext.tsx`
 
 ### Session Manager
 - **Pattern**: Runtime checks for web vs native storage

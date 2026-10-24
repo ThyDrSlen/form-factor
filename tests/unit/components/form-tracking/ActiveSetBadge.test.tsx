@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
-import { ActiveSetBadge } from '@/components/form-tracking/ActiveSetBadge';
+import { ActiveSetBadge } from '@/features/form-tracking/components/ActiveSetBadge';
 
 describe('ActiveSetBadge', () => {
   it('renders set + exercise when both are provided', () => {

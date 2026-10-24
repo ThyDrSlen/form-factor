@@ -3,7 +3,7 @@
  */
 import React from 'react';
 import { render } from '@testing-library/react-native';
-import { ExerciseHistoryStrip } from '@/components/form-tracking/ExerciseHistoryStrip';
+import { ExerciseHistoryStrip } from '@/features/form-tracking/components/ExerciseHistoryStrip';
 import { EMPTY_EXERCISE_HISTORY } from '@/lib/services/exercise-history';
 
 describe('ExerciseHistoryStrip', () => {

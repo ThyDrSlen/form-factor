@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
-import SetReadyButton from '@/components/workout/SetReadyButton';
+import SetReadyButton from '@/features/workouts/components/SetReadyButton';
 
 const mockImpactAsync = jest.fn((_style: string) => Promise.resolve());
 

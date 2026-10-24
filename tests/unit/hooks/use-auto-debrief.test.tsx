@@ -40,7 +40,7 @@ import {
   AUTO_DEBRIEF_TIMEOUT_MESSAGE,
   useAutoDebrief,
   type UseAutoDebriefState,
-} from '@/hooks/use-auto-debrief';
+} from '@/features/form-tracking/hooks/use-auto-debrief';
 
 function makeEvent() {
   return {

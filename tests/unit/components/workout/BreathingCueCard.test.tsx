@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
-import BreathingCueCard from '@/components/workout/BreathingCueCard';
+import BreathingCueCard from '@/features/workouts/components/BreathingCueCard';
 import { getBreathingPattern } from '@/lib/services/breathing-patterns';
 
 jest.useFakeTimers();

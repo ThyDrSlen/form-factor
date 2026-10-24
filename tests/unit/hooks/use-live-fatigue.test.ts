@@ -3,7 +3,7 @@
  */
 
 import { renderHook } from '@testing-library/react-native';
-import { useLiveFatigue, computeLiveFatigue, type LiveFatigueInput } from '@/hooks/use-live-fatigue';
+import { useLiveFatigue, computeLiveFatigue, type LiveFatigueInput } from '@/features/form-tracking/hooks/use-live-fatigue';
 
 describe('computeLiveFatigue (pure)', () => {
   it('returns fresh baseline with no data', () => {

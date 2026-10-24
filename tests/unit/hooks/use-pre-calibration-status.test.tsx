@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   PRE_CALIBRATION_CONSTANTS,
   usePreCalibrationStatus,
-} from '@/hooks/use-pre-calibration-status';
+} from '@/features/form-tracking/hooks/use-pre-calibration-status';
 
 describe('usePreCalibrationStatus', () => {
   beforeEach(async () => {

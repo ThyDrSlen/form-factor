@@ -27,10 +27,10 @@ import {
 } from '@react-navigation/native';
 
 import { tabColors } from '@/styles/tabs/_tab-theme';
-import { sessionStyles } from '@/styles/workout-session.styles';
+import { sessionStyles } from '@/features/workouts/styles/workout-session.styles';
 import { localDB } from '@/lib/services/database/local-db';
 import { genericLocalUpsert } from '@/lib/services/database/generic-sync';
-import ExercisePicker from '@/components/workout/ExercisePicker';
+import ExercisePicker from '@/features/workouts/components/ExercisePicker';
 import type {
   Exercise,
   GoalProfile,

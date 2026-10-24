@@ -30,7 +30,7 @@ jest.mock('expo-haptics', () => ({
 // Imports
 // ---------------------------------------------------------------------------
 
-import SessionPauseButton from '@/components/workout/SessionPauseButton';
+import SessionPauseButton from '@/features/workouts/components/SessionPauseButton';
 import { useSessionRunner } from '@/lib/stores/session-runner';
 import type { WorkoutSession } from '@/lib/types/workout-session';
 

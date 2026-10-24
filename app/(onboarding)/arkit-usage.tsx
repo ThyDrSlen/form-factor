@@ -13,7 +13,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { isIOS } from '@/lib/platform-utils';
-import { OnboardingProgress } from '@/components/onboarding/OnboardingProgress';
+import { OnboardingProgress } from '@/features/onboarding/components/OnboardingProgress';
 import { trackOnboardingEvent } from '@/lib/services/onboarding-analytics';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;

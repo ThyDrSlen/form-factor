@@ -61,7 +61,7 @@ if (typeof (globalThis as any).btoa !== 'function') {
     Buffer.from(str, 'binary').toString('base64');
 }
 
-import { useStreamingTts } from '@/hooks/use-streaming-tts';
+import { useStreamingTts } from '@/features/voice/hooks/use-streaming-tts';
 
 function oneByteBuffer(): ArrayBuffer {
   return new Uint8Array([0x42]).buffer;

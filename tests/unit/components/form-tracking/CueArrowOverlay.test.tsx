@@ -5,7 +5,7 @@ import {
   CueArrowOverlay,
   SEVERITY_COLORS,
   normalizeVector,
-} from '@/components/form-tracking/CueArrowOverlay';
+} from '@/features/form-tracking/components/CueArrowOverlay';
 
 describe('normalizeVector', () => {
   it('returns unit vector', () => {

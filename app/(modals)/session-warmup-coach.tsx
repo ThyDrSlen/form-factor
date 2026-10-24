@@ -24,7 +24,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { localDB } from '@/lib/services/database/local-db';
-import { usePreSessionCoach } from '@/hooks/use-pre-session-coach';
+import { usePreSessionCoach } from '@/features/coach/hooks/use-pre-session-coach';
 import type { SessionTemplateLike, WarmupMovement } from '@/lib/services/coach-warmup-provider';
 import { tabColors } from '@/styles/tabs/_tab-theme';
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import { SessionResumeToast } from '@/components/form-tracking/SessionResumeToast';
+import { SessionResumeToast } from '@/features/form-tracking/components/SessionResumeToast';
 
 describe('SessionResumeToast', () => {
   it('renders null when not visible', () => {

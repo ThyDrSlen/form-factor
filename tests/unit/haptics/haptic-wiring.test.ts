@@ -8,7 +8,7 @@ jest.mock('expo-haptics', () => ({
 }));
 
 import { hapticBus } from '@/lib/haptics/haptic-bus';
-import { useHapticWiring } from '@/hooks/use-haptic-wiring';
+import { useHapticWiring } from '@/features/form-tracking/hooks/use-haptic-wiring';
 
 describe('useHapticWiring', () => {
   beforeEach(() => {

@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 
-import { usePersistentFaultSummary } from '@/hooks/use-persistent-fault-summary';
+import { usePersistentFaultSummary } from '@/features/form-tracking/hooks/use-persistent-fault-summary';
 import { FAULT_DRILL_GEMMA_FLAG_ENV_VAR } from '@/lib/services/fault-drill-gemma-flag';
 import type { FaultHeatmapSnapshot } from '@/lib/services/fault-heatmap-data-loader';
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import { InlineRestTimer } from '@/components/form-tracking/InlineRestTimer';
+import { InlineRestTimer } from '@/features/form-tracking/components/InlineRestTimer';
 
 describe('InlineRestTimer', () => {
   it('renders nothing when not active', () => {

@@ -41,7 +41,7 @@ The app has deep HealthKit integration (steps, heart rate, weight, sleep data) b
 - Fallback messaging if permissions denied
 
 **Technical Context:**
-- File: `contexts/HealthKitContext.tsx` - already has `requestPermissions()` function
+- File: `features/health/contexts/HealthKitContext.tsx` - already has `requestPermissions()` function
 - Should integrate with existing HealthKit permission utilities in `lib/services/healthkit`
 - Impact: Users confused about why app needs health data, may deny permissions
 
@@ -166,7 +166,7 @@ Current onboarding only covers nutrition goals. Users need a complete profile se
 **Labels:** `onboarding`, `ui/ux`, `activity-goals`, `visualization`, `medium-priority`
 
 **Problem:**  
-The app has beautiful Activity Rings visualization (`components/activity-rings/ActivityRings.tsx`) but no visual onboarding to help users set their daily activity goals.
+The app has beautiful Activity Rings visualization (`features/health/components/ActivityRings.tsx`) but no visual onboarding to help users set their daily activity goals.
 
 **Current State:**
 - ✅ ActivityRings.tsx component implemented with SVG-based circular progress

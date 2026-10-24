@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import { FaultGlossaryChip } from '@/components/form-tracking/FaultGlossaryChip';
+import { FaultGlossaryChip } from '@/features/form-tracking/components/FaultGlossaryChip';
 
 jest.mock('@expo/vector-icons', () => ({
   Ionicons: () => null,

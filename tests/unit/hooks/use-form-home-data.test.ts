@@ -10,7 +10,7 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import {
   __resetFormHomeDataCacheForTests,
   useFormHomeData,
-} from '@/hooks/use-form-home-data';
+} from '@/features/form-tracking/hooks/use-form-home-data';
 
 function mkBuilder(data: unknown, error: unknown = null) {
   const builder: Record<string, unknown> = {};

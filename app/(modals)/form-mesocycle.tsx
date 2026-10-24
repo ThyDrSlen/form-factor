@@ -10,8 +10,8 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { FormMesocycleCard } from '@/components/form-journey/FormMesocycleCard';
-import { useFormMesocycle } from '@/hooks/use-form-mesocycle';
+import { FormMesocycleCard } from '@/features/form-tracking/components/journey/FormMesocycleCard';
+import { useFormMesocycle } from '@/features/form-tracking/hooks/use-form-mesocycle';
 import type {
   MesocycleFaultCount,
   MesocycleWeekBucket,

@@ -33,7 +33,7 @@ jest.mock('@/lib/services/database/local-db', () => ({
 }));
 
 // eslint-disable-next-line import/first
-import { useWorkoutCoachContext } from '@/hooks/use-workout-coach-context';
+import { useWorkoutCoachContext } from '@/features/coach/hooks/use-workout-coach-context';
 
 interface HarnessProps {
   onReady: (api: ReturnType<typeof useWorkoutCoachContext>) => void;

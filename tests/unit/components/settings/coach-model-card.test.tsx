@@ -2,7 +2,7 @@ import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import { Provider as PaperProvider } from 'react-native-paper';
 
-import { CoachModelCard } from '@/components/settings/CoachModelCard';
+import { CoachModelCard } from '@/features/coach/components/settings/CoachModelCard';
 
 function renderWithProvider(ui: React.ReactElement) {
   return render(<PaperProvider>{ui}</PaperProvider>);

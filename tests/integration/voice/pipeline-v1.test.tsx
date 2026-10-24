@@ -42,7 +42,7 @@ import {
   VoiceControlProvider,
   useVoiceControl,
   type VoiceTranscriptSource,
-} from '@/contexts/VoiceControlContext';
+} from '@/features/voice/contexts/VoiceControlContext';
 // eslint-disable-next-line import/first
 import { createVoiceSessionManager } from '@/lib/services/voice-session-manager';
 // eslint-disable-next-line import/first

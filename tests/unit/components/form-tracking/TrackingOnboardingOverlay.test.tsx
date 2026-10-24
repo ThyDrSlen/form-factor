@@ -15,7 +15,7 @@ jest.mock('moti', () => {
 import TrackingOnboardingOverlay, {
   FORM_TRACKING_ONBOARDING_DISMISSED_KEY,
   // eslint-disable-next-line import/first
-} from '../../../../components/form-tracking/TrackingOnboardingOverlay';
+} from '../../../../features/form-tracking/components/TrackingOnboardingOverlay';
 
 describe('TrackingOnboardingOverlay', () => {
   beforeEach(async () => {

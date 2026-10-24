@@ -11,7 +11,7 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ exercise: 'Bench Press', horizonWeeks: '3' }),
 }));
 
-jest.mock('../../../contexts/AuthContext', () => ({
+jest.mock('../../../features/auth/contexts/AuthContext', () => ({
   useAuth: () => ({ user: { id: 'user-1' } }),
 }));
 

@@ -20,7 +20,7 @@ import { render } from '@testing-library/react-native';
 import {
   VoiceControlProvider,
   useVoiceControl,
-} from '@/contexts/VoiceControlContext';
+} from '@/features/voice/contexts/VoiceControlContext';
 import {
   VOICE_CONTROL_PIPELINE_ENV_VAR,
   isVoiceControlPipelineEnabled,

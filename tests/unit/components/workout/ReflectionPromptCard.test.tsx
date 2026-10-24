@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
-import ReflectionPromptCard from '@/components/workout/ReflectionPromptCard';
+import ReflectionPromptCard from '@/features/workouts/components/ReflectionPromptCard';
 import {
   REFLECTION_PROMPTS,
   type ReflectionPrompt,

@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
-import { FaultSynthesisChip } from '@/components/form-tracking/FaultSynthesisChip';
+import { FaultSynthesisChip } from '@/features/form-tracking/components/FaultSynthesisChip';
 import {
   setFaultExplainerRunner,
   __resetFaultExplainerForTests,

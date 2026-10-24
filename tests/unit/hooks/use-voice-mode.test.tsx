@@ -25,7 +25,7 @@ const sttState = {
 };
 const mockStartListening = jest.fn().mockResolvedValue(undefined);
 const mockStopListening = jest.fn();
-jest.mock('@/hooks/use-speech-to-text', () => ({
+jest.mock('@/features/voice/hooks/use-speech-to-text', () => ({
   useSpeechToText: () => ({
     startListening: mockStartListening,
     stopListening: mockStopListening,
@@ -38,7 +38,7 @@ jest.mock('@/hooks/use-speech-to-text', () => ({
 const ttsState = { isSpeaking: false };
 const mockSpeak = jest.fn();
 const mockTtsStop = jest.fn();
-jest.mock('@/hooks/use-streaming-tts', () => ({
+jest.mock('@/features/voice/hooks/use-streaming-tts', () => ({
   useStreamingTts: () => ({
     speak: mockSpeak,
     stop: mockTtsStop,
@@ -54,7 +54,7 @@ jest.mock('@/lib/services/audio-session-manager', () => ({
 }));
 
 // eslint-disable-next-line import/first
-import { useVoiceMode } from '@/hooks/use-voice-mode';
+import { useVoiceMode } from '@/features/voice/hooks/use-voice-mode';
 
 beforeEach(() => {
   jest.clearAllMocks();

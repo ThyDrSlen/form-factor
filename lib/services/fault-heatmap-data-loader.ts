@@ -18,7 +18,7 @@
  */
 import { supabase } from '@/lib/supabase';
 import { errorWithTs } from '@/lib/logger';
-import type { FaultCell } from '@/components/form-home/FaultHeatmapThumb';
+import type { FaultCell } from '@/features/form-tracking/components/home/FaultHeatmapThumb';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SESSION_HORIZON_DAYS = 120;

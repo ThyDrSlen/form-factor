@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
-import RepTimelineCard from '@/components/form-tracking/RepTimelineCard';
+import RepTimelineCard from '@/features/form-tracking/components/RepTimelineCard';
 import {
   buildRepQualityTimeline,
 } from '@/lib/services/rep-quality-timeline';

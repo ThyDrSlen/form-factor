@@ -1,5 +1,5 @@
 import { renderHook } from '@testing-library/react-native';
-import { useRepCounterPosition } from '@/hooks/use-rep-counter-position';
+import { useRepCounterPosition } from '@/features/form-tracking/hooks/use-rep-counter-position';
 
 describe('useRepCounterPosition', () => {
   it('returns visible=false when no joints supplied', () => {

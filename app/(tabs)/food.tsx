@@ -17,9 +17,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { FoodEntry, useFood } from '../../contexts/FoodContext';
+import { FoodEntry, useFood } from '../../features/nutrition/contexts/FoodContext';
 import { useToast } from '../../contexts/ToastContext';
-import { styles } from '../../styles/tabs/_food.styles';
+import { styles } from '../../features/nutrition/styles/_food.styles';
 
 const buildFoodShareMessage = (food: FoodEntry): string => {
   const dateLabel = new Date(food.date).toLocaleDateString(undefined, {

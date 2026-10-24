@@ -17,8 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeBack } from '@/hooks/use-safe-back';
 import { useToast } from '@/contexts/ToastContext';
-import { useAuth } from '@/contexts/AuthContext';
-import { useSocial } from '@/contexts/SocialContext';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
+import { useSocial } from '@/features/social/contexts/SocialContext';
 import { useHapticPreferences } from '@/contexts/HapticPreferencesContext';
 import type { HapticMode } from '@/lib/haptics/haptic-bus';
 import {

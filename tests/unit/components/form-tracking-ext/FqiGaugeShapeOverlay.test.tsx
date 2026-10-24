@@ -16,7 +16,7 @@ jest.mock('@expo/vector-icons', () => ({
   },
 }));
 
-import { FqiGaugeShapeOverlay } from '@/components/form-tracking-ext/FqiGaugeShapeOverlay';
+import { FqiGaugeShapeOverlay } from '@/features/form-tracking/components/FqiGaugeShapeOverlay';
 
 describe('FqiGaugeShapeOverlay', () => {
   it('renders the check icon for high scores', () => {

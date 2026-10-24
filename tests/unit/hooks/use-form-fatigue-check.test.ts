@@ -1,5 +1,5 @@
 import { renderHook } from '@testing-library/react-native';
-import { useFormFatigueCheck } from '@/hooks/use-form-fatigue-check';
+import { useFormFatigueCheck } from '@/features/form-tracking/hooks/use-form-fatigue-check';
 import type { SetFqiPoint } from '@/lib/services/form-fatigue-detector';
 
 function sets(values: number[]): SetFqiPoint[] {

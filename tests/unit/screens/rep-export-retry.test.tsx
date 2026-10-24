@@ -32,19 +32,19 @@ jest.mock('@/contexts/ToastContext', () => ({
 }));
 
 // Stub heavy insight widgets so the test only exercises the export card.
-jest.mock('@/components/insights/FqiTrendChart', () => ({
+jest.mock('@/features/form-tracking/components/insights/FqiTrendChart', () => ({
   FqiTrendChart: () => null,
 }));
-jest.mock('@/components/insights/FaultHeatmap', () => ({
+jest.mock('@/features/form-tracking/components/insights/FaultHeatmap', () => ({
   FaultHeatmap: () => null,
 }));
-jest.mock('@/components/insights/RomProgressionCard', () => ({
+jest.mock('@/features/form-tracking/components/insights/RomProgressionCard', () => ({
   RomProgressionCard: () => null,
 }));
-jest.mock('@/components/insights/SymmetryCard', () => ({
+jest.mock('@/features/form-tracking/components/insights/SymmetryCard', () => ({
   SymmetryCard: () => null,
 }));
-jest.mock('@/components/insights/RepRewindCarousel', () => ({
+jest.mock('@/features/form-tracking/components/insights/RepRewindCarousel', () => ({
   RepRewindCarousel: () => null,
 }));
 

@@ -27,7 +27,7 @@ import {
   PAIN_LOCATION_LABELS,
   type PainFlag,
 } from '@/lib/services/rep-pain-journal';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { tabColors } from '@/styles/tabs/_tab-theme';
 
 // =============================================================================

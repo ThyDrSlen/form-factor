@@ -8,7 +8,7 @@
 
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
-import AutoDebriefCard from '@/components/form-tracking/AutoDebriefCard';
+import AutoDebriefCard from '@/features/form-tracking/components/AutoDebriefCard';
 import type { AutoDebriefResult } from '@/lib/services/coach-auto-debrief';
 
 function result(overrides: Partial<AutoDebriefResult> = {}): AutoDebriefResult {

@@ -5,7 +5,7 @@ import {
   PHASE_COLORS,
   ROMProgressBar,
   computeFillRect,
-} from '@/components/form-tracking/ROMProgressBar';
+} from '@/features/form-tracking/components/ROMProgressBar';
 
 describe('computeFillRect', () => {
   it('concentric fills left-to-right', () => {

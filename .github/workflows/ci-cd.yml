@@ -41,6 +41,9 @@ jobs:
               - '**/*.md'
             app_code:
               - 'app/**'
+              - 'features/**'
+              - 'styles/**'
+              - 'etc/**'
               - 'components/**'
               - 'contexts/**'
               - 'hooks/**'
@@ -597,7 +600,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ] || [ -f yarn.lock ] || [ -f pnpm-lock.yaml ]; then
-            npx audit-ci --config config/audit-ci.json
+            npx audit-ci --config etc/audit-ci.json
           elif [ -f bun.lock ] || [ -f bun.lockb ]; then
             echo "Skipping audit-ci (unsupported for Bun lockfiles); relying on bun audit"
           else

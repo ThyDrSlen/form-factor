@@ -28,7 +28,7 @@ jest.mock('@/lib/stores/session-runner', () => ({
 
 jest.mock('@/lib/workouts', () => jest.requireActual('@/lib/workouts'));
 
-import { useActiveSetBinding } from '@/hooks/use-active-set-binding';
+import { useActiveSetBinding } from '@/features/workouts/hooks/use-active-set-binding';
 
 function setSessionState(patch: Partial<typeof mockSessionState>): void {
   Object.assign(mockSessionState, patch);

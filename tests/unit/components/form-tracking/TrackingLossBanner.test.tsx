@@ -11,7 +11,7 @@ jest.mock('moti', () => {
 });
 
 // eslint-disable-next-line import/first
-import TrackingLossBanner from '../../../../components/form-tracking/TrackingLossBanner';
+import TrackingLossBanner from '../../../../features/form-tracking/components/TrackingLossBanner';
 
 describe('TrackingLossBanner', () => {
   it('renders nothing when not visible', () => {

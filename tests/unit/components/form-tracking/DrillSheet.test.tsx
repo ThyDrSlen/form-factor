@@ -16,7 +16,7 @@ jest.mock('@/lib/services/drill-tracker', () => ({
   logDrillEvent: jest.fn(),
 }));
 
-import { DrillSheet } from '@/components/form-tracking/DrillSheet';
+import { DrillSheet } from '@/features/form-tracking/components/DrillSheet';
 
 const sampleFault: FaultDefinition = {
   id: 'shoulder_elevation',

@@ -18,7 +18,7 @@ jest.mock('@/lib/services/rest-advisor', () => ({
 }));
 
 // eslint-disable-next-line import/first
-import { useRestAdvisor } from '@/hooks/use-rest-advisor';
+import { useRestAdvisor } from '@/features/workouts/hooks/use-rest-advisor';
 
 beforeEach(() => {
   jest.clearAllMocks();

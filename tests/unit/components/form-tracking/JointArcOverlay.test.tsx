@@ -5,7 +5,7 @@ import {
   JointArcOverlay,
   romColor,
   romProgress,
-} from '@/components/form-tracking/JointArcOverlay';
+} from '@/features/form-tracking/components/JointArcOverlay';
 
 describe('romProgress', () => {
   it('clamps to 0..1', () => {

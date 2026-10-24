@@ -1,7 +1,7 @@
 import React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react-native';
-import type * as WorkoutsContextModule from '@/contexts/WorkoutsContext';
-import type { Workout } from '@/contexts/WorkoutsContext';
+import type * as WorkoutsContextModule from '@/features/workouts/contexts/WorkoutsContext';
+import type { Workout } from '@/features/workouts/contexts/WorkoutsContext';
 import { ToastProvider } from '@/contexts/ToastContext';
 
 // Mock expo-crypto
@@ -17,7 +17,7 @@ jest.mock('@/contexts/NetworkContext', () => ({
 
 // Mock AuthContext
 const mockAuthValue = { user: { id: 'test-user-123' }, loading: false };
-jest.mock('@/contexts/AuthContext', () => ({
+jest.mock('@/features/auth/contexts/AuthContext', () => ({
   useAuth: () => mockAuthValue,
 }));
 
@@ -72,7 +72,7 @@ beforeAll(() => {
     data: { user: { id: 'test-user-123' } },
   });
 
-  const mod = require('@/contexts/WorkoutsContext') as WorkoutsModule;
+  const mod = require('@/features/workouts/contexts/WorkoutsContext') as WorkoutsModule;
   WorkoutsProvider = mod.WorkoutsProvider;
   useWorkouts = mod.useWorkouts;
 });

@@ -10,7 +10,7 @@ jest.mock('moti', () => {
 });
 
 // eslint-disable-next-line import/first
-import FqiGauge, { getFqiColor } from '../../../../components/form-tracking/FqiGauge';
+import FqiGauge, { getFqiColor } from '../../../../features/form-tracking/components/FqiGauge';
 
 describe('FqiGauge', () => {
   it('renders the "--" placeholder when no score is available', () => {
