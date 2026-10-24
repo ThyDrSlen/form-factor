@@ -55,7 +55,7 @@ export class SessionManager {
   /**
    * Retrieve a stored session from AsyncStorage
    */
-  async getStoredSession(): Promise<Session | null> {
+  async getStoredSession(options: { allowExpiredForRefresh?: boolean } = {}): Promise<Session | null> {
     try {
       // On web, we don't use AsyncStorage - let Supabase handle it
       if (Platform.OS === 'web') {
@@ -88,8 +88,12 @@ export class SessionManager {
         isExpired: Date.now() > expiresAt,
       });
 
-      // Check if session is expired
-      if (Date.now() > expiresAt) {
+      // Auth bootstrap may hand expired credentials to the SDK for refresh.
+      // This does not make the access token valid (isSessionValid stays strict).
+      const canAttemptRefresh = options.allowExpiredForRefresh
+        && typeof session?.refresh_token === 'string'
+        && session.refresh_token.length > 0;
+      if (Date.now() >= expiresAt && !canAttemptRefresh) {
         logWithTs('[SessionManager] Stored session is expired, clearing it');
         await this.clearSession();
         return null;
@@ -115,14 +119,16 @@ export class SessionManager {
   /**
    * Clear stored session data
    */
-  async clearSession(): Promise<void> {
+  async clearSession(options: { throwOnError?: boolean } = {}): Promise<void> {
     try {
       logWithTs('[SessionManager] Clearing stored session');
       await AsyncStorage.multiRemove([SESSION_STORAGE_KEY, SESSION_TIMESTAMP_KEY]);
       logWithTs('[SessionManager] Session cleared successfully');
     } catch (error) {
       errorWithTs('[SessionManager] Error clearing session:', error);
-      // Don't throw here - clearing should always succeed
+      // Account transitions require confirmed removal before releasing access.
+      // Other callers retain the existing best-effort cleanup contract.
+      if (options.throwOnError) throw error;
     }
   }
 

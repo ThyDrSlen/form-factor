@@ -1,9 +1,12 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { useAuth } from '../../contexts/AuthContext';
-import { useToast } from '../../contexts/ToastContext';
+import { useRef, useState } from 'react';
+import { Alert, Keyboard, KeyboardAvoidingView, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import { isIOS } from '@/lib/platform-utils';
+import { BrandMark } from '@/components/BrandMark';
+import { SocialSignInButtons } from '@/features/auth/components/SocialSignInButtons';
+import { styles } from '@/features/auth/styles/sign-in.styles';
 
 type FormData = {
   email: string;
@@ -16,6 +19,8 @@ type FieldError = { field: 'email' | 'password' | 'fullName' | 'form'; message: 
 export default function SignInScreen() {
   const router = useRouter();
   const { show: showToast } = useToast();
+  const fullNameInputRef = useRef<TextInput>(null);
+  const passwordInputRef = useRef<TextInput>(null);
   // TODO(wave-36): honor `mode=existing` query to default to the existing-account tab
   // (forwarded from app/(onboarding)/welcome.tsx's "I already have an account" CTA).
   const [isSignUp, setIsSignUp] = useState(false);
@@ -156,6 +161,8 @@ export default function SignInScreen() {
   };
 
   const handleEmailAuth = async () => {
+    if (isSigningIn) return;
+
     if (!formData.email || !formData.password) {
       setErrorMessage('Please fill in all fields');
       setFieldError(null);
@@ -170,8 +177,10 @@ export default function SignInScreen() {
       if (isSignUp) {
         if (!formData.fullName?.trim()) {
           setFieldError({ field: 'fullName', message: 'Please enter your full name' });
+          fullNameInputRef.current?.focus();
           return;
         }
+        Keyboard.dismiss();
         const { error } = await signUpWithEmail(
           formData.email,
           formData.password,
@@ -189,6 +198,7 @@ export default function SignInScreen() {
         setFormData((prev) => ({ ...prev, password: '' }));
         Alert.alert('Success', 'Check your email to confirm your account, then sign in.');
       } else {
+        Keyboard.dismiss();
         const { error } = await signInWithEmail(formData.email, formData.password);
         if (error) {
           applyFieldError(error);
@@ -201,6 +211,7 @@ export default function SignInScreen() {
   };
 
   const handleSocialAuth = async (provider: 'google' | 'apple') => {
+    Keyboard.dismiss();
     setErrorMessage('');
     clearError();
 
@@ -219,11 +230,14 @@ export default function SignInScreen() {
   };
 
   const handleMagicLink = async () => {
+    if (isSigningIn || magicLinkSent) return;
+
     if (!formData.email || !formData.email.includes('@')) {
       setErrorMessage('Please enter a valid email address');
       return;
     }
 
+    Keyboard.dismiss();
     setErrorMessage('');
     clearError();
 
@@ -245,33 +259,38 @@ export default function SignInScreen() {
     <View style={styles.container}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={isiOS ? 'padding' : 'height'}
+        enabled={!isiOS}
+        behavior="height"
       >
         <ScrollView
+          style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
+          // The auth layout owns safe-area padding. On iOS, let the native
+          // scroll view inset and reveal focused fields without resizing it twice.
+          contentInsetAdjustmentBehavior="never"
+          automaticallyAdjustKeyboardInsets={isiOS}
+          keyboardDismissMode={isiOS ? 'interactive' : 'on-drag'}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>
-              Form Factor
-            </Text>
+            <BrandMark size={44} />
+            <Text style={styles.headerTitle}>FORM FACTOR</Text>
           </View>
 
-          {/* Main card container */}
           <View style={styles.card}>
-            <View style={styles.logoContainer}>
-              <Image
-                source={require('../../assets/images/ff-logo.png')}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-            </View>
-
             <Text style={styles.welcomeTitle}>
-              Welcome to Form Factor
+              {isSignUp ? 'Start strong.' : 'Welcome back.'}
             </Text>
+            <Text style={styles.subtitle}>
+              {isSignUp ? 'Better movement starts with your next rep.' : 'Your training. Your progress. All in one place.'}
+            </Text>
+            <SocialSignInButtons disabled={isSigningIn} onPress={handleSocialAuth} />
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or continue with email</Text>
+              <View style={styles.dividerLine} />
+            </View>
 
             {/* Error message */}
             {(errorMessage || authError) && (
@@ -286,8 +305,9 @@ export default function SignInScreen() {
               <Text style={styles.inputLabel}>Email</Text>
               <TextInput
                 style={[styles.input, fieldError?.field === 'email' && styles.inputError]}
-                placeholder="Email"
-                placeholderTextColor="#6781A6"
+                placeholder="you@example.com"
+                accessibilityLabel="Email"
+                placeholderTextColor="#A4ABB8"
                 value={formData.email}
                 onChangeText={(text) => {
                   setFormData(prev => ({ ...prev, email: text.trim() }));
@@ -298,7 +318,17 @@ export default function SignInScreen() {
                 autoComplete="email"
                 autoCorrect={false}
                 textContentType="emailAddress"
-                returnKeyType={isSignUp && !isMagicLink ? 'next' : 'done'}
+                returnKeyType={isMagicLink ? 'send' : 'next'}
+                submitBehavior="submit"
+                onSubmitEditing={() => {
+                  if (isMagicLink) {
+                    void handleMagicLink();
+                  } else if (isSignUp) {
+                    fullNameInputRef.current?.focus();
+                  } else {
+                    passwordInputRef.current?.focus();
+                  }
+                }}
                 editable={!isSigningIn}
               />
               {fieldError?.field === 'email' && (
@@ -310,17 +340,23 @@ export default function SignInScreen() {
               <View style={styles.inputContainer}>
                 <Text style={styles.inputLabel}>Full Name</Text>
                 <TextInput
+                  ref={fullNameInputRef}
                   style={[styles.input, fieldError?.field === 'fullName' && styles.inputError]}
-                  placeholder="Full Name"
-                  placeholderTextColor="#6781A6"
+                  placeholder="Your full name"
+                  accessibilityLabel="Full name"
+                  placeholderTextColor="#A4ABB8"
                   value={formData.fullName}
                   onChangeText={(text) => {
                     setFormData((prev) => ({ ...prev, fullName: text }));
                     if (fieldError?.field === 'fullName') setFieldError(null);
                   }}
                   autoCapitalize="words"
+                  autoComplete="name"
+                  textContentType="name"
                   autoCorrect={false}
                   returnKeyType="next"
+                  submitBehavior="submit"
+                  onSubmitEditing={() => passwordInputRef.current?.focus()}
                   editable={!isSigningIn}
                 />
                 {fieldError?.field === 'fullName' && (
@@ -334,18 +370,24 @@ export default function SignInScreen() {
                 <View style={styles.inputContainer}>
                   <Text style={styles.inputLabel}>Password</Text>
                   <TextInput
+                    ref={passwordInputRef}
                     style={[styles.input, fieldError?.field === 'password' && styles.inputError]}
-                    placeholder="Password"
-                    placeholderTextColor="#6781A6"
+                    placeholder="Enter your password"
+                    accessibilityLabel="Password"
+                    placeholderTextColor="#A4ABB8"
                     value={formData.password}
                     onChangeText={(text) => {
                       setFormData(prev => ({ ...prev, password: text }));
                       if (fieldError?.field === 'password') setFieldError(null);
                     }}
                     secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
                     autoComplete={isSignUp ? 'new-password' : 'current-password'}
                     textContentType={isSignUp ? 'newPassword' : 'password'}
-                    returnKeyType="done"
+                    returnKeyType="go"
+                    submitBehavior="submit"
+                    onSubmitEditing={() => void handleEmailAuth()}
                     editable={!isSigningIn}
                   />
                   {fieldError?.field === 'password' && (
@@ -359,7 +401,7 @@ export default function SignInScreen() {
                   disabled={isSigningIn}
                 >
                   <Text style={styles.buttonText}>
-                    {isSigningIn ? (isSignUp ? 'Creating Account...' : 'Logging In...') : (isSignUp ? 'Create Account' : 'Log In')}
+                    {isSigningIn ? (isSignUp ? 'Creating Account...' : 'Signing in...') : (isSignUp ? 'Create Account' : 'Sign in')}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -377,6 +419,7 @@ export default function SignInScreen() {
               <TouchableOpacity
                 style={styles.magicLinkToggle}
                 onPress={() => {
+                  Keyboard.dismiss();
                   setIsMagicLink(!isMagicLink);
                   setErrorMessage('');
                   setMagicLinkSent(false);
@@ -407,6 +450,7 @@ export default function SignInScreen() {
               </Text>
               <TouchableOpacity
                 onPress={() => {
+                  Keyboard.dismiss();
                   setIsSignUp((prev) => !prev);
                   setIsMagicLink(false);
                   setMagicLinkSent(false);
@@ -430,204 +474,9 @@ export default function SignInScreen() {
               </View>
             )}
 
-            {/* Social login buttons */}
-            <TouchableOpacity
-              style={[styles.socialButton, isSigningIn && styles.buttonDisabled]}
-              onPress={() => handleSocialAuth('google')}
-              disabled={isSigningIn}
-              accessibilityRole="button"
-              accessibilityLabel="Sign in with Google"
-              accessibilityHint="Double-tap to authenticate"
-            >
-              <Text style={styles.socialButtonText}>
-                Continue with Google
-              </Text>
-            </TouchableOpacity>
-
-            {isiOS && (
-              <TouchableOpacity
-                style={[styles.socialButton, isSigningIn && styles.buttonDisabled]}
-                onPress={() => handleSocialAuth('apple')}
-                disabled={isSigningIn}
-                accessibilityRole="button"
-                accessibilityLabel="Sign in with Apple"
-                accessibilityHint="Double-tap to authenticate"
-              >
-                <Text style={styles.socialButtonText}>
-                  Continue with Apple
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#050E1F',
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 40,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  card: {
-    backgroundColor: '#0F2339',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#1B2E4A',
-    padding: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  logo: {
-    width: 80,
-    height: 80,
-  },
-  welcomeTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 32,
-  },
-  errorContainer: {
-    backgroundColor: 'rgba(255, 69, 58, 0.1)',
-    borderWidth: 1,
-    borderColor: '#FF453A',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 24,
-  },
-  inputContainer: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#9AACD1',
-    marginBottom: 6,
-    marginLeft: 2,
-  },
-  input: {
-    backgroundColor: '#13263C',
-    borderWidth: 1,
-    borderColor: '#1B2E4A',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    fontSize: 16,
-    color: '#F5F7FF',
-    minHeight: 50,
-  },
-  inputError: {
-    borderColor: '#FF453A',
-  },
-  fieldErrorText: {
-    marginTop: 6,
-    marginLeft: 4,
-    fontSize: 12,
-    color: '#FF453A',
-  },
-  loginButton: {
-    backgroundColor: '#007AFF',
-    marginTop: 16,
-    marginBottom: 24,
-    borderRadius: 25,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  signUpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  signUpLink: {
-    fontSize: 16,
-    color: '#007AFF',
-    textDecorationLine: 'underline',
-  },
-  socialButton: {
-    backgroundColor: '#13263C',
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#1B2E4A',
-    borderRadius: 25,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  errorText: {
-    fontSize: 13,
-    color: '#FF453A',
-    textAlign: 'center',
-  },
-  buttonText: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  signUpText: {
-    fontSize: 16,
-    color: '#8E8E93',
-  },
-  magicLinkToggle: {
-    marginBottom: 16,
-    paddingVertical: 8,
-  },
-  magicLinkToggleText: {
-    fontSize: 14,
-    color: '#007AFF',
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  successContainer: {
-    backgroundColor: 'rgba(52, 199, 89, 0.1)',
-    borderWidth: 1,
-    borderColor: '#34C759',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
-  successText: {
-    fontSize: 14,
-    color: '#34C759',
-    textAlign: 'center',
-  },
-  socialButtonText: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-});

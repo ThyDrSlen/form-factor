@@ -2,6 +2,7 @@ import { Session } from '@supabase/supabase-js';
 import * as Crypto from 'expo-crypto';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import { supabase } from '../supabase';
 
@@ -20,6 +21,15 @@ interface ParsedTokens {
   refreshToken: string;
 }
 
+export const OAUTH_PENDING_STATE_KEY = 'ff.auth.oauth.pendingState';
+export const MAGIC_LINK_PENDING_KEY = 'ff.auth.magicLink.pending';
+const AUTH_CALLBACK_INTENT_TTL_MS = 10 * 60 * 1000;
+
+type PendingAuthIntent = {
+  value: string;
+  createdAt: number;
+};
+
 export class OAuthHandler {
   private static instance: OAuthHandler;
   private redirectUrl: string;
@@ -27,7 +37,7 @@ export class OAuthHandler {
 
   constructor() {
     // In Expo Router, group folders like (auth) are omitted from the URL path
-    this.redirectUrl = Linking.createURL('/callback');
+    this.redirectUrl = Linking.createURL('callback');
     logWithTs('[OAuthHandler] Configured redirect URL:', this.redirectUrl);
   }
 
@@ -63,24 +73,28 @@ export class OAuthHandler {
           // non-fatal
         }
         this.pendingOAuthState = null;
+        await this.clearPendingOAuthState();
       }
 
       this.pendingOAuthState = Crypto.randomUUID();
+      await this.persistPendingOAuthState(this.pendingOAuthState);
 
-      // Start the OAuth flow with Supabase
+      // Supabase owns the provider's OAuth state. Carry our app nonce in
+      // redirectTo instead: Supabase preserves its query when returning tokens
+      // or a PKCE code. Sending queryParams.state does not round-trip this nonce.
+      const callbackUrl = new URL(this.redirectUrl);
+      callbackUrl.searchParams.set('state', this.pendingOAuthState);
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          queryParams: {
-            state: this.pendingOAuthState,
-          },
-          redirectTo: this.redirectUrl,
+          redirectTo: callbackUrl.toString(),
           skipBrowserRedirect: true,
         },
       });
 
       if (error) {
         this.pendingOAuthState = null;
+        await this.clearPendingOAuthState();
         errorWithTs(`[OAuthHandler] Error starting ${provider} OAuth:`, error);
         return {
           success: false,
@@ -90,6 +104,7 @@ export class OAuthHandler {
 
       if (!data.url) {
         this.pendingOAuthState = null;
+        await this.clearPendingOAuthState();
         errorWithTs(`[OAuthHandler] No OAuth URL returned from Supabase`);
         return {
           success: false,
@@ -126,6 +141,7 @@ export class OAuthHandler {
 
       if (result.type === 'cancel') {
         this.pendingOAuthState = null;
+        await this.clearPendingOAuthState();
         logWithTs(`[OAuthHandler] User cancelled ${provider} OAuth`);
         return {
           success: false,
@@ -135,6 +151,7 @@ export class OAuthHandler {
 
       if (result.type === 'dismiss') {
         this.pendingOAuthState = null;
+        await this.clearPendingOAuthState();
         logWithTs(`[OAuthHandler] ${provider} OAuth was dismissed`);
         return {
           success: false,
@@ -143,12 +160,14 @@ export class OAuthHandler {
       }
 
       this.pendingOAuthState = null;
+      await this.clearPendingOAuthState();
       return {
         success: false,
         error: `Unexpected OAuth result: ${result.type}`,
       };
     } catch (error) {
       this.pendingOAuthState = null;
+      await this.clearPendingOAuthState();
       errorWithTs(`[OAuthHandler] Unexpected error in ${provider} OAuth:`, error);
       return {
         success: false,
@@ -165,11 +184,23 @@ export class OAuthHandler {
       logWithTs('[OAuthHandler] Processing callback URL:', url);
 
       const callbackState = this.parseStateFromUrl(url);
-      if (!callbackState || !this.pendingOAuthState || callbackState !== this.pendingOAuthState) {
+      const pendingOAuthState = this.pendingOAuthState ?? await this.loadPendingOAuthState();
+      const hasPendingMagicLink = await this.hasPendingMagicLinkIntent();
+
+      if (callbackState || pendingOAuthState) {
+        if (!callbackState || !pendingOAuthState || callbackState !== pendingOAuthState) {
+          errorWithTs('[OAuthHandler] OAuth state validation failed', {
+            hasPendingState: !!pendingOAuthState,
+            hasCallbackState: !!callbackState,
+            callbackStateMatches: callbackState === pendingOAuthState,
+          });
+          return null;
+        }
+      } else if (!hasPendingMagicLink) {
         errorWithTs('[OAuthHandler] OAuth state validation failed', {
-          hasPendingState: !!this.pendingOAuthState,
+          hasPendingState: false,
           hasCallbackState: !!callbackState,
-          callbackStateMatches: callbackState === this.pendingOAuthState,
+          hasPendingMagicLink,
         });
         return null;
       }
@@ -205,7 +236,8 @@ export class OAuthHandler {
 
       // Check for authorization code (PKCE flow)
       const { queryParams } = Linking.parse(url);
-      const code = queryParams?.code as string;
+      const parsedCode = queryParams?.code;
+      const code = typeof parsedCode === 'string' ? parsedCode : this.parseStringParamFromUrl(url, 'code');
 
       if (code) {
         logWithTs('[OAuthHandler] Found authorization code, exchanging for session');
@@ -230,28 +262,93 @@ export class OAuthHandler {
       return null;
     } finally {
       this.pendingOAuthState = null;
+      await Promise.all([
+        this.clearPendingOAuthState(),
+        this.clearPendingMagicLinkIntent(),
+      ]);
+    }
+  }
+
+  async markMagicLinkPending(): Promise<void> {
+    await this.writeIntent(MAGIC_LINK_PENDING_KEY, 'pending');
+  }
+
+  async clearMagicLinkPending(): Promise<void> {
+    await this.clearPendingMagicLinkIntent();
+  }
+
+  private async persistPendingOAuthState(state: string): Promise<void> {
+    await this.writeIntent(OAUTH_PENDING_STATE_KEY, state);
+  }
+
+  private async loadPendingOAuthState(): Promise<string | null> {
+    return this.readFreshIntent(OAUTH_PENDING_STATE_KEY);
+  }
+
+  private async clearPendingOAuthState(): Promise<void> {
+    await AsyncStorage.removeItem(OAUTH_PENDING_STATE_KEY);
+  }
+
+  private async hasPendingMagicLinkIntent(): Promise<boolean> {
+    return (await this.readFreshIntent(MAGIC_LINK_PENDING_KEY)) !== null;
+  }
+
+  private async clearPendingMagicLinkIntent(): Promise<void> {
+    await AsyncStorage.removeItem(MAGIC_LINK_PENDING_KEY);
+  }
+
+  private async writeIntent(key: string, value: string): Promise<void> {
+    const payload: PendingAuthIntent = {
+      value,
+      createdAt: Date.now(),
+    };
+    await AsyncStorage.setItem(key, JSON.stringify(payload));
+  }
+
+  private async readFreshIntent(key: string): Promise<string | null> {
+    try {
+      const raw = await AsyncStorage.getItem(key);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Partial<PendingAuthIntent>;
+      if (typeof parsed.value !== 'string' || typeof parsed.createdAt !== 'number') {
+        await AsyncStorage.removeItem(key);
+        return null;
+      }
+      if (Date.now() - parsed.createdAt > AUTH_CALLBACK_INTENT_TTL_MS) {
+        await AsyncStorage.removeItem(key);
+        return null;
+      }
+      return parsed.value;
+    } catch (error) {
+      warnWithTs('[OAuthHandler] Failed to read pending auth intent', error);
+      await AsyncStorage.removeItem(key);
+      return null;
     }
   }
 
   private parseStateFromUrl(url: string): string | null {
+    return this.parseStringParamFromUrl(url, 'state');
+  }
+
+  private parseStringParamFromUrl(url: string, name: string): string | null {
     try {
       const hashMatch = url.match(/#(.+)/);
       const queryMatch = url.match(/\?(.+?)(?:#|$)/);
 
       if (hashMatch) {
         const hashParams = new URLSearchParams(hashMatch[1]);
-        const hashState = hashParams.get('state');
-        if (hashState) return hashState;
+        const hashValue = hashParams.get(name);
+        if (hashValue) return hashValue;
       }
 
       if (queryMatch) {
         const queryParams = new URLSearchParams(queryMatch[1]);
-        return queryParams.get('state');
+        return queryParams.get(name);
       }
 
       return null;
     } catch (error) {
-      errorWithTs('[OAuthHandler] Error parsing state from URL:', error);
+      errorWithTs(`[OAuthHandler] Error parsing ${name} from URL:`, error);
       return null;
     }
   }
@@ -328,11 +425,8 @@ export class OAuthHandler {
       return false;
     }
 
-    // Refresh tokens should also be substantial
-    if (tokens.refreshToken.length < 20) {
-      warnWithTs('[OAuthHandler] Refresh token seems too short');
-      return false;
-    }
+    // Refresh tokens are opaque: Supabase also issues 12-character tokens.
+    // Their authenticity is checked by Supabase, not an arbitrary local length.
 
     return true;
   }

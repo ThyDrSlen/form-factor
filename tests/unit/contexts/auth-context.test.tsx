@@ -1,9 +1,12 @@
 import React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react-native';
-import type * as AuthContextModule from '@/contexts/AuthContext';
+import type * as AuthContextModule from '@/features/auth/contexts/AuthContext';
 import type { Session, User } from '@supabase/supabase-js';
 import { registerDevicePushToken } from '@/lib/services/notifications';
 import { PermissionStatus } from 'expo-modules-core';
+import { signInWithApple as nativeAppleSignIn } from '@/lib/auth-utils';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { accountCleanup } from '@/lib/services/database/account-cleanup';
 
 // Mock user and session data
 const mockUser: User = {
@@ -48,6 +51,8 @@ const mockOAuthHandler = {
   getInstance: jest.fn(),
   initiateOAuth: jest.fn(),
   handleCallback: jest.fn(),
+  markMagicLinkPending: jest.fn(),
+  clearMagicLinkPending: jest.fn(),
 };
 
 jest.mock('@/lib/services/OAuthHandler', () => ({
@@ -105,6 +110,8 @@ jest.mock('@/lib/auth-utils', () => ({
   signInWithApple: jest.fn(),
 }));
 
+const mockNativeAppleSignIn = nativeAppleSignIn as jest.Mock;
+
 // Mock notifications
 jest.mock('@/lib/services/notifications', () => ({
   registerDevicePushToken: jest.fn().mockResolvedValue({ error: null }),
@@ -123,7 +130,7 @@ let AuthProvider: AuthModule['AuthProvider'];
 let useAuth: AuthModule['useAuth'];
 
 beforeAll(() => {
-  const authModule = require('@/contexts/AuthContext') as AuthModule;
+  const authModule = require('@/features/auth/contexts/AuthContext') as AuthModule;
   AuthProvider = authModule.AuthProvider;
   useAuth = authModule.useAuth;
 });
@@ -134,7 +141,11 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
 );
 
 describe('AuthContext', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // A failed/timed-out logout intentionally survives provider unmount. Each
+    // test models a separate app with fresh storage, not a retry of the last.
+    await AsyncStorage.clear();
+    await accountCleanup.run(async () => {}, { resolveLogout: true });
     jest.clearAllMocks();
     authStateChangeCallback = null;
 
@@ -278,6 +289,11 @@ describe('AuthContext', () => {
         email: 'test@example.com',
         password: 'password123',
       });
+      await waitFor(() => {
+        expect(result.current.user).toEqual(mockUser);
+        expect(result.current.session).toEqual(mockSession);
+      });
+      expect(mockSessionManager.storeSession).toHaveBeenCalledWith(mockSession);
     });
 
     it('should return error on failed sign in', async () => {
@@ -408,6 +424,11 @@ describe('AuthContext', () => {
           },
         },
       });
+      await waitFor(() => {
+        expect(result.current.user).toEqual(mockUser);
+        expect(result.current.session).toEqual(mockSession);
+      });
+      expect(mockSessionManager.storeSession).toHaveBeenCalledWith(mockSession);
     });
 
     it('should return error on failed sign up', async () => {
@@ -494,6 +515,11 @@ describe('AuthContext', () => {
       });
 
       expect(mockOAuthHandler.initiateOAuth).toHaveBeenCalledWith('google');
+      await waitFor(() => {
+        expect(result.current.user).toEqual(mockUser);
+        expect(result.current.session).toEqual(mockSession);
+      });
+      expect(mockSessionManager.storeSession).toHaveBeenCalledWith(mockSession);
     });
 
     it('should handle OAuth failure', async () => {
@@ -513,9 +539,32 @@ describe('AuthContext', () => {
     });
   });
 
+  describe('signInWithApple', () => {
+    it('should apply returned Apple session immediately', async () => {
+      mockNativeAppleSignIn.mockResolvedValue({ session: mockSession });
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      await act(async () => {
+        await result.current.signInWithApple();
+      });
+
+      expect(mockNativeAppleSignIn).toHaveBeenCalled();
+      await waitFor(() => {
+        expect(result.current.user).toEqual(mockUser);
+        expect(result.current.session).toEqual(mockSession);
+      });
+      expect(mockSessionManager.storeSession).toHaveBeenCalledWith(mockSession);
+    });
+  });
+
   describe('handleAuthCallback', () => {
     it('should handle OAuth callback successfully', async () => {
-      mockOAuthHandler.handleCallback.mockResolvedValue({ ok: true });
+      mockOAuthHandler.handleCallback.mockResolvedValue(mockSession);
 
       const { result } = renderHook(() => useAuth(), { wrapper });
 
@@ -528,11 +577,14 @@ describe('AuthContext', () => {
       });
 
       expect(mockOAuthHandler.handleCallback).toHaveBeenCalledWith('formfactor:///callback?code=test');
+      await waitFor(() => {
+        expect(result.current.user).toEqual(mockUser);
+        expect(result.current.session).toEqual(mockSession);
+      });
     });
 
     it('should set error when callback fails', async () => {
-      const callbackError = { domain: 'oauth', code: 'CALLBACK_FAILED', message: 'Callback failed' };
-      mockOAuthHandler.handleCallback.mockResolvedValue({ ok: false, error: callbackError });
+      mockOAuthHandler.handleCallback.mockResolvedValue(null);
 
       const { result } = renderHook(() => useAuth(), { wrapper });
 

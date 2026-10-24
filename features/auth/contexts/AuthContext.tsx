@@ -1,7 +1,7 @@
 import { OAuthHandler } from '@/lib/services/OAuthHandler';
 import { createError, mapToUserMessage, logError } from '@/lib/services/ErrorHandler';
 import { clearOnboardingFlag } from '@/lib/services/onboarding';
-import { AuthError, Session, User } from '@supabase/supabase-js';
+import { AuthError, isAuthRetryableFetchError, Session, User } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -12,11 +12,12 @@ import { runDiagnostics } from '@/lib/network-utils';
 import { signInWithApple as nativeAppleSignIn } from '@/lib/auth-utils';
 import { localDB } from '@/lib/services/database/local-db';
 import { syncService } from '@/lib/services/database/sync-service';
+import { accountCleanup, type AccountCleanupOptions } from '@/lib/services/database/account-cleanup';
 import { registerDevicePushToken, unregisterDevicePushToken } from '@/lib/services/notifications';
 
 // In Expo Router, group folders like (auth) are omitted from the URL path.
 // The file app/(auth)/callback.tsx resolves to '/callback', not '/auth/callback'.
-const redirectUrl = Linking.createURL('/callback');
+const redirectUrl = Linking.createURL('callback');
 const SESSION_WARNING_LEAD_MS = 60 * 1000;
 
 // Mock user data for development
@@ -66,6 +67,8 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout?: () =>
 type AuthContextType = {
   user: User | null;
   session: Session | null;
+  /** Check this publication against the latest synchronously observed auth revision. */
+  isAuthStateCurrent: () => boolean;
   loading: boolean;
   isSigningIn: boolean;
   isMockUser: boolean;
@@ -94,6 +97,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const previousUserIdRef = useRef<string | null>(null);
+  // Invalidate pending bootstrap/refresh results when authoritative auth changes.
+  const authRevisionRef = useRef(0);
+  const [publishedAuthRevision, setPublishedAuthRevision] = useState(0);
+  const isAuthStateCurrent = useCallback(
+    () => publishedAuthRevision === authRevisionRef.current,
+    [publishedAuthRevision],
+  );
   const warningTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const expiryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -128,8 +138,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [clearSessionTimers]);
 
+  const cleanupAccountData = useCallback((options?: AccountCleanupOptions, afterCleanup?: () => Promise<void>) => accountCleanup.run(async () => {
+    await syncService.cleanupRealtimeSync();
+    await localDB.clearAllData();
+    await sessionManager.clearSession({ throwOnError: true });
+    await afterCleanup?.();
+  }, options), [sessionManager]);
+
   // Helper to update auth state
-  const updateAuthState = useCallback(async (newSession: Session | null, source: string) => {
+  const updateAuthState = useCallback(async (
+    newSession: Session | null,
+    source: string,
+    revision = authRevisionRef.current,
+  ) => {
     try {
       console.log(`[Auth] Updating auth state from ${source}:`, {
         hasSession: !!newSession,
@@ -141,22 +162,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userChanged = Boolean(previousUserId && newUserId && previousUserId !== newUserId);
       const signedOut = Boolean(previousUserId && !newUserId);
 
-      if (userChanged || signedOut) {
-        try {
-          await syncService.cleanupRealtimeSync();
-        } catch (cleanupError) {
-          console.error('[Auth] Error cleaning up realtime subscriptions on user change:', cleanupError);
-        }
+      const logoutOwner = await accountCleanup.getPendingLogoutOwner();
+      if (logoutOwner && newUserId && (logoutOwner === newUserId || logoutOwner === '*')) {
+        // SDK refresh/focus events are not a successful logout or new identity.
+        setUser(null);
+        setSession(null);
+        setError('Sign-out is pending. Please retry signing out.');
+        setLoading(false);
+        return;
+      }
+      const resolveLogout = Boolean(logoutOwner && (
+        newUserId || source === 'auth_event_SIGNED_OUT'
+      ));
 
-        try {
-          await localDB.clearAllData();
-        } catch (dbError) {
-          console.error('[Auth] Error clearing local DB on user change:', dbError);
-        }
+      if (userChanged || signedOut || await accountCleanup.isPending()) {
+        await cleanupAccountData({ resolveLogout });
+      }
+
+      // A newer transition may have invalidated this cleanup while it awaited
+      // storage. Its completion is not permission to publish another identity.
+      if (accountCleanup.isBlocked) {
+        setUser(null);
+        setSession(null);
+        return;
       }
 
       setSession(newSession);
       setUser(newSession ? newSession.user : null);
+      setPublishedAuthRevision(revision);
+      setError(null);
 
       previousUserIdRef.current = newUserId;
 
@@ -170,35 +204,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     } catch (error) {
       console.error('[Auth] Error updating auth state:', error);
+      // Retain the previous owner as a cleanup obligation for the next event.
+      setUser(null);
+      setSession(null);
+      setError('Account cleanup failed. Please retry signing in or signing out.');
       setLoading(false);
+      throw error;
     }
-  }, [sessionManager, isMockUser]);
+  }, [sessionManager, isMockUser, cleanupAccountData]);
 
   // Initialize auth state
   useEffect(() => {
     let mounted = true;
+    const initialRevision = authRevisionRef.current;
+    const isCurrent = () => mounted && initialRevision === authRevisionRef.current;
+    const pendingEvents = new Set<ReturnType<typeof setTimeout>>();
+    let eventUpdates = Promise.resolve();
 
     const initializeAuth = async () => {
       try {
         console.log('[Auth] Initializing authentication...');
 
+        // Retry an interrupted transition before reading saved/SDK credentials.
+        if (await accountCleanup.isPending()) await cleanupAccountData();
+        if (!isCurrent()) return;
+        if (accountCleanup.isBlocked) {
+          setUser(null);
+          setSession(null);
+          setError('Sign-out is pending. Please retry signing out.');
+          setLoading(false);
+          return;
+        }
+
         // First, try to get stored session
-        const storedSession = await sessionManager.getStoredSession();
+        const storedSession = await sessionManager.getStoredSession({ allowExpiredForRefresh: true });
+        if (!isCurrent()) return;
 
-        if (storedSession && sessionManager.isSessionValid(storedSession)) {
-          console.log('[Auth] Found valid stored session, setting it in Supabase');
+        if (storedSession) {
+          console.log('[Auth] Restoring saved credentials through Supabase');
 
-          // Set the session in Supabase client
-          const { error } = await supabase.auth.setSession({
+          // The SDK may refresh an expired token. A saved identity is never
+          // used to authorize server operations in place of the SDK session.
+          const { data, error } = await supabase.auth.setSession({
             access_token: storedSession.access_token,
             refresh_token: storedSession.refresh_token,
           });
 
+          if (!isCurrent()) return;
+          if (error && isAuthRetryableFetchError(error)) {
+            await updateAuthState(storedSession, 'offline_cached_session');
+            return;
+          }
           if (error) {
             console.error('[Auth] Error setting stored session:', error);
             await sessionManager.clearSession();
           } else if (mounted) {
-            await updateAuthState(storedSession, 'stored_session');
+            await updateAuthState(data?.session ?? storedSession, 'stored_session');
             return; // Exit early if we successfully restored session
           }
         }
@@ -206,12 +267,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // If no valid stored session, check Supabase's current session
         const { data: { session: currentSession } } = await supabase.auth.getSession();
 
-        if (mounted) {
+        if (isCurrent()) {
           await updateAuthState(currentSession, 'supabase_session');
         }
       } catch (error) {
         console.error('[Auth] Error initializing auth:', error);
-        if (mounted) {
+        if (isCurrent()) {
           setLoading(false);
           setError('Failed to initialize authentication');
         }
@@ -221,7 +282,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initializeAuth();
 
     // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
 
       console.log(`[Auth] Auth state changed:`, { event, hasSession: !!session });
@@ -230,15 +291,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (isMockUser && event !== 'SIGNED_OUT') {
         return;
       }
+      // INITIAL_SESSION can be null when SDK recovery cannot reach the network;
+      // initialization owns that case. Only SIGNED_OUT revokes cached identity.
+      if (!session && event !== 'SIGNED_OUT') return;
+      const revision = ++authRevisionRef.current;
+      if (event === 'SIGNED_OUT' || (previousUserIdRef.current && previousUserIdRef.current !== session?.user.id)) {
+        accountCleanup.block();
+      }
 
-      await updateAuthState(session, `auth_event_${event}`);
+      // Supabase awaits this callback while holding its auth lock. Cleanup can
+      // re-enter auth via realtime, so run ordered work after releasing the lock.
+      const timer = setTimeout(() => {
+        pendingEvents.delete(timer);
+        eventUpdates = eventUpdates.then(async () => {
+          if (mounted) await updateAuthState(session, `auth_event_${event}`, revision);
+        }).catch(() => { /* Already reported; keep later cleanup retries runnable. */ });
+      }, 0);
+      pendingEvents.add(timer);
     });
 
     return () => {
       mounted = false;
+      authRevisionRef.current += 1;
+      pendingEvents.forEach(clearTimeout);
       subscription?.unsubscribe();
     };
-  }, [updateAuthState, sessionManager, isMockUser]);
+  }, [updateAuthState, sessionManager, isMockUser, cleanupAccountData]);
 
   // Refresh push token when a real user signs in
   useEffect(() => {
@@ -280,7 +358,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (session) {
         console.log('[Auth] Callback handled successfully, session created');
-        // Session will be handled by the auth state change listener
+        await updateAuthState(session, 'oauth_callback');
       } else {
         const appErr = createError('oauth', 'TOKEN_EXTRACT_FAILED', 'Failed to create session from callback', {
           retryable: true,
@@ -299,7 +377,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(mapToUserMessage(appErr));
       throw error;
     }
-  }, [oauthHandler]);
+  }, [oauthHandler, updateAuthState]);
 
 
 
@@ -339,7 +417,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (result.success && result.session) {
         console.log('[Auth] Google OAuth successful');
-        // Session will be handled by the auth state change listener
+        await updateAuthState(result.session, 'google_oauth');
         return {};
       } else {
         const appErr = createError('oauth', 'OAUTH_START_FAILED', result.error || 'Google sign-in failed', {
@@ -373,7 +451,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsSigningIn(false);
     }
-  }, [signInWithMock, oauthHandler]);
+  }, [signInWithMock, oauthHandler, updateAuthState]);
 
   /**
    * Sign in with Apple OAuth provider
@@ -392,7 +470,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: { message: 'Sign-in was cancelled', status: 0 } as AuthError };
       }
 
-      // Session will be handled by the auth state change listener
+      if (result.session) {
+        await updateAuthState(result.session, 'apple_oauth');
+      }
+
       return {};
     } catch (error) {
       const appErr = createError('oauth', 'OAUTH_EXCEPTION', error instanceof Error ? error.message : 'An unexpected error occurred', {
@@ -411,10 +492,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsSigningIn(false);
     }
-  }, []);
+  }, [updateAuthState]);
 
   const signOut = useCallback(async () => {
-    const currentUserId = user?.id;
+    const revision = ++authRevisionRef.current;
+    const currentUserId = user?.id ?? previousUserIdRef.current;
 
     try {
       console.log('[Auth] Signing out user');
@@ -424,44 +506,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('[Auth] Signing out mock user');
         setUser(null);
         setSession(null);
+        setPublishedAuthRevision(revision);
         setIsMockUser(false);
         await sessionManager.clearSession();
         return {};
       }
 
-      if (currentUserId) {
-        try {
-          await unregisterDevicePushToken(currentUserId);
-        } catch (cleanupError) {
-          console.warn('[Auth] Failed to unregister push token on sign-out:', cleanupError);
-        }
-      }
+      accountCleanup.block();
 
-      // Optimistically clear local state and storage first so UI responds immediately
+      // Revoke UI access immediately, but do not report success or forget the
+      // durable cleanup obligation until local cleanup has actually completed.
       setUser(null);
       setSession(null);
+      setPublishedAuthRevision(revision);
       setError(null);
-      await sessionManager.clearSession();
-      await clearOnboardingFlag();
-
-      // Fire supabase sign-out but don't let it block the UI for long
-      const result = await withTimeout(
-        supabase.auth.signOut(),
-        1500,
-        () => console.log('[Auth] signOut timed out, proceeding optimistically')
-      );
-
-      if (result && 'error' in result && result.error) {
-        console.warn('[Auth] Error from supabase.signOut (post-optimistic):', result.error);
-        return { error: result.error };
+      const logoutOwner = currentUserId ?? await accountCleanup.getPendingLogoutOwner() ?? '*';
+      await cleanupAccountData({ logoutOwner, resolveLogout: true }, async () => {
+        await clearOnboardingFlag();
+        // Cleanup and its durable marker precede all network housekeeping.
+        if (currentUserId) {
+          try {
+            await withTimeout(unregisterDevicePushToken(currentUserId), 1500);
+          } catch (cleanupError) {
+            console.warn('[Auth] Failed to unregister push token on sign-out:', cleanupError);
+          }
+        }
+        const result = await withTimeout(supabase.auth.signOut(), 1500);
+        if (!result) throw new Error('Sign-out timed out. Please retry signing out.');
+        if (result.error) throw result.error;
+      });
+      // An SDK event can supersede this attempt while the request is pending.
+      // That event owns final publication and any further cleanup.
+      if (revision === authRevisionRef.current && !accountCleanup.isBlocked) {
+        previousUserIdRef.current = null;
       }
 
       return {};
     } catch (error) {
       console.error('[Auth] Error in signOut:', error);
+      if (revision === authRevisionRef.current) {
+        setError('Account cleanup or sign-out failed. Please retry signing out.');
+        setLoading(false);
+      }
       return { error: error as Error };
     }
-  }, [clearSessionTimers, isMockUser, sessionManager, user]);
+  }, [clearSessionTimers, isMockUser, sessionManager, user, cleanupAccountData]);
 
   const deleteAccount = useCallback(async () => {
     try {
@@ -480,14 +569,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw fnError;
       }
 
-      // Clear local state after successful deletion
-      clearSessionTimers();
-      setUser(null);
-      setSession(null);
-      setError(null);
-      await sessionManager.clearSession();
-
-      return {};
+      // Server deletion does not prove the device cache was cleared. Use the
+      // same durable cleanup/retry boundary as explicit logout.
+      return await signOut();
     } catch (error) {
       console.error('[Auth] Error deleting account:', error);
       const appErr = createError('auth', 'DELETE_ACCOUNT_FAILED', error instanceof Error ? error.message : 'Failed to delete account', {
@@ -498,20 +582,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logError(appErr, { feature: 'auth', location: 'deleteAccount' });
       return { error: error as Error };
     }
-  }, [clearSessionTimers, sessionManager]);
+  }, [signOut]);
 
   const refreshSessionForTimeout = useCallback(async () => {
-    const { data, error } = await supabase.auth.refreshSession();
+    const revision = authRevisionRef.current;
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      // Auth events (including TOKEN_REFRESHED) own newer state. A late result
+      // must not resurrect a signed-out user or overwrite a rotated token.
+      if (revision !== authRevisionRef.current) return;
 
-    if (error || !data.session) {
-      console.warn('[Auth] Failed to refresh session from timeout warning:', error);
-      await signOut();
-      return;
+      if (error || !data.session) {
+        // Token expiry / a transport failure is not a logout. The SDK retains
+        // retryable sessions and emits SIGNED_OUT for invalid refresh tokens.
+        console.warn('[Auth] Session refresh unavailable; retaining offline state:', error);
+        return;
+      }
+
+      await updateAuthState(data.session, 'session_warning_refresh');
+      setError(null);
+    } catch (error) {
+      console.warn('[Auth] Session refresh unavailable; retaining offline state:', error);
     }
-
-    await updateAuthState(data.session, 'session_warning_refresh');
-    setError(null);
-  }, [signOut, updateAuthState]);
+  }, [updateAuthState]);
 
   useEffect(() => {
     clearSessionTimers();
@@ -524,15 +617,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const expiresAtMs = session.expires_at * 1000;
     const msUntilExpiry = expiresAtMs - now;
 
+    // Access-token expiry only requires refresh, never destructive sign-out.
     if (msUntilExpiry <= 0) {
-      setError('Your session has expired. Please sign in again.');
-      void signOut();
+      void refreshSessionForTimeout();
       return;
     }
 
     expiryTimeoutRef.current = setTimeout(() => {
-      setError('Your session expired. Please sign in again.');
-      void signOut();
+      void refreshSessionForTimeout();
     }, msUntilExpiry);
 
     const warningDelayMs = msUntilExpiry - SESSION_WARNING_LEAD_MS;
@@ -540,8 +632,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (warningDelayMs > 0) {
       warningTimeoutRef.current = setTimeout(() => {
         Alert.alert(
-          'Session expiring soon',
-          'You will be logged out in about 1 minute. Stay logged in?',
+          'Refresh session',
+          'Your connection needs refreshing. You can keep using offline data if the network is unavailable.',
           [
             {
               text: 'Log out now',
@@ -570,6 +662,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setIsSigningIn(true);
       setError(null);
+      await oauthHandler.markMagicLinkPending();
 
       const { error } = await supabase.auth.signInWithOtp({
         email,
@@ -580,6 +673,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
+        await oauthHandler.clearMagicLinkPending();
         return { error };
       }
 
@@ -596,11 +690,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsSigningIn(false);
     }
-  }, []);
+  }, [oauthHandler]);
 
   const signInWithEmail = useCallback(async (email: string, password: string) => {
     try {
       setIsSigningIn(true);
+      setError(null);
       console.log('[Auth] Attempting to sign in with email:', email);
       
       // Check if Supabase client is properly configured
@@ -636,8 +731,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('[Auth] Supabase auth error:', error);
         return { error };
       }
-      
+
       console.log('[Auth] Sign in successful');
+      if (data.session) {
+        await updateAuthState(data.session, 'email_signin');
+      }
+
       return { error: undefined };
     } catch (error) {
       console.error('[Auth] Unexpected error during sign in:', error);
@@ -679,12 +778,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsSigningIn(false);
     }
-  }, []);
+  }, [updateAuthState]);
 
   const signUpWithEmail = useCallback(async (email: string, password: string, userData?: { fullName?: string }) => {
     try {
       setIsSigningIn(true);
-      const { error } = await supabase.auth.signUp({
+      setError(null);
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -693,6 +793,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           },
         },
       });
+
+      if (!error && data.session) {
+        await updateAuthState(data.session, 'email_signup');
+      }
+
       return { error: error || undefined };
     } catch (error) {
       const appErr = createError('auth', 'EMAIL_SIGNUP_FAILED', error instanceof Error ? error.message : 'Failed to sign up', {
@@ -706,7 +811,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsSigningIn(false);
     }
-  }, []);
+  }, [updateAuthState]);
 
   const updateProfile = useCallback(async (updates: { fullName?: string }) => {
     try {
@@ -779,6 +884,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       user,
       session,
+      isAuthStateCurrent,
       loading,
       isSigningIn,
       isMockUser,
@@ -798,6 +904,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [
       user,
       session,
+      isAuthStateCurrent,
       loading,
       isSigningIn,
       isMockUser,

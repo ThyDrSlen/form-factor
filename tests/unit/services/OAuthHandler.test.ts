@@ -1,3 +1,5 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 const mockCreateURL = jest.fn(() => 'formfactor://callback');
 const mockParse = jest.fn();
 const mockMaybeCompleteAuthSession = jest.fn();
@@ -49,6 +51,7 @@ jest.mock('../../../lib/supabase', () => ({
 }));
 
 let OAuthHandler: typeof import('@/lib/services/OAuthHandler')['OAuthHandler'];
+let MAGIC_LINK_PENDING_KEY: typeof import('@/lib/services/OAuthHandler')['MAGIC_LINK_PENDING_KEY'];
 
 describe('OAuthHandler', () => {
   const validAccessToken = `header.${'a'.repeat(60)}.signature`;
@@ -60,11 +63,15 @@ describe('OAuthHandler', () => {
   };
 
   beforeAll(() => {
-    ({ OAuthHandler } = require('@/lib/services/OAuthHandler'));
+    ({
+      OAuthHandler,
+      MAGIC_LINK_PENDING_KEY,
+    } = require('@/lib/services/OAuthHandler'));
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    await AsyncStorage.clear();
     mockCreateURL.mockReturnValue('formfactor://callback');
     mockParse.mockReturnValue({ queryParams: {} });
     mockSignInWithOAuth.mockResolvedValue({ data: { url: 'https://supabase.test/auth' }, error: null });
@@ -84,10 +91,7 @@ describe('OAuthHandler', () => {
     expect(mockSignInWithOAuth).toHaveBeenCalledWith({
       provider: 'google',
       options: {
-        queryParams: {
-          state: 'test-oauth-state-123',
-        },
-        redirectTo: 'formfactor://callback',
+        redirectTo: 'formfactor://callback?state=test-oauth-state-123',
         skipBrowserRedirect: true,
       },
     });
@@ -102,6 +106,29 @@ describe('OAuthHandler', () => {
     expect(result).toEqual({ success: true, session });
   });
 
+  it.each(['implicit', 'pkce'])('round-trips app state via redirectTo in the Supabase %s callback', async (flow) => {
+    // Supabase owns provider state. It preserves redirectTo's query, then
+    // appends session tokens (implicit) or its authorization code (PKCE).
+    mockOpenAuthSessionAsync.mockImplementation(async () => {
+      const { options } = mockSignInWithOAuth.mock.calls[0][0];
+      const callback = new URL(options.redirectTo);
+      if (flow === 'implicit') {
+        callback.hash = `access_token=${validAccessToken}&refresh_token=${validRefreshToken}`;
+      } else {
+        callback.searchParams.set('code', 'supabase-auth-code');
+      }
+      return { type: 'success', url: callback.toString() };
+    });
+
+    const result = await new OAuthHandler().initiateOAuth('google');
+
+    expect(result).toEqual({ success: true, session });
+    const { options } = mockSignInWithOAuth.mock.calls[0][0];
+    expect(options.queryParams?.state).toBeUndefined();
+    expect(new URL(options.redirectTo).searchParams.get('state')).toBe('test-oauth-state-123');
+    if (flow === 'pkce') expect(mockExchangeCodeForSession).toHaveBeenCalledWith('supabase-auth-code');
+  });
+
   it('returns a cancellation error when the user cancels OAuth', async () => {
     mockOpenAuthSessionAsync.mockResolvedValue({ type: 'cancel' });
     const handler = new OAuthHandler();
@@ -114,6 +141,19 @@ describe('OAuthHandler', () => {
     });
     expect(mockSetSession).not.toHaveBeenCalled();
     expect(mockExchangeCodeForSession).not.toHaveBeenCalled();
+  });
+
+  it('accepts Supabase opaque 12-character refresh tokens instead of rejecting a valid login locally', async () => {
+    mockOpenAuthSessionAsync.mockResolvedValue({
+      type: 'success',
+      url: `formfactor://callback?state=test-oauth-state-123#access_token=${validAccessToken}&refresh_token=Ab12Cd34Ef56`,
+    });
+
+    expect(await new OAuthHandler().initiateOAuth('google')).toEqual({ success: true, session });
+    expect(mockSetSession).toHaveBeenCalledWith({
+      access_token: validAccessToken,
+      refresh_token: 'Ab12Cd34Ef56',
+    });
   });
 
   it('parses tokens from both hash fragments and query params', () => {
@@ -161,6 +201,25 @@ describe('OAuthHandler', () => {
     await Promise.resolve();
 
     const result = await handler.handleCallback(
+      `formfactor://callback#state=test-oauth-state-123&access_token=${validAccessToken}&refresh_token=${validRefreshToken}`
+    );
+
+    expect(result).toEqual(session);
+    expect(mockSetSession).toHaveBeenCalledWith({
+      access_token: validAccessToken,
+      refresh_token: validRefreshToken,
+    });
+  });
+
+  it('handles an OAuth callback after cold start using persisted state', async () => {
+    const handler = new OAuthHandler();
+
+    mockOpenAuthSessionAsync.mockImplementation(() => new Promise(() => {}));
+    void handler.initiateOAuth('google');
+    await Promise.resolve();
+
+    const coldStartHandler = new OAuthHandler();
+    const result = await coldStartHandler.handleCallback(
       `formfactor://callback#state=test-oauth-state-123&access_token=${validAccessToken}&refresh_token=${validRefreshToken}`
     );
 
@@ -288,6 +347,60 @@ describe('OAuthHandler', () => {
     expect(result).toBeNull();
   });
 
+  it('returns null when callback includes state but no pending OAuth state exists', async () => {
+    const handler = new OAuthHandler();
+
+    const result = await handler.handleCallback(
+      `formfactor://callback#state=stale-state&access_token=${validAccessToken}&refresh_token=${validRefreshToken}`
+    );
+
+    expect(result).toBeNull();
+    expect(mockSetSession).not.toHaveBeenCalled();
+    expect(mockExchangeCodeForSession).not.toHaveBeenCalled();
+  });
+
+  it('accepts no-state magic-link token callbacks only after a pending magic-link intent', async () => {
+    const handler = new OAuthHandler();
+    await handler.markMagicLinkPending();
+
+    const result = await handler.handleCallback(
+      `formfactor://callback#access_token=${validAccessToken}&refresh_token=${validRefreshToken}`
+    );
+
+    expect(result).toEqual(session);
+    expect(mockSetSession).toHaveBeenCalledWith({
+      access_token: validAccessToken,
+      refresh_token: validRefreshToken,
+    });
+  });
+
+  it('rejects no-state token callbacks without a pending magic-link intent', async () => {
+    const handler = new OAuthHandler();
+
+    const result = await handler.handleCallback(
+      `formfactor://callback#access_token=${validAccessToken}&refresh_token=${validRefreshToken}`
+    );
+
+    expect(result).toBeNull();
+    expect(mockSetSession).not.toHaveBeenCalled();
+  });
+
+  it('rejects expired pending intents and clears them', async () => {
+    const handler = new OAuthHandler();
+    await AsyncStorage.setItem(
+      MAGIC_LINK_PENDING_KEY,
+      JSON.stringify({ value: 'pending', createdAt: Date.now() - 11 * 60 * 1000 })
+    );
+
+    const result = await handler.handleCallback(
+      `formfactor://callback#access_token=${validAccessToken}&refresh_token=${validRefreshToken}`
+    );
+
+    expect(result).toBeNull();
+    expect(mockSetSession).not.toHaveBeenCalled();
+    await expect(AsyncStorage.getItem(MAGIC_LINK_PENDING_KEY)).resolves.toBeNull();
+  });
+
   it('returns null when setSession fails after token extraction', async () => {
     mockSetSession.mockResolvedValue({ data: { session: null }, error: { message: 'Invalid token' } });
     const handler = new OAuthHandler();
@@ -317,6 +430,22 @@ describe('OAuthHandler', () => {
     );
 
     expect(mockExchangeCodeForSession).toHaveBeenCalledWith('auth-code-xyz');
+    expect(result).toEqual(session);
+  });
+
+  it('falls back to direct URL parsing when Linking.parse omits the authorization code', async () => {
+    mockParse.mockReturnValue({ queryParams: {} });
+    const handler = new OAuthHandler();
+
+    mockOpenAuthSessionAsync.mockImplementation(() => new Promise(() => {}));
+    void handler.initiateOAuth('google');
+    await Promise.resolve();
+
+    const result = await handler.handleCallback(
+      'formfactor://callback?state=test-oauth-state-123&code=fallback-code'
+    );
+
+    expect(mockExchangeCodeForSession).toHaveBeenCalledWith('fallback-code');
     expect(result).toEqual(session);
   });
 
