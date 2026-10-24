@@ -10,6 +10,8 @@ export interface RouteOptions {
   require?: readonly ModelCapability[];
   /** Try the next candidate when one fails with a retryable error. Default true. */
   fallback?: boolean;
+  /** Narrows which errors trigger fallback. Default `shouldFallBack`. */
+  fallbackWhen?: (error: unknown) => boolean;
   /** Called before each fallback hop. Telemetry only; never load-bearing. */
   onFallback?: (from: string, to: string, error: unknown) => void;
   /** Overrides `EXPO_PUBLIC_AI_PROVIDERS` (tests, previews). */
@@ -61,7 +63,7 @@ async function route(
     } catch (error) {
       lastError = error;
       const next = candidates.slice(i + 1)[0];
-      if (!fallback || !next || !shouldFallBack(error) || request.signal?.aborted) throw error;
+      if (!fallback || !next || !(options.fallbackWhen ?? shouldFallBack)(error) || request.signal?.aborted) throw error;
       try {
         options.onFallback?.(provider.id, next.id, error);
       } catch {

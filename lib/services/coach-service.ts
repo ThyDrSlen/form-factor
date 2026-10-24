@@ -1,13 +1,13 @@
-import { supabase } from '@/lib/supabase';
-import { localDB, type LocalWorkout } from '@/lib/services/database/local-db';
-import { errorWithTs, warnWithTs } from '@/lib/logger';
+import { warnWithTs } from '@/lib/logger';
+import { ensureBuiltinProviders } from '@/lib/ai/providers';
+import { getPreferredProviderId } from '@/lib/ai/config';
+import { getProvider } from '@/lib/ai/registry';
+import { generate, shouldFallBack } from '@/lib/ai/router';
+import type { ModelResult } from '@/lib/ai/types';
 import { createError, logError } from './ErrorHandler';
-import { resolveCloudProvider } from './coach-cloud-provider';
-import { sendCoachGemmaPrompt } from './coach-gemma-service';
 import {
   inferCoachProvider,
   type CoachProvider,
-  type CoachProviderSignal,
 } from './coach-provider-types';
 import { synthesizeMemoryClause } from './coach-memory-context';
 import { shapeFinalResponse } from './coach-output-shaper';
@@ -20,7 +20,6 @@ import {
   type CoachUserTier,
   type CoachSignals,
 } from './coach-model-dispatch';
-import { isDispatchEnabled } from './coach-model-dispatch-flag';
 import {
   recordDispatchDecision,
   recordDispatchMismatch,
@@ -30,7 +29,10 @@ import {
   type CoachTaskKind as TrackerTaskKind,
   type CoachProvider as TrackerProvider,
 } from './coach-cost-tracker';
-import { assertUnderWeeklyCap } from './coach-cost-guard';
+import { recordCoachFailoverUsed } from './coach-telemetry';
+import { buildCoachContext, persistCoachConversation } from './coach-workout-context';
+
+export { parseRetryAfterMs } from '@/lib/ai/providers/edge-chat-provider';
 
 function estimateTokens(text: string): number {
   if (!text) return 0;
@@ -59,6 +61,7 @@ function mapProviderToTracker(provider: CoachProvider): TrackerProvider {
     case 'gemma-cloud':
       return 'gemma_cloud';
     case 'gemma-on-device':
+    case 'on-device':
       return 'gemma_ondevice';
     default:
       return 'stub';
@@ -157,12 +160,14 @@ export interface CoachSendOptions {
    */
   stream?: boolean | ((chunk: string) => void);
   /**
-   * If true and the primary call returns 429/5xx, automatically retry against
-   * the secondary provider (#465 Item 2).
+   * If true, a retryable failure (429/5xx/network) moves on to the next
+   * enabled provider instead of surfacing (#465 Item 2). Without it only a
+   * spend-cap rejection falls back.
    */
   allowFailover?: boolean;
   /**
-   * Provider hint for streaming and for failover routing (`gemma`|`openai`).
+   * Provider to try first (`gemma` → `gemma-cloud`). Ignored unless that
+   * provider is enabled in `EXPO_PUBLIC_AI_PROVIDERS`.
    */
   provider?: 'gemma' | 'openai';
   /**
@@ -177,10 +182,10 @@ export interface CoachSendOptions {
    */
   shaper?: boolean;
   /**
-   * Pipeline-v2 task kind hint. When the master flag is on AND
-   * `EXPO_PUBLIC_COACH_DISPATCH=on`, the task kind is fed to
-   * `decideCoachModel()` to pick a provider (tactical → Gemma, complex → GPT)
-   * before the legacy provider hint runs. Omitted means "general_chat".
+   * Pipeline-v2 task kind hint. When the pipeline-v2 flag is on, the task
+   * kind is fed to `decideCoachModel()` to prefer a provider (tactical →
+   * Gemma, complex → GPT); the preference only applies when that provider is
+   * enabled. Omitted means "general_chat".
    *
    * NOTE: `taskKind` is the ONLY routing signal. `CoachContext.focus` is a
    * cosmetic prompt label and does not affect model selection — always set
@@ -191,276 +196,6 @@ export interface CoachSendOptions {
   userTier?: CoachUserTier;
   /** Pipeline-v2 optional signals fed into the model dispatcher. */
   dispatchSignals?: CoachSignals;
-}
-
-interface RawCoachResponse {
-  message?: string;
-  content?: string;
-  reply?: string;
-  error?: string;
-  /** Provider discriminator — optional; may be absent from legacy responses. */
-  provider?: CoachProvider | string;
-  /** Model name (e.g. `gpt-5.4-mini`, `gemma-2b`). Used to infer provider. */
-  model?: string;
-  /** Coarse origin marker for cache / local-fallback paths. */
-  source?: 'cache' | 'local' | 'remote';
-}
-
-const DEFAULT_MODEL_ID = 'gpt-5.4-mini';
-const functionName = (process.env.EXPO_PUBLIC_COACH_FUNCTION || 'coach').trim();
-const MAX_RECENT_WORKOUT_CONTEXT_ITEMS = 5;
-const MAX_BEST_PERFORMANCE_ITEMS = 2;
-const MAX_WORKOUT_CONTEXT_LENGTH = 420;
-
-function formatWorkoutValue(value?: number): string | null {
-  if (typeof value !== 'number' || isNaN(value) || value <= 0) {
-    return null;
-  }
-
-  return value % 1 === 0 ? String(value) : value.toFixed(1);
-}
-
-function formatWorkoutSummaryItem(workout: LocalWorkout): string {
-  const dateLabel = workout.date.split('T')[0] || workout.date;
-  const exerciseLabel = workout.exercise.trim() || 'Workout';
-  const details: string[] = [];
-
-  if (workout.sets > 0 && typeof workout.reps === 'number' && workout.reps > 0) {
-    details.push(`${workout.sets}x${workout.reps}`);
-  } else if (workout.sets > 0) {
-    details.push(`${workout.sets} sets`);
-  } else if (typeof workout.reps === 'number' && workout.reps > 0) {
-    details.push(`${workout.reps} reps`);
-  }
-
-  const weightLabel = formatWorkoutValue(workout.weight);
-  if (weightLabel) {
-    details.push(`weight ${weightLabel}`);
-  }
-
-  const durationLabel = formatWorkoutValue(workout.duration);
-  if (durationLabel) {
-    details.push(`${durationLabel} min`);
-  }
-
-  return details.length > 0
-    ? `${dateLabel}: ${exerciseLabel} (${details.join(', ')})`
-    : `${dateLabel}: ${exerciseLabel}`;
-}
-
-function formatBestPerformanceItem(workout: LocalWorkout): string | null {
-  const exerciseLabel = workout.exercise.trim();
-  if (!exerciseLabel) {
-    return null;
-  }
-
-  const weightLabel = formatWorkoutValue(workout.weight);
-  const repsLabel = formatWorkoutValue(workout.reps);
-
-  if (weightLabel && repsLabel) {
-    return `${exerciseLabel} ${weightLabel} x ${repsLabel}`;
-  }
-
-  if (weightLabel) {
-    return `${exerciseLabel} ${weightLabel}`;
-  }
-
-  if (repsLabel) {
-    return `${exerciseLabel} ${repsLabel} reps`;
-  }
-
-  return null;
-}
-
-function pickBestPerformanceWorkouts(workouts: LocalWorkout[]): LocalWorkout[] {
-  const workoutsWithWeight = workouts.filter(
-    (workout) => typeof workout.weight === 'number' && !isNaN(workout.weight) && workout.weight > 0
-  );
-  const workoutsWithReps = workouts.filter(
-    (workout) => typeof workout.reps === 'number' && !isNaN(workout.reps) && workout.reps > 0
-  );
-
-  const heaviestWorkout = workoutsWithWeight.sort((a, b) => {
-    if ((b.weight || 0) !== (a.weight || 0)) {
-      return (b.weight || 0) - (a.weight || 0);
-    }
-
-    return b.date.localeCompare(a.date);
-  })[0];
-
-  const highestRepWorkout = workoutsWithReps
-    .filter((workout) => !heaviestWorkout || workout.id !== heaviestWorkout.id)
-    .sort((a, b) => {
-      if ((b.reps || 0) !== (a.reps || 0)) {
-        return (b.reps || 0) - (a.reps || 0);
-      }
-
-      return b.date.localeCompare(a.date);
-    })[0];
-
-  return [heaviestWorkout, highestRepWorkout]
-    .filter((workout): workout is LocalWorkout => Boolean(workout))
-    .slice(0, MAX_BEST_PERFORMANCE_ITEMS);
-}
-
-function summarizeRecentWorkouts(workouts: LocalWorkout[]): string | undefined {
-  const recentWorkouts = workouts.slice(0, MAX_RECENT_WORKOUT_CONTEXT_ITEMS);
-  if (recentWorkouts.length === 0) {
-    return undefined;
-  }
-
-  const summary = `Recent workouts: ${recentWorkouts
-    .map(formatWorkoutSummaryItem)
-    .join('; ')}`;
-
-  return summary.length > MAX_WORKOUT_CONTEXT_LENGTH
-    ? `${summary.slice(0, MAX_WORKOUT_CONTEXT_LENGTH - 1).replace(/\s+$/, '')}…`
-    : summary;
-}
-
-function summarizeBestPerformances(workouts: LocalWorkout[]): string | undefined {
-  const bestSummary = pickBestPerformanceWorkouts(workouts)
-    .map(formatBestPerformanceItem)
-    .filter((item): item is string => Boolean(item));
-
-  if (bestSummary.length === 0) {
-    return undefined;
-  }
-
-  return `Best performance: ${bestSummary.join('; ')}`;
-}
-
-function combineWorkoutContextSummary(workouts: LocalWorkout[]): string | undefined {
-  const parts = [
-    summarizeRecentWorkouts(workouts),
-    summarizeBestPerformances(workouts),
-  ].filter((part): part is string => Boolean(part));
-
-  if (parts.length === 0) {
-    return undefined;
-  }
-
-  const summary = parts.join('. ');
-  return summary.length > MAX_WORKOUT_CONTEXT_LENGTH
-    ? `${summary.slice(0, MAX_WORKOUT_CONTEXT_LENGTH - 1).replace(/\s+$/, '')}…`
-    : summary;
-}
-
-async function buildCoachContext(context?: CoachContext): Promise<CoachContext | undefined> {
-  let workoutSummary: string | undefined;
-
-  try {
-    workoutSummary = combineWorkoutContextSummary(await localDB.getAllWorkouts());
-  } catch (err) {
-    logError(
-      createError(
-        'storage',
-        'COACH_WORKOUT_CONTEXT_FAILED',
-        'Unable to load workout history for coach context',
-        {
-          details: err,
-          retryable: false,
-          severity: 'warning',
-        }
-      ),
-      {
-        feature: 'workouts',
-        location: 'sendCoachPrompt.buildCoachContext',
-      }
-    );
-  }
-
-  if (!context && !workoutSummary) {
-    return undefined;
-  }
-
-  if (!workoutSummary) {
-    return context;
-  }
-
-  return {
-    ...context,
-    workoutSummary,
-  };
-}
-
-async function persistCoachConversation(
-  insertPayload: Record<string, unknown>,
-  sessionId: string,
-  userId: string,
-): Promise<void> {
-  const { error } = await supabase.from('coach_conversations').insert(insertPayload);
-
-  if (!error) {
-    return;
-  }
-
-  logError(
-    createError(
-      'storage',
-      'COACH_CONVERSATION_PERSIST_FAILED',
-      'Failed to persist coach conversation',
-      {
-        details: error,
-        retryable: true,
-        severity: 'warning',
-      }
-    ),
-    {
-      feature: 'app',
-      location: 'sendCoachPrompt.persistCoachConversation',
-      meta: { sessionId, userId },
-    }
-  );
-}
-
-/**
- * Parse a `Retry-After` header value per RFC 7231. The header carries either
- * an integer number of seconds OR an HTTP-date. Returns the delay in
- * milliseconds, or undefined if the value can't be parsed.
- *
- * Exported for reuse by `coach-gemma-service.ts` — the two services share the
- * same 429 handling contract.
- */
-export function parseRetryAfterMs(raw: string | null | undefined): number | undefined {
-  if (!raw) return undefined;
-  const asInt = Number.parseInt(raw, 10);
-  if (Number.isFinite(asInt) && asInt >= 0 && /^\d+$/.test(raw.trim())) {
-    return asInt * 1000;
-  }
-  const asDate = Date.parse(raw);
-  if (Number.isFinite(asDate)) {
-    return Math.max(0, asDate - Date.now());
-  }
-  return undefined;
-}
-
-/**
- * Extract a `Retry-After` delay (ms) from a Supabase Edge Functions failure
- * tuple. Handles both shapes the SDK returns on 429:
- *   - `response.headers.get('Retry-After')` — the raw Response from a
- *     FunctionsHttpError.
- *   - `error.context.headers.get('Retry-After')` — the same Response, but
- *     surfaced via the error wrapper.
- * Returns undefined when neither path yields a header.
- */
-function extractRetryAfterMs(
-  response: Response | undefined,
-  error: unknown,
-): number | undefined {
-  const fromResponse = response?.headers?.get?.('Retry-After');
-  if (fromResponse) {
-    const parsed = parseRetryAfterMs(fromResponse);
-    if (parsed !== undefined) return parsed;
-  }
-  const ctx = (error as { context?: unknown } | null | undefined)?.context;
-  if (ctx && typeof ctx === 'object' && 'headers' in ctx) {
-    const headers = (ctx as { headers?: { get?: (k: string) => string | null } }).headers;
-    const raw = headers?.get?.('Retry-After') ?? null;
-    const parsed = parseRetryAfterMs(raw);
-    if (parsed !== undefined) return parsed;
-  }
-  return undefined;
 }
 
 /**
@@ -497,21 +232,64 @@ function applyMemoryClause(
   return [memoryMessage, ...messages];
 }
 
+const DEFAULT_MODEL_ID = 'gpt-5.4-mini';
+const COST_CAP_CODE = 'COACH_COST_CAP_EXCEEDED';
+
+const isCostCap = (err: unknown) =>
+  !!err && typeof err === 'object' && (err as { code?: string }).code === COST_CAP_CODE;
+
+/** allowFailover: retryable provider errors, spend caps, and raw transport throws. */
+const isFailoverEligible = (err: unknown) =>
+  shouldFallBack(err) || !(err && typeof err === 'object' && 'domain' in err);
+
+/** Maps the caller's `gemma`|`openai` hint onto registry ids. */
+function providerIdFromHint(hint: CoachSendOptions['provider']): string | undefined {
+  if (!hint) return undefined;
+  return hint === 'gemma' ? 'gemma-cloud' : hint;
+}
+
 /**
- * Send a coach prompt. Dispatch order:
- *   1. If `opts.stream` → streaming path (#466 Item 1)
- *   2. If `opts.allowFailover` → failover producer, optionally cached (#466 Items 2-3)
- *   3. If `opts.cacheMs > 0` → cached OpenAI path (#466 Item 3)
- *   4. Else → resolve cloud provider (from `opts.provider`, AsyncStorage, or env)
- *      - `gemma` → direct `sendCoachGemmaPrompt`
- *      - `openai` → `sendCoachPromptInner` (coach edge function)
+ * Pipeline v2 task-kind policy: a tactical task prefers Gemma, a complex one
+ * GPT. Only consulted when the caller hasn't pinned a provider. Fires the
+ * dispatch telemetry counters; telemetry is never load-bearing.
+ */
+function taskRoutedProviderId(opts?: CoachSendOptions): string | undefined {
+  if (!isCoachPipelineV2Enabled() || !opts?.taskKind || opts.provider !== undefined) return undefined;
+  const signals = opts.dispatchSignals ?? {};
+  const tier = opts.userTier ?? 'free';
+  const decision = decideCoachModel(opts.taskKind, signals, tier);
+  try {
+    recordDispatchDecision(decision);
+    recordDispatchMismatch(expectedTierModel(opts.taskKind, signals, tier), decision.model, decision.reason);
+  } catch {
+    // Telemetry is never load-bearing.
+  }
+  return decision.model.startsWith('gemma-') ? 'gemma-cloud' : 'openai';
+}
+
+/** UI/telemetry provider label for a routed result. */
+function coachProviderFor(result: ModelResult): CoachProvider {
+  if (result.providerId === 'gemma-cloud') return 'gemma-cloud';
+  if (getProvider(result.providerId)?.kind === 'on-device') return 'on-device';
+  // The OpenAI edge function only reports a model; infer the badge from it.
+  const raw = (result.raw ?? {}) as { provider?: string };
+  return inferCoachProvider({ provider: raw.provider, model: result.model ?? DEFAULT_MODEL_ID, source: result.source });
+}
+
+function annotate(reply: CoachMessage, key: 'provider' | 'model', value: string): void {
+  // Non-enumerable keeps backward-compatible equality for consumers that
+  // shallow/deep-compare replies, while TypeScript and the UI can still read it.
+  Object.defineProperty(reply, key, { value, enumerable: false, configurable: true, writable: true });
+}
+
+/**
+ * Send a coach prompt. Streaming (`opts.stream`) uses the NDJSON stream path;
+ * everything else is one routed turn, optionally cached (`opts.cacheMs`).
  *
- * Memory clause (#461) is synthesized inside `sendCoachPromptInner` for the
- * OpenAI path; callers may opt out by setting `EXPO_PUBLIC_COACH_MEMORY=false`
- * or pre-composing `context.memoryClause`.
- *
- * Backward compatible: the two-arg call shape hits the cloud provider selector,
- * which defaults to `openai` absent any user/env preference.
+ * Routing: `opts.provider`, then the pipeline-v2 task-kind policy, then the
+ * user's preferred provider, then `EXPO_PUBLIC_AI_PROVIDERS` order (default
+ * `openai`). Only enabled providers are tried. A spend-cap rejection always
+ * falls back; other retryable failures fall back only with `allowFailover`.
  */
 export async function sendCoachPrompt(
   messages: CoachMessage[],
@@ -521,95 +299,16 @@ export async function sendCoachPrompt(
   if (opts?.stream) {
     return sendCoachPromptStreaming(messages, context, opts);
   }
-  if (opts?.allowFailover) {
-    // Lazy require keeps the dep graph 1-way and avoids load-order issues
-    // (await import() does not work in jest's CJS env without
-    // --experimental-vm-modules).
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { sendCoachPromptWithFailover } = require('./coach-failover') as typeof import('./coach-failover');
-    const failoverProducer = () =>
-      sendCoachPromptWithFailover(messages, context, {
-        primary: opts.provider ?? 'gemma',
-        secondary: opts.provider === 'openai' ? 'gemma' : 'openai',
-      });
-    if (typeof opts.cacheMs === 'number' && opts.cacheMs > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { withCoachCache } = require('./coach-cache') as typeof import('./coach-cache');
-      return withCoachCache(messages, context, opts.cacheMs, failoverProducer, {
-        shaper: opts.shaper,
-      });
-    }
-    return failoverProducer();
-  }
   if (typeof opts?.cacheMs === 'number' && opts.cacheMs > 0) {
+    // Lazy require keeps the dep graph 1-way (await import() does not work in
+    // jest's CJS env without --experimental-vm-modules).
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { withCoachCache } = require('./coach-cache') as typeof import('./coach-cache');
-    return withCoachCache(
-      messages,
-      context,
-      opts.cacheMs,
-      () => sendCoachPromptInner(messages, context, opts?.taskKind),
-      { shaper: opts.shaper }
-    );
+    return withCoachCache(messages, context, opts.cacheMs, () => runCoachTurn(messages, context, opts), {
+      shaper: opts.shaper,
+    });
   }
-
-  // Pipeline v2: consult the task-kind router BEFORE the legacy provider
-  // hint is applied. When the model dispatcher picks a Gemma model and the
-  // caller hasn't already pinned a provider, route to Gemma. Otherwise fall
-  // through to the existing provider resolution. READ-ONLY on
-  // coach-model-dispatch.ts itself. Fires a single-shot telemetry counter so
-  // product can track dispatch decisions as rollout progresses.
-  let routedProvider: 'gemma' | 'openai' | undefined;
-  if (
-    isCoachPipelineV2Enabled() &&
-    isDispatchEnabled() &&
-    opts?.taskKind &&
-    opts.provider === undefined
-  ) {
-    const signals = opts.dispatchSignals ?? {};
-    const tier = opts.userTier ?? 'free';
-    const decision = decideCoachModel(opts.taskKind, signals, tier);
-    try {
-      recordDispatchDecision(decision);
-      // Tier ↔ model mismatch telemetry. When the tier-expected baseline
-      // diverges from the model we actually dispatched (because of a flag,
-      // forceCloud override, visionFallback, or high-fault upgrade) emit a
-      // `coach_dispatch_mismatch:<expected>:<actual>` counter so product can
-      // monitor how often dispatch overrides fire in production.
-      const expected = expectedTierModel(opts.taskKind, signals, tier);
-      recordDispatchMismatch(expected, decision.model, decision.reason);
-    } catch {
-      // Telemetry is never load-bearing; swallow any recorder fault so the
-      // coach turn still proceeds.
-    }
-    routedProvider = decision.model.startsWith('gemma-') ? 'gemma' : 'openai';
-  }
-
-  // No advanced opts: pick cloud provider (explicit hint, dispatcher, user pref, env, or openai default).
-  const provider = opts?.provider ?? routedProvider ?? (await resolveCloudProvider());
-  // Dispatch-flag gate (#536): only route to Gemma when the global flag is on.
-  if (provider === 'gemma' && isDispatchEnabled()) {
-    try {
-      await assertUnderWeeklyCap('gemma_cloud');
-      return await sendCoachGemmaPrompt(messages, context, {
-        taskKind: opts?.taskKind as string | undefined,
-      });
-    } catch (err) {
-      const code =
-        err && typeof err === 'object' && 'code' in err
-          ? (err as { code?: string }).code
-          : undefined;
-      if (code === 'COACH_COST_CAP_EXCEEDED') {
-        warnWithTs(
-          '[coach-service] weekly Gemma cap hit, falling back to OpenAI',
-          err,
-        );
-        return sendCoachPromptInner(messages, context, opts?.taskKind);
-      }
-      throw err;
-    }
-  }
-  return sendCoachPromptInner(messages, context, opts?.taskKind);
+  return runCoachTurn(messages, context, opts);
 }
 
 async function sendCoachPromptStreaming(
@@ -661,155 +360,52 @@ async function sendCoachPromptStreaming(
   return { role: 'assistant', content: result.text };
 }
 
-async function sendCoachPromptInner(
+async function runCoachTurn(
   messages: CoachMessage[],
-  context?: CoachContext,
-  taskKind?: CoachTaskKind,
+  context: CoachContext | undefined,
+  opts: CoachSendOptions | undefined,
 ): Promise<CoachMessage> {
   try {
+    ensureBuiltinProviders();
+    const prefer = [providerIdFromHint(opts?.provider), taskRoutedProviderId(opts)];
+    if (!prefer.some(Boolean)) prefer.push((await getPreferredProviderId()) ?? undefined);
+
     const memoryClause = await resolveMemoryClause(context);
     const outgoingMessages = applyMemoryClause(messages, memoryClause);
     const contextWithMemory =
       memoryClause !== null
         ? { ...(context ?? {}), memoryClause }
         : context;
-
     const requestContext = await buildCoachContext(contextWithMemory);
-    const { data, error, response } = await supabase.functions.invoke<RawCoachResponse>(functionName, {
-      body: { messages: outgoingMessages, context: requestContext },
-    });
 
-    if (error) {
-      // Check for specific error types based on error message or context
-      const errorMessage = error.message || '';
-      const isConfigError = errorMessage.includes('not configured') ||
-                           errorMessage.includes('OPENAI_API_KEY') ||
-                           errorMessage.includes('missing');
-      const hasStatus = typeof error === 'object' && error !== null && 'status' in error;
-      const status = hasStatus ? (error as { status: unknown }).status : undefined;
-      const isNotFound = (status === 404) || errorMessage.includes('404');
-      const isRateLimited =
-        status === 429 ||
-        /\b429\b/.test(errorMessage) ||
-        /rate.?limit/i.test(errorMessage) ||
-        /too many requests/i.test(errorMessage);
+    const result = await generate(
+      { messages: outgoingMessages, context: requestContext, taskKind: opts?.taskKind },
+      {
+        prefer,
+        fallbackWhen: opts?.allowFailover ? isFailoverEligible : isCostCap,
+        onFallback: (from, to, err) => {
+          if (isCostCap(err)) warnWithTs(`[coach-service] ${from} spend cap hit, falling back to ${to}`, err);
+          recordCoachFailoverUsed(to);
+        },
+      },
+    );
 
-      if (isNotFound) {
-        throw createError(
-          'validation',
-          'COACH_NOT_DEPLOYED',
-          'Coach service is not available. Please contact support.',
-          { details: error, retryable: false }
-        );
-      }
-
-      if (isConfigError) {
-        throw createError(
-          'validation',
-          'COACH_NOT_CONFIGURED',
-          'Coach is not configured. Please contact support.',
-          { details: error, retryable: false }
-        );
-      }
-
-      if (isRateLimited) {
-        const retryAfterMs = extractRetryAfterMs(response, error);
-        throw createError(
-          'network',
-          'COACH_RATE_LIMITED',
-          'Coach is rate-limited — try again in a moment.',
-          {
-            details: retryAfterMs !== undefined ? { error, retryAfterMs } : error,
-            retryable: true,
-          }
-        );
-      }
-
-      throw createError(
-        'network',
-        'COACH_INVOKE_FAILED',
-        error.message || 'Coach request failed',
-        {
-          details: error,
-          retryable: true,
-        }
-      );
-    }
-
-    // Check if the response itself contains an error field
-    if (data?.error) {
-      const isConfigError = data.error.includes('not configured') ||
-                           data.error.includes('OPENAI_API_KEY');
-      const isRateLimitedPayload =
-        /\b429\b/.test(data.error) ||
-        /rate.?limit/i.test(data.error) ||
-        /too many requests/i.test(data.error);
-
-      if (isRateLimitedPayload) {
-        const retryAfterMs = extractRetryAfterMs(response, error);
-        throw createError(
-          'network',
-          'COACH_RATE_LIMITED',
-          'Coach is rate-limited — try again in a moment.',
-          {
-            details:
-              retryAfterMs !== undefined
-                ? { error: data.error, retryAfterMs }
-                : data.error,
-            retryable: true,
-          }
-        );
-      }
-
-      throw createError(
-        isConfigError ? 'validation' : 'network',
-        isConfigError ? 'COACH_NOT_CONFIGURED' : 'COACH_ERROR',
-        data.error,
-        { retryable: !isConfigError }
-      );
-    }
-
-    const rawResponseText =
-      data?.message?.trim() ||
-      data?.content?.trim() ||
-      data?.reply?.trim();
-
-    if (!rawResponseText) {
-      throw createError(
-        'validation',
-        'COACH_EMPTY_RESPONSE',
-        'Coach did not return a reply'
-      );
-    }
-
-    // Pipeline v2: apply the post-generation safety filter to cloud responses
-    // before returning. Mirrors `coach-local.ts:finalizeOutput` so cloud and
-    // on-device paths enforce the same safety rules. On violation we throw
-    // `COACH_CLOUD_UNSAFE`; the dispatcher/UI surfaces it or falls back to
-    // a fallback-response string.
-    let safeResponseText = rawResponseText;
+    // Pipeline v2: post-generation safety filter for every provider. On
+    // violation we throw `COACH_CLOUD_UNSAFE`; the UI surfaces it or falls
+    // back to a fallback-response string.
+    let safeResponseText = result.text;
     if (isCoachPipelineV2Enabled()) {
-      const safety = evaluateSafety(rawResponseText);
+      const safety = evaluateSafety(result.text);
       if (!safety.ok) {
-        const unsafeErr = createError(
-          'ml',
-          'COACH_CLOUD_UNSAFE',
-          'Coach reply failed safety check',
-          {
-            retryable: false,
-            severity: 'warning',
-            details: { metric: safety.metric, reason: safety.reason },
-          }
-        );
+        const unsafeErr = createError('ml', 'COACH_CLOUD_UNSAFE', 'Coach reply failed safety check', {
+          retryable: false,
+          severity: 'warning',
+          details: { metric: safety.metric, reason: safety.reason },
+        });
         try {
-          logError(unsafeErr, {
-            feature: 'workouts',
-            location: 'coach-service.sendCoachPromptInner',
-          });
+          logError(unsafeErr, { feature: 'workouts', location: 'coach-service.runCoachTurn' });
         } catch {
-          // logError should never throw in prod; swallow in case test env
-          // misconfigures expo-constants/Platform so the safety rejection
-          // still reaches the caller with the right code.
+          // logError should never throw in prod; keep the rejection code intact.
         }
         throw unsafeErr;
       }
@@ -817,24 +413,14 @@ async function sendCoachPromptInner(
       safeResponseText = safety.output;
     }
 
-    // Pipeline v2: shape the synchronous response (strips filler, normalizes
-    // lists, caps budget — see coach-output-shaper.ts). Flag-gated so existing
-    // callers keep the raw text until rollout.
+    // Pipeline v2: shape the response (strips filler, normalizes lists, caps
+    // budget — see coach-output-shaper.ts).
     const responseText = isCoachPipelineV2Enabled()
       ? shapeFinalResponse(safeResponseText)
       : safeResponseText;
 
-    // WHY: the edge function today only returns text (no provider field). We
-    // infer the provider from whatever signal it does emit (model name +
-    // optional `source`) so the UI can still show a badge. Once the edge
-    // function starts returning `provider` explicitly, that wins.
-    const signal: CoachProviderSignal = {
-      provider: data?.provider,
-      model: data?.model ?? DEFAULT_MODEL_ID,
-      source: data?.source,
-    };
-    const provider = inferCoachProvider(signal);
-    const modelId = signal.model ?? DEFAULT_MODEL_ID;
+    const provider = coachProviderFor(result);
+    const modelId = result.model ?? (result.providerId === 'openai' ? DEFAULT_MODEL_ID : undefined);
 
     if (context?.profile?.id && context.sessionId) {
       const userTurns = messages.filter(m => m.role === 'user');
@@ -851,27 +437,13 @@ async function sendCoachPromptInner(
       void persistCoachConversation(insertPayload, context.sessionId, context.profile.id);
     }
 
-    // WHY non-enumerable: `provider` is a supplementary annotation on the
-    // assistant reply. Keeping it non-enumerable preserves backward-compatible
-    // equality semantics for existing consumers that shallow-compare replies,
-    // while still letting TypeScript + the UI read `msg.provider`.
     const reply: CoachMessage = { role: 'assistant', content: responseText };
-    Object.defineProperty(reply, 'provider', {
-      value: provider,
-      enumerable: false,
-      configurable: true,
-      writable: true,
-    });
+    annotate(reply, 'provider', provider);
+    if (modelId) annotate(reply, 'model', modelId);
 
     // Cost-tracker wiring (#537). Fire-and-forget; never blocks the reply.
     const promptText = messages.map((m) => m.content ?? '').join('\n');
-    fireAndForgetRecordUsage(
-      provider,
-      taskKind,
-      promptText,
-      responseText,
-      data?.source === 'cache',
-    );
+    fireAndForgetRecordUsage(provider, opts?.taskKind, promptText, responseText, result.source === 'cache');
 
     return reply;
   } catch (err) {

@@ -8,6 +8,7 @@ export type CoachProvider =
   | 'openai'
   | 'gemma-cloud'
   | 'gemma-on-device'
+  | 'on-device'
   | 'local-fallback'
   | 'cached';
 
@@ -28,6 +29,7 @@ const KNOWN_PROVIDERS: readonly CoachProvider[] = [
   'openai',
   'gemma-cloud',
   'gemma-on-device',
+  'on-device',
   'local-fallback',
   'cached',
 ] as const;

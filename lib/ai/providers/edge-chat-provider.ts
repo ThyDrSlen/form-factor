@@ -138,13 +138,21 @@ export async function invokeEdgeChat(config: EdgeChatConfig, request: ModelReque
   return { text, providerId: config.id, model, source: data?.source, raw: data };
 }
 
-export function createEdgeChatProvider(config: EdgeChatConfig): ModelProvider {
+export interface EdgeChatHooks {
+  /** Runs before every routed call, e.g. a spend cap that throws to trigger fallback. */
+  beforeGenerate?: () => Promise<void>;
+}
+
+export function createEdgeChatProvider(config: EdgeChatConfig, hooks: EdgeChatHooks = {}): ModelProvider {
   return {
     id: config.id,
     label: config.label,
     kind: 'cloud',
     capabilities: config.capabilities ?? [],
     isAvailable: () => true,
-    generate: (request) => invokeEdgeChat(config, request),
+    generate: async (request) => {
+      await hooks.beforeGenerate?.();
+      return invokeEdgeChat(config, request);
+    },
   };
 }

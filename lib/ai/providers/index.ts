@@ -1,3 +1,4 @@
+import { assertUnderWeeklyCap } from '@/lib/services/coach-cost-guard';
 import { registerProvider } from '../registry';
 import { createEdgeChatProvider, type EdgeChatConfig } from './edge-chat-provider';
 
@@ -31,7 +32,11 @@ let registered = false;
 export function ensureBuiltinProviders(): void {
   if (registered) return;
   registered = true;
-  for (const config of BUILTIN_EDGE_PROVIDERS) registerProvider(createEdgeChatProvider(config));
+  registerProvider(createEdgeChatProvider(OPENAI_EDGE));
+  // Gemma spend is capped weekly; over the cap the router falls back.
+  registerProvider(createEdgeChatProvider(GEMMA_CLOUD_EDGE, {
+    beforeGenerate: () => assertUnderWeeklyCap('gemma_cloud'),
+  }));
 }
 
 /** Test-only: allow a fresh registration after `__resetRegistryForTests()`. */
