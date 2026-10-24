@@ -1,6 +1,6 @@
 /**
  * Pipeline-v2 provider dispatch tests for progression-planner.
- * Verifies EXPO_PUBLIC_COACH_CLOUD_PROVIDER is honoured when the master
+ * Verifies EXPO_PUBLIC_AI_PROVIDERS order is honoured when the master
  * flag is on; legacy behavior (no opts) when the flag is off.
  */
 
@@ -22,7 +22,7 @@ beforeAll(() => {
 });
 
 const FLAG = 'EXPO_PUBLIC_COACH_PIPELINE_V2';
-const PROVIDER = 'EXPO_PUBLIC_COACH_CLOUD_PROVIDER';
+const PROVIDER = 'EXPO_PUBLIC_AI_PROVIDERS';
 const originalFlag = process.env[FLAG];
 const originalProvider = process.env[PROVIDER];
 
@@ -57,7 +57,7 @@ afterEach(() => {
 describe('progression-planner provider dispatch (pipeline-v2)', () => {
   it('forwards provider=gemma when flag is on and env=gemma', async () => {
     process.env[FLAG] = 'on';
-    process.env[PROVIDER] = 'gemma';
+    process.env[PROVIDER] = 'gemma-cloud,openai';
 
     await generateProgressionPlan({
       userId: 'u1',
@@ -89,7 +89,7 @@ describe('progression-planner provider dispatch (pipeline-v2)', () => {
 
   it('annotates taskKind even when flag is off (legacy behavior otherwise preserved)', async () => {
     delete process.env[FLAG];
-    process.env[PROVIDER] = 'gemma';
+    process.env[PROVIDER] = 'gemma-cloud,openai';
 
     await generateProgressionPlan({
       userId: 'u1',

@@ -1,6 +1,6 @@
 # Tracking quality module
 
-This module centralizes tracking-quality tuning constants and exposes the pipeline flag read path.
+This module centralizes tracking-quality tuning constants, filters, occlusion and cue-hysteresis helpers, and the subject/human validation guards.
 
 ## Exports
 
@@ -10,31 +10,11 @@ This module centralizes tracking-quality tuning constants and exposes the pipeli
   - `SHOW_N_FRAMES`, `HIDE_N_FRAMES`, `HOLD_FRAMES`
   - `N_CONSEC_FRAMES`, `REP_DETECTOR_THRESHOLDS`
   - `CONFIDENCE_TIER_THRESHOLDS`
-- Flag helpers in `index.ts`:
-  - `readUseNewTrackingPipelineFlag()`
-  - `resolveTrackingPipelineMode()`
-  - `getTrackingPipelineFlags()`
-  - `getTrackingQualityPipeline()`
+- Guard helpers in `index.ts`: `readTrackingGuardsFlag()`, `createTrackingGuards()`
 
-## Flag behavior
+## Integration
 
-- `EXPO_PUBLIC_USE_NEW_TRACKING_PIPELINE` (preferred) or `USE_NEW_TRACKING_PIPELINE` can explicitly enable/disable the new path.
-- If unset, default is `true` for dev/test (`__DEV__` or `NODE_ENV=test`) and `false` otherwise.
-
-## Current integration
-
-`scan-arkit.tsx` switches between legacy and new pipeline at initialization boundaries only. Legacy behavior stays unchanged when the flag is `false`.
-
-## Rollout and rollback guide (`useNewTrackingPipeline`)
-
-- Rollout path:
-  - Set `EXPO_PUBLIC_USE_NEW_TRACKING_PIPELINE=true` (or `USE_NEW_TRACKING_PIPELINE=true`) for the target environment.
-  - Keep legacy path available; no code removal is required for rollout.
-  - Validate with `bun run test` and `bun run eval:pullup-tracking` before widening rollout.
-- Rollback path:
-  - Flip `EXPO_PUBLIC_USE_NEW_TRACKING_PIPELINE=false` (or `USE_NEW_TRACKING_PIPELINE=false`).
-  - Restart/redeploy so initialization re-reads env flags.
-  - `scan-arkit.tsx` resumes legacy create/process functions at init boundaries with no migration step.
+`scan-arkit.tsx` smooths joint angles with `processRealtimeAngles` from `lib/pose/realtime-form-engine.ts` in every build. There is no separate legacy/new pipeline switch. Validate tuning changes with `bun run test` and `bun run eval:pullup-tracking`.
 
 ## Release-candidate defaults
 

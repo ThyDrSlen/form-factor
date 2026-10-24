@@ -1,6 +1,6 @@
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { RadioButton, Text } from 'react-native-paper';
-import type { CoachRoutingPreference as RoutingPref } from '@/lib/services/coach-dispatch';
+import type { OnDeviceRoutingPreference as RoutingPref } from '@/lib/ai/config';
 
 export interface CoachRoutingPreferenceProps {
   value: RoutingPref;

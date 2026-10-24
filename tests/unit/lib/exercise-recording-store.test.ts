@@ -3,12 +3,13 @@ import { readFileSync } from 'fs';
 import path from 'path';
 import ts from 'typescript';
 import { ExerciseRecordingStore } from '@/lib/debug/exercise-recording-store';
+import { readScanScreenSource } from '../../helpers/scan-screen-source';
 
 // Execute only trusted repository source (never user/external strings).
 // Exercise the actual Scan observer and controller option without mounting native UI.
 function scanResetObserver(store: ExerciseRecordingStore, development: boolean, fixture: boolean) {
   const filename = path.resolve(process.cwd(), 'app/(tabs)/scan-arkit.tsx');
-  const source = ts.createSourceFile(filename, readFileSync(filename, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const source = ts.createSourceFile(filename, readScanScreenSource(), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const screen = source.statements.find((node): node is ts.FunctionDeclaration =>
     ts.isFunctionDeclaration(node) && node.name?.text === 'ScanARKitScreen');
   const declarations = screen!.body!.statements.filter(ts.isVariableStatement)

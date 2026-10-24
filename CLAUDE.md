@@ -61,7 +61,7 @@ Form Factor is an iOS-first fitness tracking app built with Expo 54 + React Nati
 - `ErrorHandler.ts` — Centralized error domain system with `withErrorHandling()` wrapper
 - `social-service.ts` — Follow/block/share logic
 - `video-service.ts` — Video upload/streaming
-- `coach-service.ts` — AI coach (calls Supabase Edge Function)
+- `coach-service.ts` — AI coach pipeline; model choice goes through `lib/ai/` (provider registry + router, see `docs/AI_PROVIDERS.md`)
 - `healthkit/` — HealthKit readers, metrics, bulk sync, weight trends
 - `rest-timer.ts`, `rep-logger.ts`, `fqi-calculator.ts` — Workout session services
 

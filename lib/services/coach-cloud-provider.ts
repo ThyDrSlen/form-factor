@@ -1,7 +1,9 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getPreferredProviderId, setPreferredProviderId } from '@/lib/ai/config';
+import { isGemmaCloudPrimary } from './coach-provider-types';
 
 export type CoachCloudProvider = 'openai' | 'gemma';
 
+/** Legacy storage key; still read by lib/ai/config for existing installs. */
 export const COACH_CLOUD_PROVIDER_STORAGE_KEY = 'coach_cloud_provider';
 
 const VALID_PROVIDERS: CoachCloudProvider[] = ['openai', 'gemma'];
@@ -19,41 +21,34 @@ function parseProvider(raw: unknown): CoachCloudProvider | null {
  * Resolve which cloud coach provider to use for the current user.
  *
  * Precedence (highest wins):
- *   1. AsyncStorage preference at `coach_cloud_provider` (user-selected)
- *   2. `EXPO_PUBLIC_COACH_CLOUD_PROVIDER` env (build-time default)
+ *   1. The user's preferred provider (lib/ai/config; reads the legacy
+ *      `coach_cloud_provider` key too)
+ *   2. EXPO_PUBLIC_AI_PROVIDERS order: gemma when `gemma-cloud` leads
  *   3. Hard-coded default: `openai`
  *
  * Invalid values at any layer are treated as absent and fall through.
  */
 export async function resolveCloudProvider(): Promise<CoachCloudProvider> {
-  try {
-    const stored = await AsyncStorage.getItem(COACH_CLOUD_PROVIDER_STORAGE_KEY);
-    const parsed = parseProvider(stored);
-    if (parsed) return parsed;
-  } catch {
-    // AsyncStorage failures fall through to env/default.
-  }
-
-  const envValue = process.env.EXPO_PUBLIC_COACH_CLOUD_PROVIDER;
-  const fromEnv = parseProvider(envValue);
-  if (fromEnv) return fromEnv;
-
-  return DEFAULT_PROVIDER;
+  const preferred = await getPreferredProviderId();
+  if (preferred === 'gemma-cloud') return 'gemma';
+  if (preferred === 'openai') return 'openai';
+  return isGemmaCloudPrimary() ? 'gemma' : DEFAULT_PROVIDER;
 }
 
 /** Persist a user-selected provider. Throws on invalid input. */
 export async function setCloudProviderPreference(
   provider: CoachCloudProvider,
 ): Promise<void> {
-  if (!parseProvider(provider)) {
+  const parsed = parseProvider(provider);
+  if (!parsed) {
     throw new Error(`Invalid coach cloud provider: ${String(provider)}`);
   }
-  await AsyncStorage.setItem(COACH_CLOUD_PROVIDER_STORAGE_KEY, provider);
+  await setPreferredProviderId(parsed === 'gemma' ? 'gemma-cloud' : 'openai');
 }
 
-/** Remove any stored preference and fall back to env/default. */
+/** Remove any stored preference and fall back to the enabled order/default. */
 export async function clearCloudProviderPreference(): Promise<void> {
-  await AsyncStorage.removeItem(COACH_CLOUD_PROVIDER_STORAGE_KEY);
+  await setPreferredProviderId(null);
 }
 
 /**

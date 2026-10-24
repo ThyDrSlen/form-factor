@@ -9,7 +9,7 @@ import {
 } from '@/lib/services/coach-cloud-provider';
 
 describe('coach-cloud-provider', () => {
-  const ENV_KEY = 'EXPO_PUBLIC_COACH_CLOUD_PROVIDER';
+  const ENV_KEY = 'EXPO_PUBLIC_AI_PROVIDERS';
   const originalEnvValue = process.env[ENV_KEY];
 
   beforeEach(async () => {
@@ -31,7 +31,7 @@ describe('coach-cloud-provider', () => {
   });
 
   it('uses the env value when AsyncStorage is empty', async () => {
-    process.env[ENV_KEY] = 'gemma';
+    process.env[ENV_KEY] = 'gemma-cloud,openai';
     expect(await resolveCloudProvider()).toBe('gemma');
   });
 
@@ -42,7 +42,7 @@ describe('coach-cloud-provider', () => {
   });
 
   it('prefers AsyncStorage over env for both providers', async () => {
-    process.env[ENV_KEY] = 'gemma';
+    process.env[ENV_KEY] = 'gemma-cloud,openai';
     await AsyncStorage.setItem(COACH_CLOUD_PROVIDER_STORAGE_KEY, 'openai');
     expect(await resolveCloudProvider()).toBe('openai');
   });
@@ -52,7 +52,7 @@ describe('coach-cloud-provider', () => {
   // ---------------------------------------------------------------------------
 
   it('ignores invalid AsyncStorage values and falls through to env', async () => {
-    process.env[ENV_KEY] = 'gemma';
+    process.env[ENV_KEY] = 'gemma-cloud,openai';
     await AsyncStorage.setItem(COACH_CLOUD_PROVIDER_STORAGE_KEY, 'claude');
     expect(await resolveCloudProvider()).toBe('gemma');
   });
@@ -86,7 +86,7 @@ describe('coach-cloud-provider', () => {
     (AsyncStorage as { getItem: unknown }).getItem = jest
       .fn()
       .mockRejectedValueOnce(new Error('storage error'));
-    process.env[ENV_KEY] = 'gemma';
+    process.env[ENV_KEY] = 'gemma-cloud,openai';
     try {
       expect(await resolveCloudProvider()).toBe('gemma');
     } finally {
@@ -110,9 +110,9 @@ describe('coach-cloud-provider', () => {
   // Setters
   // ---------------------------------------------------------------------------
 
-  it('setCloudProviderPreference writes to AsyncStorage', async () => {
+  it('setCloudProviderPreference writes the model-layer preference', async () => {
     await setCloudProviderPreference('gemma');
-    expect(await AsyncStorage.getItem(COACH_CLOUD_PROVIDER_STORAGE_KEY)).toBe('gemma');
+    expect(await AsyncStorage.getItem('ai_preferred_provider')).toBe('gemma-cloud');
     expect(await resolveCloudProvider()).toBe('gemma');
   });
 

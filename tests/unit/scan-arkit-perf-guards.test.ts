@@ -7,11 +7,9 @@
 // gates.
 import fs from 'fs';
 import path from 'path';
+import { readScanScreenSource } from '../helpers/scan-screen-source';
 
-const scanArkitSource = fs.readFileSync(
-  path.resolve(__dirname, '..', '..', 'app', '(tabs)', 'scan-arkit.tsx'),
-  'utf8'
-);
+const scanArkitSource = readScanScreenSource();
 
 describe('scan-arkit perf regression guards (#460)', () => {
   it('caps the pose2D smoothing cache at 30 entries', () => {

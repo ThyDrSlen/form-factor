@@ -1,5 +1,7 @@
 # Gemma On-Device Coach — Rollout Runbook
 
+> **Superseded (2026-10).** The on-device coach scaffold (`coach-local`, `coach-dispatch`, `coach-rollout`, `coach-model-manager`) and the `EXPO_PUBLIC_COACH_LOCAL*` flags below were removed. On-device models now register through the provider slot in `lib/ai/providers/on-device-provider.ts` and are enabled with `EXPO_PUBLIC_AI_PROVIDERS`; see [AI providers](AI_PROVIDERS.md). The rest of this page is kept for history.
+
 ## TL;DR
 
 On-device Gemma is staged behind TWO gates:

@@ -1,6 +1,5 @@
 import type { JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 import { createRealtimeFormEngineState, processRealtimeAngles } from '@/lib/pose/realtime-form-engine';
-import { processTrackingQualityAngles } from '@/lib/tracking-quality';
 
 const baseAngles: JointAngles = {
   leftKnee: 120, rightKnee: 121,
@@ -19,7 +18,6 @@ const cases = keys.flatMap(key => [Number.NaN, Infinity, -Infinity].map(value =>
 
 describe.each([
   ['direct', processRealtimeAngles],
-  ['tracking quality', processTrackingQualityAngles],
 ] as const)('%s smoothing recovery', (_name, processAngles) => {
   test.each(cases)('recovers $key from $value only after a tracked finite sample', ({ key, value }) => {
     const state = createRealtimeFormEngineState();

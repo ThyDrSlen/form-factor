@@ -1,7 +1,8 @@
-import { supabase } from '@/lib/supabase';
+import { invokeEdgeChat } from '@/lib/ai/providers/edge-chat-provider';
+import { GEMMA_CLOUD_EDGE } from '@/lib/ai/providers';
 import { warnWithTs } from '@/lib/logger';
 import { createError, logError } from './ErrorHandler';
-import { parseRetryAfterMs, type CoachContext, type CoachMessage } from './coach-service';
+import type { CoachContext, CoachMessage } from './coach-service';
 import type { CoachProvider } from './coach-provider-types';
 import {
   recordCoachUsage,
@@ -41,45 +42,6 @@ function mapGemmaTaskKind(input?: string): TrackerTaskKind {
   }
 }
 
-interface RawCoachGemmaResponse {
-  message?: string;
-  content?: string;
-  reply?: string;
-  error?: string;
-  model?: string;
-}
-
-const DEFAULT_FUNCTION_NAME = 'coach-gemma';
-
-function functionName(): string {
-  return (process.env.EXPO_PUBLIC_COACH_GEMMA_FUNCTION || DEFAULT_FUNCTION_NAME).trim();
-}
-
-/**
- * Extract a `Retry-After` delay (ms) from a Supabase Functions failure tuple.
- * Checks the raw `Response` first (present when the SDK surfaces a
- * `FunctionsHttpError`) and falls back to `error.context.headers` when the
- * Response is only reachable through the error wrapper.
- */
-function readRetryAfterMs(
-  response: Response | undefined,
-  error: unknown,
-): number | undefined {
-  const fromResponse = response?.headers?.get?.('Retry-After');
-  if (fromResponse) {
-    const parsed = parseRetryAfterMs(fromResponse);
-    if (parsed !== undefined) return parsed;
-  }
-  const ctx = (error as { context?: unknown } | null | undefined)?.context;
-  if (ctx && typeof ctx === 'object' && 'headers' in ctx) {
-    const headers = (ctx as { headers?: { get?: (k: string) => string | null } }).headers;
-    const raw = headers?.get?.('Retry-After') ?? null;
-    const parsed = parseRetryAfterMs(raw);
-    if (parsed !== undefined) return parsed;
-  }
-  return undefined;
-}
-
 /**
  * Send a coach prompt to the Gemma cloud provider (Supabase edge function
  * coach-gemma) which proxies to Google's Gemini `generateContent` API for the
@@ -95,91 +57,8 @@ export async function sendCoachGemmaPrompt(
   opts?: { model?: string; taskKind?: string },
 ): Promise<CoachMessage> {
   try {
-    const body: Record<string, unknown> = { messages, context };
-    if (opts?.model) body.model = opts.model;
-
-    const { data, error, response } = await supabase.functions.invoke<RawCoachGemmaResponse>(
-      functionName(),
-      { body },
-    );
-
-    if (error) {
-      const errorMessage = error.message || '';
-      const isConfigError =
-        errorMessage.includes('not configured') ||
-        errorMessage.includes('GEMINI_API_KEY') ||
-        errorMessage.includes('missing');
-      const hasStatus =
-        typeof error === 'object' && error !== null && 'status' in error;
-      const status = hasStatus ? (error as { status: unknown }).status : undefined;
-      const isNotFound = status === 404 || errorMessage.includes('404');
-      const isRateLimited =
-        status === 429 ||
-        /\b429\b/.test(errorMessage) ||
-        /rate.?limit/i.test(errorMessage) ||
-        /too many requests/i.test(errorMessage);
-
-      if (isNotFound) {
-        throw createError(
-          'validation',
-          'COACH_GEMMA_NOT_DEPLOYED',
-          'Gemma coach service is not available. Please contact support.',
-          { details: error, retryable: false },
-        );
-      }
-
-      if (isConfigError) {
-        throw createError(
-          'validation',
-          'COACH_GEMMA_NOT_CONFIGURED',
-          'Gemma coach is not configured. Please contact support.',
-          { details: error, retryable: false },
-        );
-      }
-
-      if (isRateLimited) {
-        const retryAfterMs = readRetryAfterMs(response, error);
-        throw createError(
-          'network',
-          'COACH_GEMMA_RATE_LIMITED',
-          'Gemma coach is rate-limited — try again in a moment.',
-          {
-            details: retryAfterMs !== undefined ? { error, retryAfterMs } : error,
-            retryable: true,
-          },
-        );
-      }
-
-      throw createError(
-        'network',
-        'COACH_GEMMA_INVOKE_FAILED',
-        error.message || 'Gemma coach request failed',
-        { details: error, retryable: true },
-      );
-    }
-
-    if (data?.error) {
-      const isConfigError =
-        data.error.includes('not configured') ||
-        data.error.includes('GEMINI_API_KEY');
-      throw createError(
-        isConfigError ? 'validation' : 'network',
-        isConfigError ? 'COACH_GEMMA_NOT_CONFIGURED' : 'COACH_GEMMA_ERROR',
-        data.error,
-        { retryable: !isConfigError },
-      );
-    }
-
-    const responseText =
-      data?.message?.trim() || data?.content?.trim() || data?.reply?.trim();
-
-    if (!responseText) {
-      throw createError(
-        'validation',
-        'COACH_GEMMA_EMPTY_RESPONSE',
-        'Gemma coach did not return a reply',
-      );
-    }
+    const result = await invokeEdgeChat(GEMMA_CLOUD_EDGE, { messages, context, model: opts?.model });
+    const responseText = result.text;
 
     // Annotate the reply with provider + model so the UI + telemetry can
     // distinguish Gemma responses from OpenAI without re-inferring from the
@@ -205,10 +84,7 @@ export async function sendCoachGemmaPrompt(
     // Always emit a `model` annotation. If the edge function returned one,
     // use it; otherwise tag with UNKNOWN_GEMMA_MODEL and emit a once-per-
     // process warn so the server-side gap is visible without log spam.
-    const rawModel =
-      typeof data?.model === 'string' && data.model.trim().length > 0
-        ? data.model.trim()
-        : undefined;
+    const rawModel = result.model;
     Object.defineProperty(reply, 'model', {
       value: rawModel ?? UNKNOWN_GEMMA_MODEL,
       enumerable: false,
@@ -226,7 +102,7 @@ export async function sendCoachGemmaPrompt(
             {
               retryable: false,
               severity: 'warning',
-              details: { responseKeys: data ? Object.keys(data) : [] },
+              details: { responseKeys: result.raw && typeof result.raw === 'object' ? Object.keys(result.raw) : [] },
             },
           ),
           {
