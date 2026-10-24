@@ -1,6 +1,7 @@
+import { theme } from '@/styles/theme';
 import { StyleSheet } from 'react-native';
-import { spacing, borderRadius } from './_theme-constants';
-import { tabColors } from './_tab-theme';
+import { spacing, borderRadius } from '../../../styles/tabs/_theme-constants';
+import { tabColors } from '../../../styles/tabs/_tab-theme';
 
 export const styles = StyleSheet.create({
   container: {
@@ -9,8 +10,9 @@ export const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 28,
+    fontFamily: theme.font.bold,
+    letterSpacing: -0.8,
     color: tabColors.textPrimary,
     marginTop: spacing.md,
   },
@@ -125,7 +127,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#050E1F',
+    borderColor: theme.colors.background,
   },
   inboxBadgeText: {
     color: '#FFFFFF',

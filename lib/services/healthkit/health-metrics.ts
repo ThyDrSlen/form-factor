@@ -1,5 +1,35 @@
 import { createError, logError } from '../ErrorHandler';
 import { getNativeHealthKit } from './native-healthkit';
+import type { RecordedHealthObservation } from './health-types';
+
+/** Separate from legacy filled history: sample instants are retained without interpolation. */
+export function getRecordedWeightHistoryAsync(days = 180): Promise<RecordedHealthObservation[]> {
+  return getRecordedHistory('bodyMass', 'kg', 'kg', days);
+}
+
+export function getRecordedVO2HistoryAsync(days = 180): Promise<RecordedHealthObservation[]> {
+  return getRecordedHistory('vo2Max', 'ml/kg/min', 'mL/kg/min', days);
+}
+
+async function getRecordedHistory(metric: 'bodyMass' | 'vo2Max', nativeUnit: string, unit: string, days: number): Promise<RecordedHealthObservation[]> {
+  try {
+    const healthKit = getNativeHealthKit();
+    if (typeof healthKit?.getQuantitySamples !== 'function') return [];
+    const { start, end } = buildDateRange(days);
+    const rows = await healthKit.getQuantitySamples(metric, start.toISOString(), end.toISOString(), nativeUnit, null, true);
+    if (!Array.isArray(rows)) return [];
+    return rows.flatMap((row: HealthKitSample): RecordedHealthObservation[] => {
+      const date = new Date(row.startDate ?? row.endDate ?? '').getTime();
+      const value = extractSampleValue(row);
+      if (!Number.isFinite(date) || date < start.getTime() || date > Date.now() || value == null || value <= 0) return [];
+      return [{ date, dayKey: new Date(normalizeDay(new Date(date))!).toISOString().slice(0, 10), value, unit, source: 'HealthKit', provenance: 'observed' }];
+    }).sort((a, b) => a.date - b.date);
+  } catch (error) {
+    reportHealthKitQueryFailure('getRecordedWeightHistory', error);
+    return [];
+  }
+}
+
 
 /**
  * Centralised telemetry hook for native HealthKit query failures.
@@ -106,7 +136,9 @@ export function ensureContinuousHistory(
   let lastValue: number | null = null;
 
   while (cursor <= range.end) {
-    const key = cursor.getTime();
+    // Match aggregateDaily/normalizeDay's UTC key for this local calendar day.
+    // Iterate locally so DST does not skip or duplicate days.
+    const key = normalizeDay(cursor)!;
     const valueForDay = byDay.get(key);
 
     if (typeof valueForDay === 'number' && !Number.isNaN(valueForDay)) {

@@ -1,5 +1,6 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
+import type { RecordedHealthObservation } from '@/lib/services/healthkit/health-types';
 import { getAvailabilityAsync, getPermissionStatusAsync, requestPermissionsAsync } from '@/lib/services/healthkit';
 import type { HealthKitPermissions, HealthPermissionStatus } from '@/lib/services/healthkit';
 import {
@@ -8,6 +9,8 @@ import {
   getLatestBodyMassKgAsync,
   getStepHistoryAsync,
   getWeightHistoryAsync,
+  getRecordedWeightHistoryAsync,
+  getRecordedVO2HistoryAsync,
   getRespiratoryRateHistoryAsync,
   getWalkingHeartRateAverageHistoryAsync,
   getActiveEnergyHistoryAsync,
@@ -29,9 +32,9 @@ import {
 import { localDB } from '@/lib/services/database/local-db';
 import { syncService } from '@/lib/services/database/sync-service';
 import { createError, logError } from '@/lib/services/ErrorHandler';
-import { useAuth } from './AuthContext';
+import { useAuth } from '../../auth/contexts/AuthContext';
 import { useSessionRunner } from '@/lib/stores/session-runner';
-import { useNetwork } from './NetworkContext';
+import { useNetwork } from '../../../contexts/NetworkContext';
 import { updateWatchContext } from '@/lib/watch-connectivity';
 import type { WatchHeartRateStatus } from '@/lib/watch-connectivity/tracking-payload';
 
@@ -65,6 +68,8 @@ interface HealthKitContextValue {
   weightHistory30Days: HealthMetricPoint[];
   weightHistory90Days: HealthMetricPoint[];
   weightHistory180Days: HealthMetricPoint[];
+  recordedWeightHistory: RecordedHealthObservation[];
+  recordedVO2History: RecordedHealthObservation[];
   respiratoryRateHistory: HealthMetricPoint[];
   walkingHeartRateAvgHistory: HealthMetricPoint[];
   activeEnergyHistory: HealthMetricPoint[];
@@ -130,7 +135,7 @@ function reportHealthKitError(code: string, message: string, details: unknown): 
     }),
     {
       feature: 'app',
-      location: 'contexts/HealthKitContext',
+      location: 'features/health/contexts/HealthKitContext',
     }
   );
 }
@@ -151,6 +156,8 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const [weightHistory30Days, setWeightHistory30Days] = useState<HealthMetricPoint[]>([]);
   const [weightHistory90Days, setWeightHistory90Days] = useState<HealthMetricPoint[]>([]);
   const [weightHistory180Days, setWeightHistory180Days] = useState<HealthMetricPoint[]>([]);
+  const [recordedWeightHistory, setRecordedWeightHistory] = useState<RecordedHealthObservation[]>([]);
+  const [recordedVO2History, setRecordedVO2History] = useState<RecordedHealthObservation[]>([]);
   const [respiratoryRateHistory, setRespiratoryRateHistory] = useState<HealthMetricPoint[]>([]);
   const [walkingHeartRateAvgHistory, setWalkingHeartRateAvgHistory] = useState<HealthMetricPoint[]>([]);
   const [activeEnergyHistory, setActiveEnergyHistory] = useState<HealthMetricPoint[]>([]);
@@ -178,8 +185,56 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
   const syncProgressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rescheduleAfterSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const ownerId = user?.id ?? null;
+  const [cacheOwner, setCacheOwner] = useState(ownerId);
+  const ownerScope = useMemo(() => ({ ownerId, active: true }), [ownerId]);
+  useLayoutEffect(() => {
+    ownerScope.active = true;
+    lastSyncedSignatureRef.current = null;
+    hasTriggeredAutoSyncRef.current = false;
+    return () => {
+      ownerScope.active = false;
+      if (syncProgressTimerRef.current) clearTimeout(syncProgressTimerRef.current);
+      if (rescheduleAfterSyncTimerRef.current) clearTimeout(rescheduleAfterSyncTimerRef.current);
+    };
+  }, [ownerScope]);
+  // Synchronous owner gate: React retries this provider before rendering consumers.
+  // Do not defer clearing to an effect (that exposes one render of the old cache).
+  // HealthKit itself is device-scoped; fresh reads may contain the same device data.
+  if (cacheOwner !== ownerId) {
+    setCacheOwner(ownerId);
+    setStepsToday(null);
+    setLatestHeartRate(null);
+    setBodyMassKg(null);
+    setStepHistory([]);
+    setWeightHistory([]);
+    setWeightHistory30Days([]);
+    setWeightHistory90Days([]);
+    setWeightHistory180Days([]);
+    setRecordedWeightHistory([]);
+    setRecordedVO2History([]);
+    setRespiratoryRateHistory([]);
+    setWalkingHeartRateAvgHistory([]);
+    setActiveEnergyHistory([]);
+    setBasalEnergyHistory([]);
+    setDistanceWalkingRunningHistory([]);
+    setDistanceCyclingHistory([]);
+    setDistanceSwimmingHistory([]);
+    setWeightAnalysis(null);
+    setDataSource('none');
+    setLastUpdatedAt(null);
+    setBiologicalSex(null);
+    setAgeYears(null);
+    setBirthDate(null);
+    setError(undefined);
+    setIsSyncing(false);
+    setSyncProgress(null);
+    setHasSyncedBefore(false);
+  }
+
   // Weight analysis refresh function
   const refreshWeightAnalysis = useCallback(async () => {
+    if (!ownerScope.active) return;
     try {
       const allWeightData = [...weightHistory180Days];
       if (allWeightData.length > 0) {
@@ -190,7 +245,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.warn('[HealthKitContext] Failed to analyze weight trends:', error);
     }
-  }, [weightHistory180Days]);
+  }, [weightHistory180Days, ownerScope]);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -227,6 +282,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
     const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
 
     async function loadMetrics() {
+      if (cancelled || !ownerScope.active) return;
       try {
         const hasReadPermission = Boolean(status?.hasReadPermission);
         if (lastPermissionLogRef.current !== hasReadPermission) {
@@ -245,6 +301,8 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
             weightSeries30,
             weightSeries90,
             weightSeries180,
+            recordedWeight,
+            recordedVO2,
             respSeries,
             walkingHrSeries,
             activeEnergySeries,
@@ -261,6 +319,8 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
             getWeightHistoryAsync(30),
             getWeightHistoryAsync(90),
             getWeightHistoryAsync(180),
+            getRecordedWeightHistoryAsync(180),
+            getRecordedVO2HistoryAsync(180),
             getRespiratoryRateHistoryAsync(30),
             getWalkingHeartRateAverageHistoryAsync(30),
             getActiveEnergyHistoryAsync(30),
@@ -269,7 +329,9 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
             getDistanceCyclingHistoryAsync(30),
             getDistanceSwimmingHistoryAsync(30),
           ]);
-          console.log('[HealthKitContext] loadMetrics: results', { steps, hr, weight });
+          if (cancelled || !ownerScope.active) return;
+          setRecordedWeightHistory(recordedWeight ?? []);
+          setRecordedVO2History(recordedVO2 ?? []);
 
           const normalizedSteps = steps == null ? null : Math.max(0, Math.round(steps));
           const normalizedHeartRate = hr?.bpm == null ? null : Math.round(hr.bpm);
@@ -332,7 +394,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
           if (!cancelled) {
             const analysisTimer = setTimeout(() => {
               pendingTimers.delete(analysisTimer);
-              if (!cancelled) refreshWeightAnalysis();
+              if (!cancelled && ownerScope.active) refreshWeightAnalysis();
             }, 100);
             pendingTimers.add(analysisTimer);
           }
@@ -363,6 +425,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
                 weight_kg: normalizedWeight,
                 weight_timestamp: normalizedWeightPayload.timestamp ? new Date(normalizedWeightPayload.timestamp).toISOString() : null,
               });
+              if (cancelled || !ownerScope.active) return;
 
               // Trigger background sync if online
               if (isOnline) {
@@ -380,11 +443,14 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Fallback: Try local DB first, then Supabase if needed
+        setRecordedWeightHistory([]);
+        setRecordedVO2History([]);
         if (user?.id) {
           try {
             // Check local DB
             const today = new Date().toISOString().slice(0, 10);
             const localMetric = await localDB.getHealthMetricByDate(user.id, today);
+            if (cancelled || !ownerScope.active) return;
             
             if (localMetric) {
               setStepsToday(localMetric.steps ?? null);
@@ -405,6 +471,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
+        if (cancelled || !ownerScope.active) return;
         setStepsToday(null);
         setLatestHeartRate({ bpm: null, timestamp: null });
         setBodyMassKg({ kg: null, timestamp: null });
@@ -421,15 +488,16 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         setLastUpdatedAt(null);
       } catch (error: unknown) {
         // Non-fatal; keep UI graceful
+        if (cancelled || !ownerScope.active) return;
         reportHealthKitError('HEALTHKIT_METRICS_LOAD_FAILED', 'Failed to read HealthKit metrics', error);
         setError((prev) => prev ?? getErrorMessage(error, 'Failed to read HealthKit metrics'));
       }
     }
 
     const tick = async () => {
-      if (cancelled) return;
+      if (cancelled || !ownerScope.active) return;
       await loadMetrics();
-      if (cancelled) return;
+      if (cancelled || !ownerScope.active) return;
       const intervalMs = status?.hasReadPermission
         ? (highFrequencyRef.current || isWorkoutInProgress ? 3_000 : 60_000)
         : 15_000;
@@ -467,7 +535,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         rescheduleAfterSyncTimerRef.current = null;
       }
     };
-  }, [status?.hasReadPermission, user?.id, isWorkoutInProgress]);
+  }, [status?.hasReadPermission, user?.id, isWorkoutInProgress, ownerScope]);
 
   const requestPermissions = useCallback(async () => {
     setIsLoading(true);
@@ -529,15 +597,16 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
 
   // Check if user has synced data before
   const checkDataRange = useCallback(async () => {
-    if (!user?.id) {
+    if (!user?.id || !ownerScope.active) {
       return { earliest: null, latest: null, count: 0 };
     }
-    return await getExistingDataRange(user.id);
-  }, [user?.id]);
+    const range = await getExistingDataRange(user.id);
+    return ownerScope.active ? range : { earliest: null, latest: null, count: 0 };
+  }, [user?.id, ownerScope]);
 
   // Sync all historical data
   const syncAllHistoricalData = useCallback(async (days: number = 365) => {
-    if (!user?.id || isSyncing) {
+    if (!user?.id || isSyncing || !ownerScope.active) {
       console.log('[HealthKitContext] Cannot sync: no user or already syncing');
       return;
     }
@@ -557,9 +626,10 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         user.id,
         days,
         (progress) => {
-          setSyncProgress(progress);
+          if (ownerScope.active) setSyncProgress(progress);
         }
       );
+      if (!ownerScope.active) return;
 
       if (result.success) {
         console.log('[HealthKitContext] Bulk sync completed successfully', result);
@@ -568,6 +638,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         // Refresh the metrics after sync — tracked so it can be cancelled on unmount
         if (rescheduleAfterSyncTimerRef.current) clearTimeout(rescheduleAfterSyncTimerRef.current);
         rescheduleAfterSyncTimerRef.current = setTimeout(() => {
+          if (!ownerScope.active) return;
           rescheduleAfterSyncTimerRef.current = null;
           try {
             rescheduleRef.current?.();
@@ -579,6 +650,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         console.warn('[HealthKitContext] Bulk sync completed with errors', result);
       }
     } catch (error) {
+      if (!ownerScope.active) return;
       console.error('[HealthKitContext] Bulk sync failed', error);
       setSyncProgress({
         phase: 'error',
@@ -587,20 +659,23 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         message: error instanceof Error ? error.message : 'Sync failed',
       });
     } finally {
-      setIsSyncing(false);
-      
-      if (syncProgressTimerRef.current) clearTimeout(syncProgressTimerRef.current);
-      syncProgressTimerRef.current = setTimeout(() => {
-        setSyncProgress(null);
-        syncProgressTimerRef.current = null;
-      }, 5000);
+      if (ownerScope.active) {
+        setIsSyncing(false);
+        if (syncProgressTimerRef.current) clearTimeout(syncProgressTimerRef.current);
+        syncProgressTimerRef.current = setTimeout(() => {
+          if (!ownerScope.active) return;
+          setSyncProgress(null);
+          syncProgressTimerRef.current = null;
+        }, 5000);
+      }
     }
-  }, [user?.id, isSyncing]);
+  }, [user?.id, isSyncing, ownerScope]);
 
   // Check if user has synced before on mount
   useEffect(() => {
     if (user?.id) {
       checkDataRange().then((range) => {
+        if (!ownerScope.active) return;
         if (range.count > 0) {
           setHasSyncedBefore(true);
           console.log('[HealthKitContext] User has', range.count, 'days of synced data');
@@ -620,7 +695,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
         syncProgressTimerRef.current = null;
       }
     };
-  }, [user?.id, checkDataRange, syncAllHistoricalData]);
+  }, [user?.id, checkDataRange, syncAllHistoricalData, ownerScope]);
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
@@ -671,12 +746,12 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const [sex, dob] = await Promise.all([getBiologicalSexAsync(), getDateOfBirthAsync()]);
-        if (cancelled) return;
+        if (cancelled || !ownerScope.active) return;
         setBiologicalSex(sex);
         setAgeYears(dob.age);
         setBirthDate(dob.birthDate);
       } catch (err) {
-        if (cancelled) return;
+        if (cancelled || !ownerScope.active) return;
         console.warn('[HealthKitContext] Failed to load characteristics', err);
       }
     }
@@ -685,7 +760,7 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [status?.hasReadPermission]);
+  }, [status?.hasReadPermission, ownerScope]);
 
   const value = useMemo<HealthKitContextValue>(
     () => ({
@@ -702,6 +777,8 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
       weightHistory30Days,
       weightHistory90Days,
       weightHistory180Days,
+      recordedWeightHistory,
+      recordedVO2History,
       respiratoryRateHistory,
       walkingHeartRateAvgHistory,
       activeEnergyHistory,
@@ -738,6 +815,8 @@ export function HealthKitProvider({ children }: { children: React.ReactNode }) {
       weightHistory30Days,
       weightHistory90Days,
       weightHistory180Days,
+      recordedWeightHistory,
+      recordedVO2History,
       respiratoryRateHistory,
       walkingHeartRateAvgHistory,
       activeEnergyHistory,

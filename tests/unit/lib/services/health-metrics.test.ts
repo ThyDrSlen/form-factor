@@ -74,8 +74,8 @@ describe('health-metrics utilities', () => {
 
   describe('ensureContinuousHistory', () => {
     it('should fill gaps with the last known value', () => {
-      const start = new Date('2024-01-01T00:00:00Z');
-      const end = new Date('2024-01-03T23:59:59Z');
+      const start = new Date(2024, 0, 1, 0, 0, 0);
+      const end = new Date(2024, 0, 3, 23, 59, 59);
 
       const points = [{ date: Date.UTC(2024, 0, 1), value: 150 }];
 
@@ -88,8 +88,8 @@ describe('health-metrics utilities', () => {
     });
 
     it('should update value when new data arrives', () => {
-      const start = new Date('2024-01-01T00:00:00Z');
-      const end = new Date('2024-01-03T23:59:59Z');
+      const start = new Date(2024, 0, 1, 0, 0, 0);
+      const end = new Date(2024, 0, 3, 23, 59, 59);
 
       const points = [
         { date: Date.UTC(2024, 0, 1), value: 150 },
@@ -104,8 +104,8 @@ describe('health-metrics utilities', () => {
     });
 
     it('should return empty array if no data before range', () => {
-      const start = new Date('2024-01-01T00:00:00Z');
-      const end = new Date('2024-01-01T23:59:59Z');
+      const start = new Date(2024, 0, 1, 0, 0, 0);
+      const end = new Date(2024, 0, 1, 23, 59, 59);
 
       const result = ensureContinuousHistory([], { start, end });
 

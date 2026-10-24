@@ -1,6 +1,7 @@
-import React from 'react';
+import { theme } from '@/styles/theme';
+import React, { useState } from 'react';
 import {
-  Dimensions,
+  useWindowDimensions,
   StyleSheet,
   Text,
   View,
@@ -26,7 +27,9 @@ export interface WeeklyTrendChartProps {
 const CHART_HEIGHT = 160;
 
 export function WeeklyTrendChart({ data, p90, allTimeAvg }: WeeklyTrendChartProps) {
-  const width = Dimensions.get('window').width - 32;
+  const { width: windowWidth } = useWindowDimensions();
+  const [cardWidth, setCardWidth] = useState<number | null>(null);
+  const width = Math.max(1, (cardWidth ?? windowWidth - 48) - 32);
   const hasAnyValue = data.some((d) => d.avgFqi !== null);
 
   if (!hasAnyValue) {
@@ -53,7 +56,7 @@ export function WeeklyTrendChart({ data, p90, allTimeAvg }: WeeklyTrendChartProp
   const datasets: { data: number[]; color?: (opacity?: number) => string; strokeWidth?: number; withDots?: boolean }[] = [
     {
       data: safeValues,
-      color: (opacity = 1) => `rgba(76, 140, 255, ${opacity})`,
+      color: () => theme.colors.accent,
       strokeWidth: 3,
     },
   ];
@@ -75,7 +78,7 @@ export function WeeklyTrendChart({ data, p90, allTimeAvg }: WeeklyTrendChartProp
   }
 
   return (
-    <View style={styles.card} testID="weekly-trend-chart">
+    <View style={styles.card} testID="weekly-trend-chart" onLayout={({ nativeEvent }) => setCardWidth(nativeEvent.layout.width)}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>7-day FQI trend</Text>
         <View style={styles.legendRow}>
@@ -94,11 +97,14 @@ export function WeeklyTrendChart({ data, p90, allTimeAvg }: WeeklyTrendChartProp
         withVerticalLines={false}
         chartConfig={{
           backgroundColor: 'transparent',
-          backgroundGradientFrom: '#0F2339',
-          backgroundGradientTo: '#1B2E4A',
+          backgroundGradientFrom: theme.colors.surface,
+          backgroundGradientTo: theme.colors.surface,
+          fillShadowGradientFrom: theme.colors.accent,
+          fillShadowGradientFromOpacity: 0.16,
+          fillShadowGradientToOpacity: 0,
           decimalPlaces: 0,
           color: (opacity = 1) => `rgba(76, 140, 255, ${opacity})`,
-          labelColor: (opacity = 1) => `rgba(154, 172, 209, ${opacity})`,
+          labelColor: () => theme.colors.secondary,
           propsForBackgroundLines: {
             stroke: 'rgba(154, 172, 209, 0.15)',
             strokeWidth: 1,
@@ -122,27 +128,27 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#0F2339',
+    backgroundColor: theme.colors.surface,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#1B2E4A',
+    borderColor: theme.colors.border,
   },
   emptyCard: {
-    backgroundColor: '#0F2339',
+    backgroundColor: theme.colors.surface,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#1B2E4A',
+    borderColor: theme.colors.border,
   },
   title: {
-    color: '#F5F7FF',
+    color: theme.colors.text,
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 8,
   },
   emptyText: {
-    color: '#97A3C2',
+    color: theme.colors.secondary,
     fontSize: 13,
     marginTop: 4,
   },
@@ -167,7 +173,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   legendLabel: {
-    color: '#97A3C2',
+    color: theme.colors.secondary,
     fontSize: 11,
   },
   chart: {

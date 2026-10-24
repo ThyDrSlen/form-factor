@@ -1,3 +1,13 @@
+/** A real sample instant, never a carried-forward calendar value. */
+export interface RecordedHealthObservation {
+  date: number;
+  dayKey: string;
+  value: number;
+  unit: string;
+  source: string;
+  provenance: 'observed';
+}
+
 // HealthKit types and shared interfaces
 // We keep our own app-level enums and map them to expo-health at runtime
 

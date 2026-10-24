@@ -14,8 +14,8 @@
  */
 
 import React from 'react';
-import { renderHook, waitFor, act } from '@testing-library/react-native';
-import type * as HealthKitContextModule from '@/contexts/HealthKitContext';
+import { renderHook, waitFor, act, cleanup } from '@testing-library/react-native';
+import type * as HealthKitContextModule from '@/features/health/contexts/HealthKitContext';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -36,6 +36,8 @@ jest.mock('@/lib/services/healthkit/health-metrics', () => ({
   getStepCountForTodayAsync: jest.fn().mockResolvedValue(null),
   getLatestBodyMassKgAsync: jest.fn().mockResolvedValue(null),
   getStepHistoryAsync: jest.fn().mockResolvedValue([]),
+  getRecordedWeightHistoryAsync: jest.fn().mockResolvedValue([{ date: 123, value: 80, provenance: 'observed' }]),
+  getRecordedVO2HistoryAsync: jest.fn().mockResolvedValue([{ date: 123, value: 42, provenance: 'observed' }]),
   getWeightHistoryAsync: jest.fn().mockResolvedValue([]),
   getRespiratoryRateHistoryAsync: jest.fn().mockResolvedValue([]),
   getWalkingHeartRateAverageHistoryAsync: jest.fn().mockResolvedValue([]),
@@ -73,7 +75,7 @@ jest.mock('@/lib/services/database/sync-service', () => ({
   },
 }));
 
-jest.mock('@/contexts/AuthContext', () => ({
+jest.mock('@/features/auth/contexts/AuthContext', () => ({
   useAuth: jest.fn().mockReturnValue({ user: null }),
 }));
 
@@ -108,7 +110,7 @@ let HealthKitProvider: typeof HealthKitContextModule.HealthKitProvider;
 let useHealthKit: typeof HealthKitContextModule.useHealthKit;
 
 beforeAll(() => {
-  const mod = require('@/contexts/HealthKitContext') as typeof HealthKitContextModule;
+  const mod = require('@/features/health/contexts/HealthKitContext') as typeof HealthKitContextModule;
   computeHrStatus = mod.computeHrStatus;
   HealthKitProvider = mod.HealthKitProvider;
   useHealthKit = mod.useHealthKit;
@@ -184,8 +186,23 @@ describe('computeHrStatus', () => {
 // ---------------------------------------------------------------------------
 
 describe('HealthKitProvider', () => {
+  it('exposes recorded series separately from filled weight histories', async () => {
+    mockGetAvailability.mockResolvedValue(true);
+    mockGetPermissionStatus.mockResolvedValue({ hasReadPermission: true });
+    const { result } = renderHook(() => useHealthKit(), { wrapper: HealthKitProvider });
+    await waitFor(() => expect(result.current.recordedWeightHistory).toEqual([{ date: 123, value: 80, provenance: 'observed' }]));
+    expect(result.current.recordedVO2History).toEqual([{ date: 123, value: 42, provenance: 'observed' }]);
+    expect(result.current.weightHistory180Days).toEqual([]);
+  });
   beforeEach(() => {
+    jest.useFakeTimers();
     jest.clearAllMocks();
+    require('@/lib/services/database/local-db').localDB.getHealthMetricByDate.mockResolvedValue(null);
+    require('@/features/auth/contexts/AuthContext').useAuth.mockReturnValue({ user: null });
+    const metrics = require('@/lib/services/healthkit/health-metrics');
+    metrics.getRecordedWeightHistoryAsync.mockResolvedValue([{ date: 123, value: 80, provenance: 'observed' }]);
+    metrics.getWeightHistoryAsync.mockResolvedValue([]);
+    mockExistingDataRange.mockResolvedValue({ earliest: null, latest: null, count: 0 });
     mockGetAvailability.mockResolvedValue(false);
     mockGetPermissionStatus.mockResolvedValue({
       isAvailable: false,
@@ -203,9 +220,121 @@ describe('HealthKitProvider', () => {
     });
   });
 
+  afterEach(() => {
+    cleanup();
+    jest.useRealTimers();
+  });
+
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <HealthKitProvider>{children}</HealthKitProvider>
   );
+
+  test.each(['owner-b', null])('hides cached health data on the first render for owner %s', async (nextOwner) => {
+    const { useAuth } = require('@/features/auth/contexts/AuthContext');
+    const metrics = require('@/lib/services/healthkit/health-metrics');
+    useAuth.mockReturnValue({ user: { id: 'owner-a' } });
+    mockExistingDataRange.mockResolvedValue({ earliest: null, latest: null, count: 1 });
+    mockGetPermissionStatus.mockResolvedValue({ hasReadPermission: true });
+    metrics.getWeightHistoryAsync.mockResolvedValue([{ date: 123, value: 80 }]);
+    const renders: ReturnType<typeof useHealthKit>[] = [];
+    const { result, rerender } = renderHook(() => {
+      const value = useHealthKit();
+      renders.push(value);
+      return value;
+    }, { wrapper });
+    await waitFor(() => expect(result.current.recordedWeightHistory).toHaveLength(1));
+    metrics.getRecordedWeightHistoryAsync.mockImplementation(() => new Promise(() => {}));
+    useAuth.mockReturnValue({ user: nextOwner ? { id: nextOwner } : null });
+    renders.length = 0;
+    rerender({});
+    expect(renders.length).toBeGreaterThan(0);
+    for (const value of renders) {
+      expect(value.recordedWeightHistory).toEqual([]);
+      expect(value.recordedVO2History).toEqual([]);
+      expect(value.stepHistory).toEqual([]);
+      expect(value.weightHistory).toEqual([]);
+      expect(value.weightHistory30Days).toEqual([]);
+      expect(value.weightHistory90Days).toEqual([]);
+      expect(value.weightHistory180Days).toEqual([]);
+      expect(value.respiratoryRateHistory).toEqual([]);
+      expect(value.walkingHeartRateAvgHistory).toEqual([]);
+      expect(value.activeEnergyHistory).toEqual([]);
+      expect(value.basalEnergyHistory).toEqual([]);
+      expect(value.distanceWalkingRunningHistory).toEqual([]);
+      expect(value.distanceCyclingHistory).toEqual([]);
+      expect(value.distanceSwimmingHistory).toEqual([]);
+      expect(value.stepsToday).toBeNull();
+      expect(value.latestHeartRate).toBeNull();
+      expect(value.bodyMassKg).toBeNull();
+      expect(value.weightAnalysis).toBeNull();
+      expect(value.biologicalSex).toBeNull();
+      expect(value.birthDate).toBeNull();
+      expect(value.ageYears).toBeNull();
+      expect(value.lastUpdatedAt).toBeNull();
+      expect(value.dataSource).toBe('none');
+    }
+  });
+
+  test('ignores a previous owner local read that resolves after the new owner loads', async () => {
+    const { useAuth } = require('@/features/auth/contexts/AuthContext');
+    const { localDB } = require('@/lib/services/database/local-db');
+    let resolveOld!: (value: unknown) => void;
+    localDB.getHealthMetricByDate.mockImplementation((id: string) => id === 'owner-a'
+      ? new Promise((resolve) => { resolveOld = resolve; })
+      : Promise.resolve({ steps: 222, updated_at: '2026-01-01' }));
+    mockExistingDataRange.mockResolvedValue({ earliest: null, latest: null, count: 1 });
+    useAuth.mockReturnValue({ user: { id: 'owner-a' } });
+    const { result, rerender } = renderHook(() => useHealthKit(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    useAuth.mockReturnValue({ user: { id: 'owner-b' } });
+    rerender({});
+    await waitFor(() => expect(result.current.stepsToday).toBe(222));
+    await act(async () => resolveOld({ steps: 111, updated_at: '2026-01-01' }));
+    expect(result.current.stepsToday).toBe(222);
+  });
+
+  test('ignores previous owner bulk-sync progress and completion after switching accounts', async () => {
+    const { useAuth } = require('@/features/auth/contexts/AuthContext');
+    let resolveOld!: (value: unknown) => void;
+    let progress!: (value: unknown) => void;
+    mockBulkSync.mockImplementation((_id, _days, onProgress) => {
+      progress = onProgress;
+      return new Promise((resolve) => { resolveOld = resolve; });
+    });
+    mockExistingDataRange.mockResolvedValue({ earliest: null, latest: null, count: 1 });
+    useAuth.mockReturnValue({ user: { id: 'owner-a' } });
+    const { result, rerender } = renderHook(() => useHealthKit(), { wrapper });
+    await waitFor(() => expect(result.current.hasSyncedBefore).toBe(true));
+    let pending!: Promise<void>;
+    act(() => { pending = result.current.syncAllHistoricalData(); });
+    useAuth.mockReturnValue({ user: { id: 'owner-b' } });
+    mockExistingDataRange.mockImplementation(() => new Promise(() => {}));
+    rerender({});
+    await act(async () => {
+      progress({ phase: 'saving', current: 9, total: 10, message: 'Old account' });
+      resolveOld({ success: true });
+      await pending;
+    });
+    expect(result.current.syncProgress).toBeNull();
+    expect(result.current.hasSyncedBefore).toBe(false);
+    expect(result.current.isSyncing).toBe(false);
+  });
+
+  test('does not auto-sync or mark the new account synced from an old range response', async () => {
+    const { useAuth } = require('@/features/auth/contexts/AuthContext');
+    let resolveOld!: (value: unknown) => void;
+    mockExistingDataRange.mockImplementation((id: string) => id === 'owner-a'
+      ? new Promise((resolve) => { resolveOld = resolve; })
+      : new Promise(() => {}));
+    useAuth.mockReturnValue({ user: { id: 'owner-a' } });
+    const { result, rerender } = renderHook(() => useHealthKit(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    useAuth.mockReturnValue({ user: { id: 'owner-b' } });
+    rerender({});
+    await act(async () => resolveOld({ earliest: null, latest: null, count: 0 }));
+    expect(mockBulkSync).not.toHaveBeenCalled();
+    expect(result.current.hasSyncedBefore).toBe(false);
+  });
 
   test('provides initial loading state and reports unavailable when native module absent', async () => {
     const { result } = renderHook(() => useHealthKit(), { wrapper });

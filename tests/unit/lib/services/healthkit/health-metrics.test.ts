@@ -107,8 +107,8 @@ describe('health-metrics', () => {
 
   describe('ensureContinuousHistory with zero fill', () => {
     it('fills gaps with zero instead of carry-forward', () => {
-      const start = new Date('2024-01-01T00:00:00Z');
-      const end = new Date('2024-01-03T23:59:59Z');
+      const start = new Date(2024, 0, 1, 0, 0, 0);
+      const end = new Date(2024, 0, 3, 23, 59, 59);
       const points: HealthMetricPoint[] = [
         { date: Date.UTC(2024, 0, 1), value: 5000 },
       ];
@@ -121,8 +121,8 @@ describe('health-metrics', () => {
     });
 
     it('skips points with non-finite dates', () => {
-      const start = new Date('2024-01-01T00:00:00Z');
-      const end = new Date('2024-01-02T23:59:59Z');
+      const start = new Date(2024, 0, 1, 0, 0, 0);
+      const end = new Date(2024, 0, 2, 23, 59, 59);
       const points: HealthMetricPoint[] = [
         { date: NaN, value: 100 },
         { date: Date.UTC(2024, 0, 1), value: 200 },

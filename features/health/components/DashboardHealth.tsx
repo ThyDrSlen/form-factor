@@ -1,9 +1,10 @@
+import { theme } from '@/styles/theme';
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useHealthKit } from '@/contexts/HealthKitContext';
-import { getHealthKitGuidance } from '@/components/health-kit/healthkit-guidance';
+import { useHealthKit } from '@/features/health/contexts/HealthKitContext';
+import { getHealthKitGuidance } from '@/features/health/components/healthkit-guidance';
 import { isIOS } from '@/lib/platform-utils';
 
 interface StatProps {
@@ -15,7 +16,7 @@ interface StatProps {
 function StatCard({ label, value, sublabel, isStale }: StatProps & { isStale?: boolean }) {
   return (
     <LinearGradient
-      colors={['#0F2339', '#081526']}
+      colors={[theme.colors.surface, '#081526']}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.statCard}
@@ -46,7 +47,7 @@ export function DashboardHealth() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Health</Text>
         <LinearGradient
-          colors={['#0F2339', '#081526']}
+          colors={[theme.colors.surface, '#081526']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.permissionCard}
@@ -107,7 +108,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#F5F7FF',
+    color: theme.colors.text,
     marginBottom: 16,
   },
   statsGrid: {
@@ -120,7 +121,7 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#1B2E4A',
+    borderColor: theme.colors.border,
   },
   statNumber: {
     fontSize: 28,
@@ -136,7 +137,7 @@ const styles = StyleSheet.create({
   statSublabel: {
     marginTop: 4,
     fontSize: 12,
-    color: '#6781A6',
+    color: theme.colors.muted,
   },
   statSublabelStale: {
     color: '#FF6B6B',
@@ -150,12 +151,12 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#1B2E4A',
+    borderColor: theme.colors.border,
   },
   permissionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#F5F7FF',
+    color: theme.colors.text,
     marginBottom: 6,
   },
   permissionText: {
@@ -186,6 +187,6 @@ const styles = StyleSheet.create({
   permissionFootnote: {
     marginTop: 8,
     fontSize: 12,
-    color: '#6781A6',
+    color: theme.colors.muted,
   },
 });

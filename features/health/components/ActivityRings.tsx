@@ -1,11 +1,12 @@
+import { theme } from '@/styles/theme';
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
-import { useHealthKit } from '@/contexts/HealthKitContext';
-import { useWorkouts } from '@/contexts/WorkoutsContext';
-import { useFood } from '@/contexts/FoodContext';
-import { useNutritionGoals } from '@/contexts/NutritionGoalsContext';
+import { useHealthKit } from '@/features/health/contexts/HealthKitContext';
+import { useWorkouts } from '@/features/workouts/contexts/WorkoutsContext';
+import { useFood } from '@/features/nutrition/contexts/FoodContext';
+import { useNutritionGoals } from '@/features/nutrition/contexts/NutritionGoalsContext';
 
 interface ActivityRingProps {
   progress: number; // 0-1
@@ -23,7 +24,7 @@ function ActivityRing({
   size,
   strokeWidth,
   color,
-  backgroundColor = '#1B2E4A',
+  backgroundColor = theme.colors.border,
   title,
   subtitle,
   showValue = false
@@ -182,7 +183,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#F5F7FF',
+    color: theme.colors.text,
     marginBottom: 20,
     textAlign: 'center',
   },
@@ -212,12 +213,12 @@ const styles = StyleSheet.create({
   ringValueText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#F5F7FF',
+    color: theme.colors.text,
   },
   ringTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#F5F7FF',
+    color: theme.colors.text,
     marginTop: 8,
     textAlign: 'center',
   },
@@ -231,12 +232,12 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#1B2E4A',
+    borderColor: theme.colors.border,
   },
   summaryTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#F5F7FF',
+    color: theme.colors.text,
     marginBottom: 16,
     textAlign: 'center',
   },
