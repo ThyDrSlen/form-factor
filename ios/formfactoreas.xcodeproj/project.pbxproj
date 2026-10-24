@@ -795,6 +795,9 @@
 		E34BD3422EFE33C400DAB2CF /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Form Factor Watch Watch App/FormFactorWatch.entitlements";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "This app reads steps, heart rate (resting and variability), VO2 Max, sleep, respiratory rate, walking HR, cardio metrics, and sex/birth year to tailor recovery and training insights.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "This app writes workout data to record your activity.";
 				"ARCHS[sdk=watchos*]" = (
 					arm64,
 					arm64_32,
@@ -848,6 +851,9 @@
 		E34BD3432EFE33C400DAB2CF /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Form Factor Watch Watch App/FormFactorWatch.entitlements";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "This app reads steps, heart rate (resting and variability), VO2 Max, sleep, respiratory rate, walking HR, cardio metrics, and sex/birth year to tailor recovery and training insights.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "This app writes workout data to record your activity.";
 				"ARCHS[sdk=watchos*]" = (
 					arm64,
 					arm64_32,
