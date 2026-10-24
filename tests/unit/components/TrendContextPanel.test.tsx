@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, waitFor, waitForElementToBeRemoved } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TrendContextPanel } from '@/features/health/components/TrendContextPanel';
 
@@ -19,7 +19,8 @@ describe('TrendContextPanel', () => {
     expect(view.getByText(/not evidence that the tagged event caused/)).toBeTruthy();
     expect(view.getAllByText(/originating device or scale is unknown/)).toHaveLength(2);
     fireEvent.press(view.getByRole('button', { name: 'Delete Travel 2020-01-01 to 2020-01-03' }));
-    await waitFor(() => expect(view.queryByText('Travel · Kyoto')).toBeNull());
+    // A failing toBeNull() pretty-prints the fiber (~0.5s per poll), which can outlast waitFor's 1s budget on CI.
+    await waitForElementToBeRemoved(() => view.queryByText('Travel · Kyoto'));
   });
   it('clears unsaved private fields on account change and disables signed-out editing', async () => {
     const view = render(<TrendContextPanel ownerId="a" />);
