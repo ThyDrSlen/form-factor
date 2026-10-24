@@ -126,6 +126,8 @@ test-results/
 .cargo/
 .worktrees/
 .sisyphus/
+.hermes/
+.omo/
 Library/
 **/Library/**
 
