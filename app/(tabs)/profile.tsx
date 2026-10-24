@@ -3,18 +3,17 @@ import { View, Text, TouchableOpacity, ScrollView, Alert, Share, Modal, TextInpu
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { useNutritionGoals } from '@/contexts/NutritionGoalsContext';
-import { useSocial } from '@/contexts/SocialContext';
-import { HealthTrendsView } from '@/components/dashboard-health/HealthTrendsView';
+import { useNutritionGoals } from '@/features/nutrition/contexts/NutritionGoalsContext';
+import { useSocial } from '@/features/social/contexts/SocialContext';
 import { errorWithTs, warnWithTs } from '@/lib/logger';
 import { deleteVideo, getVideoById, listVideos, toggleVideoLike, VideoWithUrls } from '@/lib/services/video-service';
 import { router } from 'expo-router';
 import { syncService, type SyncStatus } from '@/lib/services/database/sync-service';
 import { localDB, type SyncQueueItem } from '@/lib/services/database/local-db';
 import { fixInvalidUUIDs } from '@/scripts/fix-invalid-uuids';
-import { useDebugInfo } from '@/hooks/use-debug-info';
+import { useDebugInfo } from '@/features/form-tracking/hooks/use-debug-info';
 import {
   buildOverlaySummary,
   buildPostText,
@@ -24,8 +23,8 @@ import {
   getPrimaryCue,
   type VideoFeedMetrics,
 } from '@/lib/video-feed';
-import { styles } from '../../styles/tabs/_profile.styles';
-import { styles as feedStyles } from '../../styles/tabs/_index.styles';
+import { styles } from '../../features/profile/styles/_profile.styles';
+import { styles as feedStyles } from '../../features/health/styles/_index.styles';
 import { subscribeToCommentEvents } from '@/lib/video-comments-events';
 import {
   getFollowCounts,
@@ -833,7 +832,7 @@ Generated: ${new Date().toISOString()}
   };
 
   const MenuItem = ({ icon, title, onPress, danger = false }: MenuItemProps) => (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={title}>
       <LinearGradient
         colors={danger ? ['rgba(255, 59, 48, 0.1)', 'rgba(255, 59, 48, 0.05)'] : ['rgba(76, 140, 255, 0.05)', 'rgba(76, 140, 255, 0.02)']}
         start={{ x: 0, y: 0 }}
@@ -884,8 +883,11 @@ Generated: ${new Date().toISOString()}
       </LinearGradient>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Health Overview</Text>
-        <HealthTrendsView />
+        <MenuItem
+          icon="stats-chart-outline"
+          title="Health trends"
+          onPress={() => router.push('/(tabs)/trends')}
+        />
       </View>
 
       <View style={styles.section}>
@@ -1088,6 +1090,16 @@ Generated: ${new Date().toISOString()}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>App</Text>
         <View style={styles.menuGroup}>
+          <MenuItem
+            icon="refresh-outline"
+            title="Replay app onboarding"
+            onPress={() => router.push({ pathname: '/(onboarding)/welcome', params: { mode: 'replay' } })}
+          />
+          <MenuItem
+            icon="body-outline"
+            title="Form check-in walkthrough"
+            onPress={() => router.push('/(modals)/form-tracking-setup')}
+          />
           <MenuItem icon="help-circle-outline" title="Help & Support" onPress={handleOpenHelpSupport} />
           <MenuItem icon="information-circle-outline" title="About" onPress={handleOpenAbout} />
           <MenuItem icon="star-outline" title="Rate App" onPress={handleRateApp} />

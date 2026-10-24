@@ -2,6 +2,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ONBOARDING_KEY = 'onboarding_completed';
 
+// Replay is a navigation mode, not a reset of the user's persisted setup.
+export function isOnboardingReplay(mode: string | string[] | undefined): boolean {
+  return mode === 'replay';
+}
+
 export async function isOnboardingCompleted(): Promise<boolean> {
   const value = await AsyncStorage.getItem(ONBOARDING_KEY);
   return value === 'true';

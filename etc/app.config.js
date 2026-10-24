@@ -34,6 +34,7 @@ const getScheme = () => {
 };
 
 const baseConfig = {
+  icon: './assets/images/ff-icon-v2.png',
   runtimeVersion: '1.0.0',
   updates: {
     enabled: false,
@@ -94,7 +95,7 @@ const baseConfig = {
   ios: {
     bundleIdentifier: 'com.slenthekid.form-factor-eas',
     supportsTablet: true,
-    icon: './assets/images/ff-logo.png',
+    icon: './assets/images/ff-icon-v2.png',
     // buildNumber is managed remotely via appVersionSource: "remote" in eas.json
     appleTeamId: 'NCTLNFGC6G',
     infoPlist: {
