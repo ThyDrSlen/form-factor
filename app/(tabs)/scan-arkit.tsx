@@ -135,7 +135,6 @@ import { styles } from '../../features/form-tracking/styles/_scan-arkit.styles';
 import { VoiceCommandFeedback } from '@/features/form-tracking/components/VoiceCommandFeedback';
 import { CameraPermissionBanner } from '@/features/form-tracking/components/CameraPermissionBanner';
 // W3-A resilience (#445) — hooks + services.
-import { isAROverlaysV2Enabled } from '@/lib/services/ar-overlays-v2-flag';
 import { useSubjectIdentity } from '@/features/form-tracking/hooks/use-subject-identity';
 import { useCameraPermissionGuard } from '@/features/form-tracking/hooks/use-camera-permission-guard';
 import { useAppStatePause } from '@/features/form-tracking/hooks/use-app-state-pause';
@@ -226,18 +225,6 @@ type BaselineDebugMetrics = {
   frameLatencyTotalMs: number;
   frameLatencyCount: number;
 };
-
-type PullupComponentIndicator = {
-  key: PullupScoringResult['missing_components'][number];
-  label: string;
-};
-
-const PULLUP_COMPONENT_INDICATORS: PullupComponentIndicator[] = [
-  { key: 'rom_score', label: 'ROM' },
-  { key: 'symmetry_score', label: 'SYM' },
-  { key: 'tempo_score', label: 'TMP' },
-  { key: 'torso_stability_score', label: 'TOR' },
-];
 
 const createBaselineDebugMetrics = (): BaselineDebugMetrics => ({
   cueFlipCount: 0,
@@ -530,15 +517,11 @@ export default function ScanARKitScreen() {
   // independent of the ARKit frame timestamp clock.
   const lastFpsPublishMsRef = React.useRef<number>(0);
 
-  // ---------------------------------------------------------------
-  // W3-A form-tracking resilience (#445) — all behind the AR_OVERLAYS_V2
-  // master feature flag so the legacy tree stays byte-identical until
-  // EXPO_PUBLIC_AR_OVERLAYS_V2=on flips the whole package on.
-  // ---------------------------------------------------------------
-  const arOverlaysV2 = useMemo(() => isAROverlaysV2Enabled(), []);
-  const subjectIdentity = useSubjectIdentity({ enabled: arOverlaysV2 && isTracking });
+  // Form-tracking resilience (#445): subject identity, camera permission and
+  // app-state pause guards run whenever tracking is active.
+  const subjectIdentity = useSubjectIdentity({ enabled: isTracking });
   const cameraPermission = useCameraPermissionGuard();
-  const appStatePause = useAppStatePause({ enabled: arOverlaysV2 && isTracking });
+  const appStatePause = useAppStatePause({ enabled: isTracking });
   const [sustainedOcclusionHint, setSustainedOcclusionHint] =
     useState<SustainedOcclusionEvent | null>(null);
   const sustainedOcclusionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1977,10 +1960,9 @@ export default function ScanARKitScreen() {
       return hasAnyTracked ? nextJoints : null;
     });
 
-    // W3-A resilience (#445): feed joints into the subject-identity
-    // tracker + occlusion manager. Both are no-ops when AR_OVERLAYS_V2
-    // is off thanks to `enabled` gating inside the hooks.
-    if (arOverlaysV2 && hasAnyTracked) {
+    // Resilience (#445): feed joints into the subject-identity tracker and
+    // occlusion manager. The tracker is a no-op while tracking is stopped.
+    if (hasAnyTracked) {
       subjectIdentity.step(nextJoints);
       const occMap: Record<string, { x: number; y: number; isTracked: boolean; confidence?: number } | null> = {};
       for (const j of nextJoints) {
@@ -1993,8 +1975,7 @@ export default function ScanARKitScreen() {
     }
 
     return undefined;
-    // Intentionally keep dep list tight: adding subjectIdentity/arOverlaysV2
-    // here would churn this frame-driven effect every snapshot change.
+    // Intentionally keep dep list tight: adding subjectIdentity here would churn this frame-driven effect every snapshot change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pose2D, detectionMode]);
 
@@ -3377,13 +3358,7 @@ export default function ScanARKitScreen() {
     detectionMode === 'pullup' &&
     (isTracking || fixturePlaybackEnabled) &&
     showPartialTrackingBadge;
-  const shouldShowTrackingLossBanner = arOverlaysV2 && shouldShowPartialTrackingBadge;
-  const shouldShowLegacyPartialTrackingBadge = !arOverlaysV2 && shouldShowPartialTrackingBadge;
-  const missingComponentSet = new Set(effectivePartialStatus?.missing_components ?? []);
-  const partialTrackingComponents = PULLUP_COMPONENT_INDICATORS.map((item) => ({
-    ...item,
-    missing: missingComponentSet.has(item.key),
-  }));
+  const shouldShowTrackingLossBanner = shouldShowPartialTrackingBadge;
   const liveCue = primaryCue ? classifyCue(primaryCue) : null;
   const showReadinessGuide = !isTracking;
   const baselineMetricsSnapshot = baselineDebugMetricsRef.current;
@@ -3610,14 +3585,8 @@ export default function ScanARKitScreen() {
             style={styles.fullFill}
           />
 
-          {/*
-           * =============================================================
-           * AR Overlays v2 (#445) — W3-A resilience UX + W3-D SVG overlays.
-           * ALL of this is gated by isAROverlaysV2Enabled(); legacy tree
-           * unchanged when the flag is off.
-           * =============================================================
-           */}
-          {arOverlaysV2 && isTracking && cameraPosition === 'back' && overlayLayout.current && smoothedPose2DJoints && smoothedPose2DJoints.length > 0 ? (
+          {/* AR overlays (#445): resilience UX + SVG joint overlays. */}
+          {isTracking && cameraPosition === 'back' && overlayLayout.current && smoothedPose2DJoints && smoothedPose2DJoints.length > 0 ? (
             <ARScanOverlaysV2
               joints={smoothedPose2DRef.current ?? smoothedPose2DJoints}
               width={overlayLayout.current.width}
@@ -3629,7 +3598,7 @@ export default function ScanARKitScreen() {
           ) : null}
 
           {/* Subject-identity switch banner */}
-          {arOverlaysV2 && subjectIdentity.snapshot.switchDetected ? (
+          {subjectIdentity.snapshot.switchDetected ? (
             <View style={scanArV2Styles.banner} accessibilityRole="alert">
               <Ionicons name="person-circle-outline" size={18} color="#FDE047" />
               <Text style={scanArV2Styles.bannerText}>
@@ -3647,7 +3616,7 @@ export default function ScanARKitScreen() {
           ) : null}
 
           {/* Camera-permission revoked banner */}
-          {arOverlaysV2 && cameraPermission.revoked ? (
+          {cameraPermission.revoked ? (
             <View
               style={[scanArV2Styles.banner, scanArV2Styles.bannerError]}
               accessibilityRole="alert"
@@ -3670,7 +3639,7 @@ export default function ScanARKitScreen() {
           ) : null}
 
           {/* Resume? prompt after AppState foreground return */}
-          {arOverlaysV2 && appStatePause.needsResume ? (
+          {appStatePause.needsResume ? (
             <View
               style={[scanArV2Styles.banner, scanArV2Styles.bannerInfo]}
               accessibilityRole="alert"
@@ -3746,7 +3715,7 @@ export default function ScanARKitScreen() {
            * squat with arms crossed over camera) the old toast faded
            * before the user could read what joint was hidden.
            */}
-          {arOverlaysV2 && sustainedOcclusionHint ? (
+          {sustainedOcclusionHint ? (
             <View
               style={[scanArV2Styles.banner, scanArV2Styles.bannerError]}
               accessibilityRole="alert"
@@ -3784,7 +3753,7 @@ export default function ScanARKitScreen() {
           ) : null}
 
           {/* Thermal/FPS debug badge (DEV-only) */}
-          {arOverlaysV2 && DEV && adaptiveFps.throttled ? (
+          {DEV && adaptiveFps.throttled ? (
             <View style={scanArV2Styles.fpsBadge}>
               <Text style={scanArV2Styles.fpsBadgeText}>
                 {adaptiveFps.fps}fps · {adaptiveFps.state}
@@ -3947,34 +3916,6 @@ export default function ScanARKitScreen() {
                 {`cueFlipRate=${(debugCueFlipRate * 100).toFixed(1)}% meanFrameLatency=${debugMeanFrameLatencyMs.toFixed(2)}ms buckets[<4:${baselineMetricsSnapshot.latencyBuckets.lt4} <8:${baselineMetricsSnapshot.latencyBuckets.lt8} <16:${baselineMetricsSnapshot.latencyBuckets.lt16} >=16:${baselineMetricsSnapshot.latencyBuckets.gte16}]`}
               </Text>
             )}
-          </View>
-        </View>
-      )}
-
-      {shouldShowLegacyPartialTrackingBadge && (
-        <View style={[styles.partialTrackingBadge, { top: topBarBottom + 8 }]}> 
-          <Text style={styles.partialTrackingBadgeText}>Partial tracking</Text>
-          <View style={styles.partialTrackingComponentRow}>
-            {partialTrackingComponents.map((component) => (
-              <View
-                key={component.key}
-                style={[
-                  styles.partialTrackingComponentPill,
-                  component.missing ? styles.partialTrackingComponentPillMissing : styles.partialTrackingComponentPillAvailable,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.partialTrackingComponentLabel,
-                    component.missing
-                      ? styles.partialTrackingComponentLabelMissing
-                      : styles.partialTrackingComponentLabelAvailable,
-                  ]}
-                >
-                  {component.label}
-                </Text>
-              </View>
-            ))}
           </View>
         </View>
       )}
@@ -4181,9 +4122,8 @@ export default function ScanARKitScreen() {
 }
 
 // =============================================================
-// AR Overlays v2 sub-component (#445 W3-D) — extracted so the main
-// scan screen stays readable. All SVG overlays live here; parent
-// gates the whole tree with isAROverlaysV2Enabled().
+// AR overlays sub-component (#445 W3-D) — extracted so the main
+// scan screen stays readable. All SVG overlays live here.
 // =============================================================
 type ARScanOverlaysV2Props = {
   joints: Joint2D[];
