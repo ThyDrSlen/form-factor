@@ -4,6 +4,7 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import ts from 'typescript';
 import type { WatchTrackingPayload } from '@/lib/watch-connectivity/tracking-payload';
+import { readScanScreenSource } from '../../helpers/scan-screen-source';
 
 /**
  * Execute the checked-in screen's publisher refs + complete useEffect call
@@ -13,7 +14,7 @@ import type { WatchTrackingPayload } from '@/lib/watch-connectivity/tracking-pay
  */
 const source = ts.createSourceFile(
   'scan-arkit.tsx',
-  readFileSync(resolve(__dirname, '../../../app/(tabs)/scan-arkit.tsx'), 'utf8'),
+  readScanScreenSource(),
   ts.ScriptTarget.Latest,
   true,
   ts.ScriptKind.TSX,

@@ -1,8 +1,9 @@
 import fs from 'fs';
 import path from 'path';
+import { readScanScreenSource } from '../../helpers/scan-screen-source';
 
 const root = path.resolve(__dirname, '../../..');
-const scan = fs.readFileSync(path.join(root, 'app/(tabs)/scan-arkit.tsx'), 'utf8');
+const scan = readScanScreenSource();
 const native = fs.readFileSync(path.join(root, 'modules/arkit-body-tracker/ios/ARKitBodyTrackerModule.swift'), 'utf8');
 
 describe('Watch mirror native/screen integration contracts', () => {

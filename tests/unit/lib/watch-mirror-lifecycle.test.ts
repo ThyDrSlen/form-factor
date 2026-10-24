@@ -3,12 +3,13 @@ import { act, renderHook } from '@testing-library/react-native';
 import { readFileSync } from 'fs';
 import path from 'path';
 import ts from 'typescript';
+import { readScanScreenSource } from '../../helpers/scan-screen-source';
 
 // Execute the actual screen slice, including its effect cleanup and callback,
 // rather than duplicating the publisher or importing unrelated native UI.
 function loadMirror(snapshot: jest.Mock, sendMessage: jest.Mock) {
   const filename = path.resolve(__dirname, '../../..', 'app/(tabs)/scan-arkit.tsx');
-  const source = ts.createSourceFile(filename, readFileSync(filename, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const source = ts.createSourceFile(filename, readScanScreenSource(), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const screen = source.statements.find((node): node is ts.FunctionDeclaration =>
     ts.isFunctionDeclaration(node) && node.name?.text === 'ScanARKitScreen');
   if (!screen?.body) throw new Error('Missing screen');

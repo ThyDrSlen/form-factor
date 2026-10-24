@@ -3,8 +3,9 @@ import { createRealtimeFormEngineState, processRealtimeAngles } from '@/lib/pose
 import { compareJointAngles } from '@/lib/pose/shadow-metrics';
 import { dumbbellCurlDefinition } from '@/lib/workouts/dumbbell-curl';
 import { jointsForWorkout } from '@/lib/pose/workout-joint-scope';
+import { resolveFrameJoints } from '@/features/form-tracking/hooks/scan/scan-frame-helpers';
 import { readFileSync } from 'fs';
-import ts from 'typescript';
+import { readScanScreenSource } from '../helpers/scan-screen-source';
 
 jest.mock('expo-modules-core', () => ({ requireNativeModule: jest.fn(() => ({
   calculateAngle: (a: Joint3D, b: Joint3D, c: Joint3D) => {
@@ -139,23 +140,10 @@ describe('curl tracking with legs outside the camera frame', () => {
   });
 
   test.each([true, false])('Scan accepts arms and hips without knees (neck visible: %s)', (neckVisible) => {
-    const source = ts.createSourceFile('scan.tsx', readFileSync('app/(tabs)/scan-arkit.tsx', 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-    const statements: ts.Statement[] = [];
-    const visit = (node: ts.Node) => {
-      if (ts.isTryStatement(node) && node.tryBlock.statements[0]?.getText(source).includes('BodyTracker.calculateAllAngles')) {
-        for (const statement of node.tryBlock.statements) {
-          statements.push(statement);
-          if (ts.isVariableStatement(statement) && statement.declarationList.declarations.some(d => d.name.getText(source) === 'valid')) break;
-        }
-      } else ts.forEachChild(node, visit);
-    };
-    visit(source);
-    expect(statements.length).toBeGreaterThan(1);
-    const js = ts.transpileModule(`${statements.map(s => s.getText(source)).join('\n')}\nreturn { angles, valid };`, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
-    // Execute only the trusted repository frame slice, never external input.
     const pose = upperBody();
     if (!neckVisible) pose.joints = pose.joints.filter(j => !/neck|spine/.test(j.name));
-    const result = new Function('BodyTracker', 'pose', 'detectionMode', 'trackingDebugEnabledRef', js)(BodyTracker, pose, 'dumbbell_curl', { current: false });
+    const angles = BodyTracker.calculateAllAngles(pose, 'dumbbell_curl');
+    const result = { angles, valid: resolveFrameJoints(pose, 'dumbbell_curl', angles, false).valid };
     expect(result.angles).not.toBeNull();
     expect(result.valid).toEqual(upperBodyValidity);
   });
@@ -164,7 +152,7 @@ describe('curl tracking with legs outside the camera frame', () => {
     const joints = [...upperBody().joints, joint('left_leg_joint', 0, 2), joint('right_ankle', 0, 3), joint('left_toes_joint', 0, 4)];
     expect(jointsForWorkout(joints, 'dumbbell_curl')).toEqual(upperBody().joints);
     expect(jointsForWorkout(joints, 'squat')).toEqual(joints);
-    const source = readFileSync('app/(tabs)/scan-arkit.tsx', 'utf8');
+    const source = readScanScreenSource();
     expect(source.includes('jointsForWorkout(pose2D.joints, detectionMode)')).toBe(true);
   });
 });

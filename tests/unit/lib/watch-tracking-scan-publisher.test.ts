@@ -4,6 +4,7 @@ import { readFileSync } from 'fs';
 import path from 'path';
 import ts from 'typescript';
 import type { WatchTrackingPayload } from '@/lib/watch-connectivity/tracking-payload';
+import { readScanScreenSource } from '../../helpers/scan-screen-source';
 
 /**
  * Execute the actual screen's publisher slice, not a copied throttle or a mock
@@ -13,7 +14,7 @@ import type { WatchTrackingPayload } from '@/lib/watch-connectivity/tracking-pay
  */
 function loadScreenPublisher(sendMessage: jest.Mock, updateWatchContext: jest.Mock) {
   const filename = path.resolve(__dirname, '../../..', 'app/(tabs)/scan-arkit.tsx');
-  const source = ts.createSourceFile(filename, readFileSync(filename, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const source = ts.createSourceFile(filename, readScanScreenSource(), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const screen = source.statements.find((node): node is ts.FunctionDeclaration =>
     ts.isFunctionDeclaration(node) && node.name?.text === 'ScanARKitScreen');
   if (!screen?.body) throw new Error('Scan screen function not found');

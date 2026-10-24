@@ -6,13 +6,14 @@ import ts from 'typescript';
 import { exerciseRecordingStore } from '@/lib/debug/exercise-recording-store';
 import type { ExerciseReplayFrame } from '@/lib/debug/exercise-replay';
 import * as FileSystem from 'expo-file-system/legacy';
+import { readScanScreenSource } from '../../helpers/scan-screen-source';
 
 jest.mock('expo-file-system/legacy', () => ({
   documentDirectory: 'file:///documents/',
   writeAsStringAsync: jest.fn().mockResolvedValue(undefined), moveAsync: jest.fn().mockResolvedValue(undefined),
 }));
 const filename = path.resolve(process.cwd(), 'app/(tabs)/scan-arkit.tsx');
-const sourceText = () => readFileSync(filename, 'utf8');
+const sourceText = () => readScanScreenSource();
 
 // Execute only trusted repository source; no external/user text enters this harness.
 // Isolate the actual screen's capture callback/effect from unrelated native camera UI.
