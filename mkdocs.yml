@@ -5,6 +5,7 @@ nav:
   - Home: index.md
   - Architecture:
       - Repository Structure: REPOSITORY_STRUCTURE.md
+      - AI Providers: AI_PROVIDERS.md
       - PRD: PRD.md
       - CI/CD: CI-CD.md
   - Guides:

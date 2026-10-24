@@ -45,6 +45,14 @@ function getVisual(provider: CoachProvider): BadgeVisual {
         border: `${GOOGLE_BLUE}44`,
         text: GOOGLE_BLUE,
       };
+    case 'on-device':
+      return {
+        label: 'On device',
+        a11yLabel: 'Response from a model running on this device',
+        background: 'rgba(102, 212, 177, 0.12)',
+        border: 'rgba(102, 212, 177, 0.4)',
+        text: '#66D4B1',
+      };
     case 'local-fallback':
       return {
         label: 'Local fallback',

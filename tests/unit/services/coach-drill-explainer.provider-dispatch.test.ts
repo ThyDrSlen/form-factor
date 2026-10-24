@@ -1,6 +1,6 @@
 /**
  * Pipeline-v2 provider dispatch tests for coach-drill-explainer.
- * Verifies EXPO_PUBLIC_COACH_CLOUD_PROVIDER is honoured when the master
+ * Verifies EXPO_PUBLIC_AI_PROVIDERS order is honoured when the master
  * flag is on; legacy behavior (hardcoded 'cloud') when the flag is off.
  *
  * Provider label semantics (#539): the returned `provider` field reflects
@@ -21,11 +21,9 @@ import type { ExplainDrillInput } from '@/lib/services/coach-drill-explainer';
 let explainDrill: typeof import('@/lib/services/coach-drill-explainer')['explainDrill'];
 
 const FLAG = 'EXPO_PUBLIC_COACH_PIPELINE_V2';
-const PROVIDER = 'EXPO_PUBLIC_COACH_CLOUD_PROVIDER';
-const DISPATCH = 'EXPO_PUBLIC_COACH_DISPATCH';
+const PROVIDERS = 'EXPO_PUBLIC_AI_PROVIDERS';
 const originalFlag = process.env[FLAG];
-const originalProvider = process.env[PROVIDER];
-const originalDispatch = process.env[DISPATCH];
+const originalProviders = process.env[PROVIDERS];
 
 const baseInput: ExplainDrillInput = {
   drillTitle: 'Tempo squat',
@@ -48,8 +46,7 @@ describe('coach-drill-explainer provider dispatch (pipeline-v2)', () => {
   afterEach(() => {
     for (const [k, v] of [
       [FLAG, originalFlag],
-      [PROVIDER, originalProvider],
-      [DISPATCH, originalDispatch],
+      [PROVIDERS, originalProviders],
     ] as const) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
@@ -59,8 +56,7 @@ describe('coach-drill-explainer provider dispatch (pipeline-v2)', () => {
   it('passes provider=gemma through sendCoachPrompt and labels reply gemma when both flags on (#539)', async () => {
     // Both flags on → gemma-first path. Gemma replies → label 'gemma'.
     process.env[FLAG] = 'on';
-    process.env[DISPATCH] = 'on';
-    process.env[PROVIDER] = 'gemma';
+    process.env[PROVIDERS] = 'gemma-cloud,openai'; // gemma enabled and primary
     const result = await explainDrill(baseInput);
 
     expect(mockSendCoachPrompt).toHaveBeenCalledTimes(1);
@@ -75,7 +71,7 @@ describe('coach-drill-explainer provider dispatch (pipeline-v2)', () => {
     // Pipeline-v2 on, dispatch off → no gemma-first attempt. Env points
     // at openai → hint it through, reply authored by openai, label 'openai'.
     process.env[FLAG] = 'on';
-    process.env[PROVIDER] = 'openai';
+    process.env[PROVIDERS] = 'openai';
     const result = await explainDrill(baseInput);
 
     const [, , opts] = mockSendCoachPrompt.mock.calls[0];
@@ -83,14 +79,11 @@ describe('coach-drill-explainer provider dispatch (pipeline-v2)', () => {
     expect(result.provider).toBe('openai');
   });
 
-  it('labels reply openai when env=gemma but dispatch flag is off (#539 — actual path wins)', async () => {
-    // Pipeline-v2 on, dispatch OFF → gemma-first is skipped. We still
-    // forward the provider hint from the env resolver, but since the
-    // dispatch flag is off inside sendCoachPrompt, Gemma is not actually
-    // called — OpenAI owns the turn. Label reflects the authoring path.
+  it('labels reply openai when gemma-cloud is not enabled (#539 — actual path wins)', async () => {
+    // Pipeline-v2 on, gemma-cloud not enabled → gemma-first is skipped and
+    // OpenAI owns the turn. Label reflects the authoring path.
     process.env[FLAG] = 'on';
-    delete process.env[DISPATCH];
-    process.env[PROVIDER] = 'gemma';
+    process.env[PROVIDERS] = 'openai'; // gemma-cloud not enabled
     const result = await explainDrill(baseInput);
 
     expect(mockSendCoachPrompt).toHaveBeenCalledTimes(1);
@@ -101,8 +94,7 @@ describe('coach-drill-explainer provider dispatch (pipeline-v2)', () => {
     // Gemma-first path errors → fallback to OpenAI. Label reflects the
     // path that actually produced the text, not the preferred one.
     process.env[FLAG] = 'on';
-    process.env[DISPATCH] = 'on';
-    process.env[PROVIDER] = 'gemma';
+    process.env[PROVIDERS] = 'gemma-cloud,openai'; // gemma enabled and primary
     mockSendCoachPrompt
       .mockRejectedValueOnce(new Error('gemma unavailable'))
       .mockResolvedValueOnce({ role: 'assistant', content: 'openai fallback reply' });
@@ -118,8 +110,7 @@ describe('coach-drill-explainer provider dispatch (pipeline-v2)', () => {
     // Empty Gemma reply is indistinguishable from a real failure from the
     // user's perspective — fall through to OpenAI and label accordingly.
     process.env[FLAG] = 'on';
-    process.env[DISPATCH] = 'on';
-    process.env[PROVIDER] = 'gemma';
+    process.env[PROVIDERS] = 'gemma-cloud,openai'; // gemma enabled and primary
     mockSendCoachPrompt
       .mockResolvedValueOnce({ role: 'assistant', content: '   ' })
       .mockResolvedValueOnce({ role: 'assistant', content: 'openai fallback' });
@@ -132,7 +123,7 @@ describe('coach-drill-explainer provider dispatch (pipeline-v2)', () => {
   it('preserves legacy cloud behavior when pipeline-v2 flag is off', async () => {
     // Pipeline-v2 off → no provider resolution, legacy 'cloud' label.
     delete process.env[FLAG];
-    process.env[PROVIDER] = 'gemma';
+    process.env[PROVIDERS] = 'gemma-cloud,openai';
     const result = await explainDrill(baseInput);
 
     const [, , opts] = mockSendCoachPrompt.mock.calls[0];

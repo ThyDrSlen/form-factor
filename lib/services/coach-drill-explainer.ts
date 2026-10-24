@@ -2,7 +2,7 @@ import { sendCoachPrompt } from '@/lib/services/coach-service';
 import type { CoachMessage } from '@/lib/services/coach-service';
 import type { CoachProvider } from '@/lib/services/coach-provider-types';
 import { isCoachPipelineV2Enabled } from '@/lib/services/coach-pipeline-v2-flag';
-import { isDispatchEnabled } from '@/lib/services/coach-model-dispatch-flag';
+import { isGemmaCloudEnabled, isGemmaCloudPrimary } from '@/lib/services/coach-provider-types';
 
 export type DrillExplainerProvider = 'cloud' | 'gemma' | 'openai';
 
@@ -20,16 +20,12 @@ function mapToDrillProvider(cp: CoachProvider | undefined): DrillExplainerProvid
 }
 
 /**
- * Pipeline-v2 provider resolution. Reads `EXPO_PUBLIC_COACH_CLOUD_PROVIDER`
- * mirroring `coach-auto-debrief.resolveCloudProvider`. Returns 'openai' when
- * unset or unrecognised.
+ * Pipeline-v2 provider resolution: Gemma when `gemma-cloud` is enabled ahead
+ * of `openai` in EXPO_PUBLIC_AI_PROVIDERS, mirroring
+ * `coach-auto-debrief.resolveCloudProvider`. Otherwise 'openai'.
  */
 function resolveDrillProvider(): 'gemma' | 'openai' {
-  const raw = (process.env.EXPO_PUBLIC_COACH_CLOUD_PROVIDER ?? 'openai')
-    .trim()
-    .toLowerCase();
-  if (raw === 'gemma') return 'gemma';
-  return 'openai';
+  return isGemmaCloudPrimary() ? 'gemma' : 'openai';
 }
 
 export interface DrillFaultInput {
@@ -85,13 +81,13 @@ export function buildDrillExplainerMessages(input: ExplainDrillInput): CoachMess
 /**
  * Routes through the coach Edge Function with `focus: 'drill-explainer'`.
  *
- * Pipeline-v2: when the master flag is on, resolve the provider via
- * `EXPO_PUBLIC_COACH_CLOUD_PROVIDER` (mirroring `coach-auto-debrief.ts:157`)
+ * Pipeline-v2: when the master flag is on, resolve the provider from
+ * EXPO_PUBLIC_AI_PROVIDERS order (mirroring `coach-auto-debrief`)
  * and pass it through to `sendCoachPrompt`. Flag off → legacy behavior
  * (hardcoded 'cloud' return annotation).
  *
- * Gemma-first fallback: when BOTH the pipeline master flag AND the model
- * dispatch flag are on, we attempt Gemma first (regardless of the env
+ * Gemma-first fallback: when the pipeline master flag is on AND gemma-cloud
+ * is enabled, we attempt Gemma first (regardless of the env
  * resolver, since the cost-aware dispatcher considers drill explanations
  * tactical), and fall back to the cloud on any error.
  *
@@ -104,8 +100,7 @@ export function buildDrillExplainerMessages(input: ExplainDrillInput): CoachMess
 export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDrillResult> {
   const messages = buildDrillExplainerMessages(input);
   const pipelineV2 = isCoachPipelineV2Enabled();
-  const dispatchOn = isDispatchEnabled();
-  const gemmaFirst = pipelineV2 && dispatchOn;
+  const gemmaFirst = pipelineV2 && isGemmaCloudEnabled();
   const resolvedProvider: 'gemma' | 'openai' | null = pipelineV2
     ? resolveDrillProvider()
     : null;
@@ -120,7 +115,7 @@ export async function explainDrill(input: ExplainDrillInput): Promise<ExplainDri
   // (the legacy cloud provider resolves inside coach-service).
   const taskKindOpts = { taskKind: 'fault_explainer' as const };
 
-  // Gemma-first attempt (both flags on). On any error we fall through to the
+  // Gemma-first attempt (pipeline on, gemma-cloud enabled). On any error we fall through to the
   // env-resolved provider below. Success returns provider='gemma' (#539).
   if (gemmaFirst) {
     try {

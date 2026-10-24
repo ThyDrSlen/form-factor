@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 import { Button, Card, ProgressBar, Text } from 'react-native-paper';
-import type { CoachModelStatus } from '@/lib/services/coach-model-manager';
+import type { OnDeviceModelStatus as CoachModelStatus } from '@/features/coach/hooks/use-on-device-model-status';
 
 export interface CoachModelCardProps {
   status: CoachModelStatus;

@@ -3,7 +3,8 @@
  *
  * Given a snapshot of the user's current stance (frame + joint angles),
  * asks the coach whether the setup looks safe and correct for the
- * upcoming exercise. Attempts Gemma (on-device) first when enabled,
+ * upcoming exercise. Attempts Gemma (cloud) first when `gemma-cloud` leads
+ * EXPO_PUBLIC_AI_PROVIDERS,
  * falls back to OpenAI via the existing coach Edge Function when Gemma
  * is unavailable or errors out.
  */
@@ -13,6 +14,7 @@ import type { FrameSnapshot, JointAngles } from '@/lib/arkit/ARKitBodyTracker';
 import { sendCoachPrompt, type CoachMessage } from './coach-service';
 import { sendCoachGemmaPrompt } from './coach-gemma-service';
 import { assertUnderWeeklyCap } from './coach-cost-guard';
+import { isGemmaCloudPrimary } from './coach-provider-types';
 import { recordCoachUsage } from './coach-cost-tracker';
 import { hardenAgainstInjection } from './coach-injection-hardener';
 
@@ -24,7 +26,6 @@ export interface PreSetPreviewResult {
   provider: PreSetPreviewProvider;
 }
 
-const GEMMA_PROVIDER_ENV = 'EXPO_PUBLIC_COACH_CLOUD_PROVIDER';
 const MAX_VERDICT_LENGTH = 160;
 
 export const PRE_SET_PREVIEW_TASK_KIND = 'form_check' as const;
@@ -79,7 +80,7 @@ function interpretVerdict(raw: string): { verdict: string; isFormGood: boolean }
 
 function isGemmaEnabled(): boolean {
   // Evaluated at call-time so tests can mutate process.env between cases.
-  return process.env[GEMMA_PROVIDER_ENV] === 'gemma';
+  return isGemmaCloudPrimary();
 }
 
 async function callGemma(prompt: string): Promise<string> {
