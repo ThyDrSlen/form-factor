@@ -48,7 +48,8 @@ import { syncService } from '@/lib/services/database/sync-service';
 function recentMidnight(daysAgo: number) {
   const d = new Date();
   d.setHours(12, 0, 0, 0);
-  return d.getTime() - daysAgo * 24 * 60 * 60 * 1000;
+  d.setDate(d.getDate() - daysAgo);
+  return d.toISOString();
 }
 
 describe('health-bulk-sync: partial-failure semantics (#546)', () => {
@@ -58,6 +59,7 @@ describe('health-bulk-sync: partial-failure semantics (#546)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     spyInsert = jest.spyOn(localDB, 'insertHealthMetric').mockResolvedValue(undefined as any);
+    jest.spyOn(localDB, 'getHealthMetricsForRange').mockResolvedValue([]);
     spySyncToSupabase = jest
       .spyOn(syncService, 'syncToSupabase')
       .mockResolvedValue(undefined as any);
@@ -74,9 +76,9 @@ describe('health-bulk-sync: partial-failure semantics (#546)', () => {
   test('mixed success/error on insertHealthMetric counts errors separately, success flag flips false', async () => {
     // 3 daily step samples.
     mockNativeHK.getDailySumSamples.mockResolvedValue([
-      { date: recentMidnight(2), value: 5000 },
-      { date: recentMidnight(1), value: 6000 },
-      { date: recentMidnight(0), value: 7000 },
+      { startDate: recentMidnight(2), value: 5000 },
+      { startDate: recentMidnight(1), value: 6000 },
+      { startDate: recentMidnight(0), value: 7000 },
     ]);
 
     // Second insert throws (native write partial failure). Others succeed.
@@ -97,8 +99,8 @@ describe('health-bulk-sync: partial-failure semantics (#546)', () => {
 
   test('all inserts succeed => success=true, errors=0, and sync-to-supabase is triggered', async () => {
     mockNativeHK.getDailySumSamples.mockResolvedValue([
-      { date: recentMidnight(1), value: 8000 },
-      { date: recentMidnight(0), value: 9000 },
+      { startDate: recentMidnight(1), value: 8000 },
+      { startDate: recentMidnight(0), value: 9000 },
     ]);
 
     const result = await syncAllHealthKitDataToSupabase('user-1', 2);
@@ -112,8 +114,8 @@ describe('health-bulk-sync: partial-failure semantics (#546)', () => {
 
   test('onProgress emits a terminal complete phase on partial success (no orphaned uploading phase)', async () => {
     mockNativeHK.getDailySumSamples.mockResolvedValue([
-      { date: recentMidnight(1), value: 5000 },
-      { date: recentMidnight(0), value: 6000 },
+      { startDate: recentMidnight(1), value: 5000 },
+      { startDate: recentMidnight(0), value: 6000 },
     ]);
     spyInsert.mockResolvedValueOnce(undefined as any).mockRejectedValueOnce(new Error('fail'));
 
@@ -154,8 +156,8 @@ describe('health-bulk-sync: partial-failure semantics (#546)', () => {
     // try/catch-ed, so a mid-batch failure cannot leave the bulk sync in
     // a half-finished state that later logic assumes ran to completion.
     mockNativeHK.getDailySumSamples.mockResolvedValue([
-      { date: recentMidnight(1), value: 5000 },
-      { date: recentMidnight(0), value: 6000 },
+      { startDate: recentMidnight(1), value: 5000 },
+      { startDate: recentMidnight(0), value: 6000 },
     ]);
     spyInsert
       .mockRejectedValueOnce(new Error('disk full'))

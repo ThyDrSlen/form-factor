@@ -13,10 +13,11 @@
  */
 
 const mockErrorWithTs = jest.fn();
+const mockWarnWithTs = jest.fn();
 jest.mock('@/lib/logger', () => ({
   logWithTs: jest.fn(),
   infoWithTs: jest.fn(),
-  warnWithTs: jest.fn(),
+  warnWithTs: (...args: unknown[]) => mockWarnWithTs(...args),
   errorWithTs: (...args: unknown[]) => mockErrorWithTs(...args),
 }));
 
@@ -140,6 +141,7 @@ describe('ErrorHandler — shouldRetry', () => {
 describe('ErrorHandler — logError + sanitizeDetails branches', () => {
   beforeEach(() => {
     mockErrorWithTs.mockClear();
+    mockWarnWithTs.mockClear();
   });
 
   // errorWithTs is called as (tag, payload) — our mock records args as-is,
@@ -187,7 +189,8 @@ describe('ErrorHandler — logError + sanitizeDetails branches', () => {
       createError('coach', 'C1', 'hi', { severity: 'warning', retryable: true }),
       { feature: 'coach', location: 'coach-service', meta: { traceId: 'abc' } },
     );
-    const payload = mockErrorWithTs.mock.calls[0][1];
+    expect(mockErrorWithTs).not.toHaveBeenCalled();
+    const payload = mockWarnWithTs.mock.calls[0][1];
     expect(payload).toEqual(
       expect.objectContaining({
         domain: 'coach',

@@ -1,3 +1,4 @@
+import type { SyncTableName, SyncOperation, SyncQueueItem } from './sync-types';
 import * as SQLite from 'expo-sqlite';
 import { errorWithTs, logWithTs } from '@/lib/logger';
 import { createError } from '@/lib/services/ErrorHandler';
@@ -91,23 +92,13 @@ export interface ExercisePersonalRecords {
   maxDurationSeconds: number | null;
 }
 
-export type SyncTableName = 'foods' | 'workouts' | 'health_metrics' | 'nutrition_goals';
-export type SyncOperation = 'upsert' | 'delete';
-
-export interface SyncQueueItem {
-  id: number;
-  table_name: SyncTableName;
-  operation: SyncOperation;
-  record_id: string;
-  data: string | null;
-  created_at: string;
-  retry_count: number;
-  next_retry_at: string | null;
-}
+export type { SyncTableName, SyncOperation, SyncQueueItem } from './sync-types';
 
 class LocalDatabase {
+  public readonly supportsWorkoutSync: boolean = true;
   public db: SQLite.SQLiteDatabase | null = null;
   private initPromise: Promise<void> | null = null;
+  private transactionTail: Promise<void> = Promise.resolve();
 
   async initialize(): Promise<void> {
     if (this.initPromise) {
@@ -355,6 +346,14 @@ class LocalDatabase {
       );
     `);
 
+    // Additive migration: unidentified device rows stay unowned. Only a new
+    // authenticated write or a server row may establish ownership.
+    const sessionColumns = await this.db.getAllAsync<{ name: string }>('PRAGMA table_info(workout_sessions)');
+    if (!sessionColumns.some(column => column.name === 'user_id')) {
+      await this.db.execAsync('ALTER TABLE workout_sessions ADD COLUMN user_id TEXT;');
+    }
+    await this.db.execAsync('CREATE INDEX IF NOT EXISTS idx_ws_owner ON workout_sessions(user_id, started_at DESC);');
+
     // Workout session exercises
     await this.db.execAsync(`
       CREATE TABLE IF NOT EXISTS workout_session_exercises (
@@ -512,7 +511,11 @@ class LocalDatabase {
     if (!dbResult.ok) {
       throw new Error(dbResult.error.message);
     }
-    await dbResult.data.withTransactionAsync(fn);
+    // Expo transactions share one connection: overlapping BEGIN/ROLLBACK can
+    // abort another caller's work. Keep transaction boundaries FIFO.
+    const transaction = this.transactionTail.then(() => dbResult.data.withTransactionAsync(fn));
+    this.transactionTail = transaction.catch(() => {});
+    await transaction;
   }
 
   // Food operations
@@ -539,7 +542,7 @@ class LocalDatabase {
     }
 
     const now = new Date().toISOString();
-    await dbResult.data.withTransactionAsync(async () => {
+    await this.withTransaction(async () => {
       await dbResult.data.runAsync(
         `INSERT OR REPLACE INTO foods (id, name, calories, protein, carbs, fat, date, synced, deleted, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
@@ -590,13 +593,60 @@ class LocalDatabase {
     return await this.db.getAllAsync<LocalFood>('SELECT * FROM foods');
   }
 
-  async updateFoodSyncStatus(id: string, synced: boolean): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    await this.db.runAsync(
-      'UPDATE foods SET synced = ?, updated_at = ? WHERE id = ?',
-      [synced ? 1 : 0, new Date().toISOString(), id]
+  async reconcileFood(
+    incoming: LocalFood, expected: LocalFood, isCurrent?: () => boolean,
+  ): Promise<boolean> {
+    if (incoming.id !== expected.id) return false;
+    const result = await this.runCurrentHealthWrite(
+      `UPDATE foods
+       SET name = ?, calories = ?, protein = ?, carbs = ?, fat = ?, date = ?, updated_at = ?, deleted = ?, synced = 1
+       WHERE id IS ? AND name IS ? AND calories IS ? AND protein IS ? AND carbs IS ? AND fat IS ?
+         AND date IS ? AND synced IS ? AND deleted IS ? AND updated_at IS ?`,
+      [incoming.name, incoming.calories, incoming.protein ?? null, incoming.carbs ?? null, incoming.fat ?? null,
+        incoming.date, incoming.updated_at, incoming.deleted, expected.id, expected.name, expected.calories,
+        expected.protein ?? null, expected.carbs ?? null, expected.fat ?? null,
+        expected.date, expected.synced, expected.deleted, expected.updated_at],
+      // Always prepare explicitly to guard connection replacement, even without a caller guard.
+      isCurrent ?? (() => true),
     );
+    return result.changes > 0;
+  }
+
+  async reconcileWorkout(
+    incoming: LocalWorkout, expected: LocalWorkout, isCurrent?: () => boolean,
+  ): Promise<boolean> {
+    if (incoming.id !== expected.id) return false;
+    const result = await this.runCurrentHealthWrite(
+      `UPDATE workouts
+       SET exercise = ?, sets = ?, reps = ?, weight = ?, duration = ?, date = ?, updated_at = ?, deleted = ?, synced = 1
+       WHERE id IS ? AND exercise IS ? AND sets IS ? AND reps IS ? AND weight IS ? AND duration IS ?
+         AND date IS ? AND synced IS ? AND deleted IS ? AND updated_at IS ?`,
+      [incoming.exercise, incoming.sets, incoming.reps ?? null, incoming.weight ?? null, incoming.duration ?? null,
+        incoming.date, incoming.updated_at, incoming.deleted, expected.id, expected.exercise, expected.sets,
+        expected.reps ?? null, expected.weight ?? null, expected.duration ?? null,
+        expected.date, expected.synced, expected.deleted, expected.updated_at],
+      isCurrent ?? (() => true),
+    );
+    return result.changes > 0;
+  }
+
+  private async updateLegacySyncStatus(
+    table: 'foods' | 'workouts' | 'nutrition_goals', id: string, synced: boolean,
+    expected?: Partial<LocalFood | LocalWorkout | LocalNutritionGoals>,
+  ): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    // A network acknowledgement belongs to captured content, not just an ID
+    // or millisecond timestamp. Do not mark concurrent edits/deletes as sent.
+    const entries = Object.entries(expected ?? {});
+    const guard = entries.map(([key]) => ` AND "${key.replace(/"/g, '""')}" IS ?`).join('');
+    await this.db.runAsync(
+      `UPDATE ${table} SET synced = ? WHERE id = ?${guard}`,
+      [synced ? 1 : 0, id, ...entries.map(([, value]) => value ?? null)]
+    );
+  }
+
+  async updateFoodSyncStatus(id: string, synced: boolean, expected?: Partial<LocalFood>): Promise<void> {
+    await this.updateLegacySyncStatus('foods', id, synced, expected);
   }
 
   async softDeleteFood(id: string): Promise<void> {
@@ -613,7 +663,7 @@ class LocalDatabase {
 
     const now = new Date().toISOString();
     const db = this.db;
-    await db.withTransactionAsync(async () => {
+    await this.withTransaction(async () => {
       await db.runAsync(
         'UPDATE foods SET deleted = 1, synced = 0, updated_at = ? WHERE id = ?',
         [now, id]
@@ -669,7 +719,7 @@ class LocalDatabase {
 
     const now = new Date().toISOString();
     const db = this.db;
-    await db.withTransactionAsync(async () => {
+    await this.withTransaction(async () => {
       await db.runAsync(
         `UPDATE foods SET ${setClauses} WHERE id = ?`,
         values
@@ -714,7 +764,7 @@ class LocalDatabase {
     }
 
     const now = new Date().toISOString();
-    await dbResult.data.withTransactionAsync(async () => {
+    await this.withTransaction(async () => {
       await dbResult.data.runAsync(
         `INSERT OR REPLACE INTO workouts (id, exercise, sets, reps, weight, duration, date, synced, deleted, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
@@ -774,13 +824,8 @@ class LocalDatabase {
     return await this.db.getAllAsync<LocalWorkout>('SELECT * FROM workouts');
   }
 
-  async updateWorkoutSyncStatus(id: string, synced: boolean): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    await this.db.runAsync(
-      'UPDATE workouts SET synced = ?, updated_at = ? WHERE id = ?',
-      [synced ? 1 : 0, new Date().toISOString(), id]
-    );
+  async updateWorkoutSyncStatus(id: string, synced: boolean, expected?: Partial<LocalWorkout>): Promise<void> {
+    await this.updateLegacySyncStatus('workouts', id, synced, expected);
   }
 
   async softDeleteWorkout(id: string): Promise<void> {
@@ -797,7 +842,7 @@ class LocalDatabase {
 
     const now = new Date().toISOString();
     const db = this.db;
-    await db.withTransactionAsync(async () => {
+    await this.withTransaction(async () => {
       await db.runAsync(
         'UPDATE workouts SET deleted = 1, synced = 0, updated_at = ? WHERE id = ?',
         [now, id]
@@ -853,7 +898,7 @@ class LocalDatabase {
 
     const now = new Date().toISOString();
     const db = this.db;
-    await db.withTransactionAsync(async () => {
+    await this.withTransaction(async () => {
       await db.runAsync(
         `UPDATE workouts SET ${setClauses} WHERE id = ?`,
         values
@@ -901,10 +946,15 @@ class LocalDatabase {
     return dbResult.data.getAllAsync<LocalWorkout>(query, params);
   }
 
+  /** Completed, undeleted sets scoped to the persisted session owner; blank owners are rejected. */
   async getExerciseHistory(
+    userId: string,
     exerciseId: string,
     limit = 20,
   ): Promise<ExerciseHistoryEntry[]> {
+    if (!userId.trim()) {
+      throw new Error('userId must not be blank');
+    }
     const dbResult = await this.ensureInitialized();
     if (!dbResult.ok) {
       throw new Error(dbResult.error.message);
@@ -933,16 +983,21 @@ class LocalDatabase {
        JOIN workout_sessions s
          ON s.id = wse.session_id
         AND COALESCE(s.deleted, 0) = 0
-       WHERE wse.exercise_id = ?
+       WHERE s.user_id = ?
+         AND wse.exercise_id = ?
          AND COALESCE(ws.deleted, 0) = 0
          AND ws.completed_at IS NOT NULL
        ORDER BY COALESCE(s.ended_at, s.started_at) DESC, ws.completed_at DESC, ws.sort_order DESC
        LIMIT ?`,
-      [exerciseId, safeLimit],
+      [userId, exerciseId, safeLimit],
     );
   }
 
-  async getPersonalRecords(exerciseId: string): Promise<ExercisePersonalRecords> {
+  /** Owner-scoped records; blank owners are rejected and missing eligible values retain null aggregates. */
+  async getPersonalRecords(userId: string, exerciseId: string): Promise<ExercisePersonalRecords> {
+    if (!userId.trim()) {
+      throw new Error('userId must not be blank');
+    }
     const dbResult = await this.ensureInitialized();
     if (!dbResult.ok) {
       throw new Error(dbResult.error.message);
@@ -964,10 +1019,11 @@ class LocalDatabase {
        JOIN workout_sessions s
          ON s.id = wse.session_id
         AND COALESCE(s.deleted, 0) = 0
-       WHERE wse.exercise_id = ?
+       WHERE s.user_id = ?
+         AND wse.exercise_id = ?
          AND COALESCE(ws.deleted, 0) = 0
          AND ws.completed_at IS NOT NULL`,
-      [exerciseId],
+      [userId, exerciseId],
     );
 
     return rows[0] ?? {
@@ -979,13 +1035,89 @@ class LocalDatabase {
   }
 
   // Health Metric operations
+  // A single SQL statement protects the natural key even when a local write
+  // lands between the service's read and this write. Never REPLACE a remote row.
+  private async runCurrentHealthWrite(
+    sql: string, values: SQLite.SQLiteBindValue[], isCurrent?: () => boolean,
+  ): Promise<{ changes: number }> {
+    const db = this.db;
+    if (!db) throw new Error('Database not initialized');
+    if (!isCurrent) return db.runAsync(sql, values);
+    if (!isCurrent()) return { changes: 0 };
+    // Expo's runAsync awaits prepareAsync internally. Revalidate after that
+    // await so a prepared statement cannot repopulate a cleared account cache.
+    const statement = await db.prepareAsync(sql);
+    try {
+      if (!isCurrent() || this.db !== db) return { changes: 0 };
+      return await statement.executeAsync(values);
+    } finally {
+      await statement.finalizeAsync();
+    }
+  }
+
+  async reconcileHealthMetric(metric: LocalHealthMetric, expectedUpdatedAt?: string, isCurrent?: () => boolean): Promise<boolean>;
+  async reconcileHealthMetric(metric: LocalHealthMetric, expected: LocalHealthMetric, isCurrent?: () => boolean): Promise<boolean>;
+  async reconcileHealthMetric(metric: LocalHealthMetric, expected?: string | LocalHealthMetric, isCurrent?: () => boolean): Promise<boolean> {
+    if (!this.db) throw new Error('Database not initialized');
+    const run = (sql: string, values: SQLite.SQLiteBindValue[]) => this.runCurrentHealthWrite(sql, values, isCurrent);
+    if (typeof expected === 'string') {
+      // Upload reconciliation is update-only: a concurrent deletion stays deleted.
+      const result = await run(
+        `UPDATE health_metrics SET steps = ?, heart_rate_bpm = ?, heart_rate_timestamp = ?,
+           weight_kg = ?, weight_timestamp = ?, synced = 1, updated_at = ?
+         WHERE user_id = ? AND summary_date = ? AND updated_at = ?
+           AND julianday(updated_at) <= julianday(?)`,
+        [metric.steps, metric.heart_rate_bpm, metric.heart_rate_timestamp, metric.weight_kg,
+          metric.weight_timestamp, metric.updated_at, metric.user_id, metric.summary_date,
+          expected, metric.updated_at],
+      );
+      return result.changes > 0;
+    }
+    if (expected) {
+      if (expected.user_id !== metric.user_id || expected.summary_date !== metric.summary_date) return false;
+      // Compare the entire submitted content, not only millisecond timestamps:
+      // two HealthKit edits can share a timestamp. A deleted row stays deleted.
+      const result = await run(
+        `UPDATE health_metrics SET steps = ?, heart_rate_bpm = ?, heart_rate_timestamp = ?,
+           weight_kg = ?, weight_timestamp = ?, synced = 1, updated_at = ?
+         WHERE id = ? AND user_id = ? AND summary_date = ? AND updated_at = ? AND synced = ?
+           AND steps IS ? AND heart_rate_bpm IS ? AND heart_rate_timestamp IS ?
+           AND weight_kg IS ? AND weight_timestamp IS ?
+           AND julianday(updated_at) <= julianday(?)`,
+        [metric.steps, metric.heart_rate_bpm, metric.heart_rate_timestamp, metric.weight_kg,
+          metric.weight_timestamp, metric.updated_at, expected.id, expected.user_id, expected.summary_date,
+          expected.updated_at, expected.synced, expected.steps, expected.heart_rate_bpm,
+          expected.heart_rate_timestamp, expected.weight_kg, expected.weight_timestamp, metric.updated_at],
+      );
+      return result.changes > 0;
+    }
+    const result = await run(
+      `INSERT INTO health_metrics
+       (id, user_id, summary_date, steps, heart_rate_bpm, heart_rate_timestamp, weight_kg, weight_timestamp, synced, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+       ON CONFLICT(user_id, summary_date) DO UPDATE SET
+         steps = excluded.steps, heart_rate_bpm = excluded.heart_rate_bpm,
+         heart_rate_timestamp = excluded.heart_rate_timestamp, weight_kg = excluded.weight_kg,
+         weight_timestamp = excluded.weight_timestamp, synced = 1, updated_at = excluded.updated_at
+       WHERE health_metrics.synced = 1
+         AND julianday(health_metrics.updated_at) <= julianday(excluded.updated_at)`,
+      [`${metric.user_id}_${metric.summary_date}`, metric.user_id, metric.summary_date, metric.steps,
+        metric.heart_rate_bpm, metric.heart_rate_timestamp, metric.weight_kg, metric.weight_timestamp, metric.updated_at],
+    );
+    return result.changes > 0;
+  }
+
   async insertHealthMetric(metric: Omit<LocalHealthMetric, 'synced' | 'updated_at'>): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
     await this.db.runAsync(
-      `INSERT OR REPLACE INTO health_metrics
+      `INSERT INTO health_metrics
        (id, user_id, summary_date, steps, heart_rate_bpm, heart_rate_timestamp, weight_kg, weight_timestamp, synced, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+       ON CONFLICT(user_id, summary_date) DO UPDATE SET
+         steps = excluded.steps, heart_rate_bpm = excluded.heart_rate_bpm,
+         heart_rate_timestamp = excluded.heart_rate_timestamp, weight_kg = excluded.weight_kg,
+         weight_timestamp = excluded.weight_timestamp, synced = 0, updated_at = excluded.updated_at`,
       [
         metric.id,
         metric.user_id,
@@ -1008,11 +1140,15 @@ class LocalDatabase {
 
     const now = new Date().toISOString();
     const db = this.db;
-    await db.withTransactionAsync(async () => {
+    await this.withTransaction(async () => {
       await db.runAsync(
-        `INSERT OR REPLACE INTO health_metrics
+        `INSERT INTO health_metrics
          (id, user_id, summary_date, steps, heart_rate_bpm, heart_rate_timestamp, weight_kg, weight_timestamp, synced, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+         ON CONFLICT(user_id, summary_date) DO UPDATE SET
+           steps = excluded.steps, heart_rate_bpm = excluded.heart_rate_bpm,
+           heart_rate_timestamp = excluded.heart_rate_timestamp, weight_kg = excluded.weight_kg,
+           weight_timestamp = excluded.weight_timestamp, synced = 0, updated_at = excluded.updated_at`,
         [
           metric.id,
           metric.user_id,
@@ -1026,8 +1162,10 @@ class LocalDatabase {
         ]
       );
       await db.runAsync(
-        'INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at) VALUES (?, ?, ?, ?, ?, ?)',
-        ['health_metrics', 'upsert', metric.id, JSON.stringify(syncData || {}), now, now]
+        `INSERT INTO sync_queue (table_name, operation, record_id, data, created_at, next_retry_at)
+         SELECT 'health_metrics', 'upsert', id, ?, ?, ? FROM health_metrics
+         WHERE user_id = ? AND summary_date = ?`,
+        [JSON.stringify(syncData || {}), now, now, metric.user_id, metric.summary_date]
       );
     });
   }
@@ -1087,12 +1225,12 @@ class LocalDatabase {
     return result;
   }
 
-  async updateHealthMetricSyncStatus(id: string, synced: boolean): Promise<void> {
+  async updateHealthMetricSyncStatus(id: string, synced: boolean, expectedUpdatedAt?: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
     await this.db.runAsync(
-      'UPDATE health_metrics SET synced = ?, updated_at = ? WHERE id = ?',
-      [synced ? 1 : 0, new Date().toISOString(), id]
+      'UPDATE health_metrics SET synced = ? WHERE id = ? AND (? IS NULL OR updated_at = ?)',
+      [synced ? 1 : 0, id, expectedUpdatedAt ?? null, expectedUpdatedAt ?? null]
     );
   }
 
@@ -1115,6 +1253,15 @@ class LocalDatabase {
     );
   }
 
+  async deleteSyncedHealthMetric(userId: string, summaryDate: string, updatedAt: string, isCurrent?: () => boolean): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    await this.runCurrentHealthWrite(
+      'DELETE FROM health_metrics WHERE user_id = ? AND summary_date = ? AND synced = 1 AND julianday(updated_at) <= julianday(?)',
+      [userId, summaryDate, updatedAt],
+      isCurrent,
+    );
+  }
+
   async deleteHealthMetric(id: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -1129,6 +1276,25 @@ class LocalDatabase {
       [userId]
     );
     return result[0]?.count || 0;
+  }
+
+  async reconcileNutritionGoals(
+    incoming: LocalNutritionGoals, expected: LocalNutritionGoals, isCurrent?: () => boolean,
+  ): Promise<boolean> {
+    if (!incoming.user_id || !expected.user_id || incoming.user_id !== expected.user_id) return false;
+    const result = await this.runCurrentHealthWrite(
+      `UPDATE nutrition_goals
+       SET calories_goal = ?, protein_goal = ?, carbs_goal = ?, fat_goal = ?, updated_at = ?, synced = 1
+       WHERE id = ? AND user_id = ? AND calories_goal = ? AND protein_goal = ?
+         AND carbs_goal = ? AND fat_goal = ? AND synced = ? AND updated_at = ?`,
+      [incoming.calories_goal, incoming.protein_goal, incoming.carbs_goal, incoming.fat_goal,
+        incoming.updated_at, expected.id, expected.user_id, expected.calories_goal,
+        expected.protein_goal, expected.carbs_goal, expected.fat_goal, expected.synced, expected.updated_at],
+      // Always prepare explicitly so connection replacement is guarded even
+      // when the caller has no separate cancellation predicate.
+      isCurrent ?? (() => true),
+    );
+    return result.changes > 0;
   }
 
   async upsertNutritionGoals(goals: Omit<LocalNutritionGoals, 'synced' | 'updated_at'>, synced = 0): Promise<void> {
@@ -1164,7 +1330,7 @@ class LocalDatabase {
     }
 
     const now = new Date().toISOString();
-    await dbResult.data.withTransactionAsync(async () => {
+    await this.withTransaction(async () => {
       await dbResult.data.runAsync(
         `INSERT OR REPLACE INTO nutrition_goals (id, user_id, calories_goal, protein_goal, carbs_goal, fat_goal, synced, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
@@ -1217,13 +1383,8 @@ class LocalDatabase {
     return result;
   }
 
-  async updateNutritionGoalsSyncStatus(id: string, synced: boolean): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    await this.db.runAsync(
-      'UPDATE nutrition_goals SET synced = ?, updated_at = ? WHERE id = ?',
-      [synced ? 1 : 0, new Date().toISOString(), id]
-    );
+  async updateNutritionGoalsSyncStatus(id: string, synced: boolean, expected?: Partial<LocalNutritionGoals>): Promise<void> {
+    await this.updateLegacySyncStatus('nutrition_goals', id, synced, expected);
   }
 
   async updateNutritionGoals(id: string, updates: Partial<LocalNutritionGoals>): Promise<void> {
@@ -1263,7 +1424,7 @@ class LocalDatabase {
 
     const now = new Date().toISOString();
     const db = this.db;
-    await db.withTransactionAsync(async () => {
+    await this.withTransaction(async () => {
       await db.runAsync(
         `INSERT OR REPLACE INTO nutrition_goals (id, user_id, calories_goal, protein_goal, carbs_goal, fat_goal, synced, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
@@ -1295,7 +1456,7 @@ class LocalDatabase {
     }
     const nowIso = new Date().toISOString();
 
-    await dbResult.data.withTransactionAsync(async () => {
+    await this.withTransaction(async () => {
       await dbResult.data.runAsync(
         'DELETE FROM sync_queue WHERE table_name = ? AND record_id = ?',
         [tableName, recordId]
@@ -1344,7 +1505,7 @@ class LocalDatabase {
     if (!this.db) throw new Error('Database not initialized');
 
     const db = this.db;
-    await db.withTransactionAsync(async () => {
+    await this.withTransaction(async () => {
       await db.runAsync('DELETE FROM foods WHERE deleted = 1 AND synced = 1');
       await db.runAsync('DELETE FROM workouts WHERE deleted = 1 AND synced = 1');
       // Workout session tables
@@ -1409,7 +1570,7 @@ class LocalDatabase {
         if (existing.length > 0) continue;
 
         // Wrap all three inserts for this workout in a single transaction
-        await db.withTransactionAsync(async () => {
+        await this.withTransaction(async () => {
           // Create session
           await db.runAsync(
             `INSERT INTO workout_sessions (id, template_id, name, goal_profile, started_at, ended_at, timezone_offset_minutes, bodyweight_lb, notes, synced, deleted, updated_at, created_at)
@@ -1443,24 +1604,29 @@ class LocalDatabase {
 
   // Database utilities
   async clearAllData(): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
+    const db = this.db;
+    if (!db) throw new Error('Database not initialized');
 
-    await this.db.execAsync(`
-      DELETE FROM foods;
-      DELETE FROM workouts;
-      DELETE FROM health_metrics;
-      DELETE FROM nutrition_goals;
-      DELETE FROM sync_queue;
-      DELETE FROM exercises;
-      DELETE FROM workout_templates;
-      DELETE FROM workout_template_exercises;
-      DELETE FROM workout_template_sets;
-      DELETE FROM workout_sessions;
-      DELETE FROM workout_session_exercises;
-      DELETE FROM workout_session_sets;
-      DELETE FROM workout_session_events;
-      DELETE FROM debrief_notes;
-    `);
+    // Join the transaction serializer and retain this connection while waiting.
+    // Cleanup must not be undone by another transaction's rollback or partly commit.
+    await this.withTransaction(async () => {
+      await db.execAsync(`
+        DELETE FROM foods;
+        DELETE FROM workouts;
+        DELETE FROM health_metrics;
+        DELETE FROM nutrition_goals;
+        DELETE FROM sync_queue;
+        DELETE FROM exercises;
+        DELETE FROM workout_templates;
+        DELETE FROM workout_template_exercises;
+        DELETE FROM workout_template_sets;
+        DELETE FROM workout_sessions;
+        DELETE FROM workout_session_exercises;
+        DELETE FROM workout_session_sets;
+        DELETE FROM workout_session_events;
+        DELETE FROM debrief_notes;
+      `);
+    });
     logWithTs('[LocalDB] All data cleared');
   }
 
@@ -1471,20 +1637,30 @@ class LocalDatabase {
   /**
    * Upsert per-session debrief notes: free-text notes, starred fault ids,
    * and whether the user asked us to save the cues as personalized for
-   * next time. Overwrites any existing row for the same sessionId.
+   * next time. Only an undeleted session's persisted owner may write; false
+   * means no row was applied. Invalidated callers leave existing notes intact.
    */
   async saveDebriefNotes(
+    userId: string,
     sessionId: string,
     notes: string,
     starredFaultIds: string[],
     savedCues: boolean,
-  ): Promise<void> {
+    isCurrent?: () => boolean,
+  ): Promise<boolean> {
+    if (!userId.trim()) throw new Error('userId must not be blank');
+    if (isCurrent && !isCurrent()) return false;
     if (!this.db) await this.initialize();
+    if (isCurrent && !isCurrent()) return false;
     if (!this.db) throw new Error('Database not initialized');
     const now = new Date().toISOString();
-    await this.db.runAsync(
+    const result = await this.runCurrentHealthWrite(
       `INSERT INTO debrief_notes (session_id, notes, starred_fault_ids, saved_cues, updated_at)
-       VALUES (?, ?, ?, ?, ?)
+       SELECT ?, ?, ?, ?, ?
+       WHERE EXISTS (
+         SELECT 1 FROM workout_sessions
+         WHERE id = ? AND user_id = ? AND COALESCE(deleted, 0) = 0
+       )
        ON CONFLICT(session_id) DO UPDATE SET
          notes = excluded.notes,
          starred_fault_ids = excluded.starred_fault_ids,
@@ -1496,15 +1672,20 @@ class LocalDatabase {
         JSON.stringify(Array.isArray(starredFaultIds) ? starredFaultIds : []),
         savedCues ? 1 : 0,
         now,
+        sessionId,
+        userId,
       ],
+      // Force post-prepare connection checks even without caller cancellation.
+      isCurrent ?? (() => true),
     );
+    return result.changes > 0;
   }
 
   /**
    * Read the most recent debrief-notes row for the given session. Returns
-   * null when no notes have been saved yet.
+   * null for unavailable/unowned notes or an invalidated caller/connection.
    */
-  async getDebriefNotes(sessionId: string): Promise<
+  async getDebriefNotes(userId: string, sessionId: string, isCurrent?: () => boolean): Promise<
     | {
         sessionId: string;
         notes: string;
@@ -1514,19 +1695,25 @@ class LocalDatabase {
       }
     | null
   > {
+    if (!userId.trim()) throw new Error('userId must not be blank');
+    if (isCurrent && !isCurrent()) return null;
     if (!this.db) await this.initialize();
-    if (!this.db) return null;
-    const row = await this.db.getFirstAsync<{
+    if (isCurrent && !isCurrent()) return null;
+    const db = this.db;
+    if (!db) return null;
+    const row = await db.getFirstAsync<{
       session_id: string;
       notes: string;
       starred_fault_ids: string;
       saved_cues: number;
       updated_at: string;
     }>(
-      'SELECT session_id, notes, starred_fault_ids, saved_cues, updated_at FROM debrief_notes WHERE session_id = ?',
-      [sessionId],
+      `SELECT n.session_id, n.notes, n.starred_fault_ids, n.saved_cues, n.updated_at
+       FROM debrief_notes n JOIN workout_sessions s ON s.id = n.session_id
+       WHERE n.session_id = ? AND s.user_id = ? AND COALESCE(s.deleted, 0) = 0`,
+      [sessionId, userId],
     );
-    if (!row) return null;
+    if (this.db !== db || (isCurrent && !isCurrent()) || !row) return null;
     let starred: string[] = [];
     try {
       const parsed = JSON.parse(row.starred_fault_ids);

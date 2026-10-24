@@ -102,8 +102,8 @@ describe('health-bulk-sync', () => {
 
     it('continues on individual insert failures', async () => {
       mockNativeHK.getDailySumSamples.mockResolvedValue([
-        { value: 5000, startDate: '2024-01-01T12:00:00Z' },
-        { value: 6000, startDate: '2024-01-02T12:00:00Z' },
+        { value: 5000, startDate: new Date(Date.now() - 86400000).toISOString() },
+        { value: 6000, startDate: new Date().toISOString() },
       ]);
 
       spyInsertHealthMetric
@@ -314,8 +314,8 @@ describe('health-bulk-sync', () => {
 
     it('still triggers the Supabase background sync even when some inserts fail', async () => {
       mockNativeHK.getDailySumSamples.mockResolvedValue([
-        { value: 5000, startDate: '2024-01-01T12:00:00Z' },
-        { value: 6000, startDate: '2024-01-02T12:00:00Z' },
+        { value: 5000, startDate: new Date(Date.now() - 86400000).toISOString() },
+        { value: 6000, startDate: new Date().toISOString() },
       ]);
 
       spyInsertHealthMetric
@@ -331,8 +331,8 @@ describe('health-bulk-sync', () => {
 
     it('does not crash when localDB rejects every single insert (all records tracked as errors)', async () => {
       mockNativeHK.getDailySumSamples.mockResolvedValue([
-        { value: 5000, startDate: '2024-01-01T12:00:00Z' },
-        { value: 6000, startDate: '2024-01-02T12:00:00Z' },
+        { value: 5000, startDate: new Date(Date.now() - 86400000).toISOString() },
+        { value: 6000, startDate: new Date().toISOString() },
       ]);
 
       spyInsertHealthMetric.mockRejectedValue(new Error('DB locked'));
