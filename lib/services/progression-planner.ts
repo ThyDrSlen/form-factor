@@ -16,6 +16,7 @@ import type { ExerciseHistorySummary } from './exercise-history-service';
 import { isCoachPipelineV2Enabled } from './coach-pipeline-v2-flag';
 import { recordCoachUsage } from './coach-cost-tracker';
 import { recordExplicitProviderOverride } from './coach-model-dispatch-telemetry';
+import { isGemmaCloudPrimary } from '@/lib/services/coach-provider-types';
 
 const PROGRESSION_TASK_KIND = 'program_design' as const;
 
@@ -27,15 +28,12 @@ function estimateTokens(text: string): number {
 type SendCoachPromptOpts = Parameters<typeof sendCoachPrompt>[2];
 
 /**
- * Pipeline-v2: resolve the provider from env. Mirrors
- * `coach-auto-debrief.resolveCloudProvider` and `coach-drill-explainer`.
+ * Pipeline-v2: Gemma when `gemma-cloud` is enabled ahead of `openai` in
+ * EXPO_PUBLIC_AI_PROVIDERS. Mirrors `coach-auto-debrief.resolveCloudProvider`
+ * and `coach-drill-explainer`.
  */
 function resolveProgressionProvider(): 'gemma' | 'openai' {
-  const raw = (process.env.EXPO_PUBLIC_COACH_CLOUD_PROVIDER ?? 'openai')
-    .trim()
-    .toLowerCase();
-  if (raw === 'gemma') return 'gemma';
-  return 'openai';
+  return isGemmaCloudPrimary() ? 'gemma' : 'openai';
 }
 
 export interface ProgressionPlanInput {

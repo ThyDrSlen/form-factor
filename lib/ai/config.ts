@@ -27,9 +27,9 @@ const LEGACY_PROVIDER_STORAGE_KEY = 'coach_cloud_provider';
  */
 export async function getPreferredProviderId(): Promise<string | null> {
   try {
-    const current = await AsyncStorage.getItem(PREFERRED_PROVIDER_STORAGE_KEY);
-    if (current && current.trim()) return current.trim();
-    const legacy = await AsyncStorage.getItem(LEGACY_PROVIDER_STORAGE_KEY);
+    const current = (await AsyncStorage.getItem(PREFERRED_PROVIDER_STORAGE_KEY))?.trim().toLowerCase();
+    if (current) return current;
+    const legacy = (await AsyncStorage.getItem(LEGACY_PROVIDER_STORAGE_KEY))?.trim().toLowerCase();
     if (legacy === 'gemma') return 'gemma-cloud';
     if (legacy === 'openai') return 'openai';
   } catch {

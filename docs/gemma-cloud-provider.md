@@ -66,10 +66,12 @@ rest of the app is provider-agnostic.
    `<CoachCloudProviderPicker />`, or set a build-time default in `.env`:
 
    ```bash
-   EXPO_PUBLIC_COACH_CLOUD_PROVIDER=gemma
+   EXPO_PUBLIC_AI_PROVIDERS=gemma-cloud,openai
    ```
 
-   Precedence: AsyncStorage preference > env > hard default (`openai`).
+   Gemma only serves when `gemma-cloud` is listed; it is the default when
+   listed before `openai`. Precedence: caller hint > user preference >
+   `EXPO_PUBLIC_AI_PROVIDERS` order > `openai`. See `docs/AI_PROVIDERS.md`.
 
 3. **Ad-hoc testing** from app code:
 

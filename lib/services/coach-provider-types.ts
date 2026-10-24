@@ -1,3 +1,5 @@
+import { isProviderEnabled, readEnabledProviderIds } from '@/lib/ai/config';
+
 /**
  * Coach provider discriminator — which AI backend produced a given reply.
  *
@@ -92,4 +94,20 @@ export function inferCoachProvider(
  */
 export function __resetCoachProviderInferenceWarning(): void {
   hasWarnedAboutAmbiguousProvider = false;
+}
+
+/**
+ * Gemma-surface gates over `EXPO_PUBLIC_AI_PROVIDERS`: Gemma may serve when
+ * `gemma-cloud` is listed, and is the default when it is listed before
+ * `openai`. Replaces EXPO_PUBLIC_COACH_DISPATCH / EXPO_PUBLIC_COACH_CLOUD_PROVIDER.
+ */
+export function isGemmaCloudEnabled(): boolean {
+  return isProviderEnabled('gemma-cloud');
+}
+
+export function isGemmaCloudPrimary(): boolean {
+  const ids = readEnabledProviderIds();
+  const gemma = ids.indexOf('gemma-cloud');
+  const openai = ids.indexOf('openai');
+  return gemma !== -1 && (openai === -1 || gemma < openai);
 }
