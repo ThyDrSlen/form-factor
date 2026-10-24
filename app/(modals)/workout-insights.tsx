@@ -20,6 +20,7 @@ import {
   type WorkoutInsightsSnapshot,
 } from '@/lib/services/workout-insights';
 import { getFqiBand } from '@/lib/services/workout-insights-fqi-bands';
+import { useFirstSessionCheck } from '@/features/form-tracking/hooks/use-first-session-check';
 
 const { width: screenWidth } = Dimensions.get('window');
 const chartWidth = screenWidth - 40;
@@ -37,9 +38,50 @@ function buildLabels(points: number): string[] {
   return Array.from({ length: points }, (_, index) => (index % stride === 0 || index === points - 1 ? `${index + 1}` : ''));
 }
 
+type NextSetFocus = { title: string; detail: string; reason: string };
+
+function buildNextSetFocus(snapshot: WorkoutInsightsSnapshot): NextSetFocus {
+  const topAction = snapshot.coachActions[0];
+  if (topAction) {
+    return {
+      title: topAction.title,
+      detail: topAction.detail,
+      reason: 'Based on: top coach action',
+    };
+  }
+  if (snapshot.fatigueSignals.asymmetryDriftDeg != null && snapshot.fatigueSignals.asymmetryDriftDeg > 3) {
+    return {
+      title: 'Match left and right sides',
+      detail: 'Slow the first two reps and keep the bar path centered before adding speed.',
+      reason: `Based on: asymmetry drift +${snapshot.fatigueSignals.asymmetryDriftDeg.toFixed(1)}°`,
+    };
+  }
+  if (snapshot.fatigueSignals.fqiDropPct != null && snapshot.fatigueSignals.fqiDropPct > 8) {
+    return {
+      title: 'Protect the last reps',
+      detail: 'Stop one rep earlier or add 30 seconds rest so form quality stays stable.',
+      reason: `Based on: FQI dropped ${snapshot.fatigueSignals.fqiDropPct.toFixed(1)}%`,
+    };
+  }
+  if (snapshot.avgFqi != null && snapshot.avgFqi < 75) {
+    const band = getFqiBand(snapshot.avgFqi);
+    return {
+      title: 'Clean up the setup first',
+      detail: 'Keep the phone steady, full body visible, and repeat a controlled set before chasing load or speed.',
+      reason: `Based on: avg FQI ${Math.round(snapshot.avgFqi)} (${band.label.toLowerCase()})`,
+    };
+  }
+  return {
+    title: 'Repeat the same setup',
+    detail: 'Keep the phone 6–8 feet back, full body in frame, and chase the same smooth tempo next set.',
+    reason: 'Based on: stable set signals',
+  };
+}
+
 export default function WorkoutInsightsModal() {
   const router = useRouter();
   const params = useLocalSearchParams<{ sessionId?: string }>();
+  const { hasSeenSetup } = useFirstSessionCheck();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [snapshot, setSnapshot] = useState<WorkoutInsightsSnapshot | null>(null);
@@ -257,6 +299,17 @@ export default function WorkoutInsightsModal() {
           ? '#F59E0B'
           : '#7C8FB0';
 
+  const nextSetFocus = useMemo(() => (snapshot ? buildNextSetFocus(snapshot) : null), [snapshot]);
+  const isSetupStatusLoading = hasSeenSetup === null;
+  const nextSessionRoute = hasSeenSetup ? '/(tabs)/scan-arkit' : '/(modals)/form-tracking-setup';
+
+  const startNextSession = React.useCallback(() => {
+    if (isSetupStatusLoading) {
+      return;
+    }
+    router.push(nextSessionRoute);
+  }, [isSetupStatusLoading, nextSessionRoute, router]);
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -277,6 +330,17 @@ export default function WorkoutInsightsModal() {
           <Ionicons name="analytics-outline" size={42} color="#6781A6" />
           <Text style={styles.stateTitle}>No insight data yet</Text>
           <Text style={styles.stateText}>{error ?? 'Record and complete a set to unlock analytics.'}</Text>
+          <TouchableOpacity
+            style={[styles.stateCta, isSetupStatusLoading && styles.stateCtaDisabled]}
+            onPress={startNextSession}
+            disabled={isSetupStatusLoading}
+            accessibilityRole="button"
+            accessibilityLabel="Start a form session"
+            accessibilityState={{ busy: isSetupStatusLoading, disabled: isSetupStatusLoading }}
+          >
+            <Ionicons name="scan-outline" size={16} color="#0B1626" />
+            <Text style={styles.stateCtaText}>{isSetupStatusLoading ? 'Checking setup...' : 'Record a set'}</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <ScrollView
@@ -310,6 +374,33 @@ export default function WorkoutInsightsModal() {
               <Text style={styles.summaryValue}>{snapshot.asymmetryScore}</Text>
             </View>
           </View>
+
+          {nextSetFocus ? (
+            <View style={styles.nextActionCard}>
+              <View style={styles.nextActionIcon}>
+                <Ionicons name="flash-outline" size={18} color="#0B1626" />
+              </View>
+              <View style={styles.nextActionCopy}>
+                <Text style={styles.nextActionEyebrow}>Next set focus</Text>
+                <Text style={styles.nextActionTitle}>{nextSetFocus.title}</Text>
+                <Text style={styles.nextActionDetail}>{nextSetFocus.detail}</Text>
+                <View style={styles.nextActionReasonPill}>
+                  <Ionicons name="analytics-outline" size={12} color="#3CC8A9" />
+                  <Text style={styles.nextActionReasonText}>{nextSetFocus.reason}</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={[styles.nextActionButton, isSetupStatusLoading && styles.nextActionButtonDisabled]}
+                onPress={startNextSession}
+                disabled={isSetupStatusLoading}
+                accessibilityRole="button"
+                accessibilityLabel="Start next form set"
+                accessibilityState={{ busy: isSetupStatusLoading, disabled: isSetupStatusLoading }}
+              >
+                <Text style={styles.nextActionButtonText}>{isSetupStatusLoading ? '...' : 'Start set'}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Waveform - {snapshot.waveLabel}</Text>
@@ -681,6 +772,24 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
+  stateCta: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#4C8CFF',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  stateCtaDisabled: {
+    opacity: 0.72,
+  },
+  stateCtaText: {
+    color: '#0B1626',
+    fontSize: 13,
+    fontWeight: '800',
+  },
   content: {
     flex: 1,
   },
@@ -718,6 +827,78 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     marginTop: 2,
     textTransform: 'uppercase',
+  },
+  nextActionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#173255',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 140, 255, 0.38)',
+    padding: 14,
+  },
+  nextActionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3CC8A9',
+  },
+  nextActionCopy: {
+    flex: 1,
+  },
+  nextActionEyebrow: {
+    color: '#3CC8A9',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+  nextActionTitle: {
+    color: '#F5F7FF',
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  nextActionDetail: {
+    color: '#DCE5F5',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 3,
+  },
+  nextActionReasonPill: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(60, 200, 169, 0.28)',
+    backgroundColor: 'rgba(60, 200, 169, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 8,
+  },
+  nextActionReasonText: {
+    color: '#BEEFE3',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  nextActionButton: {
+    borderRadius: 12,
+    backgroundColor: '#4C8CFF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  nextActionButtonDisabled: {
+    opacity: 0.72,
+  },
+  nextActionButtonText: {
+    color: '#F5F7FF',
+    fontSize: 12,
+    fontWeight: '800',
   },
   card: {
     backgroundColor: '#12243A',

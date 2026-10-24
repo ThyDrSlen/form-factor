@@ -1,14 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { listWorkoutSessionHistory, type WorkoutSessionHistorySummary } from '@/lib/services/workout-session-history';
+import { tabColors } from '@/styles/tabs/_tab-theme';
+import { useSessionRunner } from '@/lib/stores/session-runner';
 import { DeleteAction } from '@/components';
-import { AskCoachCTA } from '@/components/form-tracking/AskCoachCTA';
-import { FormQualityBadgeRow } from '@/components/workouts/FormQualityBadgeRow';
-import { OverloadAnalyticsCard } from '@/components/workouts/OverloadAnalyticsCard';
-import { WorkoutCardSkeleton } from '@/components/workouts/WorkoutCardSkeleton';
-import { useAuth } from '@/contexts/AuthContext';
+import { AskCoachCTA } from '@/features/form-tracking/components/AskCoachCTA';
+import { FormQualityBadgeRow } from '@/features/workouts/components/FormQualityBadgeRow';
+import { OverloadAnalyticsCard } from '@/features/workouts/components/OverloadAnalyticsCard';
+import { WorkoutCardSkeleton } from '@/features/workouts/components/WorkoutCardSkeleton';
+import { useAuth } from '@/features/auth/contexts/AuthContext';
 import { useUnits } from '@/contexts/UnitsContext';
+import { formatWorkoutWeight } from '@/lib/workouts/weight';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import { getMostRecentAvgFqi } from '@/lib/services/form-session-history-lookup';
 import {
@@ -30,9 +33,9 @@ import {
     View
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
-import { useWorkouts, type Workout } from '../../contexts/WorkoutsContext';
+import { useWorkouts, type Workout } from '../../features/workouts/contexts/WorkoutsContext';
 import { useToast } from '../../contexts/ToastContext';
-import { styles } from '../../styles/tabs/_workouts.styles';
+import { styles } from '../../features/workouts/styles/_workouts.styles';
 
 const buildWorkoutShareMessage = (workout: Workout, weightLabel: string): string => {
   const workoutDate = workout.date ? new Date(workout.date) : null;
@@ -43,7 +46,7 @@ const buildWorkoutShareMessage = (workout: Workout, weightLabel: string): string
       : null,
     `Sets: ${workout.sets}`,
     typeof workout.reps === 'number' && workout.reps > 0 ? `Reps: ${workout.reps}` : null,
-    typeof workout.weight === 'number' && workout.weight > 0 ? `Weight: ${workout.weight} ${weightLabel}` : null,
+    typeof workout.weight === 'number' ? `Weight: ${formatWorkoutWeight(workout.weight, weightLabel)} ${weightLabel}` : null,
     typeof workout.duration === 'number' && workout.duration > 0 ? `Duration: ${workout.duration} min` : null,
   ].filter((line): line is string => Boolean(line));
 
@@ -53,11 +56,54 @@ const buildWorkoutShareMessage = (workout: Workout, weightLabel: string): string
 export default function WorkoutsScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const activeSession = useSessionRunner((state) => state.activeSession);
+  const loadActiveSession = useSessionRunner((state) => state.loadActiveSession);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [sessionError, setSessionError] = useState(false);
+  const [sessionRetry, setSessionRetry] = useState(0);
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    setSessionReady(false);
+    setSessionError(false);
+    void (async () => {
+      try {
+        await loadActiveSession();
+        if (useSessionRunner.getState().error) throw new Error('Unable to load session');
+        if (!cancelled) setSessionReady(true);
+      } catch {
+        if (!cancelled) setSessionError(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [loadActiveSession, user?.id, sessionRetry]));
+  const sessionLabel = sessionError ? 'Retry workout' : !sessionReady ? 'Opening workout…' : activeSession ? 'Resume workout' : 'Start workout';
   const { getWeightLabel } = useUnits();
   const { workouts, loading, refreshWorkouts, deleteWorkout } = useWorkouts();
   const { show: showToast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [history, setHistory] = useState<{ userId?: string; sessions: WorkoutSessionHistorySummary[] }>({ sessions: [] });
+  const sessions = history.userId === user?.id ? history.sessions : [];
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState(false);
+  const historyRequest = useRef(0);
+  const refreshHistory = useCallback(async () => {
+    const request = ++historyRequest.current;
+    setHistoryLoading(true);
+    setHistoryError(false);
+    try {
+      const rows = user?.id ? await listWorkoutSessionHistory(user.id) : [];
+      if (request === historyRequest.current) setHistory({ userId: user?.id, sessions: rows });
+    } catch {
+      if (request === historyRequest.current) setHistoryError(true);
+    } finally {
+      if (request === historyRequest.current) setHistoryLoading(false);
+    }
+  }, [user?.id]);
+  useFocusEffect(useCallback(() => {
+    void refreshHistory();
+    return () => { historyRequest.current += 1; };
+  }, [refreshHistory]));
   const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
   // Per-exercise most-recent FQI (issue #494, item 4). Lazily populated
   // from form-session-history; missing entries render no badge.
@@ -137,18 +183,20 @@ export default function WorkoutsScreen() {
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      await refreshWorkouts();
+      await Promise.all([refreshWorkouts(), refreshHistory()]);
       setLastSynced(new Date());
     } finally {
       setIsRefreshing(false);
     }
-  }, [refreshWorkouts]);
+  }, [refreshWorkouts, refreshHistory]);
 
   const lastUpdatedLabel = lastSynced
     ? `Last updated ${lastSynced.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`
     : null;
 
   const handleAddPress = () => {
+    if (sessionError) { setSessionRetry((value) => value + 1); return; }
+    if (!sessionReady) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     logWithTs('Navigating to workout-session from workouts tab');
     router.push('/(modals)/workout-session');
@@ -272,8 +320,55 @@ export default function WorkoutsScreen() {
     );
   }, [exportLatestSession]);
 
+  const renderSessionHistory = () => (
+    <View style={sessionListStyles.section}>
+      <Text accessibilityRole="header" style={sessionListStyles.title}>Completed sessions</Text>
+      {historyLoading ? <Text style={sessionListStyles.detail}>Loading sessions…</Text> : null}
+      {historyError ? (
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry loading completed sessions"
+          style={sessionListStyles.link} onPress={() => void refreshHistory()}>
+          <Text style={sessionListStyles.detail}>Could not load sessions. Tap to retry.</Text>
+        </TouchableOpacity>
+      ) : null}
+      {!historyLoading && !historyError && sessions.length === 0 ? (
+        <Text style={sessionListStyles.detail}>No completed sessions yet. Finish a workout to review it here.</Text>
+      ) : null}
+      {sessions.slice(0, 5).map((session) => (
+        <TouchableOpacity key={session.id} style={sessionListStyles.card} accessibilityRole="button"
+          accessibilityLabel={`Review ${session.name || 'Workout'}`}
+          accessibilityHint="Opens saved exercises and completed sets"
+          onPress={() => router.push(`/(modals)/session-history?sessionId=${encodeURIComponent(session.id)}`)}>
+          <View style={sessionListStyles.cardHeading}>
+            <Text style={[sessionListStyles.title, sessionListStyles.cardName]}>{session.name || 'Workout'}</Text>
+            <Ionicons name="chevron-forward" size={18} color={tabColors.textSecondary} accessible={false} />
+          </View>
+          <Text style={sessionListStyles.detail}>{new Date(session.started_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
+          <Text style={sessionListStyles.detail}>{session.completed_exercise_count} exercises · {session.completed_set_count} completed sets</Text>
+        </TouchableOpacity>
+      ))}
+      <TouchableOpacity accessibilityRole="button" style={sessionListStyles.link}
+        onPress={() => router.push('/(modals)/session-history')}>
+        <Text style={sessionListStyles.review}>View all session history</Text>
+      </TouchableOpacity>
+      <Text accessibilityRole="header" style={sessionListStyles.title}>Quick logs</Text>
+      <Text style={sessionListStyles.detail}>Single-exercise entries, separate from workout sessions.</Text>
+      <TouchableOpacity accessibilityRole="button" style={sessionListStyles.link} onPress={handleQuickAddPress}>
+        <Text style={sessionListStyles.review}>Add quick log</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   const renderIntelHeader = () => (
     <View style={intelHeaderStyles.row}>
+      <TouchableOpacity
+        style={intelHeaderStyles.pill}
+        onPress={() => router.push('/(modals)/templates')}
+        accessibilityLabel="Browse workout templates"
+        accessibilityRole="button"
+      >
+        <Ionicons name="grid-outline" size={16} color={tabColors.textSecondary} accessible={false} />
+        <Text style={intelHeaderStyles.pillText}>Templates</Text>
+      </TouchableOpacity>
       <TouchableOpacity
         style={intelHeaderStyles.pill}
         onPress={handleOpenTimeline}
@@ -307,21 +402,7 @@ export default function WorkoutsScreen() {
         renderRightActions={() => renderRightActions(item.id, item.exercise)}
       >
         <View style={styles.card}>
-          <TouchableOpacity 
-            activeOpacity={0.9}
-            accessibilityLabel={`${item.exercise} workout`}
-            accessibilityHint="Swipe left to reveal delete actions"
-            onPress={() => {
-              Haptics.selectionAsync();
-              // Navigate to workout detail
-            }}
-          >
-          <LinearGradient
-            colors={['#0F2339', '#081526']}
-            style={styles.cardGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
+          <View style={styles.cardGradient}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle} numberOfLines={1}>
                 {item.exercise}
@@ -357,12 +438,12 @@ export default function WorkoutsScreen() {
                 </View>
               )}
               
-              {item.weight && (
+              {typeof item.weight === 'number' ? (
                 <View style={styles.detailItem}>
-                  <Text style={styles.detailValue}>{item.weight}</Text>
+                  <Text style={styles.detailValue}>{formatWorkoutWeight(item.weight, getWeightLabel())}</Text>
                   <Text style={styles.detailLabel}>{getWeightLabel()}</Text>
                 </View>
-              )}
+              ) : null}
               
               {item.duration && (
                 <View style={styles.detailItem}>
@@ -385,7 +466,7 @@ export default function WorkoutsScreen() {
                     item.date ? `Date: ${new Date(item.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}` : null,
                     `Sets: ${item.sets || 0}`,
                     typeof item.reps === 'number' && item.reps > 0 ? `Reps: ${item.reps}` : null,
-                    typeof item.weight === 'number' && item.weight > 0 ? `Weight: ${item.weight} lbs` : null,
+                    typeof item.weight === 'number' ? `Weight: ${formatWorkoutWeight(item.weight, getWeightLabel())} ${getWeightLabel()}` : null,
                     typeof item.duration === 'number' && item.duration > 0 ? `Duration: ${item.duration} min` : null,
                   ].filter(Boolean) as string[];
                   Alert.alert(item.exercise, lines.join('\n'));
@@ -434,33 +515,39 @@ export default function WorkoutsScreen() {
                 />
               </View>
             ) : null}
-          </LinearGradient>
-          </TouchableOpacity>
+          </View>
         </View>
       </Swipeable>
     );
   };
 
-  // Skeleton placeholders on cold-load keep the tab usable on slow networks
-  // (#562/A1). Render 3 shimmer cards that mirror the real-card dimensions so
-  // users see structure instead of a blank spinner. When the fetch completes,
-  // the FlatList below takes over; when the list arrives empty, the empty
-  // state with illustration + CTA takes over.
-  if (loading && !workouts.length) {
-    return (
-      <View style={styles.container} testID="workouts-skeleton-container">
-        <View style={styles.list}>
-          <WorkoutCardSkeleton testID="workout-card-skeleton-0" />
-          <WorkoutCardSkeleton testID="workout-card-skeleton-1" />
-          <WorkoutCardSkeleton testID="workout-card-skeleton-2" />
-        </View>
+  // Quick-log loading must not hide independently hydrated session controls.
+  const quickLogsLoading = loading && workouts.length === 0;
+
+  const renderSessionEntry = () => (
+      <View style={sessionListStyles.hero}>
+        <Text style={sessionListStyles.eyebrow}>
+          {sessionError ? 'Workout unavailable' : !sessionReady ? 'Getting ready' : activeSession ? 'Workout in progress' : 'Your next session'}
+        </Text>
+        <Text accessibilityRole="header" style={sessionListStyles.heroTitle}>
+          {sessionError ? 'Let’s try that again' : !sessionReady ? 'Loading your workout' : activeSession ? activeSession.name || 'Continue your workout' : 'Ready to train?'}
+        </Text>
+        <Text style={sessionListStyles.heroDetail}>
+          {sessionError ? 'We couldn’t load your workout. Retry before starting another.' : !sessionReady ? 'Checking for an active session.' : activeSession ? 'Pick up where you left off.' : 'Log your sets, then review the whole session.'}
+        </Text>
+        <TouchableOpacity style={[sessionListStyles.primary, !sessionReady && !sessionError && sessionListStyles.primaryLoading]} onPress={handleAddPress}
+          accessibilityRole="button" accessibilityLabel={sessionLabel}
+          accessibilityState={{ disabled: !sessionReady && !sessionError, busy: !sessionReady && !sessionError }}
+          disabled={!sessionReady && !sessionError}>
+          <Ionicons name={sessionError ? 'refresh-outline' : 'play'} size={18} color={tabColors.textPrimary} accessible={false} />
+          <Text style={styles.addFirstButtonText}>{sessionLabel}</Text>
+        </TouchableOpacity>
       </View>
-    );
-  }
+  );
 
   return (
     <View style={styles.container}>
-      {workouts.length === 0 ? (
+      {!quickLogsLoading && workouts.length === 0 && sessions.length === 0 && !historyLoading && !historyError ? (
         <ScrollView 
           contentContainerStyle={styles.emptyState}
           refreshControl={
@@ -472,35 +559,20 @@ export default function WorkoutsScreen() {
             />
           }
         >
-          {renderIntelHeader()}
+          {renderSessionEntry()}
+              {renderIntelHeader()}
+              {renderSessionHistory()}
           {lastUpdatedLabel ? (
             <Text style={{ color: '#8E8E93', fontSize: 12, marginBottom: 16, textAlign: 'center' }}>{lastUpdatedLabel}</Text>
           ) : null}
           <View style={styles.emptyIllustration}>
-            <Ionicons name="barbell-outline" size={80} color="#E5E5EA" />
+            <Ionicons name="barbell-outline" size={40} color="#E5E5EA" />
           </View>
           <Text style={styles.emptyTitle}>No Workouts Yet</Text>
           <Text style={styles.emptyDescription}>
             Track your first workout to see your progress over time
           </Text>
-          <TouchableOpacity 
-            style={styles.addFirstButton}
-            onPress={handleAddPress}
-          >
-            <Text style={styles.addFirstButtonText}>Start Session</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.addFirstButton, { marginTop: 12, backgroundColor: 'transparent', borderWidth: 1, borderColor: '#4C8CFF' }]}
-            onPress={() => router.push('/(modals)/templates')}
-          >
-            <Text style={[styles.addFirstButtonText, { color: '#4C8CFF' }]}>Templates</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.addFirstButton, { marginTop: 8, backgroundColor: 'transparent', borderWidth: 0 }]}
-            onPress={handleQuickAddPress}
-          >
-            <Text style={[styles.addFirstButtonText, { color: '#8E8E93', fontSize: 14 }]}>Quick Add (legacy)</Text>
-          </TouchableOpacity>
+
         </ScrollView>
       ) : (
         <FlatList
@@ -509,9 +581,18 @@ export default function WorkoutsScreen() {
           renderItem={renderItem}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          ListEmptyComponent={quickLogsLoading ? (
+            <View testID="workouts-skeleton-container" accessibilityLabel="Loading quick logs">
+              <WorkoutCardSkeleton testID="workout-card-skeleton-0" />
+              <WorkoutCardSkeleton testID="workout-card-skeleton-1" />
+              <WorkoutCardSkeleton testID="workout-card-skeleton-2" />
+            </View>
+          ) : null}
           ListHeaderComponent={
             <View>
+              {renderSessionEntry()}
               {renderIntelHeader()}
+              {renderSessionHistory()}
               {lastUpdatedLabel ? (
                 <Text style={{ color: '#8E8E93', fontSize: 12, marginBottom: 12, textAlign: 'center' }}>{lastUpdatedLabel}</Text>
               ) : null}
@@ -534,20 +615,28 @@ export default function WorkoutsScreen() {
           }
         />
       )}
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={handleAddPress}
-        activeOpacity={0.9}
-        accessibilityLabel="Add workout"
-        accessibilityRole="button"
-      >
-        <Ionicons name="add" size={28} color="#fff" />
-      </TouchableOpacity>
     </View>
   );
 }
 
 // --- Local styles for the per-card form quality badge (#494) ----------------
+const sessionListStyles = StyleSheet.create({
+  hero: { alignSelf: 'stretch', marginBottom: 16, padding: 20, borderRadius: 20, borderWidth: 1, borderColor: tabColors.accentSurfaceBorder, backgroundColor: tabColors.accentSurface, gap: 8 },
+  eyebrow: { color: tabColors.accent, fontFamily: 'Lexend_500Medium', fontSize: 12, lineHeight: 18 },
+  heroTitle: { color: tabColors.textPrimary, fontFamily: 'Lexend_700Bold', fontSize: 24, lineHeight: 32 },
+  heroDetail: { color: tabColors.textSecondary, fontFamily: 'Lexend_400Regular', fontSize: 14, lineHeight: 21 },
+  primary: { backgroundColor: tabColors.accent, minHeight: 52, borderRadius: 12, padding: 14, marginTop: 8, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },
+  primaryLoading: { opacity: 0.55 },
+  section: { gap: 12, marginBottom: 20, alignSelf: 'stretch' },
+  cardHeading: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  cardName: { flex: 1 },
+  title: { color: tabColors.textPrimary, fontFamily: 'Lexend_500Medium', fontSize: 17 },
+  detail: { color: tabColors.textSecondary, fontFamily: 'Lexend_400Regular', fontSize: 13, lineHeight: 20 },
+  review: { color: tabColors.accent, fontFamily: 'Lexend_500Medium', fontSize: 14 },
+  card: { padding: 16, gap: 8, borderRadius: 16, borderWidth: 1, borderColor: tabColors.border, backgroundColor: tabColors.overlay },
+  link: { minHeight: 44, justifyContent: 'center' },
+});
+
 const workoutCardStyles = StyleSheet.create({
   badgeRow: {
     marginTop: 6,
@@ -566,24 +655,25 @@ const workoutCardStyles = StyleSheet.create({
 const intelHeaderStyles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 10,
+    marginBottom: 24,
   },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    minHeight: 44,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: '#4C8CFF15',
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: tabColors.overlay,
     borderWidth: 1,
-    borderColor: '#4C8CFF30',
+    borderColor: tabColors.border,
   },
   pillText: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: 'Lexend_500Medium',
-    color: '#4C8CFF',
+    color: tabColors.textSecondary,
   },
 });

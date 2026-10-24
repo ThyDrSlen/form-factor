@@ -12,9 +12,11 @@
  */
 
 import { create } from 'zustand';
+import { supabase } from '@/lib/supabase';
 import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import { localDB } from '@/lib/services/database/local-db';
+import { accountCleanup } from '@/lib/services/database/account-cleanup';
 import {
   genericLocalUpsert,
   genericGetAll,
@@ -172,8 +174,14 @@ export function onSessionFinished(listener: SessionFinishedListener): () => void
   };
 }
 
-async function emitSessionFinished(event: SessionFinishedEvent): Promise<void> {
+async function emitSessionFinished(
+  event: SessionFinishedEvent,
+  canNotify: () => boolean,
+): Promise<void> {
   for (const listener of Array.from(sessionFinishedListeners)) {
+    // Each listener can await work. Never deliver the next notification into
+    // a different auth lifetime, including sign-out followed by the same user.
+    if (!canNotify()) return;
     try {
       await listener(event);
     } catch (err) {
@@ -190,6 +198,16 @@ export function __resetSessionFinishedListenersForTests(): void {
 // =============================================================================
 // Helpers
 // =============================================================================
+
+async function assertSessionOwnerUnchanged(userId: string | null): Promise<void> {
+  // Use Supabase's local session (offline-capable), not a network getUser lookup
+  // or SessionManager's separate persisted backup.
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  if ((data.session?.user.id ?? null) !== userId) {
+    throw new Error('Signed-in account changed while loading the workout session');
+  }
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -270,9 +288,10 @@ export function __resetSessionEventListenersForTests(): void {
   sessionEventListeners.clear();
 }
 
-function notifySessionEventListeners(event: WorkoutSessionEvent): void {
+function notifySessionEventListeners(event: WorkoutSessionEvent, canNotify: () => boolean): void {
   if (sessionEventListeners.size === 0) return;
   for (const listener of sessionEventListeners) {
+    if (!canNotify()) return;
     try {
       listener(event);
     } catch (err) {
@@ -287,6 +306,8 @@ async function emitEvent(
   sessionExerciseId?: string | null,
   sessionSetId?: string | null,
   payload: Record<string, unknown> = {},
+  canNotify: () => boolean = () => true,
+  assertCurrent?: () => void,
 ): Promise<void> {
   const event: Record<string, unknown> = {
     id: Crypto.randomUUID(),
@@ -298,10 +319,15 @@ async function emitEvent(
     payload: JSON.stringify(payload),
     synced: 0,
   };
-  await genericLocalUpsert('workout_session_events', 'id', event, 0);
+  if (assertCurrent) {
+    await genericLocalUpsert('workout_session_events', 'id', event, 0, undefined, assertCurrent);
+  } else {
+    await genericLocalUpsert('workout_session_events', 'id', event, 0);
+  }
 
   // Fan out to in-process listeners (watch bridge, analytics, etc.).
   // The stored payload is serialized JSON; subscribers receive the rich object.
+  if (!canNotify()) return;
   notifySessionEventListeners({
     id: event.id as string,
     session_id: sessionId,
@@ -310,7 +336,7 @@ async function emitEvent(
     session_exercise_id: sessionExerciseId ?? null,
     session_set_id: sessionSetId ?? null,
     payload,
-  });
+  }, canNotify);
 }
 
 // ---------------------------------------------------------------------------
@@ -397,6 +423,67 @@ async function getExerciseById(exerciseId: string): Promise<Exercise | null> {
 // =============================================================================
 
 export const useSessionRunner = create<SessionRunnerState>((set, get) => {
+  // Shared by start/resume: only the latest request may publish state/errors.
+  let hydrationRequest = 0;
+  let authGeneration = 0;
+  let finishGeneration = 0;
+  let observedOwner: string | null | undefined;
+  let authSubscribed = false;
+  const suggestionRequests = new Map<string, symbol>();
+  const clearPublishedSession = () => {
+    suggestionRequests.clear();
+    clearRestTimerCompletionTimeout();
+    clearRestTimerHapticTimeout();
+    set({
+      activeSession: null, exercises: [], sets: {},
+      exerciseSuggestionsByExerciseId: {}, formTargetsByExercise: {},
+      restTimer: null, restTimerCompletionTimeout: null,
+      isPaused: false, pausedAt: null, totalPausedMs: 0, pausedRestTimer: null,
+      isWorkoutInProgress: false, isLoading: false, error: null,
+    });
+  };
+  const ensureAuthSubscription = () => {
+    if (authSubscribed) return;
+    // The singleton store owns this subscription for its lifetime. Keep the
+    // callback synchronous: Supabase auth callbacks must not await auth APIs.
+    supabase.auth.onAuthStateChange?.((event, session) => {
+      const owner = session?.user.id ?? null;
+      if (event === 'SIGNED_OUT' || (observedOwner !== undefined && owner !== observedOwner)) {
+        ++authGeneration;
+        ++hydrationRequest;
+        // Invalidates queued schedules synchronously and cancels only the
+        // detached current ID; do not await native work inside the auth callback.
+        void cancelRestNotification();
+        clearPublishedSession();
+      }
+      observedOwner = owner;
+    });
+    authSubscribed = true;
+  };
+  const captureMutation = (session: WorkoutSession, parentExerciseId?: string) => {
+    ensureAuthSubscription();
+    const authSnapshot = authGeneration;
+    const hydrationSnapshot = hydrationRequest;
+    const finishSnapshot = finishGeneration;
+    const cleanupSnapshot = accountCleanup.generation;
+    const db = localDB.db;
+    const isCurrent = () => {
+      const current = get().activeSession;
+      return authSnapshot === authGeneration && hydrationSnapshot === hydrationRequest
+        && finishSnapshot === finishGeneration && localDB.db === db
+        && cleanupSnapshot === accountCleanup.generation && !accountCleanup.isBlocked
+        && current?.id === session.id && current.user_id === session.user_id
+        && !current.ended_at
+        && (parentExerciseId === undefined || get().exercises.some((exercise) =>
+          exercise.id === parentExerciseId && exercise.session_id === session.id))
+        && (observedOwner === undefined || observedOwner === session.user_id);
+    };
+    const assertCurrent = () => {
+      if (!isCurrent()) throw new Error('Workout session or signed-in account changed during mutation');
+    };
+    assertCurrent();
+    return { isCurrent, assertCurrent };
+  };
   const clearRestTimerCompletionTimeout = () => {
     const timeout = get().restTimerCompletionTimeout;
     if (!timeout) return;
@@ -456,10 +543,30 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
   loadExerciseSuggestion: async (exerciseId) => {
     if (!exerciseId) return null;
 
+    ensureAuthSubscription();
+    const authSnapshot = authGeneration;
+    const hydrationSnapshot = hydrationRequest;
+    // A late snapshot must not replace a newer recommendation for this exercise.
+    const request = Symbol(exerciseId);
+    suggestionRequests.set(exerciseId, request);
+    const isCurrent = () => authSnapshot === authGeneration && hydrationSnapshot === hydrationRequest
+      && suggestionRequests.get(exerciseId) === request;
     try {
+      const { data, error: authError } = await supabase.auth.getSession();
+      if (!isCurrent()) return null;
+      if (authError) throw authError;
+      const userId = data.session?.user.id;
+      if (!userId) return null;
+      if (observedOwner !== undefined && observedOwner !== userId) return null;
+      observedOwner = userId;
       const exercise = await getExerciseById(exerciseId);
-      const history = await localDB.getExerciseHistory(exerciseId, 24);
-      const personalRecords = await localDB.getPersonalRecords(exerciseId);
+      if (!isCurrent()) return null;
+      const history = await localDB.getExerciseHistory(userId, exerciseId, 24);
+      if (!isCurrent()) return null;
+      const personalRecords = await localDB.getPersonalRecords(userId, exerciseId);
+      if (!isCurrent()) return null;
+      await assertSessionOwnerUnchanged(userId);
+      if (!isCurrent()) return null;
       const suggestion = buildProgressiveOverloadSuggestion({
         exercise,
         history,
@@ -475,8 +582,10 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
 
       return suggestion;
     } catch (error) {
-      errorWithTs(`[SessionRunner] Failed to load suggestion for ${exerciseId}:`, error);
+      if (isCurrent()) errorWithTs(`[SessionRunner] Failed to load suggestion for ${exerciseId}:`, error);
       return null;
+    } finally {
+      if (suggestionRequests.get(exerciseId) === request) suggestionRequests.delete(exerciseId);
     }
   },
 
@@ -484,13 +593,22 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
   // Start Session
   // =========================================================================
   startSession: async (opts) => {
+    ensureAuthSubscription();
+    const request = ++hydrationRequest;
     set({ isLoading: true, error: null });
     try {
+      const { data, error: authError } = await supabase.auth.getSession();
+      if (authError) throw authError;
+      if (request !== hydrationRequest) return;
+      observedOwner = data.session?.user.id ?? null;
+      const userId = data.session?.user.id;
+      if (!userId) throw new Error('Sign in to start a workout session');
       const now = nowIso();
       const sessionId = Crypto.randomUUID();
 
       const session: Record<string, unknown> = {
         id: sessionId,
+        user_id: userId,
         template_id: opts?.templateId ?? null,
         name: opts?.name ?? null,
         goal_profile: opts?.goalProfile ?? 'hypertrophy',
@@ -519,8 +637,13 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       const sessionObj = session as unknown as WorkoutSession;
       const exercises = await loadSessionExercises(sessionId);
       const sets = await loadSessionSets(exercises);
-      const exerciseSuggestionsByExerciseId = await loadExerciseSuggestions(exercises);
+      const exerciseSuggestionsByExerciseId = await loadExerciseSuggestions(
+        exercises, userId, () => request === hydrationRequest,
+      );
+      if (request !== hydrationRequest) return;
 
+      await assertSessionOwnerUnchanged(userId);
+      if (request !== hydrationRequest) return;
       set({
         activeSession: sessionObj,
         exercises,
@@ -540,10 +663,10 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       logWithTs(`[SessionRunner] Started session ${sessionId}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to start session';
-      set({ error: message });
+      if (request === hydrationRequest) set({ error: message });
       errorWithTs('[SessionRunner] Failed to start session:', error);
     } finally {
-      set({ isLoading: false });
+      if (request === hydrationRequest) set({ isLoading: false });
     }
   },
 
@@ -553,6 +676,9 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
   addExercise: async (exerciseId) => {
     const { activeSession, exercises } = get();
     if (!activeSession) throw new Error('No active session');
+    const mutation = captureMutation(activeSession);
+    await assertSessionOwnerUnchanged(activeSession.user_id);
+    mutation.assertCurrent();
 
     const id = Crypto.randomUUID();
     const now = nowIso();
@@ -570,10 +696,13 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       created_at: now,
     };
 
-    await genericLocalUpsert('workout_session_exercises', 'id', row, 0);
-    await emitEvent(activeSession.id, 'exercise_started', id);
+    await genericLocalUpsert('workout_session_exercises', 'id', row, 0, undefined, mutation.assertCurrent);
+    mutation.assertCurrent();
+    await emitEvent(activeSession.id, 'exercise_started', id, null, {}, mutation.isCurrent, mutation.assertCurrent);
+    mutation.assertCurrent();
 
     const exercise = await getExerciseById(exerciseId);
+    mutation.assertCurrent();
     const newExercise = { ...row, exercise: exercise ?? undefined } as WorkoutSessionExercise & { exercise?: Exercise };
 
     set((state) => ({
@@ -583,6 +712,7 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
 
     // Auto-add first set
     await get().addSet(id);
+    mutation.assertCurrent();
     void get().loadExerciseSuggestion(exerciseId);
 
     return id;
@@ -636,6 +766,9 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
   addSet: async (sessionExerciseId, setType = 'normal') => {
     const { activeSession, sets } = get();
     if (!activeSession) throw new Error('No active session');
+    const mutation = captureMutation(activeSession, sessionExerciseId);
+    await assertSessionOwnerUnchanged(activeSession.user_id);
+    mutation.assertCurrent();
 
     const id = Crypto.randomUUID();
     const now = nowIso();
@@ -672,7 +805,8 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       created_at: now,
     };
 
-    await genericLocalUpsert('workout_session_sets', 'id', row, 0);
+    await genericLocalUpsert('workout_session_sets', 'id', row, 0, undefined, mutation.assertCurrent);
+    mutation.assertCurrent();
 
     const newSet = row as unknown as WorkoutSessionSet;
 
@@ -757,7 +891,21 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
 
     if (!theSet || !parentExerciseId) return;
 
-    // Compute TUT
+    const mutation = captureMutation(activeSession, parentExerciseId);
+    await assertSessionOwnerUnchanged(activeSession.user_id);
+    mutation.assertCurrent();
+
+    // Completing accepts the values displayed by SetRow. Resolve only missing
+    // actuals; an explicitly entered zero must never fall back to the plan.
+    theSet = {
+      ...theSet,
+      actual_reps: theSet.actual_reps ?? theSet.planned_reps,
+      actual_seconds: theSet.actual_seconds ?? theSet.planned_seconds,
+      actual_weight: theSet.actual_weight ?? theSet.planned_weight,
+    };
+    const { actual_reps, actual_seconds, actual_weight } = theSet;
+
+    // Compute TUT from the same actuals committed below.
     const exercise = parentExercise?.exercise;
     let tutResult = { tut_ms: null as number | null, tut_source: 'unknown' as const };
     if (exercise?.is_timed && theSet.actual_seconds) {
@@ -784,18 +932,26 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
     await db.runAsync(
       `UPDATE workout_session_sets SET
         completed_at = ?, rest_target_seconds = ?, rest_started_at = ?,
-        tut_ms = ?, tut_source = ?, synced = 0, updated_at = ?
+        tut_ms = ?, tut_source = ?, synced = 0, updated_at = ?,
+        actual_reps = ?, actual_seconds = ?, actual_weight = ?
        WHERE id = ?`,
-      [now, restSeconds, now, tutResult.tut_ms, tutResult.tut_source, now, setId],
+      [now, restSeconds, now, tutResult.tut_ms, tutResult.tut_source, now,
+        actual_reps, actual_seconds, actual_weight, setId],
     );
 
+    // A valid commit is retained, but its continuation belongs to the captured
+    // auth/session lifetime, not whichever account is active when SQLite returns.
+    mutation.assertCurrent();
     await emitEvent(activeSession.id, 'set_completed', parentExerciseId, setId, {
-      actual_reps: theSet.actual_reps,
-      actual_weight: theSet.actual_weight,
-    });
+      actual_reps,
+      actual_weight,
+      actual_seconds,
+    }, mutation.isCurrent, mutation.assertCurrent);
+    mutation.assertCurrent();
     await emitEvent(activeSession.id, 'rest_started', parentExerciseId, setId, {
       rest_target_seconds: restSeconds,
-    });
+    }, mutation.isCurrent, mutation.assertCurrent);
+    mutation.assertCurrent();
 
     // Schedule notification
     const nextSetIdx = (sets[parentExerciseId] ?? []).findIndex((s) => s.id === setId) + 1;
@@ -803,7 +959,9 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       restSeconds,
       exercise?.name,
       nextSetIdx + 1,
+      mutation.isCurrent,
     );
+    mutation.assertCurrent();
     scheduleRestTimerCompletionHaptic(now, restSeconds);
 
     // Update in-memory state
@@ -814,6 +972,9 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
           s.id === setId
             ? {
                 ...s,
+                actual_reps,
+                actual_seconds,
+                actual_weight,
                 completed_at: now,
                 rest_target_seconds: restSeconds,
                 rest_started_at: now,
@@ -848,11 +1009,20 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
     const { activeSession, restTimer } = get();
     if (!activeSession || !restTimer) return;
 
+    const mutation = captureMutation(activeSession);
+    const isCurrent = () => mutation.isCurrent() && get().restTimer === restTimer;
+    const assertCurrent = () => {
+      mutation.assertCurrent();
+      if (get().restTimer !== restTimer) throw new Error('Rest timer changed during mutation');
+    };
+    await assertSessionOwnerUnchanged(activeSession.user_id);
+    assertCurrent();
     const now = nowIso();
 
     clearRestTimerCompletionTimeout();
     clearRestTimerHapticTimeout();
     await cancelRestNotification();
+    assertCurrent();
 
     const db = localDB.db;
     if (!db) return;
@@ -864,7 +1034,9 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       [now, now, restTimer.setId],
     );
 
-    await emitEvent(activeSession.id, 'rest_skipped', null, restTimer.setId);
+    assertCurrent();
+    await emitEvent(activeSession.id, 'rest_skipped', null, restTimer.setId, {}, isCurrent, assertCurrent);
+    assertCurrent();
 
     set((state) => {
       const newSets = { ...state.sets };
@@ -1011,9 +1183,14 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
   // Finish Session
   // =========================================================================
   finishSession: async () => {
+    ensureAuthSubscription();
+    const authSnapshot = authGeneration;
     const { activeSession, isPaused, pausedAt, totalPausedMs } = get();
     if (!activeSession) return;
 
+    // Retire snapshots read before this finish, even if they return after SQL.
+    ++hydrationRequest;
+    set({ isLoading: false });
     const now = nowIso();
 
     // If we finish while paused, flush the in-flight pause segment into the
@@ -1028,14 +1205,27 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
     const db = localDB.db;
     if (!db) return;
 
-    await db.runAsync(
-      'UPDATE workout_sessions SET ended_at = ?, synced = 0, updated_at = ? WHERE id = ?',
-      [now, now, activeSession.id],
+    const { data, error: authError } = await supabase.auth.getSession();
+    if (authError) throw authError;
+    if (authSnapshot !== authGeneration) {
+      throw new Error('Signed-in account changed while finishing the workout session');
+    }
+    const result = await db.runAsync(
+      'UPDATE workout_sessions SET ended_at = ?, synced = 0, updated_at = ? WHERE id = ? AND user_id = ?',
+      [now, now, activeSession.id, data.session?.user.id ?? null],
     );
+    if (result?.changes === 0) throw new Error('Session is not owned by the signed-in account');
+    ++finishGeneration;
+    // SQL has committed. Even if event persistence fails, this session must
+    // not remain active; never reset a replacement session or auth lifetime.
+    if (authSnapshot === authGeneration && get().activeSession?.id === activeSession.id) {
+      clearPublishedSession();
+    }
 
     await emitEvent(activeSession.id, 'session_completed', null, null, {
       paused_ms: finalPausedMs,
-    });
+    }, () => authSnapshot === authGeneration);
+    if (authSnapshot !== authGeneration) return;
 
     // Capture details before store reset so subscribers see a stable snapshot.
     const finishedEvent: SessionFinishedEvent = {
@@ -1046,45 +1236,40 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       name: activeSession.name,
     };
 
-    set({
-      activeSession: null,
-      exercises: [],
-      sets: {},
-      exerciseSuggestionsByExerciseId: {},
-      formTargetsByExercise: {},
-      restTimer: null,
-      restTimerCompletionTimeout: null,
-      isPaused: false,
-      pausedAt: null,
-      totalPausedMs: 0,
-      pausedRestTimer: null,
-      isWorkoutInProgress: false,
-    });
-
     logWithTs(
       `[SessionRunner] Finished session ${activeSession.id} (paused_ms=${finalPausedMs})`,
     );
 
     // Fan out to onSessionFinished subscribers. Listener errors are logged
     // inside emitSessionFinished and do not propagate to the caller.
-    await emitSessionFinished(finishedEvent);
+    await emitSessionFinished(finishedEvent, () => authSnapshot === authGeneration);
   },
 
   // =========================================================================
   // Load Active Session (on app resume)
   // =========================================================================
   loadActiveSession: async () => {
+    ensureAuthSubscription();
+    const finishSnapshot = finishGeneration;
+    const request = ++hydrationRequest;
     set({ isLoading: true, error: null });
     try {
       const db = localDB.db;
       if (!db) return;
 
-      // Find any session without ended_at
+      const { data, error: authError } = await supabase.auth.getSession();
+      if (authError) throw authError;
+      if (request !== hydrationRequest) return;
+      observedOwner = data.session?.user.id ?? null;
+      // Never resume unidentified legacy rows or another account's sessions.
       const rows = await db.getAllAsync<WorkoutSession>(
-        'SELECT * FROM workout_sessions WHERE ended_at IS NULL AND deleted = 0 ORDER BY started_at DESC LIMIT 1',
+        'SELECT * FROM workout_sessions WHERE ended_at IS NULL AND deleted = 0 AND user_id = ? ORDER BY started_at DESC LIMIT 1',
+        [data.session?.user.id ?? null],
       );
 
       if (rows.length === 0) {
+        await assertSessionOwnerUnchanged(data.session?.user.id ?? null);
+        if (request !== hydrationRequest) return;
         clearRestTimerCompletionTimeout();
         set({
           activeSession: null,
@@ -1104,15 +1289,21 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       }
 
       const session = rows[0];
+      const userId = data.session?.user.id;
+      if (!userId) return;
       const exercises = await loadSessionExercises(session.id);
       const sets = await loadSessionSets(exercises);
-      const exerciseSuggestionsByExerciseId = await loadExerciseSuggestions(exercises);
+      const isCurrent = () => request === hydrationRequest && finishSnapshot === finishGeneration;
+      const exerciseSuggestionsByExerciseId = await loadExerciseSuggestions(exercises, userId, isCurrent);
+      if (!isCurrent()) return;
       // Rehydrate form-target overrides from the originating template so
       // scan-arkit still sees per-exercise targets after an app resume.
       const formTargetsByExercise = session.template_id
         ? await loadFormTargetsForTemplate(session.template_id)
         : {};
 
+      await assertSessionOwnerUnchanged(data.session?.user.id ?? null);
+      if (request !== hydrationRequest || finishSnapshot !== finishGeneration) return;
       // Check if there's an active rest timer
       let restTimer: SessionRunnerState['restTimer'] = null;
       // Track the most recently completed set so we can detect the orphan
@@ -1181,10 +1372,10 @@ export const useSessionRunner = create<SessionRunnerState>((set, get) => {
       logWithTs(`[SessionRunner] Loaded active session ${session.id}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to load session';
-      set({ error: message });
+      if (request === hydrationRequest) set({ error: message });
       errorWithTs('[SessionRunner] Failed to load active session:', error);
     } finally {
-      set({ isLoading: false });
+      if (request === hydrationRequest) set({ isLoading: false });
     }
   },
 
@@ -1365,11 +1556,14 @@ async function loadSessionSets(
 
 async function loadExerciseSuggestions(
   exercises: (WorkoutSessionExercise & { exercise?: Exercise })[],
+  userId: string,
+  isCurrent: () => boolean,
 ): Promise<Record<string, ProgressiveOverloadSuggestion>> {
   const suggestions: Record<string, ProgressiveOverloadSuggestion> = {};
   const seenExerciseIds = new Set<string>();
 
   for (const sessionExercise of exercises) {
+    if (!isCurrent()) return {};
     const exerciseId = sessionExercise.exercise_id;
     if (!exerciseId || seenExerciseIds.has(exerciseId)) {
       continue;
@@ -1378,8 +1572,10 @@ async function loadExerciseSuggestions(
     seenExerciseIds.add(exerciseId);
 
     try {
-      const history = await localDB.getExerciseHistory(exerciseId, 24);
-      const personalRecords = await localDB.getPersonalRecords(exerciseId);
+      const history = await localDB.getExerciseHistory(userId, exerciseId, 24);
+      if (!isCurrent()) return {};
+      const personalRecords = await localDB.getPersonalRecords(userId, exerciseId);
+      if (!isCurrent()) return {};
       const suggestion = buildProgressiveOverloadSuggestion({
         exercise: sessionExercise.exercise,
         history,
@@ -1387,6 +1583,7 @@ async function loadExerciseSuggestions(
       });
       suggestions[exerciseId] = suggestion;
     } catch (error) {
+      if (!isCurrent()) return {};
       errorWithTs(`[SessionRunner] Failed to hydrate suggestion for ${exerciseId}:`, error);
     }
   }

@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useSessionRunner } from '@/lib/stores/session-runner';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Image,
   RefreshControl,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -18,14 +20,13 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { useAuth } from '../../contexts/AuthContext';
-import { useFood } from '@/contexts/FoodContext';
-import { useWorkouts } from '@/contexts/WorkoutsContext';
+import { useAuth } from '../../features/auth/contexts/AuthContext';
+import { useFood } from '@/features/nutrition/contexts/FoodContext';
+import { useWorkouts } from '@/features/workouts/contexts/WorkoutsContext';
 import { useToast } from '../../contexts/ToastContext';
-import { useSocial } from '../../contexts/SocialContext';
-import { DashboardHealth } from '@/components';
+import { useSocial } from '../../features/social/contexts/SocialContext';
+import { DashboardHealth } from '@/features/health/components/DashboardHealth';
 import { errorWithTs, logWithTs, warnWithTs } from '@/lib/logger';
 import {
   deleteVideo,
@@ -37,7 +38,7 @@ import {
 } from '@/lib/services/video-service';
 import { CoachMessage, sendCoachPrompt } from '@/lib/services/coach-service';
 import { AppError, mapToUserMessage } from '@/lib/services/ErrorHandler';
-import { CoachProviderBadge } from '@/components/coach/CoachProviderBadge';
+import { CoachProviderBadge } from '@/features/coach/components/CoachProviderBadge';
 import {
   buildOverlaySummary,
   buildPostText,
@@ -48,7 +49,7 @@ import {
   type VideoFeedMetrics,
 } from '@/lib/video-feed';
 import { subscribeToCommentEvents } from '@/lib/video-comments-events';
-import { styles } from '../../styles/tabs/_index.styles';
+import { styles } from '../../features/health/styles/_index.styles';
 import { spacing } from '../../styles/tabs/_theme-constants';
 
 const motivationalMessages = [
@@ -294,10 +295,30 @@ const coachQuickPrompts = [
 
 export default function HomeScreen() {
   const { user } = useAuth();
+  const activeSession = useSessionRunner((state) => state.activeSession);
+  const loadActiveSession = useSessionRunner((state) => state.loadActiveSession);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [sessionError, setSessionError] = useState(false);
+  const [sessionRetry, setSessionRetry] = useState(0);
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    setSessionReady(false);
+    setSessionError(false);
+    void (async () => {
+      try {
+        await loadActiveSession();
+        if (useSessionRunner.getState().error) throw new Error('Unable to load session');
+        if (!cancelled) setSessionReady(true);
+      } catch {
+        if (!cancelled) setSessionError(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [loadActiveSession, user?.id, sessionRetry]));
+  const sessionLabel = sessionError ? 'Retry workout' : !sessionReady ? 'Opening workout…' : activeSession ? 'Resume workout' : 'Start workout';
   const { foods } = useFood();
   const { workouts } = useWorkouts();
   const router = useRouter();
-  const tabBarHeight = useBottomTabBarHeight();
   const { show: showToast } = useToast();
   const social = useSocial();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'videos' | 'coach'>('dashboard');
@@ -691,16 +712,23 @@ export default function HomeScreen() {
   };
 
   const renderDashboard = () => (
-    <View style={styles.content}>
+    <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: spacing.lg }} showsVerticalScrollIndicator={false} testID="home-dashboard-scroll">
       <Text style={styles.sectionTitle}>Quick Actions</Text>
       
       <View style={styles.actionGrid}>
         <TouchableOpacity
           style={styles.actionCardWrapper}
           onPress={() => {
-            logWithTs('Navigating to workout-session');
+            if (sessionError) {
+              setSessionRetry((value) => value + 1);
+              return;
+            }
             router.push('/(modals)/workout-session');
           }}
+          disabled={!sessionReady && !sessionError}
+          accessibilityRole="button"
+          accessibilityLabel={sessionLabel}
+          accessibilityState={{ disabled: !sessionReady && !sessionError }}
           testID="home-quick-action-log-workout"
         >
           <LinearGradient
@@ -712,7 +740,7 @@ export default function HomeScreen() {
             <View style={styles.actionIcon}>
               <Text style={styles.actionIconText}>💪</Text>
             </View>
-            <Text style={styles.actionTitle}>Log Workout</Text>
+            <Text style={styles.actionTitle}>{sessionLabel}</Text>
             <Text style={styles.actionSubtitle}>Track your exercise</Text>
             {/* A13: call out that a subset of exercises support live form
                 tracking so the "Form" badges in the exercise picker aren't a
@@ -772,7 +800,7 @@ export default function HomeScreen() {
 
       {/* Health metrics from Apple Health */}
       <DashboardHealth />
-    </View>
+    </ScrollView>
   );
 
   const renderVideoFeed = () => (
@@ -913,8 +941,8 @@ export default function HomeScreen() {
     </View>
   );
 
-  // Add bottom padding when coach tab is active to keep composer above tab bar
-  const bottomPadding = activeTab === 'coach' ? tabBarHeight + spacing.md : 0;
+  // The navigator already reserves space for the bottom tab bar.
+  const bottomPadding = activeTab === 'coach' ? spacing.md : 0;
 
   return (
     <View style={[styles.container, { paddingBottom: bottomPadding }]}>
@@ -940,8 +968,8 @@ export default function HomeScreen() {
                 </View>
               ) : null}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.coachEmojiButton} onPress={() => setActiveTab('coach')}>
-              <Text style={styles.coachEmojiText}>🧑‍🏫</Text>
+            <TouchableOpacity style={styles.coachEmojiButton} accessibilityRole="button" accessibilityLabel="Open coach" onPress={() => setActiveTab('coach')}>
+              <Ionicons name="sparkles-outline" size={20} color="#8CB4FF" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.newPostButton} onPress={handleUploadVideo}>
               <Ionicons name="add" size={18} color="#DDE6FF" />
@@ -956,8 +984,8 @@ export default function HomeScreen() {
             <Text style={styles.subtitle}>{subtitle}</Text>
           </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.coachEmojiButton} onPress={() => setActiveTab('coach')}>
-              <Text style={styles.coachEmojiText}>🧑‍🏫</Text>
+            <TouchableOpacity style={styles.coachEmojiButton} accessibilityRole="button" accessibilityLabel="Open coach" onPress={() => setActiveTab('coach')}>
+              <Ionicons name="sparkles-outline" size={20} color="#8CB4FF" />
             </TouchableOpacity>
           </View>
         </View>

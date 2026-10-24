@@ -78,7 +78,17 @@ export async function addWorkout(formData: FormData) {
 
   const sets = parseInt(formData.get('sets') as string) || 1;
   const reps = parseInt(formData.get('reps') as string) || 0;
-  const weight = parseFloat(formData.get('weight') as string) || 0;
+  const weightInput = formData.get('weight');
+  const weightText = typeof weightInput === 'string' ? weightInput.trim() : '';
+  const weight = weightText === '' ? null : Number(weightText);
+  // Web input is pounds-only. Blank is unspecified; zero is a real load.
+  // Validate before creating the session so malformed input leaves no rows.
+  if (
+    (weightInput !== null && typeof weightInput !== 'string') ||
+    (weight !== null && (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(weightText) || !Number.isFinite(weight)))
+  ) {
+    throw new Error('Weight must be a finite, non-negative number');
+  }
   const timestamp = new Date().toISOString();
 
   const { data: session, error: sessionError } = await supabase

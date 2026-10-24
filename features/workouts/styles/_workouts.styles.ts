@@ -1,7 +1,7 @@
 import { Platform, StyleSheet } from 'react-native';
-import { spacing, borderRadius } from './_theme-constants';
-import { CARD_HEIGHT, CARD_MARGIN } from './_card-dimensions';
-import { tabColors } from './_tab-theme';
+import { spacing, borderRadius } from '../../../styles/tabs/_theme-constants';
+import { CARD_HEIGHT, CARD_MARGIN } from '../../../styles/tabs/_card-dimensions';
+import { tabColors } from '../../../styles/tabs/_tab-theme';
 
 // Helper to get the correct font family based on platform and weight
 const getFontFamily = (weight: 'regular' | 'medium' | 'bold' = 'regular') => {
@@ -45,8 +45,8 @@ export const styles = StyleSheet.create({
   },
   cardGradient: {
     borderRadius: borderRadius.lg,
-    minHeight: CARD_HEIGHT,
-    padding: 20,
+    backgroundColor: tabColors.overlay,
+    padding: 16,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: tabColors.border,
@@ -58,8 +58,8 @@ export const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   cardTitle: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '600',
     color: tabColors.textPrimary,
     flex: 1,
     marginRight: spacing.sm + spacing.xs,
@@ -78,8 +78,9 @@ export const styles = StyleSheet.create({
   cardDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 12,
     marginBottom: spacing.md,
-    paddingHorizontal: spacing.sm,
   },
   detailItem: {
     alignItems: 'center',
@@ -88,7 +89,8 @@ export const styles = StyleSheet.create({
   detailValue: {
     fontSize: 24,
     fontWeight: '700',
-    color: tabColors.accent,
+    color: tabColors.textPrimary,
+    fontVariant: ['tabular-nums'],
     marginBottom: 2,
     fontFamily: getFontFamily('bold'),
   },
@@ -111,15 +113,11 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    minHeight: 44,
     paddingVertical: spacing.xs + spacing.sm,
   },
   shareActionButton: {
-    flex: 1.35,
     paddingHorizontal: spacing.sm,
-    backgroundColor: 'rgba(76, 140, 255, 0.08)',
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(76, 140, 255, 0.25)',
   },
   actionText: {
     color: tabColors.accent,
@@ -165,16 +163,16 @@ export const styles = StyleSheet.create({
     fontFamily: getFontFamily('medium'),
   },
   emptyState: {
-    flex: 1,
-    justifyContent: 'center',
+    flexGrow: 1,
     alignItems: 'center',
-    padding: spacing.xl,
+    padding: spacing.md,
+    paddingBottom: 100,
     backgroundColor: tabColors.background,
   },
   emptyIllustration: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     backgroundColor: 'rgba(76, 140, 255, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',

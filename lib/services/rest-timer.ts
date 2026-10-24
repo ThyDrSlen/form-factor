@@ -117,6 +117,7 @@ export function isRestComplete(
 
 let activeRestNotificationId: string | null = null;
 let pendingSchedule: Promise<string | null> | null = null;
+let cancellationGeneration = 0;
 
 /**
  * Schedule a local notification for when rest is complete.
@@ -129,14 +130,14 @@ export async function scheduleRestNotification(
   targetSeconds: number,
   exerciseName?: string,
   nextSetNumber?: number,
+  isCurrent: () => boolean = () => true,
 ): Promise<string | null> {
-  // Wait for any in-flight schedule to finish so its ID is stored
-  // before we try to cancel it.
-  if (pendingSchedule) {
-    await pendingSchedule.catch(() => {});
-  }
-
-  const task = _scheduleRestNotification(targetSeconds, exerciseName, nextSetNumber);
+  // Publish the queue tail before awaiting: every concurrent caller must wait
+  // for its immediate predecessor, not all resume behind the same first task.
+  const generation = cancellationGeneration;
+  const task = (pendingSchedule ?? Promise.resolve(null)).catch(() => null).then(() =>
+    _scheduleRestNotification(targetSeconds, exerciseName, nextSetNumber,
+      () => generation === cancellationGeneration && isCurrent()));
   pendingSchedule = task;
 
   try {
@@ -150,10 +151,13 @@ async function _scheduleRestNotification(
   targetSeconds: number,
   exerciseName?: string,
   nextSetNumber?: number,
+  isCurrent: () => boolean = () => true,
 ): Promise<string | null> {
   try {
+    if (!isCurrent()) return null;
     // Cancel any existing rest notification
-    await cancelRestNotification();
+    await cancelActiveRestNotification();
+    if (!isCurrent()) return null;
 
     const body = nextSetNumber && exerciseName
       ? `Time for set ${nextSetNumber} of ${exerciseName}`
@@ -173,6 +177,11 @@ async function _scheduleRestNotification(
       },
     });
 
+    if (!isCurrent()) {
+      // Never cancel globally here: a stale request owns only its returned ID.
+      await Notifications.cancelScheduledNotificationAsync(id);
+      return null;
+    }
     activeRestNotificationId = id;
     logWithTs(`[RestTimer] Scheduled notification in ${targetSeconds}s (id: ${id})`);
     return id;
@@ -186,14 +195,22 @@ async function _scheduleRestNotification(
  * Cancel the active rest notification (on skip or early dismiss).
  */
 export async function cancelRestNotification(): Promise<void> {
-  if (activeRestNotificationId) {
+  // Invalidate queued/native-in-flight requests synchronously, including those
+  // that have not returned an ID yet. Later schedules capture the new generation.
+  cancellationGeneration += 1;
+  await cancelActiveRestNotification();
+}
+
+async function cancelActiveRestNotification(): Promise<void> {
+  const id = activeRestNotificationId;
+  activeRestNotificationId = null;
+  if (id) {
     try {
-      await Notifications.cancelScheduledNotificationAsync(activeRestNotificationId);
-      logWithTs(`[RestTimer] Cancelled notification (id: ${activeRestNotificationId})`);
+      await Notifications.cancelScheduledNotificationAsync(id);
+      logWithTs(`[RestTimer] Cancelled notification (id: ${id})`);
     } catch (error) {
       warnWithTs('[RestTimer] Failed to cancel notification:', error);
     }
-    activeRestNotificationId = null;
   }
 }
 

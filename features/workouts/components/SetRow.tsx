@@ -9,8 +9,10 @@
 import React, { useCallback } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { sessionStyles as styles, colors } from '@/styles/workout-session.styles';
+import { sessionStyles as styles, colors } from '@/features/workouts/styles/workout-session.styles';
 import type { WorkoutSessionSet, SetType } from '@/lib/types/workout-session';
+import { useUnits } from '@/contexts/UnitsContext';
+import { WorkoutWeightInput } from './WorkoutWeightInput';
 
 interface SetRowProps {
   set: WorkoutSessionSet;
@@ -50,6 +52,7 @@ function SetRow({
   onNotesPress,
   detectedReps,
 }: SetRowProps) {
+  const { weightUnit } = useUnits();
   const isCompleted = !!set.completed_at;
   const circleColor = SET_TYPE_COLORS[set.set_type] || colors.accent;
 
@@ -68,8 +71,7 @@ function SetRow({
       : null;
 
   const handleWeightChange = useCallback(
-    (text: string) => {
-      const val = text ? parseFloat(text) : null;
+    (val: number | null) => {
       onUpdateSet(set.id, { actual_weight: val });
     },
     [set.id, onUpdateSet],
@@ -102,18 +104,12 @@ function SetRow({
 
       {/* Weight column */}
       <View style={styles.setColumn}>
-        <Text style={styles.setColumnLabel}>Lb</Text>
-        <TextInput
+        <Text style={styles.setColumnLabel}>{weightUnit}</Text>
+        <WorkoutWeightInput
           style={styles.setInput}
-          value={
-            set.actual_weight != null
-              ? String(set.actual_weight)
-              : set.planned_weight != null
-              ? String(set.planned_weight)
-              : ''
-          }
-          onChangeText={handleWeightChange}
-          keyboardType="numeric"
+          value={set.actual_weight ?? set.planned_weight}
+          unit={weightUnit}
+          onChange={handleWeightChange}
           placeholder="-"
           placeholderTextColor={colors.textSecondary}
           editable={!isCompleted}
