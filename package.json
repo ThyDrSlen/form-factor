@@ -45,6 +45,7 @@
     "test:e2e:report": "playwright show-report",
     "fixtures:pullup:prepare": "bun scripts/prepare-pullup-fixtures.ts",
     "eval:pullup-tracking": "bun scripts/eval-pullup-tracking.ts",
+    "replay:exercise": "bun scripts/replay-exercise.ts",
     "baseline:pullup-tracking": "bun scripts/baseline-pullup-tracking.ts",
     "eval:coach": "bun scripts/eval-coach.ts",
     "eval:redteam": "bun scripts/eval-redteam.ts",
